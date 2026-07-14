@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
+import { useAuth } from '../../src/contexts/AuthContext';
 import {
   Image,
   KeyboardAvoidingView,
@@ -17,16 +18,18 @@ import { COLORS } from "../../src/constants/theme";
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const { login } = useAuth();
+  const { returnUrl } = useLocalSearchParams();
 
   const handleNext = () => {
     if (!email) {
       alert("Vui lòng nhập email");
       return;
     }
-    // Đẩy sang trang OTP trước, mang theo email và luồng hiện tại
+    // ĐI THẲNG TỚI TRANG NHẬP MẬT KHẨU
     router.push({
-      pathname: "/(auth)/otp",
-      params: { email: email, flow: "login" },
+      pathname: "/(auth)/password",
+      params: { email: email, returnUrl: returnUrl }, 
     });
   };
 

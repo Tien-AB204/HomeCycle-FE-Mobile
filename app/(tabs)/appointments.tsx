@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-export default function OrdersScreen() {
+export default function AppointmentsScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Màn hình Quản lý Đơn hàng</Text>
+      <Text style={styles.text}>Màn hình Quản lý Lịch hẹn</Text>
       <Text style={styles.subText}>(Đang phát triển)</Text>
     </View>
   );

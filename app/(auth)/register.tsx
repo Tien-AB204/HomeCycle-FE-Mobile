@@ -20,17 +20,19 @@ export default function RegisterScreen() {
 
   const [role, setRole] = useState<"personal" | "business">("personal");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(auth)/login" as any);
+    }
+  };
 
   const handleRegister = () => {
     if (!email) {
       alert("Vui lòng điền Email");
-      return;
-    }
-    if (role === "personal" && !password) {
-      alert("Vui lòng nhập mật khẩu");
       return;
     }
     if (!agreeTerms) {
@@ -38,17 +40,11 @@ export default function RegisterScreen() {
       return;
     }
 
-    // --- PHÂN LUỒNG TẠI ĐÂY ---
-    if (role === "business") {
-      // 1. Luồng Doanh Nghiệp: KHÔNG qua màn hình OTP
-      router.push("/(auth)/business-setup");
-    } else {
-      // 2. Luồng Cá Nhân: Bắt buộc qua màn hình OTP
-      router.push({
-        pathname: "/(auth)/otp",
-        params: { email: email, flow: "register", role: role },
-      });
-    }
+    // ĐÃ SỬA: Cả luồng Cá nhân và Doanh nghiệp đều đi qua bước xác thực OTP
+    router.push({
+      pathname: "/(auth)/otp",
+      params: { email: email, flow: "register", role: role },
+    });
   };
 
   return (
@@ -63,10 +59,7 @@ export default function RegisterScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color={COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>HomeCycle</Text>
@@ -92,9 +85,7 @@ export default function RegisterScreen() {
                 <Ionicons
                   name="person-outline"
                   size={20}
-                  color={
-                    role === "personal" ? COLORS.primary : COLORS.textLight
-                  }
+                  color={role === "personal" ? COLORS.primary : COLORS.textLight}
                 />
                 <Text
                   style={[
@@ -116,9 +107,7 @@ export default function RegisterScreen() {
                 <Ionicons
                   name="business-outline"
                   size={20}
-                  color={
-                    role === "business" ? COLORS.primary : COLORS.textLight
-                  }
+                  color={role === "business" ? COLORS.primary : COLORS.textLight}
                 />
                 <Text
                   style={[
@@ -154,43 +143,7 @@ export default function RegisterScreen() {
               />
             </View>
 
-            {/* Ô nhập Mật khẩu (Dùng trick Tàng hình giữ chỗ để tránh Layout Shift) */}
-            <View
-              style={{ opacity: role === "personal" ? 1 : 0 }}
-              pointerEvents={role === "personal" ? "auto" : "none"}
-            >
-              <Text style={styles.label}>Mật khẩu</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={20}
-                  color={COLORS.textLight}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={[
-                    styles.input,
-                    Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-                  ]}
-                  placeholder="********"
-                  placeholderTextColor={COLORS.textLight}
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-outline" : "eye-off-outline"}
-                    size={20}
-                    color={COLORS.textLight}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Checkbox */}
+            {/* Checkbox Điều khoản */}
             <TouchableOpacity
               style={styles.checkboxRow}
               onPress={() => setAgreeTerms(!agreeTerms)}
@@ -201,13 +154,11 @@ export default function RegisterScreen() {
                 color={agreeTerms ? COLORS.primary : COLORS.textLight}
               />
               <Text style={styles.checkboxLabel}>
-                Tôi đồng ý với{" "}
-                <Text style={styles.linkText}>điều khoản dịch vụ</Text> và{" "}
-                <Text style={styles.linkText}>chính sách bảo mật</Text> của
-                HomeCycle.
+                Tôi đồng ý với <Text style={styles.linkText}>điều khoản dịch vụ</Text> và <Text style={styles.linkText}>chính sách bảo mật</Text> của HomeCycle.
               </Text>
             </TouchableOpacity>
 
+            {/* Nút Đăng Ký */}
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleRegister}
@@ -224,7 +175,6 @@ export default function RegisterScreen() {
             {/* Nút Google */}
             <TouchableOpacity style={styles.googleButton}>
               <Image
-                // Trỏ đường dẫn tương đối từ thư mục (auth) ra ngoài thư mục gốc rồi vào assets
                 source={require("../../assets/images/google-icon.png")}
                 style={{ width: 22, height: 22 }}
                 resizeMode="contain"
@@ -235,7 +185,7 @@ export default function RegisterScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Đã có tài khoản? </Text>
-            <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
+            <TouchableOpacity onPress={() => router.replace("/(auth)/login" as any)}>
               <Text style={styles.loginText}>Đăng nhập ngay</Text>
             </TouchableOpacity>
           </View>
@@ -319,7 +269,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 52,
     backgroundColor: "#FAFAFA",
-    marginBottom: 16,
+    marginBottom: 24,
   },
   inputIcon: { marginRight: 12 },
   input: { flex: 1, fontSize: 15, color: COLORS.text },
@@ -328,7 +278,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
     marginTop: -4,
-    marginBottom: 12,
+    marginBottom: 20,
   },
   checkboxLabel: {
     flex: 1,
@@ -343,7 +293,6 @@ const styles = StyleSheet.create({
     height: 52,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 16,
   },
   primaryButtonText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
   dividerContainer: {

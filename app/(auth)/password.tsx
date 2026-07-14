@@ -3,25 +3,36 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Keyb
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/theme';
+import { useAuth } from '../../src/contexts/AuthContext';
 
 export default function PasswordScreen() {
   const router = useRouter();
+  const { login } = useAuth();
   // Hứng lấy cái email từ trang login truyền sang
-  const { email } = useLocalSearchParams(); 
+  const { email, returnUrl } = useLocalSearchParams();
   
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // Trạng thái ẩn/hiện mật khẩu
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!password) {
       alert("Vui lòng nhập mật khẩu");
       return;
     }
-    // Tạm thời log ra, sau này gọi API Đăng nhập xong sẽ đẩy thẳng ra trang chủ (tabs)
     console.log("Tiến hành đăng nhập với:", email, password);
-    router.replace('/(tabs)');
-  };
+    
+    // GỌI HÀM LOGIN (Bây giờ nó sẽ không bị đỏ nữa)
+    await login({
+      email: email,
+      name: "Tên giả lập",
+    });
 
+    if (returnUrl) {
+      router.replace(returnUrl as any); // Đổi "string" thành "any"
+    } else {
+      router.replace('/(tabs)'); 
+    }
+  };
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView 
