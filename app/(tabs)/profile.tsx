@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Redirect, usePathname, useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
   Image, Platform, SafeAreaView, ScrollView, StyleSheet,
   Text, TouchableOpacity, useWindowDimensions, View,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
-import { COLORS } from "../../src/constants/theme"; // Import THEME MỚI
+import { COLORS } from "../../src/constants/theme"; 
 import { useAuth } from "../../src/contexts/AuthContext";
 
 export default function ProfileScreen() {
@@ -15,6 +16,11 @@ export default function ProfileScreen() {
   const { user, logout, isLoading } = useAuth();
   const pathname = usePathname();
 
+  // =========================================================================
+  // 🛠 DEV MODE: State tạm thời để giả lập Role (Xóa đi khi có API)
+  // =========================================================================
+  const [devRole, setDevRole] = useState<'personal' | 'business'>('personal');
+
   if (isLoading) {
     return <View style={{ flex: 1, backgroundColor: '#F8F9FA' }} />; 
   }
@@ -23,12 +29,20 @@ export default function ProfileScreen() {
     return <Redirect href={`/(auth)/login?returnUrl=${pathname}`} />;
   }
 
-  const menuItems = [
-    { icon: "person-outline", title: "Thông tin tài khoản" },
-    { icon: "time-outline", title: "Lịch sử giao dịch" },
-    { icon: "shield-checkmark-outline", title: "Trung tâm an toàn" },
-    { icon: "settings-outline", title: "Thiết lập ứng dụng" },
-  ];
+  // Phân nhánh Menu dựa trên Role giả lập (devRole)
+  const menuItems = devRole === 'business' 
+    ? [
+        { icon: "business-outline", title: "Hồ sơ Doanh nghiệp", route: '/business-account-info' },
+        { icon: "bar-chart-outline", title: "Thống kê & Đơn hàng", route: '/dashboard' },
+        { icon: "shield-checkmark-outline", title: "Trung tâm an toàn", route: '/safety-center' },
+        { icon: "settings-outline", title: "Thiết lập ứng dụng", route: '/settings' },
+      ]
+    : [
+        { icon: "person-outline", title: "Thông tin tài khoản", route: '/account-info' },
+        { icon: "time-outline", title: "Lịch sử giao dịch", route: '/transaction-history' },
+        { icon: "shield-checkmark-outline", title: "Trung tâm an toàn", route: '/safety-center' },
+        { icon: "settings-outline", title: "Thiết lập ứng dụng", route: '/settings' },
+      ];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -37,11 +51,26 @@ export default function ProfileScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
           
+          {/* ================= NÚT CHUYỂN NHANH DÀNH CHO DEV ================= */}
+          <TouchableOpacity 
+            style={styles.devToggleBtn}
+            onPress={() => setDevRole(devRole === 'personal' ? 'business' : 'personal')}
+          >
+            <Ionicons name="swap-horizontal" size={20} color="#D97706" />
+            <Text style={styles.devToggleText}>
+              DEV MODE: Đang xem dưới dạng [{devRole === 'personal' ? 'Cá nhân' : 'Doanh nghiệp'}]
+            </Text>
+          </TouchableOpacity>
+          {/* ================================================================= */}
+
           <View style={styles.userInfoSection}>
             <Image source={{ uri: user.avatar }} style={styles.avatar} />
-            <Text style={styles.userName}>{user.name}</Text>
+            <Text style={styles.userName}>
+              {devRole === 'business' ? 'Công Ty TNHH Thu Mua Ánh Sáng' : user.name}
+            </Text>
 
-            {user.role === "business" && (
+            {/* Huy hiệu Doanh nghiệp */}
+            {devRole === "business" && (
               <View style={styles.verifiedBadge}>
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.primary} />
                 <Text style={styles.verifiedText}>Doanh nghiệp đã xác thực</Text>
@@ -59,23 +88,26 @@ export default function ProfileScreen() {
               <Text style={styles.statsTextRating}>{user.rating}</Text>
               <Text style={styles.statsDivider}>|</Text>
               <Text style={styles.statsText}>
-                {user.orders} {user.role === "business" ? "Giao dịch" : "Đơn hàng"}
+                {user.orders} {devRole === "business" ? "Giao dịch hoàn tất" : "Đơn hàng"}
               </Text>
             </View>
           </View>
 
-          <View style={styles.upgradeBanner}>
-            <View style={styles.upgradeTextContainer}>
-              <Text style={styles.upgradeTitle}>Nâng cấp lên Doanh nghiệp</Text>
-              <Text style={styles.upgradeDesc}>Tăng độ uy tín, mở rộng hạn mức đăng tin và nhận hỗ trợ ưu tiên.</Text>
-              <TouchableOpacity style={styles.upgradeBtn}>
-                <Text style={styles.upgradeBtnText}>Khám phá ngay</Text>
-              </TouchableOpacity>
+          {/* Banner Nâng cấp Doanh nghiệp (Chỉ hiện cho Cá nhân) */}
+          {devRole === "personal" && (
+            <View style={styles.upgradeBanner}>
+              <View style={styles.upgradeTextContainer}>
+                <Text style={styles.upgradeTitle}>Nâng cấp lên Doanh nghiệp</Text>
+                <Text style={styles.upgradeDesc}>Tăng độ uy tín, mở rộng hạn mức đăng tin và nhận hỗ trợ ưu tiên.</Text>
+                <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.push('/business-upgrade' as any)}>
+                  <Text style={styles.upgradeBtnText}>Khám phá ngay</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.upgradeIconBox}>
+                <Ionicons name="storefront" size={32} color={COLORS.text} />
+              </View>
             </View>
-            <View style={styles.upgradeIconBox}>
-              <Ionicons name="storefront" size={32} color={COLORS.text} />
-            </View>
-          </View>
+          )}
 
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
@@ -85,14 +117,26 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.statCard}>
               <Ionicons name="newspaper-outline" size={24} color={COLORS.primary} />
-              <Text style={styles.statLabel}>Tin đang đăng</Text>
+              <Text style={styles.statLabel}>
+                {devRole === 'business' ? 'Tin đang thu mua' : 'Tin đang đăng bán'}
+              </Text>
               <Text style={styles.statValue}>{user.listings || 12} bài</Text>
             </View>
           </View>
 
           <View style={styles.menuContainer}>
             {menuItems.map((item, index) => (
-              <TouchableOpacity key={index} style={styles.menuItem}>
+              <TouchableOpacity 
+                key={index} 
+                style={styles.menuItem}
+                onPress={() => {
+                  if (item.route) {
+                    router.push(item.route as any);
+                  } else {
+                    alert(`Tính năng ${item.title} đang phát triển!`);
+                  }
+                }}
+              >
                 <View style={styles.menuIconBox}>
                   <Ionicons name={item.icon as any} size={22} color={COLORS.primary} />
                 </View>
@@ -119,6 +163,10 @@ const styles = StyleSheet.create({
   mobileWrapper: { flex: 1, backgroundColor: COLORS.background, ...Platform.select({ web: { boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any }) },
   container: { flex: 1, paddingHorizontal: 16 },
 
+  // Nút DEV MODE
+  devToggleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7', paddingVertical: 12, borderRadius: 12, marginTop: 16, borderWidth: 1, borderColor: '#F59E0B', borderStyle: 'dashed', gap: 8 },
+  devToggleText: { color: '#D97706', fontSize: 13, fontWeight: '700' },
+
   userInfoSection: { alignItems: "center", marginTop: 16, marginBottom: 20 },
   avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 12, backgroundColor: COLORS.border },
   userName: { fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 6 },
@@ -132,7 +180,6 @@ const styles = StyleSheet.create({
   statsDivider: { fontSize: 14, color: COLORS.border, marginHorizontal: 10 },
   statsText: { fontSize: 14, fontWeight: "600", color: COLORS.text },
 
-  // Dùng màu Xanh đen (#172B30) cho Banner
   upgradeBanner: { backgroundColor: COLORS.text, borderRadius: 16, padding: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   upgradeTextContainer: { flex: 1, marginRight: 10 },
   upgradeTitle: { color: COLORS.white, fontSize: 15, fontWeight: '700', marginBottom: 6 },
@@ -151,7 +198,6 @@ const styles = StyleSheet.create({
   menuIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.background, justifyContent: "center", alignItems: "center", marginRight: 12 },
   menuText: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: "500" },
 
-  // Đăng xuất dùng màu Đỏ đô (#7A1012)
   logoutButton: { flexDirection: "row", alignItems: "center", marginTop: 20, paddingVertical: 16, paddingHorizontal: 20, backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: '#F2D5D5' },
   logoutText: { color: COLORS.error, fontSize: 15, fontWeight: "700", marginLeft: 12 },
 });
