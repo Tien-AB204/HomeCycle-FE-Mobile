@@ -1,4 +1,3 @@
-// src/constants/theme.ts
 export const COLORS = {
   text: '#172830',         // Xanh đen trầm (Sửa lại chuẩn theo mã bạn đưa)
   primary: '#2B5659',      // Xanh rêu đậm

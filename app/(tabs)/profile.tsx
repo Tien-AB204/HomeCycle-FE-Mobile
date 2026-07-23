@@ -13,13 +13,12 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
+  
   const { user, logout, isLoading } = useAuth();
   const pathname = usePathname();
-
-  // =========================================================================
-  // 🛠 DEV MODE: State tạm thời để giả lập Role (Xóa đi khi có API)
-  // =========================================================================
-  const [devRole, setDevRole] = useState<'personal' | 'business'>('personal');
+  
+  // State xử lý lỗi khi link avatar bị hỏng
+  const [imageError, setImageError] = useState(false);
 
   if (isLoading) {
     return <View style={{ flex: 1, backgroundColor: '#F8F9FA' }} />; 
@@ -29,8 +28,20 @@ export default function ProfileScreen() {
     return <Redirect href={`/(auth)/login?returnUrl=${pathname}`} />;
   }
 
-  // Phân nhánh Menu dựa trên Role giả lập (devRole)
-  const menuItems = devRole === 'business' 
+  // Lấy năm tham gia từ createdAt
+  const joinYear = user.createdAt ? new Date(user.createdAt).getFullYear() : '';
+
+  // 1. SỬA LẠI ĐÚNG TÊN BIẾN (user.avatar)
+  // 2. Chặn luôn lỗi Backend trả về chữ "string" hoặc "null"
+  const isValidAvatar = user.avatar && user.avatar !== 'string' && user.avatar !== 'null';
+  
+  // Ảnh dự phòng màu xanh giống thiết kế
+  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username || 'U')}&background=208AEF&color=fff&size=200`;
+  
+  // Logic hiển thị: Nếu link xịn & không lỗi thì hiện ảnh, ngược lại hiện chữ
+  const avatarSource = (isValidAvatar && !imageError) ? { uri: user.avatar } : { uri: defaultAvatar };
+
+  const menuItems = user.role === 'business' 
     ? [
         { icon: "business-outline", title: "Hồ sơ Doanh nghiệp", route: '/business-account-info' },
         { icon: "bar-chart-outline", title: "Thống kê & Đơn hàng", route: '/dashboard' },
@@ -51,50 +62,35 @@ export default function ProfileScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
           
-          {/* ================= NÚT CHUYỂN NHANH DÀNH CHO DEV ================= */}
-          <TouchableOpacity 
-            style={styles.devToggleBtn}
-            onPress={() => setDevRole(devRole === 'personal' ? 'business' : 'personal')}
-          >
-            <Ionicons name="swap-horizontal" size={20} color="#D97706" />
-            <Text style={styles.devToggleText}>
-              DEV MODE: Đang xem dưới dạng [{devRole === 'personal' ? 'Cá nhân' : 'Doanh nghiệp'}]
-            </Text>
-          </TouchableOpacity>
-          {/* ================================================================= */}
-
           <View style={styles.userInfoSection}>
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
-            <Text style={styles.userName}>
-              {devRole === 'business' ? 'Công Ty TNHH Thu Mua Ánh Sáng' : user.name}
-            </Text>
+            <Image 
+              source={avatarSource} 
+              style={styles.avatar} 
+              onError={() => setImageError(true)} 
+            />
+            <Text style={styles.userName}>{user.username}</Text>
 
-            {/* Huy hiệu Doanh nghiệp */}
-            {devRole === "business" && (
+            {user.verificationStatus === 'Verified' && (
               <View style={styles.verifiedBadge}>
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.primary} />
-                <Text style={styles.verifiedText}>Doanh nghiệp đã xác thực</Text>
+                <Text style={styles.verifiedText}>Đã xác thực</Text>
               </View>
             )}
 
             <View style={styles.metaRow}>
-              <Text style={styles.metaText}>{user.location}</Text>
-              <Text style={styles.dot}>•</Text>
-              <Text style={styles.metaText}>Tham gia: {user.joinDate}</Text>
+              <Text style={styles.metaText}>Tham gia: {joinYear}</Text>
             </View>
 
             <View style={styles.statsBadge}>
-              <Ionicons name="star" size={14} color="#F39C12" />
-              <Text style={styles.statsTextRating}>{user.rating}</Text>
+              <Text style={styles.statsTextRating}>Điểm uy tín: {user.reputationScore}</Text>
               <Text style={styles.statsDivider}>|</Text>
               <Text style={styles.statsText}>
-                {user.orders} {devRole === "business" ? "Giao dịch hoàn tất" : "Đơn hàng"}
+                0 {user.role === "business" ? "Giao dịch hoàn tất" : "Đơn hàng"}
               </Text>
             </View>
           </View>
 
-          {/* Banner Nâng cấp Doanh nghiệp (Chỉ hiện cho Cá nhân) */}
-          {devRole === "personal" && (
+          {user.role === "personal" && (
             <View style={styles.upgradeBanner}>
               <View style={styles.upgradeTextContainer}>
                 <Text style={styles.upgradeTitle}>Nâng cấp lên Doanh nghiệp</Text>
@@ -113,14 +109,14 @@ export default function ProfileScreen() {
             <View style={styles.statCard}>
               <Ionicons name="wallet-outline" size={24} color={COLORS.primary} />
               <Text style={styles.statLabel}>Số dư ví</Text>
-              <Text style={styles.statValue}>{user.balance}</Text>
+              <Text style={styles.statValue}>0 đ</Text>
             </View>
             <View style={styles.statCard}>
               <Ionicons name="newspaper-outline" size={24} color={COLORS.primary} />
               <Text style={styles.statLabel}>
-                {devRole === 'business' ? 'Tin đang thu mua' : 'Tin đang đăng bán'}
+                {user.role === 'business' ? 'Tin đang thu mua' : 'Tin đang đăng bán'}
               </Text>
-              <Text style={styles.statValue}>{user.listings || 12} bài</Text>
+              <Text style={styles.statValue}>0 bài</Text>
             </View>
           </View>
 
@@ -146,7 +142,7 @@ export default function ProfileScreen() {
             ))}
           </View>
 
-          <TouchableOpacity style={styles.logoutButton} onPress={() => { logout(); router.replace("/"); }}>
+          <TouchableOpacity style={styles.logoutButton} onPress={() => logout()}>
             <Ionicons name="log-out-outline" size={22} color={COLORS.error} />
             <Text style={styles.logoutText}>Đăng xuất</Text>
           </TouchableOpacity>
@@ -160,12 +156,8 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.border, alignItems: "center" },
-  mobileWrapper: { flex: 1, backgroundColor: COLORS.background, ...Platform.select({ web: { boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any }) },
+  mobileWrapper: { flex: 1, backgroundColor: COLORS.background, ...(Platform.OS === 'web' ? { boxShadow: '0px 0px 20px rgba(0,0,0,0.1)' } as any : {}) },
   container: { flex: 1, paddingHorizontal: 16 },
-
-  // Nút DEV MODE
-  devToggleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF3C7', paddingVertical: 12, borderRadius: 12, marginTop: 16, borderWidth: 1, borderColor: '#F59E0B', borderStyle: 'dashed', gap: 8 },
-  devToggleText: { color: '#D97706', fontSize: 13, fontWeight: '700' },
 
   userInfoSection: { alignItems: "center", marginTop: 16, marginBottom: 20 },
   avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 12, backgroundColor: COLORS.border },
@@ -176,7 +168,7 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 13, color: COLORS.textLight },
   dot: { fontSize: 13, color: COLORS.textLight, marginHorizontal: 6 },
   statsBadge: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.white, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border },
-  statsTextRating: { fontSize: 14, fontWeight: "700", color: COLORS.text, marginLeft: 6 },
+  statsTextRating: { fontSize: 14, fontWeight: "700", color: COLORS.text },
   statsDivider: { fontSize: 14, color: COLORS.border, marginHorizontal: 10 },
   statsText: { fontSize: 14, fontWeight: "600", color: COLORS.text },
 
