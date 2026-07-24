@@ -1,16 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../src/constants/theme';
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { COLORS } from "../../src/constants/theme";
 
 export default function OTPScreen() {
   const router = useRouter();
   const { email, flow, role } = useLocalSearchParams();
 
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef<Array<TextInput | null>>([]);
-  const [timeLeft, setTimeLeft] = useState(118); 
+  const [timeLeft, setTimeLeft] = useState(118);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -20,13 +29,15 @@ export default function OTPScreen() {
   }, []);
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
 
   const handleOtpChange = (text: string, index: number) => {
-    const value = text.length > 0 ? text[text.length - 1] : '';
+    const value = text.length > 0 ? text[text.length - 1] : "";
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
@@ -35,44 +46,49 @@ export default function OTPScreen() {
       inputRefs.current[index + 1]?.focus();
     }
 
-    if (newOtp.every((val) => val !== '')) {
-      handleVerify(newOtp.join(''));
+    if (newOtp.every((val) => val !== "")) {
+      handleVerify(newOtp.join(""));
     }
   };
 
   const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
   const handleVerify = (fullOtp: string) => {
     if (!flow) {
-        alert("Lỗi: Không nhận được dữ liệu luồng!");
-        return;
+      alert("Lỗi: Không nhận được dữ liệu luồng!");
+      return;
     }
-    
-    if (flow === 'login') {
-      router.push({ pathname: '/(auth)/password', params: { email } });
-    } else if (flow === 'register') {
-      // ĐÃ SỬA: Cả 2 luồng đều đẩy qua trang Nhập Mật khẩu, kèm theo thông tin role
-      router.push({ 
-        pathname: '/(auth)/register-password', 
-        params: { email, role } 
+
+    if (flow === "login") {
+      // ĐĂNG NHẬP THÀNH CÔNG: Đá thẳng vào màn hình chính và xóa lịch sử lùi lại
+      router.replace("/(tabs)");
+    } else if (flow === "register") {
+      // LUỒNG ĐĂNG KÝ: Chuyển qua trang cài đặt mật khẩu
+      router.push({
+        pathname: "/(auth)/register-password",
+        params: { email, role },
       });
-    } else if (flow === 'forgot_password') {
-      router.push('/(auth)/reset-password' as any);
+    } else if (flow === "forgot_password") {
+      // LUỒNG QUÊN MẬT KHẨU: Chuyển qua trang đặt lại mật khẩu mới
+      router.push("/(auth)/reset-password");
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
         </View>
@@ -84,7 +100,8 @@ export default function OTPScreen() {
             </View>
             <Text style={styles.title}>Xác thực Email</Text>
             <Text style={styles.subtitle}>
-              Hệ thống đã gửi mã OTP gồm 6 chữ số đến email của bạn. Vui lòng kiểm tra và gõ vào ô bên dưới.
+              Hệ thống đã gửi mã OTP gồm 6 chữ số đến email của bạn. Vui lòng
+              kiểm tra và gõ vào ô bên dưới.
             </Text>
           </View>
 
@@ -92,11 +109,13 @@ export default function OTPScreen() {
             {otp.map((digit, index) => (
               <TextInput
                 key={index}
-                ref={(ref) => { inputRefs.current[index] = ref; }}
+                ref={(ref) => {
+                  inputRefs.current[index] = ref;
+                }}
                 style={[
                   styles.otpInput,
-                  Platform.OS === 'web' && { outlineStyle: 'none' } as any,
-                  digit ? styles.otpInputActive : null 
+                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                  digit ? styles.otpInputActive : null,
                 ]}
                 keyboardType="number-pad"
                 maxLength={1}
@@ -121,7 +140,10 @@ export default function OTPScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.backToLoginButton}>
+          <TouchableOpacity
+            onPress={() => router.push("/(auth)/login")}
+            style={styles.backToLoginButton}
+          >
             <Ionicons name="arrow-back" size={16} color={COLORS.primary} />
             <Text style={styles.backToLoginText}>Quay lại đăng nhập</Text>
           </TouchableOpacity>
@@ -134,29 +156,95 @@ export default function OTPScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
   container: { flex: 1, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 20 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 20,
+  },
   backButton: { padding: 8, marginLeft: -8 },
   contentCard: {
-    backgroundColor: COLORS.white, borderRadius: 24, padding: 24,
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 24,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      },
       android: { elevation: 2 },
-      web: { boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)' } as any,
+      web: { boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)" } as any,
     }),
   },
-  iconCenterContainer: { alignItems: 'center', marginBottom: 32 },
-  lockIconBox: { backgroundColor: COLORS.primary, width: 64, height: 64, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: COLORS.text, marginBottom: 12 },
-  subtitle: { fontSize: 14, color: COLORS.textLight, textAlign: 'center', lineHeight: 22, paddingHorizontal: 10 },
-  otpContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  otpInput: { width: 45, height: 55, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, fontSize: 24, fontWeight: 'bold', textAlign: 'center', color: COLORS.text, backgroundColor: COLORS.white },
-  otpInputActive: { borderColor: '#2F80ED', borderWidth: 2 },
-  timerContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 16 },
-  timerText: { color: COLORS.error, fontWeight: 'bold', fontSize: 14 },
-  resendContainer: { flexDirection: 'row', justifyContent: 'center', marginBottom: 32 },
+  iconCenterContainer: { alignItems: "center", marginBottom: 32 },
+  lockIconBox: {
+    backgroundColor: COLORS.primary,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 10,
+  },
+  otpContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  otpInput: {
+    width: 45,
+    height: 55,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: COLORS.text,
+    backgroundColor: COLORS.white,
+  },
+  otpInputActive: { borderColor: "#2F80ED", borderWidth: 2 },
+  timerContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 16,
+  },
+  timerText: { color: COLORS.error, fontWeight: "bold", fontSize: 14 },
+  resendContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 32,
+  },
   resendTextBase: { color: COLORS.textLight, fontSize: 14 },
-  resendTextHighlight: { color: '#4F7C7B', fontSize: 14, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 24, marginHorizontal: 10 },
-  backToLoginButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  backToLoginText: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
+  resendTextHighlight: { color: "#4F7C7B", fontSize: 14, fontWeight: "600" },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginBottom: 24,
+    marginHorizontal: 10,
+  },
+  backToLoginButton: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  backToLoginText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
 });

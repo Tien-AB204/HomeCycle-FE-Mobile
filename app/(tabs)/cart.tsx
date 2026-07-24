@@ -1,7 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
-import MainHeader from '../../src/components/shared/MainHeader';
-import { COLORS } from '../../src/constants/theme';
+import { SafeAreaView, StyleSheet, Text, View } from "react-native";
+import MainHeader from "../../src/components/shared/MainHeader";
+import { COLORS } from "../../src/constants/theme";
 
 export default function CartScreen() {
   return (
@@ -16,6 +15,11 @@ export default function CartScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
-  container: { flex: 1, padding: 20, alignItems: 'center', justifyContent: 'center' },
+  container: {
+    flex: 1,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: { fontSize: 16, color: COLORS.textLight },
 });

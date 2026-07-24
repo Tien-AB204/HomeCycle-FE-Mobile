@@ -1,5 +1,4 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { StyleSheet, Text, View } from "react-native";
 
 export default function OrdersScreen() {
   return (
@@ -11,7 +10,12 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' },
-  text: { fontSize: 18, fontWeight: 'bold', color: '#2C3E50' },
-  subText: { fontSize: 14, color: '#7F8C8D', marginTop: 8 }
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
+  },
+  text: { fontSize: 18, fontWeight: "bold", color: "#2C3E50" },
+  subText: { fontSize: 14, color: "#7F8C8D", marginTop: 8 },
 });

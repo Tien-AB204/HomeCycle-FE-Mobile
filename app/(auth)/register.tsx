@@ -85,7 +85,9 @@ export default function RegisterScreen() {
                 <Ionicons
                   name="person-outline"
                   size={20}
-                  color={role === "personal" ? COLORS.primary : COLORS.textLight}
+                  color={
+                    role === "personal" ? COLORS.primary : COLORS.textLight
+                  }
                 />
                 <Text
                   style={[
@@ -107,7 +109,9 @@ export default function RegisterScreen() {
                 <Ionicons
                   name="business-outline"
                   size={20}
-                  color={role === "business" ? COLORS.primary : COLORS.textLight}
+                  color={
+                    role === "business" ? COLORS.primary : COLORS.textLight
+                  }
                 />
                 <Text
                   style={[
@@ -154,7 +158,10 @@ export default function RegisterScreen() {
                 color={agreeTerms ? COLORS.primary : COLORS.textLight}
               />
               <Text style={styles.checkboxLabel}>
-                Tôi đồng ý với <Text style={styles.linkText}>điều khoản dịch vụ</Text> và <Text style={styles.linkText}>chính sách bảo mật</Text> của HomeCycle.
+                Tôi đồng ý với{" "}
+                <Text style={styles.linkText}>điều khoản dịch vụ</Text> và{" "}
+                <Text style={styles.linkText}>chính sách bảo mật</Text> của
+                HomeCycle.
               </Text>
             </TouchableOpacity>
 
@@ -185,7 +192,9 @@ export default function RegisterScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Đã có tài khoản? </Text>
-            <TouchableOpacity onPress={() => router.replace("/(auth)/login" as any)}>
+            <TouchableOpacity
+              onPress={() => router.replace("/(auth)/login" as any)}
+            >
               <Text style={styles.loginText}>Đăng nhập ngay</Text>
             </TouchableOpacity>
           </View>
