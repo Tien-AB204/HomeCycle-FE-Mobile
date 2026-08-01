@@ -80,7 +80,7 @@ export default function ProfileScreen() {
           {
             icon: "person-outline",
             title: "Thông tin tài khoản",
-            route: "/account-info",
+            route: "/profile/account-info",
           },
           {
             icon: "time-outline",

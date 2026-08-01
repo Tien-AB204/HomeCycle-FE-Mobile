@@ -12,8 +12,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator, // Thêm component này để báo loading
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
+import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -21,6 +23,7 @@ export default function RegisterScreen() {
   const [role, setRole] = useState<"personal" | "business">("personal");
   const [email, setEmail] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // THÊM STATE LOADING
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -30,7 +33,7 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!email) {
       alert("Vui lòng điền Email");
       return;
@@ -40,11 +43,23 @@ export default function RegisterScreen() {
       return;
     }
 
-    // ĐÃ SỬA: Cả luồng Cá nhân và Doanh nghiệp đều đi qua bước xác thực OTP
-    router.push({
-      pathname: "/(auth)/otp",
-      params: { email: email, flow: "register", role: role },
-    });
+    try {
+      setIsLoading(true);
+      
+      // 1. GỌI API SEND OTP XUỐNG BACKEND
+      await authApi.sendOtp(email);
+
+      // 2. CHUYỂN TRANG KHI API THÀNH CÔNG
+      router.push({
+        pathname: "/(auth)/otp",
+        params: { email: email, flow: "register", role: role },
+      });
+    } catch (error: any) {
+      console.error("Lỗi gửi OTP:", error);
+      alert(error.response?.data?.message || "Không thể gửi OTP. Vui lòng kiểm tra lại email!");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -165,12 +180,17 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* Nút Đăng Ký */}
+            {/* Nút Đăng Ký ĐÃ CẬP NHẬT TRẠNG THÁI LOADING */}
             <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleRegister}
+              disabled={isLoading}
             >
-              <Text style={styles.primaryButtonText}>Đăng ký</Text>
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Đăng ký</Text>
+              )}
             </TouchableOpacity>
 
             <View style={styles.dividerContainer}>

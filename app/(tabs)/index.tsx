@@ -42,7 +42,7 @@ export default function HomeScreen() {
                 styles.searchInput,
                 { flexDirection: "row", alignItems: "center" },
               ]}
-              onPress={() => router.push("/search/search")}
+              onPress={() => router.push("/search")}
             >
               <Ionicons
                 name="search"
@@ -56,7 +56,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.filterButton}
-              onPress={() => router.push("/search/search")}
+              onPress={() => router.push("/search")}
             >
               <Ionicons name="options-outline" size={20} color={COLORS.white} />
             </TouchableOpacity>

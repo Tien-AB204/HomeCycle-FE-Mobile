@@ -10,8 +10,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
+import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
 
 export default function OTPScreen() {
   const router = useRouter();
@@ -20,6 +22,7 @@ export default function OTPScreen() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef<Array<TextInput | null>>([]);
   const [timeLeft, setTimeLeft] = useState(118);
+  const [isLoading, setIsLoading] = useState(false); // THÊM STATE LOADING
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -57,24 +60,38 @@ export default function OTPScreen() {
     }
   };
 
-  const handleVerify = (fullOtp: string) => {
+  const handleVerify = async (fullOtp: string) => {
     if (!flow) {
       alert("Lỗi: Không nhận được dữ liệu luồng!");
       return;
     }
 
-    if (flow === "login") {
-      // ĐĂNG NHẬP THÀNH CÔNG: Đá thẳng vào màn hình chính và xóa lịch sử lùi lại
-      router.replace("/(tabs)");
-    } else if (flow === "register") {
-      // LUỒNG ĐĂNG KÝ: Chuyển qua trang cài đặt mật khẩu
-      router.push({
-        pathname: "/(auth)/register-password",
-        params: { email, role },
-      });
-    } else if (flow === "forgot_password") {
-      // LUỒNG QUÊN MẬT KHẨU: Chuyển qua trang đặt lại mật khẩu mới
-      router.push("/(auth)/reset-password");
+    try {
+      setIsLoading(true);
+      
+      // 1. GỌI API XÁC THỰC OTP
+      const response = await authApi.verifyOtp(email as string, fullOtp);
+      
+      // Bắt lấy Registration Token từ Backend trả về
+      // (Tùy thuộc vào cấu trúc json backend trả về, thường nằm trong data)
+      const token = response.data?.registrationToken || response.data?.data?.registrationToken;
+
+      if (flow === "login") {
+        router.replace("/(tabs)");
+      } else if (flow === "register") {
+        // LUỒNG ĐĂNG KÝ: Chuyển qua trang tiếp theo và NHÉT THÊM TOKEN vào Params
+        router.push({
+          pathname: "/(auth)/register-password",
+          params: { email, role, registrationToken: token },
+        });
+      } else if (flow === "forgot_password") {
+        router.push("/(auth)/reset-password");
+      }
+    } catch (error: any) {
+      console.error("Lỗi xác thực OTP:", error);
+      alert(error.response?.data?.message || "Mã OTP không chính xác hoặc đã hết hạn!");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -122,9 +139,15 @@ export default function OTPScreen() {
                 value={digit}
                 onChangeText={(text) => handleOtpChange(text, index)}
                 onKeyPress={(e) => handleKeyPress(e, index)}
+                editable={!isLoading} // Không cho gõ thêm nếu đang gọi API
               />
             ))}
           </View>
+
+          {/* HIỂN THỊ LOADING NHỎ KHI ĐANG KIỂM TRA OTP */}
+          {isLoading && (
+             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginBottom: 16 }} />
+          )}
 
           <View style={styles.timerContainer}>
             <Ionicons name="time" size={16} color={COLORS.error} />

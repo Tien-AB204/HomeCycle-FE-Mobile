@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  Image,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -11,255 +10,302 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
-import { useAuth } from "../../src/contexts/AuthContext"; // IMPORT AUTH
+import { useAuth } from "../../src/contexts/AuthContext";
+import { postApi } from "../../src/services/apis/postApi";
 
 export default function PostsScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
 
-  // Lấy role thật từ AuthContext
   const { user } = useAuth();
-  const userRole = user?.role || "personal"; // Default là personal nếu rớt mạng
+  const userRole = user?.role || "personal";
 
-  const [activePersonalTab, setActivePersonalTab] = useState<
-    "active" | "hidden"
-  >("active");
-  const [activeBusinessTab, setActiveBusinessTab] = useState<
-    "buying" | "requests"
-  >("buying");
+  const [activePersonalTab, setActivePersonalTab] = useState<"active" | "hidden">("active");
+  const [activeBusinessTab, setActiveBusinessTab] = useState<"buying" | "requests">("buying");
 
-  // ================= MOCK DATA (Tạm giữ UI Card, sẽ ghép API sau) =================
-  const mockSellingPosts = [
-    {
-      id: 1,
-      title: "Tủ lạnh Samsung Inverter 236L",
-      price: "3.500.000 đ",
-      image:
-        "https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?q=80&w=200&auto=format&fit=crop",
-      status: "Hoạt động tốt",
-      expires: "30 ngày nữa",
-    },
-    {
-      id: 2,
-      title: "Sofa góc bọc da cao cấp xám nhạt",
-      price: "2.100.000 đ",
-      image:
-        "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?q=80&w=200&auto=format&fit=crop",
-      status: "Hư nhẹ",
-      expires: "15 ngày nữa",
-    },
-  ];
+  // === STATE QUẢN LÝ DỮ LIỆU API ===
+  const [posts, setPosts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const mockBuyingPosts = [
-    {
-      id: 1,
-      title: "Thu mua tủ lạnh hư hỏng, xác điều hòa",
-      priceRange: "500k - 2tr / cái",
-      quantity: "Không giới hạn",
-      category: "Điện máy",
-      expires: "30 ngày nữa",
-    },
-    {
-      id: 2,
-      title: "Thu mua bàn ghế văn phòng thanh lý",
-      priceRange: "Thương lượng",
-      quantity: "50 - 100 cái",
-      category: "Nội thất",
-      expires: "Đã đóng",
-    },
-  ];
+  // === GỌI API GET ALL ===
+  const fetchPosts = async () => {
+    try {
+      const res = await postApi.getAllPosts();
+      const data = res?.items || res?.data?.items || res?.data || [];
+      setPosts(data);
+    } catch (error) {
+      console.error("Lỗi lấy danh sách bài đăng:", error);
+    }
+  };
 
-  const renderCard = (post: any, isBuying: boolean) => (
-    <View key={post.id} style={styles.card}>
-      {isBuying ? (
-        <View style={styles.buyingIconBox}>
-          <Ionicons name="megaphone-outline" size={28} color={COLORS.primary} />
+  useEffect(() => {
+    setIsLoading(true);
+    fetchPosts().finally(() => setIsLoading(false));
+  }, []);
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchPosts();
+    setIsRefreshing(false);
+  };
+
+  const handleDelete = (postId: string) => {
+    Alert.alert(
+      "Xác nhận xóa",
+      "Bạn có chắc chắn muốn xóa tin đăng này không? Hành động này không thể hoàn tác.",
+      [
+        { text: "Hủy", style: "cancel" },
+        { 
+          text: "Xóa", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              await postApi.deletePost(postId);
+              Alert.alert("Thành công", "Đã xóa bài đăng.");
+              await fetchPosts(); // Load lại danh sách
+            } catch (error) {
+              console.error("Lỗi xóa bài:", error);
+              Alert.alert("Lỗi", "Không thể xóa bài đăng lúc này.");
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // === HELPER FORMATTERS ===
+  const formatPrice = (price: number) => {
+    if (!price) return "0 đ";
+    return price.toLocaleString("vi-VN") + " đ";
+  };
+
+  // Hàm tính thời gian trôi qua (Relative Time)
+  const getTimeAgo = (dateString: string) => {
+    if (!dateString) return "N/A";
+    const now = new Date();
+    const past = new Date(dateString);
+    const diffMs = now.getTime() - past.getTime();
+
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const diffMonths = Math.floor(diffDays / 30);
+    const diffYears = Math.floor(diffDays / 365);
+
+    if (diffSecs < 60) return "Vừa xong";
+    if (diffMins < 60) return `${diffMins} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffDays < 30) return `${diffDays} ngày trước`;
+    if (diffMonths < 12) return `${diffMonths} tháng trước`;
+    return `${diffYears} năm trước`;
+  };
+
+  const getDaysLeft = (expiryDate: string) => {
+    if (!expiryDate) return "Không rõ";
+    const diff = new Date(expiryDate).getTime() - new Date().getTime();
+    const days = Math.ceil(diff / (1000 * 3600 * 24));
+    return days > 0 ? `${days} ngày nữa` : "Đã đóng";
+  };
+
+  const translateStatus = (status: string) => {
+    switch (status) {
+      case "Active": return { text: "Đang hoạt động", color: "#10B981", bg: "#D1FAE5" };
+      case "Pending": return { text: "Chờ duyệt", color: "#F59E0B", bg: "#FEF3C7" };
+      case "Deleted": return { text: "Đã xóa/Ẩn", color: "#EF4444", bg: "#FEE2E2" };
+      default: return { text: status || "N/A", color: "#475569", bg: "#F1F5F9" };
+    }
+  };
+
+  // Lọc dữ liệu theo Tab hiện tại
+  const activePosts = posts.filter(p => p.status === "Active" || p.status === "Pending");
+  const hiddenPosts = posts.filter(p => p.status === "Deleted");
+
+  const renderCard = (post: any) => {
+    const statusObj = translateStatus(post.status);
+    const address = [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
+
+    return (
+      <TouchableOpacity 
+        key={post.postId} 
+        style={styles.card}
+        activeOpacity={0.7}
+        onPress={() => router.push({ pathname: "/posts/[id]", params: { id: post.postId } })}
+      >
+        {/* Placeholder Icon */}
+        <View style={styles.iconBox}>
+          <Ionicons name={post.postType === "Sell" ? "cube-outline" : "megaphone-outline"} size={32} color={COLORS.primary} />
         </View>
-      ) : (
-        <Image source={{ uri: post.image }} style={styles.cardImage} />
-      )}
 
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle} numberOfLines={2}>
-          {post.title}
-        </Text>
-        <Text style={styles.cardPrice}>
-          {isBuying ? post.priceRange : post.price}
-        </Text>
-
-        <View style={styles.tagRow}>
-          {isBuying ? (
-            <>
-              <View style={[styles.tag, { backgroundColor: "#E0F2FE" }]}>
-                <Text style={[styles.tagText, { color: "#0369A1" }]}>
-                  SL: {post.quantity}
-                </Text>
-              </View>
-              <View style={[styles.tag, { backgroundColor: "#F3F4F6" }]}>
-                <Text style={styles.tagText}>{post.category}</Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>{post.status}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.cardActions}>
-          <Text
-            style={[
-              styles.statsText,
-              post.expires === "Đã đóng"
-                ? { color: COLORS.error, fontWeight: "bold" }
-                : null,
-            ]}
-          >
-            Thời hạn: {post.expires}
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {post.productName}
           </Text>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons
-                name="pencil-outline"
-                size={18}
-                color={COLORS.primary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons
-                name={isBuying ? "lock-closed-outline" : "eye-off-outline"}
-                size={18}
-                color={COLORS.error}
-              />
-            </TouchableOpacity>
+          <Text style={styles.cardPrice}>
+            {formatPrice(post.basePrice)}
+          </Text>
+
+          <Text style={styles.descText} numberOfLines={2}>
+            {post.description}
+          </Text>
+          <Text style={styles.addressText} numberOfLines={1}>
+            <Ionicons name="location-outline" size={12} /> {address || "Chưa cập nhật địa chỉ"}
+          </Text>
+
+          {/* GRID TẤT CẢ CÁC TRƯỜNG TRONG API */}
+          <View style={styles.tagGrid}>
+            <View style={[styles.tag, { backgroundColor: statusObj.bg }]}>
+              <Text style={[styles.tagText, { color: statusObj.color, fontWeight: "bold" }]}>
+                {statusObj.text}
+              </Text>
+            </View>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>Loại: {post.postType}</Text>
+            </View>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>SL: {post.remainingQuantity} / {post.quantity}</Text>
+            </View>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>Giao hàng: {post.deliveryMethod}</Text>
+            </View>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>Ưu tiên: {post.priorityLevel}</Text>
+            </View>
+          </View>
+
+          <View style={styles.cardFooter}>
+            <View>
+              {/* CHỈ CÒN LẠI 1 DÒNG TÍNH THỜI GIAN TỪ LÚC TẠO BÀI */}
+              <Text style={styles.statsText}>{getTimeAgo(post.createdAt)}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[styles.statsText, { color: COLORS.error, fontWeight: "bold" }]}>
+                Hết hạn: {getDaysLeft(post.expiryDate)}
+              </Text>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={styles.iconBtn}
+                  onPress={(e) => {
+                    e.stopPropagation(); // Ngăn sự kiện bấm nhầm vào thẻ Card
+                    router.push({
+                      pathname: "/posts/post-form",
+                      params: { editId: post.postId, postType: post.postType }
+                    });
+                  }}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={COLORS.primary} />
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.iconBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDelete(post.postId);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                </TouchableOpacity>
+              </View>
+
+            </View>
           </View>
         </View>
-      </View>
-    </View>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View
-        style={[
-          styles.mobileWrapper,
-          isWeb ? { width: 480, alignSelf: "center" } : null,
-        ]}
-      >
+      <View style={[styles.mobileWrapper, isWeb ? { width: 480, alignSelf: "center" } : null]}>
         <MainHeader title="Quản lý tin đăng" />
 
         <View style={styles.tabContainer}>
           {userRole === "personal" ? (
             <>
               <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activePersonalTab === "active" ? styles.tabBtnActive : null,
-                ]}
+                style={[styles.tabBtn, activePersonalTab === "active" ? styles.tabBtnActive : null]}
                 onPress={() => setActivePersonalTab("active")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activePersonalTab === "active"
-                      ? styles.tabTextActive
-                      : null,
-                  ]}
-                >
-                  Đang hiển thị (2)
+                <Text style={[styles.tabText, activePersonalTab === "active" ? styles.tabTextActive : null]}>
+                  Đang hiển thị ({activePosts.length})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activePersonalTab === "hidden" ? styles.tabBtnActive : null,
-                ]}
+                style={[styles.tabBtn, activePersonalTab === "hidden" ? styles.tabBtnActive : null]}
                 onPress={() => setActivePersonalTab("hidden")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activePersonalTab === "hidden"
-                      ? styles.tabTextActive
-                      : null,
-                  ]}
-                >
-                  Đã ẩn / Đã bán (0)
+                <Text style={[styles.tabText, activePersonalTab === "hidden" ? styles.tabTextActive : null]}>
+                  Đã ẩn / Đã bán ({hiddenPosts.length})
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
               <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activeBusinessTab === "buying" ? styles.tabBtnActive : null,
-                ]}
+                style={[styles.tabBtn, activeBusinessTab === "buying" ? styles.tabBtnActive : null]}
                 onPress={() => setActiveBusinessTab("buying")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeBusinessTab === "buying"
-                      ? styles.tabTextActive
-                      : null,
-                  ]}
-                >
-                  Tin Thu Mua (2)
+                <Text style={[styles.tabText, activeBusinessTab === "buying" ? styles.tabTextActive : null]}>
+                  Tin Thu Mua ({activePosts.length})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activeBusinessTab === "requests" ? styles.tabBtnActive : null,
-                ]}
+                style={[styles.tabBtn, activeBusinessTab === "requests" ? styles.tabBtnActive : null]}
                 onPress={() => setActiveBusinessTab("requests")}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeBusinessTab === "requests"
-                      ? styles.tabTextActive
-                      : null,
-                  ]}
-                >
-                  Yêu cầu chào hàng (5)
+                <Text style={[styles.tabText, activeBusinessTab === "requests" ? styles.tabTextActive : null]}>
+                  Yêu cầu ({hiddenPosts.length})
                 </Text>
               </TouchableOpacity>
             </>
           )}
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {userRole === "personal" ? (
-            activePersonalTab === "active" ? (
-              mockSellingPosts.map((post) => renderCard(post, false))
+        {isLoading ? (
+          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+          >
+            {userRole === "personal" ? (
+              activePersonalTab === "active" ? (
+                activePosts.length > 0 ? (
+                  activePosts.map((post) => renderCard(post))
+                ) : (
+                  <Text style={styles.emptyText}>Chưa có tin đăng nào đang hoạt động.</Text>
+                )
+              ) : hiddenPosts.length > 0 ? (
+                hiddenPosts.map((post) => renderCard(post))
+              ) : (
+                <Text style={styles.emptyText}>Bạn chưa có tin đăng nào bị ẩn.</Text>
+              )
+            ) : activeBusinessTab === "buying" ? (
+              activePosts.length > 0 ? (
+                activePosts.map((post) => renderCard(post))
+              ) : (
+                <Text style={styles.emptyText}>Chưa có tin thu mua nào.</Text>
+              )
             ) : (
-              <Text style={styles.emptyText}>
-                Bạn chưa có tin đăng nào bị ẩn.
-              </Text>
-            )
-          ) : activeBusinessTab === "buying" ? (
-            mockBuyingPosts.map((post) => renderCard(post, true))
-          ) : (
-            <Text style={styles.emptyText}>
-              Chưa có ai gửi yêu cầu bán cho bạn.
-            </Text>
-          )}
-          <View style={{ height: 80 }} />
-        </ScrollView>
+              <Text style={styles.emptyText}>Chưa có ai gửi yêu cầu bán cho bạn.</Text>
+            )}
+            <View style={{ height: 80 }} />
+          </ScrollView>
+        )}
 
-        <TouchableOpacity
-          style={styles.fabButton}
-          onPress={() => router.push("/posts/create-post")}
-        >
+        <TouchableOpacity style={styles.fabButton} onPress={() => router.push("/posts/post-form")}>
           <Ionicons name="add" size={32} color={COLORS.white} />
         </TouchableOpacity>
       </View>
@@ -277,80 +323,44 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
+  tabBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabBtnActive: { borderBottomColor: COLORS.primary },
   tabText: { fontSize: 14, fontWeight: "600", color: COLORS.textLight },
   tabTextActive: { color: COLORS.primary },
 
   scrollContent: { padding: 16 },
-  emptyText: {
-    textAlign: "center",
-    marginTop: 40,
-    color: COLORS.textLight,
-    fontSize: 14,
-  },
+  emptyText: { textAlign: "center", marginTop: 40, color: COLORS.textLight, fontSize: 14 },
 
   card: {
     flexDirection: "row",
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  cardImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 10,
-    backgroundColor: COLORS.border,
-  },
-  buyingIconBox: {
-    width: 90,
-    height: 90,
-    borderRadius: 10,
-    backgroundColor: "#F0F9FF",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  iconBox: { width: 80, height: 80, borderRadius: 8, backgroundColor: "#F0F9FF", justifyContent: "center", alignItems: "center" },
   cardContent: { flex: 1, marginLeft: 12, justifyContent: "space-between" },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  cardPrice: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: COLORS.error,
-    marginBottom: 6,
-  },
+  cardTitle: { fontSize: 15, fontWeight: "bold", color: COLORS.text, marginBottom: 2 },
+  cardPrice: { fontSize: 15, fontWeight: "bold", color: COLORS.error, marginBottom: 4 },
+  
+  descText: { fontSize: 12, color: COLORS.textLight, marginBottom: 4 },
+  addressText: { fontSize: 11, color: "#64748B", marginBottom: 8, fontStyle: "italic" },
 
-  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
-  tag: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  tagText: { fontSize: 11, color: "#475569", fontWeight: "500" },
+  tagGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  tag: { backgroundColor: "#F1F5F9", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4 },
+  tagText: { fontSize: 10, color: "#475569", fontWeight: "500" },
 
-  cardActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  statsText: { fontSize: 12, color: COLORS.textLight },
-  actionButtons: { flexDirection: "row", gap: 12 },
-  iconBtn: { padding: 4 },
+  cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", borderTopWidth: 1, borderTopColor: "#F1F5F9", paddingTop: 8 },
+  statsText: { fontSize: 12, color: COLORS.textLight, marginBottom: 2 },
+  actionButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
+  iconBtn: { padding: 4, backgroundColor: "#F8FAFC", borderRadius: 4, borderWidth: 1, borderColor: "#E2E8F0" },
 
   fabButton: {
     position: "absolute",
