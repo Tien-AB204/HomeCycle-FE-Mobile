@@ -1,19 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../src/constants/theme';
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  ActivityIndicator
+} from "react-native";
+import { COLORS } from "../../src/constants/theme";
+import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
 
 export default function OTPScreen() {
   const router = useRouter();
-  // Nhận email và luồng (login, register, forgot_password) từ trang trước truyền sang
   const { email, flow, role } = useLocalSearchParams();
 
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef<Array<TextInput | null>>([]);
-  const [timeLeft, setTimeLeft] = useState(118); // 1 phút 58 giây
+  const [timeLeft, setTimeLeft] = useState(118);
+  const [isLoading, setIsLoading] = useState(false); // THÊM STATE LOADING
 
-  // Đếm ngược thời gian giả lập
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
@@ -22,68 +32,84 @@ export default function OTPScreen() {
   }, []);
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
 
   const handleOtpChange = (text: string, index: number) => {
-    // Chỉ lấy 1 ký tự cuối cùng (tránh việc copy/paste dài)
-    const value = text.length > 0 ? text[text.length - 1] : '';
+    const value = text.length > 0 ? text[text.length - 1] : "";
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
 
-    // Tự động nhảy sang ô tiếp theo nếu có nhập
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Kiểm tra xem đã nhập đủ 6 số chưa
-    if (newOtp.every((val) => val !== '')) {
-      handleVerify(newOtp.join(''));
+    if (newOtp.every((val) => val !== "")) {
+      handleVerify(newOtp.join(""));
     }
   };
 
   const handleKeyPress = (e: any, index: number) => {
-    // Tự động lùi về ô trước nếu bấm xóa (Backspace) ở ô trống
-    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const handleVerify = (fullOtp: string) => {
-    console.log("Xác thực OTP:", fullOtp);
-    
-    if (flow === 'login') {
-      router.push({ pathname: '/(auth)/password', params: { email } });
-    } else if (flow === 'register') {
-      // Phân luồng rõ ràng dựa trên Role
-      if (role === 'business') {
-        // Tạm thời hiển thị cảnh báo, sau này sẽ thay bằng trang thiết lập doanh nghiệp
-        alert("Thành công! Tính năng Thiết lập Doanh Nghiệp đang được xây dựng.");
-      } else {
-        router.push('/(auth)/profile-setup' as any); // Luồng cá nhân
+  const handleVerify = async (fullOtp: string) => {
+    if (!flow) {
+      alert("Lỗi: Không nhận được dữ liệu luồng!");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // 1. GỌI API XÁC THỰC OTP
+      const response = await authApi.verifyOtp(email as string, fullOtp);
+      
+      // Bắt lấy Registration Token từ Backend trả về
+      // (Tùy thuộc vào cấu trúc json backend trả về, thường nằm trong data)
+      const token = response.data?.registrationToken || response.data?.data?.registrationToken;
+
+      if (flow === "login") {
+        router.replace("/(tabs)");
+      } else if (flow === "register") {
+        // LUỒNG ĐĂNG KÝ: Chuyển qua trang tiếp theo và NHÉT THÊM TOKEN vào Params
+        router.push({
+          pathname: "/(auth)/register-password",
+          params: { email, role, registrationToken: token },
+        });
+      } else if (flow === "forgot_password") {
+        router.push("/(auth)/reset-password");
       }
-    } else if (flow === 'forgot_password') {
-      router.push('/(auth)/reset-password' as any);
+    } catch (error: any) {
+      console.error("Lỗi xác thực OTP:", error);
+      alert(error.response?.data?.message || "Mã OTP không chính xác hoặc đã hết hạn!");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
-        {/* Header (Nút Back chuẩn form) */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Khung nội dung */}
         <View style={styles.contentCard}>
           <View style={styles.iconCenterContainer}>
             <View style={styles.lockIconBox}>
@@ -91,37 +117,43 @@ export default function OTPScreen() {
             </View>
             <Text style={styles.title}>Xác thực Email</Text>
             <Text style={styles.subtitle}>
-              Hệ thống đã gửi mã OTP gồm 6 chữ số đến email của bạn. Vui lòng kiểm tra và gõ vào ô bên dưới.
+              Hệ thống đã gửi mã OTP gồm 6 chữ số đến email của bạn. Vui lòng
+              kiểm tra và gõ vào ô bên dưới.
             </Text>
           </View>
 
-          {/* Cụm 6 ô nhập OTP */}
           <View style={styles.otpContainer}>
             {otp.map((digit, index) => (
               <TextInput
                 key={index}
-                ref={(ref) => { inputRefs.current[index] = ref; }}
+                ref={(ref) => {
+                  inputRefs.current[index] = ref;
+                }}
                 style={[
                   styles.otpInput,
-                  Platform.OS === 'web' && { outlineStyle: 'none' } as any,
-                  digit ? styles.otpInputActive : null // Đổi màu viền nếu có chữ
+                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                  digit ? styles.otpInputActive : null,
                 ]}
                 keyboardType="number-pad"
                 maxLength={1}
                 value={digit}
                 onChangeText={(text) => handleOtpChange(text, index)}
                 onKeyPress={(e) => handleKeyPress(e, index)}
+                editable={!isLoading} // Không cho gõ thêm nếu đang gọi API
               />
             ))}
           </View>
 
-          {/* Thời gian đếm ngược */}
+          {/* HIỂN THỊ LOADING NHỎ KHI ĐANG KIỂM TRA OTP */}
+          {isLoading && (
+             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginBottom: 16 }} />
+          )}
+
           <View style={styles.timerContainer}>
             <Ionicons name="time" size={16} color={COLORS.error} />
             <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
           </View>
 
-          {/* Gửi lại mã */}
           <View style={styles.resendContainer}>
             <Text style={styles.resendTextBase}>Chưa nhận được mã? </Text>
             <TouchableOpacity>
@@ -129,11 +161,12 @@ export default function OTPScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Đường kẻ ngang mỏng */}
           <View style={styles.divider} />
 
-          {/* Nút quay lại đăng nhập ở đáy */}
-          <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.backToLoginButton}>
+          <TouchableOpacity
+            onPress={() => router.push("/(auth)/login")}
+            style={styles.backToLoginButton}
+          >
             <Ionicons name="arrow-back" size={16} color={COLORS.primary} />
             <Text style={styles.backToLoginText}>Quay lại đăng nhập</Text>
           </TouchableOpacity>
@@ -144,72 +177,56 @@ export default function OTPScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
+  safeArea: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, paddingHorizontal: 20 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 20,
     marginBottom: 20,
   },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
+  backButton: { padding: 8, marginLeft: -8 },
   contentCard: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
-      android: {
-        elevation: 2,
-      },
-      web: {
-        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
-      } as any,
+      android: { elevation: 2 },
+      web: { boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)" } as any,
     }),
   },
-  iconCenterContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
+  iconCenterContainer: { alignItems: "center", marginBottom: 32 },
   lockIconBox: {
     backgroundColor: COLORS.primary,
     width: 64,
     height: 64,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 16,
   },
   title: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 12,
   },
   subtitle: {
     fontSize: 14,
     color: COLORS.textLight,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: 10,
   },
   otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 24,
   },
   otpInput: {
@@ -219,41 +236,27 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 10,
     fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: "bold",
+    textAlign: "center",
     color: COLORS.text,
     backgroundColor: COLORS.white,
   },
-  otpInputActive: {
-    borderColor: '#2F80ED', // Màu viền xanh dương như trong thiết kế Hình 2
-    borderWidth: 2,
-  },
+  otpInputActive: { borderColor: "#2F80ED", borderWidth: 2 },
   timerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     gap: 6,
     marginBottom: 16,
   },
-  timerText: {
-    color: COLORS.error,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  timerText: { color: COLORS.error, fontWeight: "bold", fontSize: 14 },
   resendContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginBottom: 32,
   },
-  resendTextBase: {
-    color: COLORS.textLight,
-    fontSize: 14,
-  },
-  resendTextHighlight: {
-    color: '#4F7C7B', // Màu xanh lục nhạt hơn một chút
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  resendTextBase: { color: COLORS.textLight, fontSize: 14 },
+  resendTextHighlight: { color: "#4F7C7B", fontSize: 14, fontWeight: "600" },
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
@@ -261,14 +264,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   },
   backToLoginButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     gap: 8,
   },
-  backToLoginText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
+  backToLoginText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
 });

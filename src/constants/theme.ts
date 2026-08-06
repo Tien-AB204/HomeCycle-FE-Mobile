@@ -1,9 +1,11 @@
 export const COLORS = {
-  primary: '#244f4d', // Xanh lục đậm chủ đạo
-  background: '#F8F9FA', // Màu nền xám nhạt
-  white: '#FFFFFF',
-  text: '#1A1A1A', // Đen chữ chính
-  textLight: '#8A92A6', // Xám nhạt cho placeholder/label
-  border: '#E0E4EC', // Viền xám
-  error: '#D32F2F', // Đỏ báo lỗi
+  text: "#172830", // Xanh đen trầm (Sửa lại chuẩn theo mã bạn đưa)
+  primary: "#2B5659", // Xanh rêu đậm
+  border: "#BAC2C1", // Xám bạc
+  textLight: "#547B7D", // Xanh xám nhạt
+  error: "#7A1012", // Đỏ đô
+
+  // 2 màu nền cơ bản giữ nguyên để UI hiển thị tốt
+  white: "#FFFFFF",
+  background: "#F8F9FA",
 };
