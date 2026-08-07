@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { Image, TouchableOpacity } from "react-native";
+import React, { useEffect, useState } from "react";
+import { TouchableOpacity } from "react-native";
+import { Image } from "expo-image";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext"; // Nhập AuthContext
 import Header from "./Header";
@@ -21,13 +22,20 @@ export default function MainHeader({
   const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
 
-  // LOGIC XỬ LÝ AVATAR CHỐNG LỖI
+  useEffect(() => {
+    setImageError(false);
+  }, [user?.avatarUrl]);
+
+  // LOGIC XỬ LÝ AVATAR CHỐNG LỖI (Bao trọn 2 trường hợp)
+  const actualAvatar = user?.avatarUrl || user?.avatar;
+
   const isValidAvatar =
-    user?.avatar && user.avatar !== "string" && user.avatar !== "null";
+    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
   const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || "U")}&background=208AEF&color=fff&size=100`;
+
   const avatarSource =
     isValidAvatar && !imageError
-      ? { uri: user.avatar }
+      ? { uri: actualAvatar }
       : { uri: defaultAvatar };
 
   const renderRightButtons = () => (
@@ -76,7 +84,7 @@ export default function MainHeader({
     <Image
       source={require("../../../assets/images/logo-dark-transparent.png")}
       style={{ width: 140, height: 32, marginLeft: 4 }}
-      resizeMode="contain"
+      contentFit="contain"
     />
   ) : null;
 

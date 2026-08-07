@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, SafeAreaView, TextInput, TouchableOpacity, 
   ScrollView, Platform, Keyboard, Image
@@ -8,13 +8,7 @@ import { useRouter } from 'expo-router';
 import { COLORS } from '../src/constants/theme';
 import apiClient from '../src/services/apis/axiosClient';
 
-// ================= MOCK DATA & DICTIONARIES =================
-const FILTER_CATEGORIES = [
-  { id: 'dien_may', name: 'Điện máy' },
-  { id: 'noi_that', name: 'Nội thất' },
-  { id: 'sinh_hoat', name: 'Sinh hoạt' }
-];
-
+// ================= DICTIONARIES =================
 const FILTER_CONDITIONS = ['Hoạt động tốt', 'Hư nhẹ', 'Hư nặng', 'Không hoạt động', 'Thanh lý đồng nát'];
 const FILTER_SPACES = ['Phòng khách', 'Phòng ngủ', 'Nhà bếp', 'Phòng ăn', 'Phòng làm việc', 'Phòng tắm'];
 const POST_TYPES = ['Bán', 'Mua'];
@@ -42,10 +36,6 @@ const PRIORITY_MAP: Record<string, string> = {
   'Cao': 'High'
 };
 
-const MOCK_RESULTS = [
-  { id: '1', name: 'Tủ lạnh Samsung Inverter 236L', price: '3.500.000đ', condition: 'Hoạt động tốt', location: 'Quận 7, TP.HCM', image: 'https://placehold.co/150x150/png' },
-];
-
 // ================= TYPE DEFINITIONS =================
 type ViewState = 'BUILDER' | 'HISTORY' | 'RESULTS';
 
@@ -57,12 +47,13 @@ export default function SearchScreen() {
   const [viewState, setViewState] = useState<ViewState>('BUILDER');
   const [isGridView, setIsGridView] = useState(true);
 
-  // SEARCH STATES (Ánh xạ chuẩn 100% theo API Payload)
+  // SEARCH STATES
   const [query, setQuery] = useState('');
-  const [history, setHistory] = useState(['Máy lạnh cũ', 'Tủ lạnh Samsung']);
+  const [history, setHistory] = useState<string[]>([]);
   
   // Các state tương ứng với API
-  const [postType, setPostType] = useState('Bán');
+  const [postType, setPostType] = useState(''); 
+  const [filterCategories, setFilterCategories] = useState<any[]>([]); // Danh mục thật từ API
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
   const [selectedCondition, setSelectedCondition] = useState('');
   const [selectedSpace, setSelectedSpace] = useState('');
@@ -83,6 +74,20 @@ export default function SearchScreen() {
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // === LẤY DANH MỤC THẬT TỪ API KHI MỞ TRANG ===
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await apiClient.get('/categories/get-all');
+        const cats = response.data?.data?.items || response.data?.items || [];
+        setFilterCategories(cats);
+      } catch (error) {
+        console.error("Lỗi tải danh mục cho bộ lọc:", error);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   // ================= LOGIC =================
   const handleInputFocus = () => setViewState('HISTORY');
@@ -113,37 +118,39 @@ export default function SearchScreen() {
     setIsLoading(true);
 
     try {
-      // TẠO PAYLOAD THEO ĐÚNG RULE CỦA BẠN (Rỗng số -> 0, Rỗng chữ -> "")
-      const payload = {
-        pageNumber: 0, 
-        pageSize: 0,
-        keyword: query.trim() || "",
-        postType: postType === 'Bán' ? 'Sell' : 'Buy',
-        categoryId: selectedCat || "", 
-        productTypeId: "", // Mock rỗng theo rule
-        brandId: "",       // Mock rỗng theo rule
-        spaceUsage: selectedSpace || "",
-        functionalityStatus: selectedCondition ? CONDITION_MAP[selectedCondition] : "",
-        minUsageDuration: minUsage ? Number(minUsage) : 0,
-        maxUsageDuration: maxUsage ? Number(maxUsage) : 0,
-        minDamageLevel: minDamage ? Number(minDamage) : 0,
-        maxDamageLevel: maxDamage ? Number(maxDamage) : 0,
-        minPrice: minPrice ? Number(minPrice) : 0,
-        maxPrice: maxPrice ? Number(maxPrice) : 0,
-        onlyAvailable: onlyAvailable, // Mặc định đã là true
-        postedWithinDays: postedWithinDays ? Number(postedWithinDays) : 0,
-        deliveryMethod: deliveryMethod ? DELIVERY_MAP[deliveryMethod] : "Unknown",
-        priorityLevel: priorityLevel ? PRIORITY_MAP[priorityLevel] : "Low",
-        city: city.trim() || "",
-        ward: ward.trim() || "",
+      const payload: any = {
+        pageNumber: 1, 
+        pageSize: 20,
+        onlyAvailable: onlyAvailable, 
         sortBy: "Newest",
-        attributeFilters: []
+        attributeFilters: [] 
       };
+
+      if (query.trim()) payload.keyword = query.trim();
+
+      if (postType) payload.postType = postType === 'Bán' ? 'Sell' : 'Buy';
+      if (selectedCat) payload.categoryId = selectedCat;
+      if (selectedSpace) payload.spaceUsage = selectedSpace;
+      
+      if (selectedCondition) payload.functionalityStatus = CONDITION_MAP[selectedCondition];
+      if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
+      if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
+
+      if (minPrice) payload.minPrice = Number(minPrice);
+      if (maxPrice) payload.maxPrice = Number(maxPrice);
+      if (minUsage) payload.minUsageDuration = Number(minUsage);
+      if (maxUsage) payload.maxUsageDuration = Number(maxUsage);
+      if (minDamage) payload.minDamageLevel = Number(minDamage);
+      if (maxDamage) payload.maxDamageLevel = Number(maxDamage);
+      if (postedWithinDays) payload.postedWithinDays = Number(postedWithinDays);
+
+      if (city.trim()) payload.city = city.trim();
+      if (ward.trim()) payload.ward = ward.trim();
 
       console.log("🚀 PAYLOAD GỬI LÊN SERVER:", JSON.stringify(payload, null, 2));
 
       const response = await apiClient.post('/posts/search', payload);
-      const fetchedData = response.data?.data || response.data?.items || response.data || [];
+      const fetchedData = response.data?.data?.items || response.data?.items || response.data || [];
       setSearchResults(fetchedData);
 
     } catch (error: any) {
@@ -165,6 +172,24 @@ export default function SearchScreen() {
     setDeliveryMethod(''); setPriorityLevel(''); setCity(''); setWard('');
     setMinPrice(''); setMaxPrice(''); setMinUsage(''); setMaxUsage(''); 
     setMinDamage(''); setMaxDamage(''); setPostedWithinDays(''); setOnlyAvailable(true);
+    setPostType('');
+  };
+
+  // === FORMATTERS CHO DỮ LIỆU THẬT ===
+  const formatPrice = (price: number) => {
+    if (!price && price !== 0) return "Liên hệ";
+    return price.toLocaleString("vi-VN") + " đ";
+  };
+
+  const getCoverImage = (post: any) => {
+    if (post.medias && post.medias.length > 0) {
+      return { uri: post.medias[0].url || post.medias[0].mediaUrl };
+    }
+    return { uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image" };
+  };
+
+  const getFullAddress = (post: any) => {
+    return [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
   };
   
   // ================= UI RENDERERS =================
@@ -177,7 +202,7 @@ export default function SearchScreen() {
         <Text style={styles.subLabel}>Loại bài đăng</Text>
         <View style={styles.chipContainer}>
           {POST_TYPES.map((type) => (
-            <TouchableOpacity key={type} style={[styles.chip, postType === type && styles.chipActive]} onPress={() => setPostType(type)}>
+            <TouchableOpacity key={type} style={[styles.chip, postType === type && styles.chipActive]} onPress={() => setPostType(postType === type ? '' : type)}>
               <Text style={[styles.chipText, postType === type && styles.chipTextActive]}>{type}</Text>
             </TouchableOpacity>
           ))}
@@ -185,14 +210,20 @@ export default function SearchScreen() {
 
         <Text style={styles.subLabel}>Danh mục sản phẩm</Text>
         <View style={styles.chipContainer}>
-          {FILTER_CATEGORIES.map((cat) => (
-            <TouchableOpacity key={cat.id} style={[styles.chip, selectedCat === cat.id && styles.chipActive]} onPress={() => setSelectedCat(cat.id === selectedCat ? null : cat.id)}>
-              <Text style={[styles.chipText, selectedCat === cat.id && styles.chipTextActive]}>{cat.name}</Text>
+          {filterCategories.map((cat) => (
+            <TouchableOpacity 
+              key={cat.categoryId} 
+              style={[styles.chip, selectedCat === cat.categoryId && styles.chipActive]} 
+              onPress={() => setSelectedCat(cat.categoryId === selectedCat ? null : cat.categoryId)}
+            >
+              <Text style={[styles.chipText, selectedCat === cat.categoryId && styles.chipTextActive]}>
+                {cat.categoryName}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Tình trạng & Sử dụng */}
+        {/* Tình trạng & Giá cả */}
         <Text style={styles.filterSectionTitle}>2. Tình trạng & Giá cả</Text>
         <Text style={styles.subLabel}>Khoảng giá (VNĐ)</Text>
         <View style={styles.inputRow}>
@@ -321,17 +352,19 @@ export default function SearchScreen() {
         ) : (
           <View style={isGridView ? styles.gridContainer : styles.listContainer}>
             {searchResults.map((post) => (
-              <TouchableOpacity key={post.id} style={isGridView ? styles.gridCard : styles.listCard}>
+              <TouchableOpacity key={post.postId} style={isGridView ? styles.gridCard : styles.listCard}>
                 <View style={isGridView ? styles.gridImageWrapper : styles.listImageWrapper}>
-                  <Image source={{ uri: post.image || 'https://placehold.co/150x150/png' }} style={styles.productImage} />
-                  <View style={styles.conditionBadge}><Text style={styles.conditionText}>{post.condition || 'Mới'}</Text></View>
+                  <Image source={getCoverImage(post)} style={styles.productImage} />
+                  <View style={styles.conditionBadge}>
+                    <Text style={styles.conditionText}>{post.status || 'Mới'}</Text>
+                  </View>
                 </View>
                 <View style={isGridView ? styles.gridInfoWrapper : styles.listInfoWrapper}>
-                  <Text style={styles.productName} numberOfLines={2}>{post.name || 'Sản phẩm'}</Text>
-                  <Text style={styles.productPrice}>{post.price ? post.price.toLocaleString() + 'đ' : 'Liên hệ'}</Text>
+                  <Text style={styles.productName} numberOfLines={2}>{post.productName || 'Sản phẩm'}</Text>
+                  <Text style={styles.productPrice}>{formatPrice(post.basePrice)}</Text>
                   <View style={styles.locationContainer}>
                     <Ionicons name="location-outline" size={13} color={COLORS.textLight} />
-                    <Text style={styles.locationText} numberOfLines={1}>{post.location || 'Chưa cập nhật'}</Text>
+                    <Text style={styles.locationText} numberOfLines={1}>{getFullAddress(post) || 'Chưa cập nhật'}</Text>
                   </View>
                 </View>
               </TouchableOpacity>

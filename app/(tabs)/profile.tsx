@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Redirect, usePathname, useRouter } from "expo-router";
-import { useState } from "react";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-  Image,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -12,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -22,34 +22,63 @@ export default function ProfileScreen() {
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
   const { user, logout, isLoading } = useAuth();
-  const pathname = usePathname();
 
   // State xử lý lỗi khi link avatar bị hỏng
   const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [user?.avatarUrl]);
 
   if (isLoading) {
     return <View style={{ flex: 1, backgroundColor: "#F8F9FA" }} />;
   }
 
+  // === KIỂM TRA ĐĂNG NHẬP: HIỂN THỊ UI MỜI ĐĂNG NHẬP THAY VÌ REDIRECT ===
   if (!user) {
-    return <Redirect href={`/(auth)/login?returnUrl=${pathname}`} />;
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.mobileWrapper, { width }]}>
+          <MainHeader title="Hồ sơ" showBack={false} />
+          <View style={styles.unauthContainer}>
+            <Ionicons
+              name="person-circle-outline"
+              size={80}
+              color="#CBD5E1"
+              style={{ marginBottom: 16 }}
+            />
+            <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
+            <Text style={styles.unauthDesc}>
+              Đăng nhập để cập nhật hồ sơ, theo dõi ví tiền và tận hưởng đầy đủ
+              tiện ích của HomeCycle!
+            </Text>
+            <TouchableOpacity
+              style={styles.loginBtn}
+              onPress={() =>
+                router.push("/(auth)/login?returnUrl=/(tabs)/profile")
+              }
+            >
+              <Text style={styles.loginBtnText}>Đăng nhập ngay</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // Lấy năm tham gia từ createdAt
   const joinYear = user.createdAt ? new Date(user.createdAt).getFullYear() : "";
 
-  // 1. SỬA LẠI ĐÚNG TÊN BIẾN (user.avatar)
-  // 2. Chặn luôn lỗi Backend trả về chữ "string" hoặc "null"
-  const isValidAvatar =
-    user.avatar && user.avatar !== "string" && user.avatar !== "null";
+  // Lấy link ảnh, Backend trả về cái nào thì xài cái đó
+  const actualAvatar = user.avatarUrl || user.avatar;
 
-  // Ảnh dự phòng màu xanh giống thiết kế
+  const isValidAvatar =
+    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
   const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username || "U")}&background=208AEF&color=fff&size=200`;
 
-  // Logic hiển thị: Nếu link xịn & không lỗi thì hiện ảnh, ngược lại hiện chữ
   const avatarSource =
     isValidAvatar && !imageError
-      ? { uri: user.avatar }
+      ? { uri: actualAvatar }
       : { uri: defaultAvatar };
 
   const menuItems =
@@ -102,7 +131,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.mobileWrapper, { width }]}>
-        <MainHeader title="Hồ sơ" showBack={true} />
+        <MainHeader title="Hồ sơ" showBack={false} />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -222,7 +251,10 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.logoutButton}
-            onPress={() => logout()}
+            onPress={async () => {
+              await logout();
+              router.replace("/(tabs)"); // Đăng xuất xong đẩy thẳng ra màn hình chủ
+            }}
           >
             <Ionicons name="log-out-outline" size={22} color={COLORS.error} />
             <Text style={styles.logoutText}>Đăng xuất</Text>
@@ -246,6 +278,36 @@ const styles = StyleSheet.create({
   },
   container: { flex: 1, paddingHorizontal: 16 },
 
+  // UI Chưa đăng nhập
+  unauthContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: COLORS.background,
+  },
+  unauthTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  unauthDesc: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 22,
+  },
+  loginBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 8,
+  },
+  loginBtnText: { color: COLORS.white, fontWeight: "bold", fontSize: 16 },
+
+  // UI Đã đăng nhập
   userInfoSection: { alignItems: "center", marginTop: 16, marginBottom: 20 },
   avatar: {
     width: 80,

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -13,11 +13,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { returnUrl } = useLocalSearchParams();
   const { login } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -25,8 +27,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // === ĐĂNG NHẬP BẰNG TÀI KHOẢN MẶC ĐỊNH ===
   const handleLogin = async () => {
-    // Dùng .trim() để lỡ bạn có bấm nhầm dấu cách thì app vẫn nhận diện đúng
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
@@ -38,6 +40,12 @@ export default function LoginScreen() {
     try {
       setIsLoading(true);
       await login(cleanEmail, cleanPassword);
+
+      if (returnUrl) {
+        router.replace(returnUrl as any);
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch (error: any) {
       alert(error.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại!");
     } finally {
@@ -51,7 +59,6 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        {/* Header có nút Back */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
@@ -66,7 +73,6 @@ export default function LoginScreen() {
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
           <View style={styles.logoContainer}>
-            {/* LẤY LOGO THẬT TỪ ASSETS */}
             <Image
               source={require("../../assets/images/logo-favicon.png")}
               style={{ width: 28, height: 28, resizeMode: "contain" }}
@@ -166,14 +172,8 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* LẤY LOGO GOOGLE THẬT TỪ ASSETS */}
-            <TouchableOpacity style={styles.googleButton}>
-              <Image
-                source={require("../../assets/images/google-icon.png")}
-                style={{ width: 20, height: 20, resizeMode: "contain" }}
-              />
-              <Text style={styles.googleButtonText}>Google</Text>
-            </TouchableOpacity>
+            {/* Nút Google Login (Đã được chuyển sang Component chung) */}
+            <GoogleLoginButton title="Google" disabled={isLoading} />
           </View>
 
           {/* Nút sang trang Đăng ký */}
@@ -277,19 +277,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontWeight: "600",
   },
-
-  googleButton: {
-    flexDirection: "row",
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    height: 54,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 10,
-  },
-  googleButtonText: { fontSize: 15, fontWeight: "600", color: COLORS.text },
 
   footer: { flexDirection: "row", justifyContent: "center", marginTop: 30 },
   footerText: { fontSize: 14, color: COLORS.textLight },

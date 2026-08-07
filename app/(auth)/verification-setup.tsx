@@ -1,11 +1,14 @@
 // app/(auth)/verification-setup.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useState, useEffect } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -14,13 +17,11 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator,
-  Modal,
-  FlatList
+  Alert, // Dùng Alert chuẩn trên RN hoặc window.confirm cho web
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
-import { useAuth } from "../../src/contexts/AuthContext"; 
 
 interface Bank {
   id: number;
@@ -31,11 +32,53 @@ interface Bank {
   logo: string;
 }
 
+// HÀM CHUYỂN ĐỔI URI THÀNH FILE/BLOB CHUẨN ĐỂ GỬI LÊN MULTIPART FORM-DATA
+const appendFileToForm = async (
+  formData: FormData,
+  key: string,
+  fileUri: string,
+  defaultName: string
+) => {
+  if (!fileUri || fileUri === "undefined" || fileUri === "null") return;
+
+  console.log(`[DEBUG] Đang xử lý file cho trường [${key}] với uri:`, fileUri);
+
+  if (Platform.OS === "web") {
+    try {
+      const response = await fetch(fileUri);
+      const blob = await response.blob();
+      formData.append(key, blob, defaultName);
+      console.log(`[DEBUG] Đã đính kèm file Web thành công cho ${key}`);
+    } catch (err) {
+      console.error(`[DEBUG] Lỗi fetch blob trên web cho ${key}:`, err);
+    }
+  } else {
+    const filename = fileUri.split("/").pop() || defaultName;
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+    formData.append(key, {
+      uri: Platform.OS === "ios" ? fileUri.replace("file://", "") : fileUri,
+      name: filename,
+      type: type,
+    } as any);
+    console.log(`[DEBUG] Đã đính kèm file Mobile thành công cho ${key}`, { name: filename, type });
+  }
+};
+
 export default function VerificationSetupScreen() {
   const router = useRouter();
-  const { login } = useAuth(); 
-  
-  const { email, registrationToken, password, fullName, username, phoneNumber, avatarUri } = useLocalSearchParams();
+  const { login } = useAuth();
+
+  const {
+    email,
+    registrationToken,
+    password,
+    fullName,
+    username,
+    phoneNumber,
+    avatarUri,
+  } = useLocalSearchParams();
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -48,9 +91,9 @@ export default function VerificationSetupScreen() {
   const [backImage, setBackImage] = useState<string | null>(null);
 
   // State Ngân hàng
-  const [bankCode, setBankCode] = useState(""); 
-  const [bankName, setBankName] = useState(""); 
-  const [bankDisplayCode, setBankDisplayCode] = useState(""); 
+  const [bankCode, setBankCode] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankDisplayCode, setBankDisplayCode] = useState("");
   const [bankLogo, setBankLogo] = useState<string | null>(null);
   const [bankAccount, setBankAccount] = useState("");
   const [bankAccountName, setBankAccountName] = useState("");
@@ -88,7 +131,7 @@ export default function VerificationSetupScreen() {
         (b) =>
           b.shortName.toLowerCase().includes(lowerText) ||
           b.name.toLowerCase().includes(lowerText) ||
-          b.code.toLowerCase().includes(lowerText)
+          b.code.toLowerCase().includes(lowerText),
       );
       setFilteredBanks(filtered);
     } else {
@@ -97,11 +140,10 @@ export default function VerificationSetupScreen() {
   };
 
   const handleSelectBank = (bank: Bank) => {
-    // Đảm bảo ép BIN sang String để không bị lỗi trim()
-    setBankCode(String(bank.bin)); 
-    setBankName(bank.shortName); 
-    setBankDisplayCode(bank.code); 
-    setBankLogo(bank.logo); 
+    setBankCode(String(bank.bin));
+    setBankName(bank.shortName);
+    setBankDisplayCode(bank.code);
+    setBankLogo(bank.logo);
     setShowBankModal(false);
     setSearchBankQuery("");
     setFilteredBanks(banks);
@@ -121,17 +163,37 @@ export default function VerificationSetupScreen() {
     }
   };
 
+  // --- HÀM XÁC NHẬN VÀ GỬI ĐĂNG KÝ ---
   const executeRegistration = async (includeVerification: boolean) => {
-    // --- THÊM BƯỚC KIỂM TRA (VALIDATION) TRƯỚC KHI GỬI API ---
+    // Kiểm tra nếu chưa chọn avatar thì bật cảnh báo
+    const hasAvatar = avatarUri && avatarUri !== "undefined" && avatarUri !== "null" && String(avatarUri).trim() !== "";
+    
+    if (!hasAvatar) {
+      const confirmSkip = Platform.OS === 'web' 
+        ? window.confirm("Bạn chưa chọn ảnh đại diện. Xác nhận bỏ qua avatar?")
+        : await new Promise((resolve) => {
+            Alert.alert(
+              "Thiếu ảnh đại diện",
+              "Bạn chưa chọn ảnh đại diện. Xác nhận bỏ qua avatar?",
+              [
+                { text: "Không", onPress: () => resolve(false), style: "cancel" },
+                { text: "Có, tiếp tục", onPress: () => resolve(true) }
+              ]
+            );
+          });
+
+      if (!confirmSkip) {
+        return; // Dừng lại để người dùng quay lại chọn ảnh
+      }
+    }
+
     if (includeVerification) {
-      // 1. Kiểm tra phần Ngân hàng: Có chọn Ngân hàng nhưng quên nhập Số TK hoặc Tên
       const hasBankData = bankCode || bankAccount || bankAccountName;
       if (hasBankData && (!bankCode || !bankAccount || !bankAccountName)) {
         alert("Vui lòng nhập ĐẦY ĐỦ Số tài khoản và Tên chủ tài khoản ngân hàng!");
         return;
       }
 
-      // 2. Kiểm tra phần CCCD: Có nhập 1 ô nhưng quên nhập các ô còn lại
       const hasCccdData = repCode || repName || repDob || repAddress;
       if (hasCccdData && (!repCode || !repName || !repDob || !repAddress)) {
         alert("Vui lòng điền ĐẦY ĐỦ 4 trường thông tin của CCCD!");
@@ -143,26 +205,24 @@ export default function VerificationSetupScreen() {
       setIsLoading(true);
       const formData = new FormData();
 
-      // GẮN CƠ BẢN
+      // LOG THÔNG TIN CƠ BẢN ĐỂ DEBUG
+      console.log("[DEBUG REGISTRATION] Params nhận được:", {
+        username,
+        email,
+        phoneNumber,
+        fullName,
+        avatarUri,
+      });
+
       formData.append("Username", username as string);
       formData.append("Password", password as string);
       formData.append("PhoneNumber", phoneNumber as string);
       formData.append("FullName", fullName as string);
 
-      const appendImage = (fieldName: string, fileUri: string | null | undefined) => {
-        if (!fileUri) return;
-        const filename = fileUri.split('/').pop() || 'image.jpg';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : `image/jpeg`;
-        
-        formData.append(fieldName, {
-          uri: Platform.OS === 'ios' ? fileUri.replace('file://', '') : fileUri,
-          name: filename,
-          type: type,
-        } as any);
-      };
-
-      appendImage("AvatarUrl", avatarUri as string);
+      // ĐÍNH KÈM AVATAR CHUẨN XÁC
+      if (hasAvatar) {
+        await appendFileToForm(formData, "AvatarUrl", avatarUri as string, "avatar.jpg");
+      }
 
       // GẮN XÁC MINH
       if (includeVerification) {
@@ -175,29 +235,33 @@ export default function VerificationSetupScreen() {
         if (bankName.trim()) formData.append("BankName", bankName.trim());
         if (bankAccount.trim()) formData.append("AccountNumber", bankAccount.trim());
         if (bankAccountName.trim()) formData.append("AccountName", bankAccountName.trim());
-        
-        appendImage("FrontIDCardImage", frontImage);
-        appendImage("BackIDCardImage", backImage);
+
+        if (frontImage) await appendFileToForm(formData, "FrontIDCardImage", frontImage, "front.jpg");
+        if (backImage) await appendFileToForm(formData, "BackIDCardImage", backImage, "back.jpg");
       }
 
-      await authApi.registerPersonal(registrationToken as string, formData);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await authApi.registerPersonal(registrationToken as string, formData);
+      console.log("[DEBUG REGISTRATION RESPONSE]:", response.data);
+      
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       try {
-        if (email && password) {
-          await login(email as string, password as string); 
-        } else throw new Error("Thiếu thông tin đăng nhập tự động");
+        const realEmail = response.data?.data?.user?.email || email;
+        if (realEmail && password) {
+          await login(realEmail as string, password as string);
+        } else {
+          throw new Error("Thiếu thông tin đăng nhập tự động");
+        }
       } catch (loginErr) {
         console.error("Lỗi Auto-login:", loginErr);
         alert("Tạo tài khoản thành công! Vui lòng đăng nhập lại.");
         router.replace("/(auth)/login");
       }
-
     } catch (error: any) {
-      console.error("Lỗi đăng ký:", error);
+      console.error("Lỗi đăng ký API:", error.response || error);
       alert(error.response?.data?.message || "Có lỗi xảy ra khi tạo tài khoản!");
-      setIsLoading(false); 
-    } 
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -224,22 +288,52 @@ export default function VerificationSetupScreen() {
 
           <Text style={styles.fieldLabel}>Số CCCD/CMND</Text>
           <View style={styles.inputContainerWhite}>
-            <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="Nhập số CCCD (12 số)..." placeholderTextColor={COLORS.textLight} keyboardType="numeric" value={repCode} onChangeText={setRepCode} editable={!isLoading}/>
+            <TextInput
+              style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+              placeholder="Nhập số CCCD (12 số)..."
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="numeric"
+              value={repCode}
+              onChangeText={setRepCode}
+              editable={!isLoading}
+            />
           </View>
 
           <Text style={styles.fieldLabel}>Họ và tên (Theo CCCD)</Text>
           <View style={styles.inputContainerWhite}>
-            <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="VD: NGUYEN VAN A" placeholderTextColor={COLORS.textLight} autoCapitalize="characters" value={repName} onChangeText={setRepName} editable={!isLoading}/>
+            <TextInput
+              style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+              placeholder="VD: NGUYEN VAN A"
+              placeholderTextColor={COLORS.textLight}
+              autoCapitalize="characters"
+              value={repName}
+              onChangeText={setRepName}
+              editable={!isLoading}
+            />
           </View>
 
           <Text style={styles.fieldLabel}>Ngày sinh (YYYY-MM-DD)</Text>
           <View style={styles.inputContainerWhite}>
-            <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="VD: 2000-01-25" placeholderTextColor={COLORS.textLight} value={repDob} onChangeText={setRepDob} editable={!isLoading}/>
+            <TextInput
+              style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+              placeholder="VD: 2000-01-25"
+              placeholderTextColor={COLORS.textLight}
+              value={repDob}
+              onChangeText={setRepDob}
+              editable={!isLoading}
+            />
           </View>
 
           <Text style={styles.fieldLabel}>Địa chỉ thường trú</Text>
           <View style={styles.inputContainerWhite}>
-            <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="Nhập địa chỉ theo CCCD..." placeholderTextColor={COLORS.textLight} value={repAddress} onChangeText={setRepAddress} editable={!isLoading}/>
+            <TextInput
+              style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+              placeholder="Nhập địa chỉ theo CCCD..."
+              placeholderTextColor={COLORS.textLight}
+              value={repAddress}
+              onChangeText={setRepAddress}
+              editable={!isLoading}
+            />
           </View>
 
           <Text style={styles.fieldLabel}>Hình ảnh CCCD</Text>
@@ -283,12 +377,28 @@ export default function VerificationSetupScreen() {
 
             <Text style={styles.fieldLabel}>Số tài khoản</Text>
             <View style={styles.inputContainerWhite}>
-              <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="Nhập số tài khoản..." placeholderTextColor={COLORS.textLight} keyboardType="numeric" value={bankAccount} onChangeText={setBankAccount} editable={!isLoading} />
+              <TextInput
+                style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+                placeholder="Nhập số tài khoản..."
+                placeholderTextColor={COLORS.textLight}
+                keyboardType="numeric"
+                value={bankAccount}
+                onChangeText={setBankAccount}
+                editable={!isLoading}
+              />
             </View>
 
             <Text style={styles.fieldLabel}>Tên chủ tài khoản (Khớp với CCCD)</Text>
             <View style={styles.inputContainerWhite}>
-              <TextInput style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]} placeholder="VD: NGUYEN VAN A" placeholderTextColor={COLORS.textLight} autoCapitalize="characters" value={bankAccountName} onChangeText={setBankAccountName} editable={!isLoading} />
+              <TextInput
+                style={[styles.input, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+                placeholder="VD: NGUYEN VAN A"
+                placeholderTextColor={COLORS.textLight}
+                autoCapitalize="characters"
+                value={bankAccountName}
+                onChangeText={setBankAccountName}
+                editable={!isLoading}
+              />
             </View>
           </View>
 

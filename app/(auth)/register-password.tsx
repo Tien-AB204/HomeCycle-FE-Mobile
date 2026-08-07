@@ -1,8 +1,10 @@
 // app/(auth)/register-password.tsx
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -13,36 +15,67 @@ import {
   View,
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
+import { authApi } from "../../src/services/apis/authApi";
+import { useAuth } from "../../src/contexts/AuthContext";
 
 export default function RegisterPasswordScreen() {
   const router = useRouter();
-  // Hứng token từ màn hình OTP
-  const { email, role, registrationToken } = useLocalSearchParams();
+  
+  // Hứng dữ liệu từ màn hình trước
+  const { email, role, registrationToken, isGoogleAuth } = useLocalSearchParams();
 
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace("/(auth)/register");
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (password.length < 6) {
       alert("Mật khẩu phải từ 6 ký tự trở lên");
       return;
     }
 
     if (role === "business") {
-      router.push({
-        pathname: "/(auth)/business-setup",
-        params: { email, password, registrationToken },
-      });
+      try {
+        setIsLoading(true);
+        // 1. Gọi API tạo tài khoản doanh nghiệp
+        const res = await authApi.registerBusiness(registrationToken as string, password);
+        
+        // 2. Bóc tách token từ response (theo cấu trúc bọc "data" của BE)
+        const responseData = res?.data?.data || res?.data;
+        const { accessToken, refreshToken } = responseData;
+
+        // 3. Nếu có accessToken, lưu thẳng vào Storage (Bỏ qua Login)
+        if (accessToken) {
+          await AsyncStorage.setItem("accessToken", accessToken);
+          if (refreshToken) await AsyncStorage.setItem("refreshToken", refreshToken);
+          
+          // Đánh dấu role là business để AuthContext biết
+          await AsyncStorage.setItem("userRole", "business");
+
+          // Chuyển thẳng sang màn setup hồ sơ
+          router.push({
+            pathname: "/(auth)/business-setup",
+            params: { email, isGoogleAuth },
+          });
+        } else {
+          throw new Error("Không nhận được Token từ máy chủ.");
+        }
+      } catch (error: any) {
+        console.error("Lỗi tạo tài khoản business:", error.response?.data || error);
+        alert(error.response?.data?.message || "Có lỗi xảy ra khi tạo tài khoản!");
+      } finally {
+        setIsLoading(false);
+      }
     } else {
-      // CHUYỂN TIẾP TOKEN VÀ PASSWORD SANG BƯỚC 2
+      // Đối với người dùng cá nhân (Personal): Chuyển tiếp dữ liệu sang Bước 2 để nhập nốt Profile
       router.push({
         pathname: "/(auth)/profile-setup",
-        params: { email, password, registrationToken },
+        params: { email, password, registrationToken, isGoogleAuth },
       });
     }
   };
@@ -85,20 +118,21 @@ export default function RegisterPasswordScreen() {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
+              editable={!isLoading}
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon} disabled={isLoading}>
               <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color={COLORS.textLight} />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.primaryButton} onPress={handleNext}>
-            <Text style={styles.primaryButtonText}>TIẾP TỤC</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={handleNext} disabled={isLoading}>
+            {isLoading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.primaryButtonText}>TIẾP TỤC</Text>}
           </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Đã có tài khoản? </Text>
-          <TouchableOpacity onPress={() => router.replace("/(auth)/login" as any)}>
+          <TouchableOpacity onPress={() => router.replace("/(auth)/login" as any)} disabled={isLoading}>
             <Text style={styles.registerText}>Đăng nhập ngay</Text>
           </TouchableOpacity>
         </View>

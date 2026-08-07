@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "temp_setup",
-    "slug": "temp_setup",
+    "name": "HomeCycle",
+    "slug": "homecycle",
+    "scheme": "homecycle",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "tempsetup",
+    "icon": "./assets/images/logo-icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.temp_setup"
     },
     "web": {
       "output": "static",
@@ -34,15 +35,17 @@
             "imageWidth": 76
           }
         }
-      ],
-      "expo-font",
-      "expo-image",
-      "expo-status-bar",
-      "expo-web-browser"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b969e108-fdf7-43b3-a720-3b4c4afc6b03"
+      }
     }
   }
 }

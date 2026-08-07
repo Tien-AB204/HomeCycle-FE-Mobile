@@ -1,6 +1,6 @@
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../src/constants/theme";
+import MainHeader from "../../src/components/shared/MainHeader";
 
 const MOCK_ORDERS = [
   {
@@ -26,9 +26,7 @@ const MOCK_ORDERS = [
 export default function OrdersScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Quản lý Đơn hàng</Text>
-      </View>
+      <MainHeader title="Quản lý Đơn hàng" />
 
       <View style={styles.tabs}>
         <Text style={styles.tabActive}>Đang xử lý</Text>
@@ -77,13 +75,11 @@ export default function OrdersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },
-  header: { padding: 16, backgroundColor: "#FFF" },
-  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#0F172A" },
   tabs: { flexDirection: "row", backgroundColor: "#FFF", paddingHorizontal: 16, borderBottomWidth: 1, borderColor: "#E2E8F0" },
   tab: { paddingVertical: 12, marginRight: 24, color: "#64748B", fontWeight: "600" },
   tabActive: { paddingVertical: 12, marginRight: 24, color: COLORS.primary, fontWeight: "bold", borderBottomWidth: 2, borderColor: COLORS.primary },
   list: { padding: 16, gap: 16 },
-  card: { backgroundColor: "#FFF", borderRadius: 12, padding: 16 },
+  card: { backgroundColor: "#FFF", borderRadius: 12, padding: 16, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderColor: "#F1F5F9", paddingBottom: 12, marginBottom: 12 },
   orderId: { fontSize: 13, color: "#475569", fontWeight: "600" },
   status: { fontSize: 13, fontWeight: "bold" },

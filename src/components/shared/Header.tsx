@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants/theme";
 
 interface HeaderProps {
@@ -21,18 +22,22 @@ export default function Header({
   rightContent,
 }: HeaderProps) {
   const router = useRouter();
+  
+  // 2. Lấy thông số safe area phía trên của thiết bị
+  const insets = useSafeAreaInsets();
 
   // LOGIC BACK AN TOÀN: Có trang trước thì lùi, không có thì về Home
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(tabs)"); // Đường dẫn trỏ về màn hình gốc (Home)
+      router.replace("/(tabs)");
     }
   };
 
   return (
-    <View style={styles.header}>
+    // Đã đổi height thành 60 + insets.top để đạt chuẩn 60px
+    <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top }]}>
       <View style={styles.headerLeft}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton}>
@@ -60,10 +65,9 @@ export default function Header({
 const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "center", // Thuộc tính này sẽ tự động căn giữa đều trên/dưới
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    height: 56,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
