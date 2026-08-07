@@ -1,7 +1,8 @@
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { COLORS } from "../../src/constants/theme"; // Dùng theme của bạn
+import { COLORS } from "../../src/constants/theme";
 import { useState } from "react";
+import MainHeader from "../../src/components/shared/MainHeader";
 
 const MOCK_SCHEDULES = [
   {
@@ -31,9 +32,7 @@ export default function ScheduleScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Quản lý Lịch hẹn</Text>
-      </View>
+      <MainHeader title="Quản lý Lịch hẹn" />
 
       <View style={styles.tabContainer}>
         {['all', 'Kiểm định', 'Thu gom'].map(tab => (
@@ -84,9 +83,7 @@ export default function ScheduleScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },
-  header: { padding: 16, backgroundColor: "#FFF", borderBottomWidth: 1, borderColor: "#E2E8F0" },
-  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#0F172A" },
-  tabContainer: { flexDirection: "row", backgroundColor: "#FFF", paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+  tabContainer: { flexDirection: "row", backgroundColor: "#FFF", paddingHorizontal: 16, paddingVertical: 8, gap: 8, borderBottomWidth: 1, borderColor: "#E2E8F0" },
   tab: { paddingVertical: 6, paddingHorizontal: 16, borderRadius: 20, backgroundColor: "#F1F5F9" },
   activeTab: { backgroundColor: "#0F172A" },
   tabText: { fontSize: 14, color: "#64748B", fontWeight: "600" },

@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Platform,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -10,306 +13,298 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  FlatList,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
-import {
-  buyingRequests,
-  categories,
-  sellingPosts,
-  suggestedProducts,
-} from "../../src/mocks/homeData";
+import { postApi } from "../../src/services/apis/postApi";
 
 export default function HomeScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
+  // === STATES DỮ LIỆU ===
+  const [categories, setCategories] = useState<any[]>([]);
+  const [sellPosts, setSellPosts] = useState<any[]>([]);
+  const [buyPosts, setBuyPosts] = useState<any[]>([]);
+  const [suggestedPosts, setSuggestedPosts] = useState<any[]>([]);
+
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // === FETCH API TRANG CHỦ ===
+  const fetchHomeData = async (isRefresh = false) => {
+    try {
+      if (!isRefresh) setIsLoading(true);
+
+      const [postsRes, catRes] = await Promise.all([
+        postApi.getAllPosts({ PageNumber: 1, PageSize: 50 }),
+        postApi.getActiveCategories(),
+      ]);
+
+      if (catRes?.data?.items) {
+        setCategories(catRes.data.items);
+      } else if (catRes?.items) {
+        setCategories(catRes.items);
+      } else if (Array.isArray(catRes)) {
+        setCategories(catRes);
+      }
+
+      const allPosts = postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
+
+      // CHỈ LẤY BÀI ĐĂNG CÓ STATUS LÀ "Active", tự động bỏ qua Closed, Suspended,...
+      const sells = allPosts.filter((p: any) => p.postType === "Sell" && p.status === "Active");
+      const buys = allPosts.filter((p: any) => p.postType === "Buy" && p.status === "Active");
+
+      setSellPosts(sells);
+      setBuyPosts(buys);
+
+      const activePosts = allPosts.filter((p: any) => p.status === "Active");
+      const shuffled = [...activePosts].sort(() => 0.5 - Math.random());
+      setSuggestedPosts(shuffled.slice(0, 10)); 
+    } catch (error) {
+      console.error("Lỗi lấy dữ liệu trang chủ:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchHomeData();
+    }, []),
+  );
+
+  const onRefresh = () => {
+    setIsRefreshing(true);
+    fetchHomeData(true);
+  };
+
+  const handleCategoryToggle = (categoryId: string) => {
+    if (activeCategoryId === categoryId) {
+      setActiveCategoryId(null);
+    } else {
+      setActiveCategoryId(categoryId);
+    }
+  };
+
+  // === LỌC DỮ LIỆU ===
+  const displayedSells = activeCategoryId ? sellPosts.filter(p => p.categoryId === activeCategoryId) : sellPosts;
+  const displayedBuys = activeCategoryId ? buyPosts.filter(p => p.categoryId === activeCategoryId) : buyPosts;
+  const displayedSuggested = activeCategoryId ? suggestedPosts.filter(p => p.categoryId === activeCategoryId) : suggestedPosts;
+
+  // === FORMATTERS ===
+  const formatPrice = (price: number) => {
+    if (!price) return "0 đ";
+    return price.toLocaleString("vi-VN") + " đ";
+  };
+
+  const getCoverImage = (post: any) => {
+    if (post.medias && post.medias.length > 0) {
+      return { uri: post.medias[0].url || post.medias[0].mediaUrl };
+    }
+    return { uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image" };
+  };
+
+  const getFullAddress = (post: any) => {
+    return [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
+  };
+
+  // ================= RENDER CARD =================
+  const renderCard = ({ item: post }: { item: any }) => (
+    <TouchableOpacity
+      style={styles.horizontalCard}
+      onPress={() => router.push(`/posts/${post.postId}`)}
+    >
+      <View style={styles.imageContainer}>
+        <Image source={getCoverImage(post)} style={styles.productImage} />
+        
+        {/* HIỂN THỊ TÊN DANH MỤC THAY VÌ TRẠNG THÁI ACTIVE */}
+        <View style={styles.categoryBadge}>
+          <Text style={styles.categoryBadgeText} numberOfLines={1}>
+            {post.categoryName || "Sản phẩm"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.productInfo}>
+        <Text style={styles.productName} numberOfLines={2}>{post.productName || post.description}</Text>
+        <Text style={styles.productPrice}>{formatPrice(post.basePrice || post.expectedPrice)}</Text>
+
+        <Text style={styles.metaText} numberOfLines={1}>
+          SL: {post.remainingQuantity}/{post.quantity} • {post.deliveryMethod}
+        </Text>
+        
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={12} color={COLORS.textLight} />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {getFullAddress(post)}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const getCategoryIcon = (categoryName: string) => {
+    if (!categoryName) return "grid-outline";
+    const name = categoryName.toLowerCase();
+    if (name.includes("điện máy")) return "tv-outline";
+    if (name.includes("nội thất")) return "bed-outline";
+    if (name.includes("đồ chơi")) return "apps-outline";
+    if (name.includes("lặt vặt") || name.includes("nhỏ lẻ")) return "cube-outline";
+    if (name.includes("quần áo")) return "shirt-outline";
+    if (name.includes("sinh hoạt")) return "basket-outline";
+    return "grid-outline"; 
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.mobileWrapper, { width: width }]}>
-        {/* 1. Header (Đã tự động hiển thị Logo nhờ MainHeader mới) */}
         <MainHeader title="HomeCycle" />
 
-        <ScrollView
-          style={styles.container}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* 2. Thanh tìm kiếm */}
-          <View style={styles.searchContainer}>
-            <TouchableOpacity
-              style={[
-                styles.searchInput,
-                { flexDirection: "row", alignItems: "center" },
-              ]}
-              onPress={() => router.push("/search")}
-            >
-              <Ionicons
-                name="search"
-                size={20}
-                color={COLORS.textLight}
-                style={{ marginRight: 8 }}
-              />
-              <Text style={{ color: COLORS.textLight, fontSize: 14 }}>
-                Bạn đang tìm món đồ cũ nào?
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.filterButton}
-              onPress={() => router.push("/search")}
-            >
-              <Ionicons name="options-outline" size={20} color={COLORS.white} />
-            </TouchableOpacity>
+        {isLoading ? (
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
           </View>
-
-          {/* 3. Danh mục sản phẩm */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Danh mục nổi bật</Text>
+        ) : (
+          <ScrollView
+            style={styles.container}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+          >
+            {/* Thanh tìm kiếm */}
+            <View style={styles.searchContainer}>
+              <TouchableOpacity
+                style={[styles.searchInput, { flexDirection: "row", alignItems: "center" }]}
+                onPress={() => router.push("/search")}
+              >
+                <Ionicons name="search" size={20} color={COLORS.textLight} style={{ marginRight: 8 }} />
+                <Text style={{ color: COLORS.textLight, fontSize: 14 }}>
+                  Bạn đang tìm món đồ cũ nào?
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.filterButton} onPress={() => router.push("/search")}>
+                <Ionicons name="options-outline" size={20} color={COLORS.white} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.categoriesRow}>
-              {categories.map((cat) => (
-                <TouchableOpacity key={cat.id} style={styles.categoryItem}>
-                  <View style={styles.categoryIconBox}>
-                    <Ionicons
-                      name={cat.icon as any}
-                      size={24}
-                      color={COLORS.primary}
-                    />
-                  </View>
-                  <Text style={styles.categoryText}>{cat.name}</Text>
+
+            {/* Banner */}
+            <View style={styles.bannerContainer}>
+              <View style={styles.bannerContent}>
+                <Text style={styles.bannerTitle}>Thanh lý nhanh chóng</Text>
+                <Text style={styles.bannerSubtitle}>Kết nối trực tiếp với các doanh nghiệp thu mua uy tín.</Text>
+                <TouchableOpacity style={styles.bannerButton} onPress={() => router.push("/posts/post-form")}>
+                  <Text style={styles.bannerButtonText}>Đăng tin bán ngay</Text>
                 </TouchableOpacity>
-              ))}
+              </View>
+              <Image
+                source={require("../../assets/images/logo-icon-light-transparent.png")}
+                style={styles.bannerLogo}
+                resizeMode="contain"
+              />
             </View>
-          </View>
 
-          {/* 4. Banner (HIỆU ỨNG LOGO IN CHÌM WATERMARK) */}
-          <View style={styles.bannerContainer}>
-            <View style={styles.bannerContent}>
-              <Text style={styles.bannerTitle}>Thanh lý nhanh chóng</Text>
-              <Text style={styles.bannerSubtitle}>
-                Kết nối trực tiếp với các doanh nghiệp thu mua uy tín.
-              </Text>
-              <TouchableOpacity style={styles.bannerButton}>
-                <Text style={styles.bannerButtonText}>Đăng tin bán ngay</Text>
-              </TouchableOpacity>
-            </View>
-            <Image
-              source={require("../../assets/images/logo-icon-light-transparent.png")}
-              style={styles.bannerLogo}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* 5. Tin thu mua từ Doanh nghiệp */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                Tin thu mua từ Doanh nghiệp
-              </Text>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>Xem tất cả</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.buyingRequestsScroll}
-            >
-              {buyingRequests.map((req) => (
-                <TouchableOpacity
-                  key={req.id}
-                  style={[styles.buyingCardHorizontal, { width: width * 0.85 }]}
-                >
-                  <View style={styles.buyingImageContainer}>
-                    <Image
-                      source={{ uri: req.image }}
-                      style={styles.buyingImage}
-                    />
-                    <View style={styles.conditionBadge}>
-                      <Text style={styles.conditionText}>{req.condition}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.buyingInfo}>
-                    <Text style={styles.buyingTitle} numberOfLines={2}>
-                      {req.title}
-                    </Text>
-                    <View style={styles.buyingPriceRow}>
-                      <Text style={styles.buyingPrice}>{req.priceRange}</Text>
-                      <View style={styles.collectionBadge}>
-                        <Text style={styles.collectionText}>
-                          {req.collectionMethod}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.buyingCompanyRow}>
-                      <Image
-                        source={{ uri: req.avatar }}
-                        style={styles.sellerAvatar}
-                      />
-                      <Text style={styles.companyNameSmall} numberOfLines={1}>
-                        {req.company}
-                      </Text>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={12}
-                        color="#27AE60"
-                        style={{ marginLeft: 4 }}
-                      />
-                    </View>
-                    <View style={styles.buyingBottomRow}>
-                      <View style={styles.buyingLocationRow}>
-                        <Ionicons
-                          name="location-outline"
-                          size={11}
-                          color={COLORS.textLight}
-                        />
-                        <Text
-                          style={styles.buyingLocationText}
-                          numberOfLines={1}
-                        >
-                          {req.location}{" "}
-                          <Text style={styles.dotSeparator}>•</Text> {req.time}
-                        </Text>
-                      </View>
-                      <TouchableOpacity style={styles.offerButtonSmall}>
-                        <Text style={styles.offerButtonTextSmall}>
-                          Gửi báo giá
+            {/* Danh mục */}
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Danh mục nổi bật</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+                {categories.length > 0 ? (
+                  categories.map((cat) => {
+                    const isActive = activeCategoryId === cat.categoryId;
+                    return (
+                      <TouchableOpacity
+                        key={cat.categoryId}
+                        style={styles.categoryItem}
+                        onPress={() => handleCategoryToggle(cat.categoryId)}
+                      >
+                        <View style={[styles.categoryIconBox, isActive && styles.categoryIconBoxActive]}>
+                          <Ionicons
+                            name={getCategoryIcon(cat.categoryName) as any}
+                            size={24}
+                            color={isActive ? COLORS.white : COLORS.primary}
+                          />
+                        </View>
+                        <Text style={[styles.categoryText, isActive && styles.categoryTextActive]} numberOfLines={2}>
+                          {cat.categoryName}
                         </Text>
                       </TouchableOpacity>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+                    );
+                  })
+                ) : (
+                  <Text style={{ color: COLORS.textLight, paddingHorizontal: 20 }}>Đang cập nhật danh mục...</Text>
+                )}
+              </ScrollView>
+            </View>
 
-          {/* 6. Tin đăng bán mới nhất */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>Xem tất cả</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.productGrid}>
-              {sellingPosts.map((prod) => (
-                <TouchableOpacity
-                  key={prod.id}
-                  style={[styles.productCard, { width: (width - 56) / 2 }]}
-                >
-                  <View style={styles.imageContainer}>
-                    <Image
-                      source={{ uri: prod.image }}
-                      style={styles.productImage}
-                    />
-                    <View style={styles.conditionBadge}>
-                      <Text style={styles.conditionText}>{prod.condition}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={2}>
-                      {prod.name}
-                    </Text>
-                    <Text style={styles.productPrice}>{prod.price}</Text>
-                    <View style={styles.sellerRow}>
-                      <Image
-                        source={{ uri: prod.sellerAvatar }}
-                        style={styles.sellerAvatar}
-                      />
-                      <Text style={styles.sellerName} numberOfLines={1}>
-                        {prod.sellerName}
-                      </Text>
-                      <Text style={styles.dotSeparator}>•</Text>
-                      <Text style={styles.productTime}>{prod.time}</Text>
-                    </View>
-                    <View style={styles.productLocationRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={11}
-                        color={COLORS.textLight}
-                      />
-                      <Text style={styles.productLocation} numberOfLines={1}>
-                        {prod.location}
-                      </Text>
-                    </View>
-                    <TouchableOpacity style={styles.negotiateBtnSmall}>
-                      <Ionicons
-                        name="chatbubbles-outline"
-                        size={12}
-                        color={COLORS.primary}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={styles.negotiateBtnText}>Thương lượng</Text>
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+            {activeCategoryId && displayedBuys.length === 0 && displayedSells.length === 0 && displayedSuggested.length === 0 && (
+              <View style={{ alignItems: 'center', marginVertical: 30 }}>
+                <Ionicons name="folder-open-outline" size={48} color={COLORS.border} />
+                <Text style={{ color: COLORS.textLight, marginTop: 12 }}>Chưa có bài đăng nào trong danh mục này.</Text>
+              </View>
+            )}
 
-          {/* 7. Gợi ý cho bạn */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Gợi ý cho bạn</Text>
-            </View>
-            <View style={styles.productGrid}>
-              {suggestedProducts.map((prod) => (
-                <TouchableOpacity
-                  key={prod.id}
-                  style={[styles.productCard, { width: (width - 56) / 2 }]}
-                >
-                  <View style={styles.imageContainer}>
-                    <Image
-                      source={{ uri: prod.image }}
-                      style={styles.productImage}
-                    />
-                    <View style={styles.conditionBadge}>
-                      <Text style={styles.conditionText}>{prod.condition}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={2}>
-                      {prod.name}
-                    </Text>
-                    <Text style={styles.productPrice}>{prod.price}</Text>
-                    <View style={styles.sellerRow}>
-                      <Image
-                        source={{ uri: prod.sellerAvatar }}
-                        style={styles.sellerAvatar}
-                      />
-                      <Text style={styles.sellerName} numberOfLines={1}>
-                        {prod.sellerName}
-                      </Text>
-                      <Text style={styles.dotSeparator}>•</Text>
-                      <Text style={styles.productTime}>{prod.time}</Text>
-                    </View>
-                    <View style={styles.productLocationRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={11}
-                        color={COLORS.textLight}
-                      />
-                      <Text style={styles.productLocation} numberOfLines={1}>
-                        {prod.location}
-                      </Text>
-                    </View>
-                    <TouchableOpacity style={styles.negotiateBtnSmall}>
-                      <Ionicons
-                        name="chatbubbles-outline"
-                        size={12}
-                        color={COLORS.primary}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={styles.negotiateBtnText}>Thương lượng</Text>
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          <View style={{ height: 40 }} />
-        </ScrollView>
+            {/* Tin Thu Mua */}
+            {displayedBuys.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Tin thu mua từ Doanh nghiệp</Text>
+                  <TouchableOpacity><Text style={styles.seeAllText}>Xem tất cả</Text></TouchableOpacity>
+                </View>
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={displayedBuys}
+                  keyExtractor={(item) => item.postId}
+                  renderItem={renderCard}
+                  contentContainerStyle={styles.horizontalListContent}
+                />
+              </View>
+            )}
+
+            {/* Tin Đăng Bán */}
+            {displayedSells.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
+                  <TouchableOpacity><Text style={styles.seeAllText}>Xem tất cả</Text></TouchableOpacity>
+                </View>
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={displayedSells}
+                  keyExtractor={(item) => item.postId}
+                  renderItem={renderCard}
+                  contentContainerStyle={styles.horizontalListContent}
+                />
+              </View>
+            )}
+
+            {/* Gợi ý */}
+            {displayedSuggested.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Gợi ý cho bạn</Text>
+                </View>
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={displayedSuggested}
+                  keyExtractor={(item) => item.postId}
+                  renderItem={renderCard}
+                  contentContainerStyle={styles.horizontalListContent}
+                />
+              </View>
+            )}
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -326,259 +321,61 @@ const styles = StyleSheet.create({
   },
   container: { flex: 1, backgroundColor: "#F8F9FA" },
 
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 50,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    paddingLeft: 16,
-    paddingRight: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  filterButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginTop: 16, marginBottom: 24, gap: 12 },
+  searchInput: { flex: 1, height: 50, backgroundColor: COLORS.white, borderRadius: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: COLORS.border },
+  filterButton: { width: 50, height: 50, backgroundColor: COLORS.primary, borderRadius: 12, justifyContent: "center", alignItems: "center" },
 
   sectionContainer: { marginBottom: 32 },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: COLORS.text },
   seeAllText: { fontSize: 14, color: COLORS.primary, fontWeight: "600" },
-  categoriesRow: {
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    gap: 32,
-    paddingHorizontal: 20,
-  },
+
+  categoriesRow: { paddingHorizontal: 20, gap: 24, paddingRight: 40 },
   categoryItem: { alignItems: "center", gap: 8, width: 72 },
-  categoryIconBox: {
-    width: 56,
-    height: 56,
-    backgroundColor: "#EFFFFE",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  categoryText: {
-    fontSize: 13,
-    color: COLORS.text,
-    fontWeight: "500",
-    textAlign: "center",
-  },
+  categoryIconBox: { width: 56, height: 56, backgroundColor: "#EFFFFE", borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  categoryIconBoxActive: { backgroundColor: COLORS.primary }, 
+  categoryText: { fontSize: 12, color: COLORS.text, fontWeight: "500", textAlign: "center" },
+  categoryTextActive: { color: COLORS.primary, fontWeight: "bold" },
 
-  bannerContainer: {
-    marginHorizontal: 20,
-    marginBottom: 32,
-    backgroundColor: COLORS.primary,
-    borderRadius: 20,
-    padding: 24,
-    overflow: "hidden",
-    position: "relative",
-  },
+  bannerContainer: { marginHorizontal: 20, marginBottom: 32, backgroundColor: COLORS.primary, borderRadius: 20, padding: 24, overflow: "hidden", position: "relative" },
   bannerContent: { zIndex: 2, width: "75%" },
-  bannerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: COLORS.white,
-    marginBottom: 8,
-  },
-  bannerSubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.8)",
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  bannerButton: {
-    backgroundColor: COLORS.white,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
+  bannerTitle: { fontSize: 20, fontWeight: "bold", color: COLORS.white, marginBottom: 8 },
+  bannerSubtitle: { fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 20, marginBottom: 16 },
+  bannerButton: { backgroundColor: COLORS.white, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignSelf: "flex-start" },
   bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
+  bannerLogo: { position: "absolute", right: -15, bottom: -20, width: 140, height: 140, opacity: 0.15, transform: [{ rotate: "-15deg" }] },
 
-  // Style cho Logo In Chìm ở Banner
-  bannerLogo: {
-    position: "absolute",
-    right: -15,
-    bottom: -20,
-    width: 140,
-    height: 140,
-    opacity: 0.15, // Tạo hiệu ứng mờ sang trọng
-    transform: [{ rotate: "-15deg" }], // Nghiêng nhẹ phá cách
-  },
-
-  buyingRequestsScroll: { paddingHorizontal: 20, gap: 16 },
-  buyingCardHorizontal: {
-    flexDirection: "row",
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
+  horizontalListContent: { paddingHorizontal: 20, gap: 16 },
+  horizontalCard: { 
+    backgroundColor: COLORS.white, 
+    borderRadius: 12, 
+    overflow: "hidden", 
+    borderWidth: 1, 
     borderColor: COLORS.border,
+    width: 160, 
   },
-  buyingImageContainer: {
-    position: "relative",
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: "#F5F5F5",
-  },
-  buyingImage: { width: "100%", height: "100%" },
-  buyingInfo: { flex: 1, marginLeft: 12, justifyContent: "space-between" },
-  buyingTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.text,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  buyingPriceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 4,
-  },
-  buyingPrice: { fontSize: 14, fontWeight: "bold", color: "#E74C3C" },
-  collectionBadge: {
-    backgroundColor: "#E8F5E9",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  collectionText: { color: "#27AE60", fontSize: 10, fontWeight: "bold" },
-  buyingCompanyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  companyNameSmall: { fontSize: 11, color: COLORS.textLight, flexShrink: 1 },
-  buyingBottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  buyingLocationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    paddingRight: 8,
-  },
-  buyingLocationText: { fontSize: 10, color: COLORS.textLight, marginLeft: 2 },
-  offerButtonSmall: {
-    backgroundColor: "#F0F7F6",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  offerButtonTextSmall: {
-    color: COLORS.primary,
-    fontSize: 11,
-    fontWeight: "bold",
-  },
-
-  productGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  productCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 4,
-  },
-  imageContainer: {
-    position: "relative",
-    width: "100%",
-    aspectRatio: 1,
-    backgroundColor: "#F5F5F5",
-  },
+  
+  imageContainer: { position: "relative", width: "100%", aspectRatio: 1, backgroundColor: "#F1F5F9" },
   productImage: { width: "100%", height: "100%" },
-  conditionBadge: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  
+  // Style mới cho Badge Danh mục
+  categoryBadge: { 
+    position: "absolute", 
+    top: 8, 
+    left: 8, 
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // Nền tối trong suốt giúp chữ nổi bật
+    paddingHorizontal: 8, 
+    paddingVertical: 4, 
+    borderRadius: 6, 
+    maxWidth: "85%" 
   },
-  conditionText: { color: COLORS.white, fontSize: 10, fontWeight: "bold" },
-  productInfo: { padding: 10 },
-  productName: {
-    fontSize: 13,
-    color: COLORS.text,
-    fontWeight: "600",
-    lineHeight: 18,
-    marginBottom: 6,
-    height: 36,
-  },
-  productPrice: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#E74C3C",
-    marginBottom: 8,
-  },
-  sellerRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
-  sellerAvatar: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginRight: 4,
-    backgroundColor: "#F0F0F0",
-  },
-  sellerName: { fontSize: 10, color: COLORS.textLight, flexShrink: 1 },
-  dotSeparator: { fontSize: 10, color: COLORS.textLight, marginHorizontal: 4 },
-  productTime: { fontSize: 10, color: COLORS.textLight },
-  productLocationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  productLocation: {
-    fontSize: 10,
-    color: COLORS.textLight,
-    marginLeft: 2,
-    flex: 1,
-  },
-  negotiateBtnSmall: {
-    flexDirection: "row",
-    width: "100%",
-    height: 30,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: COLORS.white,
-  },
-  negotiateBtnText: { color: COLORS.primary, fontSize: 11, fontWeight: "700" },
+  categoryBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: "bold" },
+
+  productInfo: { padding: 12 },
+  productName: { fontSize: 13, color: COLORS.text, fontWeight: "600", lineHeight: 18, marginBottom: 6, height: 36 },
+  productPrice: { fontSize: 15, fontWeight: "bold", color: "#E74C3C", marginBottom: 6 },
+  metaText: { fontSize: 11, color: "#64748B", marginBottom: 6 },
+  
+  locationRow: { flexDirection: "row", alignItems: "center" },
+  locationText: { fontSize: 11, color: COLORS.textLight, marginLeft: 4, flex: 1 },
 });

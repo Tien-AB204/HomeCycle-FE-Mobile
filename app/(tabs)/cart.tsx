@@ -1,29 +1,21 @@
 import { SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../src/constants/theme";
+import MainHeader from "../../src/components/shared/MainHeader";
 
 const MOCK_CART = [
   { id: 1, shop: "Home Appliance HCM", name: "Lò vi sóng Sharp 20L", price: "800.000 đ", isSoldOut: false },
-  { id: 2, shop: "Nội Thất Nam", name: "Sofa góc L bọc nỉ", price: "3.200.000 đ", isSoldOut: true }, // Mô phỏng Sold out
+  { id: 2, shop: "Nội Thất Nam", name: "Sofa góc L bọc nỉ", price: "3.200.000 đ", isSoldOut: true },
 ];
 
 export default function CartScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      {/* HEADER GIỐNG ẢNH MOCKUP */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Giỏ hàng của bạn</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn}><Ionicons name="chatbubbles-outline" size={24} color="#0F172A" /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}><Ionicons name="notifications-outline" size={24} color="#0F172A" /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}><Ionicons name="person-circle-outline" size={26} color="#0F172A" /></TouchableOpacity>
-        </View>
-      </View>
+      <MainHeader title="Giỏ hàng của bạn" />
 
       <ScrollView contentContainerStyle={styles.list}>
         {MOCK_CART.map(item => (
           <View key={item.id} style={[styles.cartItem, item.isSoldOut && styles.soldOutItem]}>
-            {/* Checkbox */}
             <TouchableOpacity style={styles.checkbox}>
               {!item.isSoldOut && <Ionicons name="checkmark-circle" size={24} color={COLORS.primary} />}
               {item.isSoldOut && <Ionicons name="ellipse-outline" size={24} color="#CBD5E1" />}
@@ -49,7 +41,6 @@ export default function CartScreen() {
         ))}
       </ScrollView>
 
-      {/* FOOTER ĐẶT HÀNG */}
       <View style={styles.footer}>
         <View>
           <Text style={styles.totalLabel}>Tạm tính (1 sản phẩm):</Text>
@@ -65,10 +56,6 @@ export default function CartScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#FFF", borderBottomWidth: 1, borderColor: "#E2E8F0" },
-  headerTitle: { fontSize: 18, fontWeight: "900", color: "#0F172A" },
-  headerIcons: { flexDirection: "row", gap: 8, alignItems: "center" },
-  iconBtn: { padding: 4 },
   list: { padding: 16, gap: 12 },
   cartItem: { flexDirection: "row", backgroundColor: "#FFF", padding: 12, borderRadius: 12, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   soldOutItem: { backgroundColor: "#F8FAFC" },
@@ -81,7 +68,7 @@ const styles = StyleSheet.create({
   soldOutBadge: { backgroundColor: "#FEE2E2", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: "flex-start" },
   soldOutText: { color: "#EF4444", fontSize: 11, fontWeight: "bold" },
   deleteBtn: { padding: 8 },
-  footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFF", padding: 16, borderTopWidth: 1, borderColor: "#E2E8F0", paddingBottom: 32 }, // paddingBottom for iOS safe area
+  footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFF", padding: 16, borderTopWidth: 1, borderColor: "#E2E8F0", paddingBottom: 32 },
   totalLabel: { fontSize: 13, color: "#64748B" },
   totalPrice: { fontSize: 18, fontWeight: "bold", color: COLORS.error },
   checkoutBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },

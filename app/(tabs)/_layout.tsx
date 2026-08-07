@@ -2,8 +2,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { COLORS } from "../../src/constants/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const isWeb = Platform.OS === "web";
+
+  // Tính toán khoảng đệm an toàn tránh dính phím điều hướng Android
+  const bottomInset = isWeb ? 0 : Math.max(insets.bottom, 12);
+
   return (
     <Tabs
       screenOptions={{
@@ -14,10 +21,11 @@ export default function TabsLayout() {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          height: Platform.OS === "ios" ? 85 : 65,
-          paddingBottom: Platform.OS === "ios" ? 25 : 10,
-          paddingTop: 10,
-          ...(Platform.OS === "web"
+          // Chiều cao tự động dãn cách dựa vào nền tảng
+          height: isWeb ? 66 : 64 + bottomInset,
+          paddingTop: 6,
+          paddingBottom: isWeb ? 6 : bottomInset,
+          ...(isWeb
             ? {
                 maxWidth: 480,
                 alignSelf: "center",
@@ -28,7 +36,7 @@ export default function TabsLayout() {
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: "600",
-          marginTop: 4,
+          marginBottom: 2,
         },
       }}
     >
@@ -40,7 +48,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "home" : "home-outline"}
-              size={24}
+              size={22}
               color={color}
             />
           ),
@@ -55,14 +63,14 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "calendar" : "calendar-outline"}
-              size={24}
+              size={22}
               color={color}
             />
           ),
         }}
       />
 
-      {/* 3. Tin đăng (Gộp Bán & Mua) */}
+      {/* 3. Tin đăng */}
       <Tabs.Screen
         name="posts"
         options={{
@@ -70,7 +78,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "newspaper" : "newspaper-outline"}
-              size={24}
+              size={22}
               color={color}
             />
           ),
@@ -85,7 +93,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "document-text" : "document-text-outline"}
-              size={24}
+              size={22}
               color={color}
             />
           ),
@@ -100,40 +108,17 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "cart" : "cart-outline"}
-              size={24}
+              size={22}
               color={color}
             />
           ),
         }}
       />
 
-      {/* ==========================================================
-          CÁC MÀN HÌNH ẨN DƯỚI TAB BAR (Vẫn giữ được Nav Bar ở đáy) 
-          ========================================================== */}
-
-      {/* 6. Profile */}
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null,
-        }}
-      />
-
-      {/* 7. Chat */}
-      <Tabs.Screen
-        name="chat"
-        options={{
-          href: null,
-        }}
-      />
-
-      {/* 8. Notifications */}
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          href: null,
-        }}
-      />
+      {/* Các màn hình ẩn */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="chat" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
 }

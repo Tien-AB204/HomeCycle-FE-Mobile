@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -15,7 +14,8 @@ import {
   ActivityIndicator, // Thêm component này để báo loading
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
-import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
+import { authApi } from "../../src/services/apis/authApi";
+import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -200,14 +200,7 @@ export default function RegisterScreen() {
             </View>
 
             {/* Nút Google */}
-            <TouchableOpacity style={styles.googleButton}>
-              <Image
-                source={require("../../assets/images/google-icon.png")}
-                style={{ width: 22, height: 22 }}
-                resizeMode="contain"
-              />
-              <Text style={styles.googleButtonText}>Google</Text>
-            </TouchableOpacity>
+            <GoogleLoginButton title="Google" disabled={isLoading} />
           </View>
 
           <View style={styles.footer}>
@@ -336,17 +329,6 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontWeight: "600",
   },
-  googleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    height: 52,
-    gap: 12,
-  },
-  googleButtonText: { fontSize: 15, fontWeight: "600", color: COLORS.text },
   footer: { flexDirection: "row", justifyContent: "center", marginTop: 24 },
   footerText: { fontSize: 14, color: COLORS.textLight },
   loginText: { fontSize: 14, fontWeight: "bold", color: COLORS.primary },

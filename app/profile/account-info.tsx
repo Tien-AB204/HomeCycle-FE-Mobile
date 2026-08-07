@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -15,9 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import apiClient from "../../src/services/apis/axiosClient";
+import { Image } from "expo-image";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import apiClient from "../../src/services/apis/axiosClient";
 
 const sanitize = (val: any) => {
   if (val === "string" || val === "null" || val === null || val === undefined)
@@ -55,7 +55,7 @@ export default function AccountInfoScreen() {
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(""); // cần xóa
   const [avatarUrl, setAvatarUrl] = useState("");
   const [newAvatarFile, setNewAvatarFile] = useState<any>(null);
 
@@ -72,12 +72,20 @@ export default function AccountInfoScreen() {
   const [accountName, setAccountName] = useState("");
 
   useEffect(() => {
+    setImageError(false);
+  }, [avatarUrl, newAvatarFile]);
+
+  useEffect(() => {
     if (user) {
       setUsername(sanitize(user.username));
-      setFullName(sanitize(user.name));
-      setPhoneNumber(sanitize(user.phone));
-      setAddress(sanitize(user.address));
-      setAvatarUrl(sanitize(user.avatar));
+      // Bắt trọn mọi trường hợp tên biến do Backend trả về
+      setFullName(sanitize(user.fullName || user.name));
+      setPhoneNumber(sanitize(user.phoneNumber || user.phone));
+      setAddress(sanitize(user.address)); 
+      
+      // Bắt trọn cả avatarUrl lẫn avatar để không bao giờ bị hụt
+      const userAvatar = user.avatarUrl || user.avatar;
+      setAvatarUrl(sanitize(userAvatar));
 
       setRepCode(sanitize(user.representativeCode));
       setRepName(sanitize(user.representativeName));
@@ -120,15 +128,15 @@ export default function AccountInfoScreen() {
         username !== sanitize(originalData.username) ||
         fullName !== sanitize(originalData.name) ||
         phoneNumber !== sanitize(originalData.phone) ||
-        address !== sanitize(originalData.address);
+        address !== sanitize(originalData.address); // cần xóa
 
       if (profileChanged) {
         apiTasks.push(
-          apiClient.put("/personals/me/profile", {
+          apiClient.put("/personal-profiles/me/profile", {
             username,
             fullName,
             phoneNumber,
-            address,
+            address, // cần xóa
           }),
         );
       }
@@ -144,7 +152,9 @@ export default function AccountInfoScreen() {
         );
         // TĂNG TIMEOUT LÊN 60 GIÂY: Để tránh lỗi "timeout of 10000ms exceeded"
         apiTasks.push(
-          apiClient.patch("/personals/me/avatar", formData, { timeout: 60000 }),
+          apiClient.patch("/personal-profiles/me/avatar", formData, {
+            timeout: 60000,
+          }),
         );
       }
 
@@ -183,7 +193,9 @@ export default function AccountInfoScreen() {
 
         // TĂNG TIMEOUT LÊN 60 GIÂY
         apiTasks.push(
-          apiClient.put("/personals/me/identity", formData, { timeout: 60000 }),
+          apiClient.put("/personal-profiles/me/identity", formData, {
+            timeout: 60000,
+          }),
         );
       }
 
@@ -194,7 +206,7 @@ export default function AccountInfoScreen() {
 
       if (bankChanged) {
         apiTasks.push(
-          apiClient.put("/personals/me/bank", {
+          apiClient.put("/personal-profiles/me/bank", {
             bankCode: bankCode || "VNBANK",
             bankName,
             accountNumber,
@@ -311,7 +323,7 @@ export default function AccountInfoScreen() {
           <View
             style={[
               styles.inputContainer,
-              { height: 80, alignItems: "flex-start", paddingTop: 12 },
+              { height: 80, alignItems: "flex-start", paddingTop: 12 }, // cần xóa
             ]}
           >
             <TextInput
@@ -319,7 +331,7 @@ export default function AccountInfoScreen() {
               value={address}
               onChangeText={setAddress}
               multiline
-              placeholder="Nhập địa chỉ..."
+              placeholder="Nhập địa chỉ..." // đến đây cần xóa
             />
           </View>
 
@@ -337,7 +349,7 @@ export default function AccountInfoScreen() {
                     uri: frontImage?.uri || sanitize(user?.frontIDCardImage),
                   }}
                   style={{ width: "100%", height: "100%", borderRadius: 12 }}
-                  resizeMode="cover"
+                  contentFit="cover"
                 />
               ) : (
                 <>
@@ -362,7 +374,7 @@ export default function AccountInfoScreen() {
                     uri: backImage?.uri || sanitize(user?.backIDCardImage),
                   }}
                   style={{ width: "100%", height: "100%", borderRadius: 12 }}
-                  resizeMode="cover"
+                  contentFit="cover"
                 />
               ) : (
                 <>

@@ -1,6 +1,7 @@
 import { SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../src/constants/theme";
+import MainHeader from "../../src/components/shared/MainHeader";
 
 const MOCK_NOTIFS = [
   {
@@ -41,8 +42,10 @@ const MOCK_NOTIFS = [
 export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Thông báo</Text>
+      <MainHeader title="Thông báo" />
+      
+      <View style={styles.subHeader}>
+        <Text style={styles.subHeaderTitle}>Gần đây</Text>
         <TouchableOpacity><Text style={styles.markRead}>Đánh dấu đã đọc</Text></TouchableOpacity>
       </View>
 
@@ -67,8 +70,8 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFF" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderColor: "#E2E8F0" },
-  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#0F172A" },
+  subHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#F8FAFC" },
+  subHeaderTitle: { fontSize: 14, fontWeight: "bold", color: "#64748B" },
   markRead: { fontSize: 13, color: COLORS.primary, fontWeight: "600" },
   list: { paddingBottom: 20 },
   notifItem: { flexDirection: "row", padding: 16, borderBottomWidth: 1, borderColor: "#F1F5F9", alignItems: "flex-start" },
