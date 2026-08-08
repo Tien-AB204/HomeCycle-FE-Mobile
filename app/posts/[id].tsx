@@ -20,11 +20,14 @@ import {
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { postApi } from "../../src/services/apis/postApi";
+// IMPORT MỚI
+import { offerApi } from "../../src/services/apis/offerApi"; 
 
 const { width } = Dimensions.get("window");
 
 export default function PostDetailScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, viewOnly } = useLocalSearchParams();
+  const isViewOnly = viewOnly === "true";
   const router = useRouter();
 
   const { user } = useAuth();
@@ -33,7 +36,6 @@ export default function PostDetailScreen() {
   const [post, setPost] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // === STATE CHO OFFER ===
   const [existingOfferId, setExistingOfferId] = useState<string | null>(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerQuantity, setOfferQuantity] = useState("1");
@@ -49,7 +51,7 @@ export default function PostDetailScreen() {
       setPost(resPost?.data || resPost);
 
       if (user && resPost?.data?.ownerId !== currentUserId) {
-        const resOffers = await postApi.getSentOffers({ PageSize: 50, PageNumber: 1 });
+        const resOffers = await offerApi.getSentOffers({ PageSize: 50, PageNumber: 1 }); // ĐỔI SANG offerApi
         const items = resOffers?.data?.items || [];
         const pendingOffer = items.find((o: any) => o.postId === id && o.offerStatus === 0);
         if (pendingOffer) setExistingOfferId(pendingOffer.offerId);
@@ -70,7 +72,6 @@ export default function PostDetailScreen() {
 
   const isMyPost = currentUserId && post?.ownerId && currentUserId === post.ownerId;
 
-  // === HÀNH ĐỘNG: ĐÓNG BÀI ĐĂNG ===
   const handleClosePost = () => {
     const targetPostId = post?.postId;
     if (!targetPostId) return alert("Không tìm thấy ID bài đăng.");
@@ -78,7 +79,7 @@ export default function PostDetailScreen() {
     const executeClose = async () => {
       try {
         setIsLoading(true);
-        await postApi.closePost(targetPostId);
+        await postApi.closePost(targetPostId); // Vẫn dùng postApi (Đúng)
         if (Platform.OS === "web") window.alert("Đã đóng bài đăng thành công.");
         else Alert.alert("Thành công", "Đã đóng bài đăng.");
         fetchPostData();
@@ -101,7 +102,6 @@ export default function PostDetailScreen() {
     }
   };
 
-  // === HÀNH ĐỘNG: KÍCH HOẠT LẠI BÀI ĐĂNG ===
   const handleReactivatePost = () => {
     const targetPostId = post?.postId;
     if (!targetPostId) return alert("Không tìm thấy ID bài đăng.");
@@ -109,7 +109,7 @@ export default function PostDetailScreen() {
     const executeReactivate = async () => {
       try {
         setIsLoading(true);
-        await postApi.reactivatePost(targetPostId);
+        await postApi.reactivatePost(targetPostId); // Vẫn dùng postApi (Đúng)
         if (Platform.OS === "web") window.alert("Đã mở lại bài đăng thành công.");
         else Alert.alert("Thành công", "Đã mở lại bài đăng.");
         fetchPostData();
@@ -139,7 +139,7 @@ export default function PostDetailScreen() {
       setIsLoadingOfferData(true);
       setShowOfferModal(true);
       try {
-        const res = await postApi.getOfferById(existingOfferId);
+        const res = await offerApi.getOfferById(existingOfferId); // ĐỔI SANG offerApi
         const data = res?.data || res;
         setOfferQuantity(data.offerQuantity?.toString() || "1");
         setOfferPrice(data.offerPrice?.toString() || "");
@@ -170,7 +170,7 @@ export default function PostDetailScreen() {
     if (!valid) return;
     try {
       setIsSubmittingOffer(true);
-      await postApi.createOffer({ postId: id as string, offerPrice: valid.price, offerQuantity: valid.qty });
+      await offerApi.createOffer({ postId: id as string, offerPrice: valid.price, offerQuantity: valid.qty }); // ĐỔI SANG offerApi
       if (Platform.OS === "web") window.alert("Đã gửi đề nghị thương lượng!");
       else Alert.alert("Thành công", "Đã gửi đề nghị thương lượng!");
       setShowOfferModal(false);
@@ -190,7 +190,7 @@ export default function PostDetailScreen() {
     if (!valid) return;
     try {
       setIsSubmittingOffer(true);
-      await postApi.updateOffer(existingOfferId, { offerPrice: valid.price, offerQuantity: valid.qty });
+      await offerApi.updateOffer(existingOfferId, { offerPrice: valid.price, offerQuantity: valid.qty }); // ĐỔI SANG offerApi
       if (Platform.OS === "web") window.alert("Đã cập nhật thương lượng!");
       else Alert.alert("Thành công", "Đã cập nhật thương lượng!");
       setShowOfferModal(false);
@@ -208,7 +208,7 @@ export default function PostDetailScreen() {
     const executeCancel = async () => {
       try {
         setIsSubmittingOffer(true);
-        await postApi.cancelOffer(existingOfferId);
+        await offerApi.cancelOffer(existingOfferId); // ĐỔI SANG offerApi
         if (Platform.OS === "web") window.alert("Đã hủy thương lượng thành công.");
         else Alert.alert("Thành công", "Đã hủy thương lượng.");
         setShowOfferModal(false);
@@ -249,6 +249,7 @@ export default function PostDetailScreen() {
   const translateSpace = (s: string) => ({ Living_room: "Phòng khách", Kitchen: "Nhà bếp", Bedroom: "Phòng ngủ", Bathroom: "Phòng tắm", Laundry_room: "Phòng giặt", Balcony: "Ban công", Garage: "Garage", Restroom: "Nhà vệ sinh" }[s] || s || "Không rõ");
   const getEavValue = (attr: any) => attr.optionValue || attr.valueText || attr.valueNumber || (attr.valueBoolean !== null && attr.valueBoolean !== undefined ? (attr.valueBoolean ? "Có" : "Không") : "N/A");
 
+  // ... (Phần render UI giữ nguyên, không cần thay đổi)
   if (isLoading && !post) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -369,7 +370,7 @@ export default function PostDetailScreen() {
         </View>
       </ScrollView>
 
-      {post.status !== "Deleted" && (
+      {!isViewOnly && post.status !== "Deleted" && (
         <View style={styles.bottomBar}>
           {isMyPost ? (
             <>
