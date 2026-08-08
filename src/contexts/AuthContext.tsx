@@ -36,7 +36,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // NGĂN CHẶN GOI API PERSONAL CHO BUSINESS
         // Tạm thời set user ảo để duy trì phiên đăng nhập cho doanh nghiệp
         setUser({
-          id: "business-account",
           role: "business",
           status: "active"
         });

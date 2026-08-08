@@ -1,11 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { TouchableOpacity } from "react-native";
-import { Image } from "expo-image";
+import { TouchableOpacity, Image } from "react-native"; // ĐỔI SANG Image CỦA REACT NATIVE
 import { COLORS } from "../../constants/theme";
-import { useAuth } from "../../contexts/AuthContext"; // Nhập AuthContext
+import { useAuth } from "../../contexts/AuthContext";
 import Header from "./Header";
+
+// HÀM CHỐNG CHẶN ẢNH TỪ NHÀ MẠNG
+const getRobustUrl = (url: string) => {
+  if (url?.includes("googleusercontent.com")) {
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+};
 
 export default function MainHeader({
   title,
@@ -17,8 +24,6 @@ export default function MainHeader({
   centerContent?: React.ReactNode;
 }) {
   const router = useRouter();
-
-  // Lấy dữ liệu user từ Context
   const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
 
@@ -26,16 +31,13 @@ export default function MainHeader({
     setImageError(false);
   }, [user?.avatarUrl]);
 
-  // LOGIC XỬ LÝ AVATAR CHỐNG LỖI (Bao trọn 2 trường hợp)
   const actualAvatar = user?.avatarUrl || user?.avatar;
-
-  const isValidAvatar =
-    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
+  const isValidAvatar = actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
   const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || "U")}&background=208AEF&color=fff&size=100`;
 
   const avatarSource =
     isValidAvatar && !imageError
-      ? { uri: actualAvatar }
+      ? { uri: getRobustUrl(actualAvatar) }
       : { uri: defaultAvatar };
 
   const renderRightButtons = () => (
@@ -48,7 +50,6 @@ export default function MainHeader({
         <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
       </TouchableOpacity>
 
-      {/* KHU VỰC AVATAR CÁ NHÂN */}
       <TouchableOpacity
         onPress={() => router.push("/(tabs)/profile")}
         style={{ justifyContent: "center", alignItems: "center" }}
@@ -59,7 +60,7 @@ export default function MainHeader({
             style={{
               width: 28,
               height: 28,
-              borderRadius: 14, // Bo tròn hoàn hảo
+              borderRadius: 14,
               backgroundColor: "#E2E8F0",
               borderWidth: 1,
               borderColor: "#E2E8F0",
@@ -67,33 +68,28 @@ export default function MainHeader({
             onError={() => setImageError(true)}
           />
         ) : (
-          <Ionicons
-            name="person-circle-outline"
-            size={28}
-            color={COLORS.text}
-          />
+          <Ionicons name="person-circle-outline" size={28} color={COLORS.text} />
         )}
       </TouchableOpacity>
     </>
   );
 
-  // LOGIC MỚI: Nếu là Trang chủ, hiển thị Logo gốc
   const isHome = title === "HomeCycle";
 
   const renderLeft = isHome ? (
     <Image
       source={require("../../../assets/images/logo-dark-transparent.png")}
       style={{ width: 140, height: 32, marginLeft: 4 }}
-      contentFit="contain"
+      resizeMode="contain"
     />
   ) : null;
 
   return (
     <Header
-      title={isHome ? undefined : title} // Giấu chữ đi nếu đang hiển thị Logo
+      title={isHome ? undefined : title}
       showBack={showBack}
       centerContent={centerContent}
-      leftContent={renderLeft} // Nạp logo vào góc trái
+      leftContent={renderLeft}
       rightContent={renderRightButtons()}
     />
   );
