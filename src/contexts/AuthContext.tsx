@@ -2,12 +2,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "../services/apis/axiosClient";
+import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JWT
 
 interface AuthContextType {
   user: any | null;
   isLoading: boolean;
   userToken: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email?: string, password?: string, initialUser?: any, token?: string, refresh?: string) => Promise<void>;
   logout: () => void;
   reloadUser: () => Promise<void>;
 }
@@ -23,7 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const reloadUser = async () => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
-      const role = await AsyncStorage.getItem("userRole"); // Lấy role từ Storage
+      const role = await AsyncStorage.getItem("userRole"); 
 
       if (!token) {
         setUserToken(null);
@@ -33,13 +34,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserToken(token);
 
       if (role === "business") {
-        // NGĂN CHẶN GOI API PERSONAL CHO BUSINESS
-        // Tạm thời set user ảo để duy trì phiên đăng nhập cho doanh nghiệp
-        setUser({
-          role: "business",
-          status: "active"
-        });
-        // Tương lai nếu BE có API: apiClient.get("/business-profiles/me") thì gọi ở đây
+        // GIẢI MÃ TOKEN ĐỂ LẤY ID VÀ EMAIL
+        try {
+          const decoded: any = jwtDecode(token);
+          
+          // Claim name URL của .NET C# JWT
+          const userIdClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier";
+          const emailClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress";
+
+          const extractedUserId = decoded[userIdClaim] || decoded.sub;
+          const extractedEmail = decoded[emailClaim] || "";
+
+          // CẬP NHẬT USER VỚI ĐẦY ĐỦ ID
+          setUser({
+            id: extractedUserId,
+            userId: extractedUserId,
+            email: extractedEmail,
+            role: "business",
+            status: "active",
+            username: "Tài khoản Doanh nghiệp", // Tạm để trống/mặc định
+            avatarUrl: null // Không có avatar thì trả ra null để xài avatar mặc định
+          });
+        } catch (decodeError) {
+          console.error("Lỗi giải mã token Business:", decodeError);
+          // Fallback nếu token lỗi format
+          setUser({ role: "business", status: "active" });
+        }
+        
       } else {
         // Luồng Personal như cũ
         const profileResponse = await apiClient.get("/personal-profiles/me");
@@ -47,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setUser({
           id: profileData.userId,
+          userId: profileData.userId,
           username: profileData.username,
           email: profileData.email,
           name: profileData.fullName,
@@ -71,8 +93,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.log("[DEBUG] Lỗi reloadUser:", error.response?.status, error.message);
       
-      // FIX CỰC MẠNH: CHỈ XÓA TOKEN NẾU TRẢ VỀ 401 (Hết hạn / Sai token)
-      // Không xóa nếu bị 404 hoặc mạng chập chờn
       if (error.response?.status === 401) {
         await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
         setUserToken(null);
@@ -90,23 +110,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkLoginStatus();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  // ĐÃ FIX: Cho phép truyền tay thông tin user/token trực tiếp để dùng chung cho Register Business
+  const login = async (email?: string, password?: string, initialUser?: any, token?: string, refresh?: string) => {
     try {
-      const loginResponse = await apiClient.post("/auth/login", {
-        email,
-        password,
-      });
+      // Nhánh 1: Login trực tiếp bằng token (Dành cho sau khi Register Business)
+      if (token && initialUser) {
+        await AsyncStorage.setItem("accessToken", token);
+        if (refresh) await AsyncStorage.setItem("refreshToken", refresh);
+        await AsyncStorage.setItem("userRole", initialUser.role?.toLowerCase() || "business");
+        
+        setUserToken(token);
+        await reloadUser();
+        return;
+      }
+
+      // Nhánh 2: Login bằng API truyền thống
+      if (!email || !password) throw new Error("Thiếu email hoặc mật khẩu");
       
+      const loginResponse = await apiClient.post("/auth/login", { email, password });
       const responseData = loginResponse.data?.data || loginResponse.data;
       const { accessToken, refreshToken, role } = responseData;
       
-      // Lưu Token
       await AsyncStorage.setItem("accessToken", accessToken);
       if (refreshToken) {
         await AsyncStorage.setItem("refreshToken", refreshToken);
       }
 
-      // Lưu Role để rẽ nhánh lúc reload (Mặc định personal nếu rỗng)
       const currentRole = role ? role.toLowerCase() : "personal";
       await AsyncStorage.setItem("userRole", currentRole);
 
@@ -123,7 +152,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    // Xóa triệt để các key khi logout
     await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
     setUserToken(null);
     setUser(null);
