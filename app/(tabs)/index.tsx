@@ -41,7 +41,8 @@ export default function HomeScreen() {
       if (!isRefresh) setIsLoading(true);
 
       const [postsRes, catRes] = await Promise.all([
-        postApi.getAllPosts({ PageNumber: 1, PageSize: 50 }),
+        // Chỉ gọi API lấy tin Active
+        postApi.getAllActivePosts({ PageNumber: 1, PageSize: 50 }),
         postApi.getActiveCategories(),
       ]);
 
@@ -55,15 +56,15 @@ export default function HomeScreen() {
 
       const allPosts = postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
 
-      // CHỈ LẤY BÀI ĐĂNG CÓ STATUS LÀ "Active", tự động bỏ qua Closed, Suspended,...
-      const sells = allPosts.filter((p: any) => p.postType === "Sell" && p.status === "Active");
-      const buys = allPosts.filter((p: any) => p.postType === "Buy" && p.status === "Active");
+      // KHÔNG CẦN CHECK STATUS NỮA, BE ĐÃ LỌC SẴN ACTIVE
+      const sells = allPosts.filter((p: any) => p.postType === "Sell");
+      const buys = allPosts.filter((p: any) => p.postType === "Buy");
 
       setSellPosts(sells);
       setBuyPosts(buys);
 
-      const activePosts = allPosts.filter((p: any) => p.status === "Active");
-      const shuffled = [...activePosts].sort(() => 0.5 - Math.random());
+      // Random bài cho mục Gợi ý
+      const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
       setSuggestedPosts(shuffled.slice(0, 10)); 
     } catch (error) {
       console.error("Lỗi lấy dữ liệu trang chủ:", error);
@@ -92,7 +93,7 @@ export default function HomeScreen() {
     }
   };
 
-  // === LỌC DỮ LIỆU ===
+  // === LỌC DỮ LIỆU THEO DANH MỤC ===
   const displayedSells = activeCategoryId ? sellPosts.filter(p => p.categoryId === activeCategoryId) : sellPosts;
   const displayedBuys = activeCategoryId ? buyPosts.filter(p => p.categoryId === activeCategoryId) : buyPosts;
   const displayedSuggested = activeCategoryId ? suggestedPosts.filter(p => p.categoryId === activeCategoryId) : suggestedPosts;
@@ -123,7 +124,6 @@ export default function HomeScreen() {
       <View style={styles.imageContainer}>
         <Image source={getCoverImage(post)} style={styles.productImage} />
         
-        {/* HIỂN THỊ TÊN DANH MỤC THAY VÌ TRẠNG THÁI ACTIVE */}
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText} numberOfLines={1}>
             {post.categoryName || "Sản phẩm"}
@@ -358,12 +358,11 @@ const styles = StyleSheet.create({
   imageContainer: { position: "relative", width: "100%", aspectRatio: 1, backgroundColor: "#F1F5F9" },
   productImage: { width: "100%", height: "100%" },
   
-  // Style mới cho Badge Danh mục
   categoryBadge: { 
     position: "absolute", 
     top: 8, 
     left: 8, 
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // Nền tối trong suốt giúp chữ nổi bật
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     paddingHorizontal: 8, 
     paddingVertical: 4, 
     borderRadius: 6, 

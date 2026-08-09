@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -236,9 +237,17 @@ export default function PostsScreen() {
         activeOpacity={0.7}
         onPress={() => router.push({ pathname: "/posts/[id]", params: { id: post.postId } })}
       >
-        <View style={styles.iconBox}>
-          <Ionicons name={post.postType === "Sell" ? "cube-outline" : "megaphone-outline"} size={32} color={COLORS.primary} />
-        </View>
+        {post.medias && post.medias.length > 0 ? (
+          <Image 
+            source={{ uri: post.medias[0].url }} 
+            style={{ width: 80, height: 80, borderRadius: 8, backgroundColor: "#F0F9FF" }} 
+            resizeMode="cover" 
+          />
+        ) : (
+          <View style={styles.iconBox}>
+            <Ionicons name={post.postType === "Sell" ? "cube-outline" : "megaphone-outline"} size={32} color={COLORS.primary} />
+          </View>
+        )}
 
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={2}>{post.productName || post.description || "Không có tiêu đề"}</Text>

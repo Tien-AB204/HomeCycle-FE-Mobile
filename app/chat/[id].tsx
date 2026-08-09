@@ -1,12 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,12 +17,16 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import * as signalR from "@microsoft/signalr";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { postApi } from "../../src/services/apis/postApi";
 import { offerApi } from "../../src/services/apis/offerApi";
 import { negotiationApi } from "../../src/services/apis/negotiationApi";
+import { agreementApi } from "../../src/services/apis/agreementApi";
+import { messageApi } from "../../src/services/apis/messageApi";
 import Header from "../../src/components/shared/Header";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const getRobustAvatar = (url: string | null | undefined, name: string) => {
   const isValid = url && url !== "string" && url !== "null" && url.startsWith("http");
@@ -46,50 +49,53 @@ export default function ChatDetailScreen() {
   const currentUserId = user?.userId || user?.id;
 
   const [negotiationInfo, setNegotiationInfo] = useState<any>(null);
+  const negotiationInfoRef = useRef<any>(null); 
+
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [agreementPreview, setAgreementPreview] = useState<any>(null);
+  const [inputText, setInputText] = useState("");
 
-  // === STATE CHO MENU VÀ MODAL ===
-  const [isActionMenuVisible, setActionMenuVisible] = useState(false); // State mở Menu thao tác
+  const [isActionMenuVisible, setActionMenuVisible] = useState(false);
   const [isCounterModalVisible, setCounterModalVisible] = useState(false);
   const [counterPriceInput, setCounterPriceInput] = useState("");
   const [counterQuantityInput, setCounterQuantityInput] = useState("1");
 
-  const fetchNegotiationDetails = useCallback(async (showLoading = true) => {
+  // =================================================================
+  // 1. TẢI DỮ LIỆU TĨNH VÀ CHECK AGREEMENT TỪ PREVIEW
+  // =================================================================
+  const fetchBaseInfo = useCallback(async () => {
     if (!negotiationId || !currentUserId) return;
-    
     try {
-      if (showLoading) setIsLoading(true);
-      
       const res = await negotiationApi.getNegotiationById(negotiationId as string);
       const info = res?.data || res;
       
       let productDetails = { 
         postId: "", name: "Sản phẩm thương lượng", image: "", basePrice: 0, city: "", productTypeName: "",
-        partnerName: info?.otherPartyName, 
-        partnerAvatar: info?.otherPartyAvatarUrl
+        partnerName: info?.otherPartyName, partnerAvatar: info?.otherPartyAvatarUrl,
+        myAvatar: user?.avatarUrl || user?.avatar
       };
 
       if (info?.offerId) {
         try {
           const offerRes = await offerApi.getOfferById(info.offerId); 
           const offerData = offerRes?.data || offerRes;
+          if (offerData) {
+            const isMeSender = offerData.sender?.userId?.toLowerCase() === currentUserId.toLowerCase();
+            const meData = isMeSender ? offerData.sender : offerData.receiver;
+            const themData = isMeSender ? offerData.receiver : offerData.sender;
 
-          if (!productDetails.partnerName && offerData) {
-            const isSender = offerData.sender?.userId?.toLowerCase() === currentUserId.toLowerCase();
-            const partner = isSender ? offerData.receiver : offerData.sender;
-            
-            if (partner) {
-              productDetails.partnerName = partner.displayName || partner.username || "Đối tác giao dịch";
-              productDetails.partnerAvatar = partner.avatarUrl || partner.avatar || null;
+            if (meData?.avatarUrl) productDetails.myAvatar = meData.avatarUrl;
+            if (themData) {
+              productDetails.partnerName = themData.displayName || themData.username || productDetails.partnerName;
+              productDetails.partnerAvatar = themData.avatarUrl || themData.avatar || productDetails.partnerAvatar;
             }
           }
 
           if (offerData?.postId) {
             const postRes = await postApi.getPostById(offerData.postId); 
             const postData = postRes?.data || postRes;
-            
             productDetails.postId = postData?.postId || "";
             productDetails.name = postData?.product?.productName || postData?.productName || "Sản phẩm";
             productDetails.basePrice = postData?.basePrice || 0;
@@ -103,36 +109,213 @@ export default function ChatDetailScreen() {
       }
 
       productDetails.partnerName = productDetails.partnerName || "Đối tác giao dịch";
-      setNegotiationInfo({ ...info, ...productDetails });
+      const combinedInfo = { ...info, ...productDetails };
+      
+      // KIỂM TRA ĐƠN XÁC NHẬN
+      if (info?.negotiationStatus === "Agreed" || info?.negotiationStatus === "Accepted") {
+        try {
+          const previewRes = await agreementApi.getPreview(negotiationId as string);
+          const previewData = previewRes?.data || previewRes;
+          setAgreementPreview(previewData);
+          combinedInfo.agreementPreview = previewData;
 
-      const rawMessages = info?.messages || [];
+          // Nếu có đơn xác nhận -> Lấy thông tin đơn về để tẹo nữa render thành 1 cái tin nhắn
+          if (previewData?.hasAgreement && previewData?.agreementId) {
+            const agreementRes = await agreementApi.getAgreementById(previewData.agreementId);
+            combinedInfo.agreementData = agreementRes?.data || agreementRes;
+          }
+        } catch (error) { console.log("Lỗi khi fetch Agreement Preview:", error); }
+      }
+
+      negotiationInfoRef.current = combinedInfo; 
+      setNegotiationInfo(combinedInfo);
+
+    } catch (error) { console.error("Lỗi fetch Base Info:", error); }
+  }, [negotiationId, currentUserId, user]);
+
+
+  // =================================================================
+  // 2. TẢI TIN NHẮN & INJECT THẺ ĐƠN XÁC NHẬN VÀO LUỒNG CHAT
+  // =================================================================
+  const fetchMessagesOnly = useCallback(async () => {
+    if (!negotiationId || !currentUserId) return;
+    
+    const info = negotiationInfoRef.current;
+    if (!info) return;
+
+    try {
+      let rawMessages: any[] = [];
+      const msgRes = await messageApi.getMessages({ negotiationId: negotiationId as string, PageNumber: 1, PageSize: 50 });
+      const msgData = msgRes?.data || msgRes;
+      if (Array.isArray(msgData)) {
+        rawMessages = msgData;
+      } else if (msgData?.items && Array.isArray(msgData.items)) {
+        rawMessages = msgData.items;
+      }
+
+      // INJECT THẺ ĐƠN XÁC NHẬN VÀO RAW MESSAGES ĐỂ SORT THEO ĐÚNG THỜI GIAN
+      if (info.agreementData) {
+        rawMessages.push({
+          messageId: `agreement-card-${info.agreementData.agreementId}`,
+          senderId: info.agreementData.sellerId, // Người gửi thẻ này là Seller
+          messageType: "AgreementCard",
+          createdAt: info.agreementData.createdAt,
+          agreementData: info.agreementData
+        });
+      }
+
       const sortedMessages = [...rawMessages].sort((a: any, b: any) => {
         const timeA = new Date(a.createdAt).getTime();
         const timeB = new Date(b.createdAt).getTime();
-        if (timeA === timeB) { return (a.messageType || 0) - (b.messageType || 0); }
+        if (timeA === timeB) { 
+          const isInitialOffer = (msg: any) => msg.messageType === "Offer" || msg.messageType === 2 || (msg.messageContent && msg.messageContent.includes("Đề nghị thương lượng ban đầu"));
+          const aIsInitial = isInitialOffer(a);
+          const bIsInitial = isInitialOffer(b);
+          if (aIsInitial && !bIsInitial) return -1; 
+          if (!aIsInitial && bIsInitial) return 1;  
+          return String(a.messageType || "").localeCompare(String(b.messageType || ""));
+        }
         return timeA - timeB;
       });
       
-      const formattedMessages = sortedMessages.map((m: any, index: number) => {
+      const formattedMessages: any[] = [];
+
+      sortedMessages.forEach((m: any, index: number) => {
         const isMe = m.senderId === currentUserId;
-        return {
+
+        // 2.1 - Nếu là THẺ ĐƠN XÁC NHẬN (Inject)
+        if (m.messageType === "AgreementCard") {
+          formattedMessages.push({
+            id: m.messageId,
+            type: "agreement_card",
+            agreementId: m.agreementData.agreementId,
+            agreementData: m.agreementData,
+            sender: isMe ? "me" : "them",
+            avatar: isMe ? info.myAvatar : info.partnerAvatar,
+            senderName: isMe ? "Bạn" : info.partnerName,
+            time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isRead: true
+          });
+          return;
+        }
+
+        // 2.2 - Nếu BE trả về messageType === "Agreement" (Thông báo tạo đơn)
+        if (m.messageType === "Agreement" || m.messageType === 4) { // Assuming 4 is the enum val
+          formattedMessages.push({
+            id: m.messageId,
+            type: "system_agreed",
+            text: m.messageContent || "Đã tạo thỏa thuận mua bán, vui lòng kiểm tra và xác nhận.",
+            avatar: isMe ? info.myAvatar : info.partnerAvatar,
+            accepterName: isMe ? "Bạn" : info.partnerName
+          });
+          return;
+        }
+
+        // 2.3 - Các tin nhắn Offer và Text bình thường
+        const isOfferType = m.messageType === 2 || m.messageType === 3 || m.messageType === "Offer" || m.messageType === "CounterOffer" || m.offerPrice > 0;
+        
+        const msgObj = {
           id: m.messageId || index.toString(),
-          type: (m.messageType === 2 || m.messageType === 3 || m.offerPrice > 0) ? "offer" : "text",
+          type: isOfferType ? "offer" : "text",
           text: m.messageContent || "", 
           price: m.offerPrice || 0,
           quantity: m.offerQuantity || 1,
-          status: "pending", 
+          status: m.offerStatus ? m.offerStatus.toLowerCase() : "pending", 
+          isRead: m.isRead === true,
           sender: isMe ? "me" : "them",
+          avatar: isMe ? info.myAvatar : info.partnerAvatar,
+          senderName: isMe ? "Bạn" : info.partnerName,
           time: m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Vừa xong",
         };
+
+        formattedMessages.push(msgObj);
+
+        // Giữ lại bong bóng "Đã chấp nhận thương lượng" ngay sau Offer được duyệt
+        if (isOfferType && msgObj.status === "accepted") {
+          const isMeAccepted = !isMe; 
+          const accepterName = isMeAccepted ? "Bạn" : info.partnerName;
+          const avatarUrl = isMeAccepted ? info.myAvatar : info.partnerAvatar;
+
+          formattedMessages.push({
+            id: `system-agreed-${msgObj.id}`,
+            type: "system_agreed",
+            text: isMeAccepted ? "Bạn đã chấp nhận thương lượng" : `${accepterName} đã chấp nhận thương lượng`,
+            avatar: avatarUrl,
+            accepterName: accepterName
+          });
+        }
       });
 
       setMessages(formattedMessages);
-    } catch (error) { console.error("Lỗi:", error); } finally { if (showLoading) setIsLoading(false); }
+    } catch (error) { console.error("Lỗi fetch Messages:", error); }
   }, [negotiationId, currentUserId]);
 
-  useFocusEffect(useCallback(() => { if (currentUserId) fetchNegotiationDetails(true); }, [fetchNegotiationDetails, currentUserId]));
 
+  // =================================================================
+  // 3. KHỞI TẠO INIT VÀ KẾT NỐI SIGNALR (REAL-TIME XỊN)
+  // =================================================================
+  const initialLoad = useCallback(async () => {
+    setIsLoading(true);
+    await fetchBaseInfo();
+    await fetchMessagesOnly();
+    try {
+      await messageApi.markAsRead(negotiationId as string);
+    } catch (e) {}
+    setIsLoading(false);
+  }, [fetchBaseInfo, fetchMessagesOnly, negotiationId]);
+
+  useFocusEffect(useCallback(() => { 
+    if (currentUserId) initialLoad(); 
+  }, [initialLoad, currentUserId]));
+
+  useEffect(() => {
+    let connection: signalR.HubConnection | null = null;
+    const setupSignalR = async () => {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!negotiationId || !token) return;
+
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl("https://homecycle-backend.onrender.com/hubs/chat", {
+          accessTokenFactory: () => token
+        })
+        .withAutomaticReconnect()
+        .build();
+
+      connection.on("MessageCreated", async () => {
+        // Có tin nhắn mới, ta reload toàn bộ để lấy cả Agreement mới (nếu có)
+        await fetchBaseInfo();
+        await fetchMessagesOnly(); 
+        try { await messageApi.markAsRead(negotiationId as string); } catch (e) {}
+      });
+
+      connection.on("MessagesRead", () => {
+        fetchMessagesOnly(); 
+      });
+
+      connection.onreconnected(async () => {
+        try {
+          await connection?.invoke("JoinNegotiation", negotiationId);
+          fetchMessagesOnly();
+        } catch (e) {}
+      });
+
+      try {
+        await connection.start();
+        await connection.invoke("JoinNegotiation", negotiationId);
+      } catch (err) {}
+    };
+
+    setupSignalR();
+
+    return () => {
+      if (connection) { connection.stop(); }
+    };
+  }, [negotiationId, fetchMessagesOnly, fetchBaseInfo]);
+
+
+  // =================================================================
+  // 4. CÁC HÀM XỬ LÝ SỰ KIỆN
+  // =================================================================
   const renderProductBanner = () => (
     <TouchableOpacity style={styles.productBanner} activeOpacity={0.7} onPress={() => { if (negotiationInfo?.postId) { router.push({ pathname: "/posts/[id]", params: { id: negotiationInfo.postId, viewOnly: "true" }}); } }}>
       <Image source={{ uri: negotiationInfo?.image || "https://placehold.co/100x100/png" }} style={styles.productImg} />
@@ -167,107 +350,165 @@ export default function ChatDetailScreen() {
     setCounterPriceInput(parseInt(numericValue, 10).toLocaleString("vi-VN"));
   };
 
+  const reloadAll = async () => {
+    await fetchBaseInfo();
+    await fetchMessagesOnly();
+  };
+
   const handleAccept = async (proposalMessageId: string) => {
     try {
       setIsProcessing(true);
       await negotiationApi.acceptProposal(negotiationId as string, proposalMessageId); 
-      Alert.alert("Thành công", "Đã chấp nhận thương lượng thành công!", [
-        {
-          text: "Tiếp tục tạo hợp đồng",
-          // MOCK: Chuyển hướng sang form tạo hợp đồng
-          onPress: () => router.push(`/agreements/form?negotiationId=${negotiationId}`)
-        }
-      ]);
-      fetchNegotiationDetails(true);
-    } catch (error: any) { Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi."); } finally { setIsProcessing(false); }
+      await reloadAll(); 
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || "Lỗi.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+    } finally { setIsProcessing(false); }
   };
 
   const handleReject = async (proposalMessageId: string) => {
     try {
       setIsProcessing(true);
       await negotiationApi.rejectProposal(negotiationId as string, proposalMessageId); 
-      Alert.alert("Thành công", "Đã từ chối đề nghị.");
-      fetchNegotiationDetails(true);
-    } catch (error: any) { Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi."); } finally { setIsProcessing(false); }
+      await reloadAll();
+    } catch (error: any) { 
+      const msg = error.response?.data?.error?.message || "Lỗi.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+    } finally { setIsProcessing(false); }
   };
 
   const submitCounterOffer = async () => {
     const numPrice = parseInt(counterPriceInput.replace(/\D/g, ""));
     const numQty = parseInt(counterQuantityInput) || 1;
-    if (isNaN(numPrice) || numPrice <= 0) { Alert.alert("Lỗi", "Vui lòng nhập mức giá hợp lệ."); return; }
+    if (isNaN(numPrice) || numPrice <= 0) { 
+      Platform.OS === "web" ? window.alert("Vui lòng nhập mức giá hợp lệ.") : Alert.alert("Lỗi", "Vui lòng nhập mức giá hợp lệ.");
+      return; 
+    }
 
     try {
       setIsProcessing(true);
       await negotiationApi.counterNegotiation(negotiationId as string, { offerPrice: numPrice, offerQuantity: numQty });
-      Alert.alert("Thành công", "Đã gửi đề xuất giá mới!");
       setCounterModalVisible(false);
-      fetchNegotiationDetails(true);
-    } catch (error: any) { Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi."); } finally { setIsProcessing(false); }
+      await reloadAll();
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || "Lỗi.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+    } finally { setIsProcessing(false); }
   };
 
-  // === HÀM XỬ LÝ HỦY GIAO DỊCH ===
   const handleCancelNegotiation = () => {
-    Alert.alert(
-      "Hủy giao dịch",
-      "Bạn có chắc chắn muốn hủy phiên thương lượng này không? Hành động này không thể hoàn tác.",
-      [
+    const executeCancel = async () => {
+      try {
+        setIsProcessing(true);
+        await negotiationApi.cancelNegotiation(negotiationId as string);
+        if (Platform.OS !== "web") Alert.alert("Thành công", "Đã hủy phiên thương lượng.");
+        await reloadAll();
+      } catch (error: any) { 
+        const msg = error.response?.data?.error?.message || "Không thể hủy giao dịch.";
+        Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+      } finally { setIsProcessing(false); }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("Bạn có chắc chắn muốn hủy phiên thương lượng này không?")) executeCancel();
+    } else {
+      Alert.alert("Hủy giao dịch", "Bạn có chắc chắn muốn hủy phiên thương lượng này không?", [
         { text: "Không", style: "cancel" },
-        { 
-          text: "Hủy giao dịch", 
-          style: "destructive", 
-          onPress: async () => {
-            try {
-              setIsProcessing(true);
-              await negotiationApi.cancelNegotiation(negotiationId as string);
-              Alert.alert("Thành công", "Đã hủy phiên thương lượng.");
-              fetchNegotiationDetails(true);
-            } catch (error: any) {
-              Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Không thể hủy giao dịch.");
-            } finally {
-              setIsProcessing(false);
-            }
-          }
-        }
-      ]
-    );
+        { text: "Hủy giao dịch", style: "destructive", onPress: executeCancel }
+      ]);
+    }
   };
 
-  const formatCurrency = (value: number) => { return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0); };
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || !negotiationId) return;
+    const content = inputText.trim();
+    setInputText(""); 
+
+    try {
+      const clientMsgId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+
+      await messageApi.sendMessage(negotiationId as string, {
+        messageContent: content,
+        clientMessageId: clientMsgId
+      });
+      await fetchMessagesOnly(); 
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || "Không thể gửi tin nhắn lúc này.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+    }
+  };
+
+  const formatCurrency = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 
   const renderHeader = () => {
     const partnerName = negotiationInfo?.partnerName || "Đối tác giao dịch";
     const avatarUri = getRobustAvatar(negotiationInfo?.partnerAvatar, partnerName);
-
     const CenterComponent = (
       <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
         <Image source={{ uri: avatarUri }} style={styles.headerAvatar} />
         <View style={{ flex: 1, justifyContent: "center" }}>
           <Text style={styles.headerName} numberOfLines={1}>{partnerName}</Text>
-          {/* Vẫn giữ trạng thái để biết bị hủy hay chưa */}
           <Text style={styles.headerStatus}>Trạng thái: {negotiationInfo?.negotiationStatus || "Open"}</Text>
         </View>
       </View>
     );
-
-    const RightComponent = (
-      <TouchableOpacity style={styles.headerIcon} onPress={() => fetchNegotiationDetails(true)}><Ionicons name="reload" size={20} color={COLORS.primary} /></TouchableOpacity>
-    );
-
+    const RightComponent = ( <TouchableOpacity style={styles.headerIcon} onPress={reloadAll}><Ionicons name="reload" size={20} color={COLORS.primary} /></TouchableOpacity> );
     return <Header showBack={true} centerContent={CenterComponent} rightContent={RightComponent} />;
   };
 
   const renderMessage = ({ item }: { item: any }) => {
     const isMe = item.sender === "me";
 
-    if (item.type === "offer") {
-      const isLatestOffer = currentActiveOffer?.id === item.id;
-      const negStatus = negotiationInfo?.negotiationStatus;
-      const defaultTitle = isMe ? "Bạn đề xuất" : "Đối tác đề xuất";
-      const offerTitle = item.text && item.text.trim() !== "" ? item.text : defaultTitle;
-
+    // LOẠI 1: CENTER SYSTEM MESSAGE
+    if (item.type === "system_agreed") {
+      const avatarUri = getRobustAvatar(item.avatar, item.accepterName);
       return (
-        <View style={[styles.offerContainer, isMe ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
-          <View style={[styles.offerCard, !isLatestOffer && { opacity: 0.5 }]}>
+        <View style={styles.systemAgreedContainer}>
+          <Image source={{ uri: avatarUri }} style={styles.systemAgreedAvatar} />
+          <Text style={styles.systemAgreedText}>{item.text}</Text>
+        </View>
+      );
+    }
+
+    const avatarComponent = (
+      <Image source={{ uri: getRobustAvatar(item.avatar, item.senderName) }} style={styles.chatAvatar} />
+    );
+
+    const renderContent = () => {
+      // LOẠI 2: THẺ ĐƠN XÁC NHẬN GIAO DỊCH CHAT RA TỪ SIDES CỦA SELLER
+      if (item.type === "agreement_card") {
+        return (
+          <View style={[styles.offerCard, { width: "100%" }]}>
+            <View style={styles.offerHeader}>
+              <Ionicons name="document-text" size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.offerTitle}>Đơn xác nhận giao dịch</Text>
+            </View>
+            <View style={styles.offerPriceBox}>
+              <Text style={styles.offerPriceValue}>{formatCurrency(item.agreementData?.finalPrice)}</Text>
+              <Text style={{ color: COLORS.textLight, marginTop: 4, fontSize: 13 }}>Số lượng: {item.agreementData?.quantity}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.viewAgreementBtnFill}
+              onPress={() => router.push(`/agreements/preview?agreementId=${item.agreementId}&negotiationId=${negotiationId}`)}
+            >
+              <Text style={styles.viewAgreementBtnFillText}>Xem chi tiết</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // LOẠI 3: THẺ OFFER BÌNH THƯỜNG
+      if (item.type === "offer") {
+        const isLatestOffer = currentActiveOffer?.id === item.id;
+        const negStatus = negotiationInfo?.negotiationStatus;
+        const defaultTitle = isMe ? "Bạn đề xuất" : "Đối tác đề xuất";
+        const offerTitle = item.text && item.text.trim() !== "" ? item.text : defaultTitle;
+
+        return (
+          <View style={[styles.offerCard, (!isLatestOffer || item.status === "superseded") && { opacity: 0.6 }]}>
             <View style={styles.offerHeader}>
               <Ionicons name="pricetag" size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
               <Text style={styles.offerTitle}>{offerTitle}</Text>
@@ -277,7 +518,7 @@ export default function ChatDetailScreen() {
               <Text style={{ color: COLORS.textLight, marginTop: 4, fontSize: 13 }}>Số lượng: {item.quantity}</Text>
             </View>
 
-            {isLatestOffer && negStatus === "Open" && (
+            {isLatestOffer && negStatus === "Open" && item.status === "pending" && (
               isMe ? ( <Text style={styles.pendingText}>Đang chờ đối tác phản hồi...</Text> ) : (
                 <View style={styles.actionBlock}>
                   <View style={styles.offerActionRow}>
@@ -288,18 +529,64 @@ export default function ChatDetailScreen() {
                 </View>
               )
             )}
-            {isLatestOffer && negStatus === "Accepted" && ( <View style={styles.statusBadgeSuccess}><Ionicons name="checkmark-circle" size={16} color={COLORS.white} /><Text style={styles.statusBadgeText}>Đã chốt kèo thành công</Text></View> )}
-            {isLatestOffer && (negStatus === "Rejected" || negStatus === "Cancelled") && ( <View style={styles.statusBadgeError}><Ionicons name="close-circle" size={16} color={COLORS.white} /><Text style={styles.statusBadgeText}>Thương lượng bị hủy / từ chối</Text></View> )}
-            {!isLatestOffer && ( <Text style={styles.outdatedOfferText}>(Đề xuất cũ)</Text> )}
+            
+            {/* SAU KHI ACCEPTED -> NẾU CHƯA CÓ ĐƠN THÌ HIỆN NÚT "TẠO ĐƠN", NẾU CÓ RỒI THÌ ĐÃ CÓ MESSAGE CARD HIỆN BÊN DƯỚI RỒI NÊN ẨN ĐI */}
+            {item.status === "accepted" && (negStatus === "Accepted" || negStatus === "Agreed") && !agreementPreview?.hasAgreement && agreementPreview?.canCreate && ( 
+              <View style={styles.agreedBlock}>
+                <TouchableOpacity 
+                  style={styles.inlineCreateFormBtn}
+                  onPress={() => router.push(`/agreements/form?negotiationId=${negotiationId}`)}
+                >
+                  <Ionicons name="create-outline" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+                  <Text style={styles.inlineCreateFormBtnText}>Tạo Đơn Xác Nhận</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {item.status === "rejected" && ( 
+              <View style={styles.statusBadgeError}>
+                <Ionicons name="close-circle" size={16} color={COLORS.white} />
+                <Text style={styles.statusBadgeText}>Đã từ chối đề xuất này</Text>
+              </View> 
+            )}
+
+            {isLatestOffer && negStatus === "Cancelled" && ( 
+              <View style={styles.statusBadgeError}>
+                <Ionicons name="close-circle" size={16} color={COLORS.white} />
+                <Text style={styles.statusBadgeText}>Phiên thương lượng đã hủy</Text>
+              </View> 
+            )}
+            
+            {(!isLatestOffer || item.status === "superseded") && item.status !== "rejected" && ( <Text style={styles.outdatedOfferText}>(Đề xuất cũ)</Text> )}
           </View>
-          <Text style={[styles.timeText, isMe ? { alignSelf: "flex-end", marginRight: 8 } : { alignSelf: "flex-start", marginLeft: 8 }]}>{item.time}</Text>
+        );
+      }
+
+      // LOẠI 4: TEXT BÌNH THƯỜNG
+      return (
+        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+          <Text style={[styles.messageText, isMe ? styles.messageTextMe : styles.messageTextThem]}>{item.text}</Text>
         </View>
       );
-    }
+    };
+
     return (
-      <View style={[styles.messageRow, isMe ? styles.messageRowMe : styles.messageRowThem]}>
-        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}><Text style={[styles.messageText, isMe ? styles.messageTextMe : styles.messageTextThem]}>{item.text}</Text></View>
-        <Text style={[styles.timeText, isMe ? { alignSelf: "flex-end", marginRight: 4 } : { alignSelf: "flex-start", marginLeft: 4 }]}>{item.time}</Text>
+      <View style={[styles.messageWrapper, isMe ? styles.messageWrapperMe : styles.messageWrapperThem]}>
+        {!isMe && avatarComponent}
+        <View style={[styles.messageContentBlock, (item.type === "offer" || item.type === "agreement_card") ? { width: "75%" } : { maxWidth: "78%" }]}>
+          {renderContent()}
+          <View style={[styles.timeRow, isMe ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
+            <Text style={styles.timeText}>{item.time}</Text>
+            {isMe && (
+              <Ionicons
+                name={item.isRead ? "checkmark-done" : "checkmark"}
+                size={14}
+                color={item.isRead ? COLORS.primary : COLORS.textLight}
+                style={styles.readIcon}
+              />
+            )}
+          </View>
+        </View>
       </View>
     );
   };
@@ -315,69 +602,66 @@ export default function ChatDetailScreen() {
         )}
 
         <View style={styles.inputContainer}>
-          {negotiationInfo?.negotiationStatus === "Open" ? (
-            // ĐỔI ICON Ở ĐÂY VÀ GỌI MENU
-            <TouchableOpacity style={styles.attachBtn} onPress={() => setActionMenuVisible(true)}>
-              <Ionicons name="add-circle-outline" size={28} color={COLORS.primary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={[styles.attachBtn, { opacity: 0.5 }]}>
-              <Ionicons name="add-circle-outline" size={28} color={COLORS.textLight} />
-            </View>
-          )}
-          <View style={[styles.textInput, { justifyContent: 'center', backgroundColor: '#F1F5F9' }]}><Text style={{ color: COLORS.textLight, fontStyle: 'italic', fontSize: 14 }}>Tính năng nhắn tin đang phát triển...</Text></View>
-          <View style={[styles.sendBtn, { backgroundColor: COLORS.border }]}><Ionicons name="send" size={18} color={COLORS.white} /></View>
+          <TouchableOpacity style={styles.attachBtn} onPress={() => setActionMenuVisible(true)}>
+            <Ionicons name="add-circle-outline" size={28} color={COLORS.primary} />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Nhập tin nhắn..."
+            placeholderTextColor={COLORS.textLight}
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSendMessage}
+            blurOnSubmit={false}
+            {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSendMessage}>
+            <Ionicons name="send" size={18} color={COLORS.white} />
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
-      {/* === MODAL MENU THAO TÁC (NÚT DẤU CỘNG) === */}
       <Modal visible={isActionMenuVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={() => setActionMenuVisible(false)}>
           <View style={styles.menuSheetContent}>
-            
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => {
-                setActionMenuVisible(false);
-                openCounterModal();
-              }}
-            >
-              <Ionicons name="pricetag-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.menuItemText}>Đề xuất giá mới</Text>
-            </TouchableOpacity>
+            {negotiationInfo?.negotiationStatus === "Open" && (
+              <>
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setActionMenuVisible(false); openCounterModal(); }}>
+                  <Ionicons name="pricetag-outline" size={22} color={COLORS.primary} />
+                  <Text style={styles.menuItemText}>Đề xuất giá mới</Text>
+                </TouchableOpacity>
+                <View style={styles.menuDivider} />
+              </>
+            )}
 
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => {
-                setActionMenuVisible(false);
-                handleCancelNegotiation();
-              }}
-            >
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setActionMenuVisible(false); handleCancelNegotiation(); }}>
               <Ionicons name="close-circle-outline" size={22} color={COLORS.error} />
               <Text style={[styles.menuItemText, { color: COLORS.error }]}>Hủy giao dịch</Text>
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            {agreementPreview?.canCreate && !agreementPreview?.hasAgreement && (
+              <>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setActionMenuVisible(false); router.push(`/agreements/form?negotiationId=${negotiationId}`); }}>
+                  <Ionicons name="document-text-outline" size={22} color={COLORS.primary} />
+                  <Text style={styles.menuItemText}>Tạo đơn xác nhận</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
-            {/* === NÚT MOCK TẠO ĐƠN === */}
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => {
-                setActionMenuVisible(false);
-                router.push(`/agreements/form?negotiationId=${negotiationId}`);
-              }}
-            >
-              <Ionicons name="document-text-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.menuItemText}>Tạo đơn xác nhận (Mock)</Text>
-            </TouchableOpacity>
-
+            {agreementPreview?.hasAgreement && (
+              <>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setActionMenuVisible(false); router.push(`/agreements/preview?agreementId=${agreementPreview.agreementId}&negotiationId=${negotiationId}`); }}>
+                  <Ionicons name="eye-outline" size={22} color={COLORS.primary} />
+                  <Text style={styles.menuItemText}>Xem chi tiết đơn xác nhận</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* === MODAL ĐỀ XUẤT GIÁ === */}
       <Modal visible={isCounterModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -385,34 +669,14 @@ export default function ChatDetailScreen() {
               <Text style={styles.modalTitle}>Đề xuất mức giá mới</Text>
               <TouchableOpacity onPress={() => setCounterModalVisible(false)}><Ionicons name="close" size={24} color={COLORS.text} /></TouchableOpacity>
             </View>
-
             <View style={styles.inputGroup}>
-              <TextInput
-                style={styles.priceInput}
-                placeholder={currentActiveOffer ? currentActiveOffer.price.toLocaleString("vi-VN") : "Ví dụ: 1.500.000"}
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                value={counterPriceInput}
-                onChangeText={handlePriceChange}
-                selectTextOnFocus={true} 
-                autoFocus
-              />
+              <TextInput style={styles.priceInput} placeholder={currentActiveOffer ? currentActiveOffer.price.toLocaleString("vi-VN") : "Ví dụ: 1.500.000"} placeholderTextColor="#94A3B8" keyboardType="number-pad" value={counterPriceInput} onChangeText={handlePriceChange} selectTextOnFocus={true} autoFocus />
               <Text style={styles.currencyLabel}>VNĐ</Text>
             </View>
-
             <View style={[styles.inputGroup, { marginBottom: 24 }]}>
-              <TextInput
-                style={[styles.priceInput, { fontSize: 16 }]}
-                placeholder={currentActiveOffer ? currentActiveOffer.quantity.toString() : "1"}
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                value={counterQuantityInput}
-                onChangeText={setCounterQuantityInput}
-                selectTextOnFocus={true} 
-              />
+              <TextInput style={[styles.priceInput, { fontSize: 16 }]} placeholder={currentActiveOffer ? currentActiveOffer.quantity.toString() : "1"} placeholderTextColor="#94A3B8" keyboardType="number-pad" value={counterQuantityInput} onChangeText={setCounterQuantityInput} selectTextOnFocus={true} />
               <Text style={styles.currencyLabel}>SL</Text>
             </View>
-
             <TouchableOpacity style={styles.submitOfferBtn} onPress={submitCounterOffer} disabled={isProcessing}>
               {isProcessing ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.submitOfferText}>Gửi Đề Xuất</Text>}
             </TouchableOpacity>
@@ -428,28 +692,38 @@ const styles = StyleSheet.create({
   mobileWrapper: { flex: 1, backgroundColor: COLORS.background, ...(Platform.OS === "web" ? ({ boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any) : {}), },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10, borderWidth: 1, borderColor: "#E2E8F0" },
   headerName: { fontSize: 16, fontWeight: "700", color: COLORS.text },
-  headerStatus: { fontSize: 12, color: COLORS.textLight, marginTop: 2 }, // Khôi phục CSS trạng thái để hiển thị lúc Cancelled
+  headerStatus: { fontSize: 12, color: COLORS.textLight, marginTop: 2 },
   headerIcon: { padding: 8 },
   productBanner: { flexDirection: "row", alignItems: "center", backgroundColor: COLORS.white, padding: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", elevation: 2, },
   productImg: { width: 40, height: 40, borderRadius: 6, marginRight: 10 },
   productInfo: { flex: 1 },
   productName: { fontSize: 13, fontWeight: "600", color: COLORS.text },
   productPrice: { fontSize: 13, color: COLORS.textLight, fontWeight: "600", marginTop: 4, },
-  chatList: { padding: 16, paddingBottom: 24 },
-  dateSeparator: { alignSelf: "center", backgroundColor: "#E2E8F0", color: COLORS.textLight, fontSize: 11, fontWeight: "600", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: "hidden", marginBottom: 16, },
-  systemText: { alignSelf: "center", backgroundColor: "#E9F0F0", color: COLORS.primary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, overflow: "hidden", marginBottom: 16, textAlign: "center", maxWidth: "90%", },
-  messageRow: { marginBottom: 16, maxWidth: "80%" },
-  messageRowMe: { alignSelf: "flex-end", alignItems: "flex-end" },
-  messageRowThem: { alignSelf: "flex-start", alignItems: "flex-start" },
+  chatList: { paddingHorizontal: 12, paddingVertical: 16, paddingBottom: 24 }, 
+  dateSeparator: { alignSelf: "center", backgroundColor: "#E9F0F0", color: COLORS.textLight, fontSize: 11, fontWeight: "600", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: "hidden", marginBottom: 16, },
+  
+  systemAgreedContainer: { flexDirection: "row", alignItems: "center", alignSelf: "center", backgroundColor: "#E9F0F0", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginBottom: 16 },
+  systemAgreedAvatar: { width: 22, height: 22, borderRadius: 11, marginRight: 8 },
+  systemAgreedText: { color: COLORS.primary, fontSize: 13, fontWeight: "600" },
+
+  messageWrapper: { flexDirection: "row", marginBottom: 16, alignItems: "flex-start", width: "100%" },
+  messageWrapperMe: { justifyContent: "flex-end" },
+  messageWrapperThem: { justifyContent: "flex-start" },
+  chatAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8, marginTop: 2 }, 
+  messageContentBlock: {}, 
+
   bubble: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20 },
   bubbleMe: { backgroundColor: COLORS.primary, borderBottomRightRadius: 4 },
   bubbleThem: { backgroundColor: "#EAEAEA", borderBottomLeftRadius: 4 },
   messageText: { fontSize: 15, lineHeight: 22 },
   messageTextMe: { color: COLORS.white },
   messageTextThem: { color: COLORS.text },
-  timeText: { fontSize: 11, color: COLORS.textLight, marginTop: 4 },
-  offerContainer: { width: "85%", marginBottom: 16 },
-  offerCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, },
+  
+  timeRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  timeText: { fontSize: 11, color: COLORS.textLight },
+  readIcon: { marginLeft: 4, marginTop: 1 },
+  
+  offerCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, width: "100%" },
   offerHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   offerTitle: { flex: 1, fontSize: 16, fontWeight: "700", color: COLORS.text }, 
   offerPriceBox: { backgroundColor: "#F8FAFC", padding: 12, borderRadius: 8, marginBottom: 12, alignItems: "center", },
@@ -464,26 +738,51 @@ const styles = StyleSheet.create({
   counterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: "700" },
   pendingText: { fontSize: 13, color: COLORS.textLight, fontStyle: "italic", textAlign: "center", },
   outdatedOfferText: { fontSize: 12, color: COLORS.textLight, textAlign: "center", marginTop: 8 }, 
-  statusBadgeSuccess: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#388E3C", paddingVertical: 8, borderRadius: 8, gap: 6, },
   statusBadgeError: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: COLORS.error, paddingVertical: 8, borderRadius: 8, gap: 6, },
   statusBadgeText: { color: COLORS.white, fontWeight: "700", fontSize: 13 },
+  
+  agreedBlock: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  inlineCreateFormBtn: { flexDirection: "row", backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  inlineCreateFormBtnText: { color: COLORS.white, fontSize: 14, fontWeight: "bold" },
+  
+  viewAgreementBtnFill: { backgroundColor: COLORS.primary, paddingVertical: 10, borderRadius: 8, alignItems: "center", marginTop: 8 },
+  viewAgreementBtnFillText: { color: COLORS.white, fontSize: 14, fontWeight: "bold" },
+
   inputContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border, },
   attachBtn: { marginRight: 8, padding: 4 },
-  textInput: { flex: 1, backgroundColor: COLORS.background, minHeight: 40, maxHeight: 100, borderRadius: 20, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border, },
-  sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.text, justifyContent: "center", alignItems: "center", marginLeft: 8, },
+  textInput: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    textAlignVertical: "center",
+    ...(Platform.OS === "web" ? { 
+      outlineStyle: "none", 
+      lineHeight: "40px", 
+      paddingTop: 0,
+      paddingBottom: 0
+    } as any : {
+      paddingVertical: 0
+    }),
+  },
+  sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, justifyContent: "center", alignItems: "center", marginLeft: 8, },
+  
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end", },
   modalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, minHeight: 300, },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, },
   modalTitle: { fontSize: 18, fontWeight: "700", color: COLORS.text },
   modalDesc: { fontSize: 14, color: COLORS.textLight, marginBottom: 24 },
   inputGroup: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 16, height: 56, marginBottom: 16, backgroundColor: COLORS.background, },
-  priceInput: { flex: 1, fontSize: 20, fontWeight: "700", color: COLORS.primary, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}), } as any,
+  priceInput: { flex: 1, fontSize: 20, fontWeight: "700", color: COLORS.primary, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}), } as any,
   currencyLabel: { fontSize: 16, fontWeight: "700", color: COLORS.textLight, marginLeft: 8, },
   submitOfferBtn: { height: 50, backgroundColor: COLORS.primary, borderRadius: 12, justifyContent: "center", alignItems: "center", },
   submitOfferText: { color: COLORS.white, fontSize: 16, fontWeight: "700" },
   productSubText: { fontSize: 12, color: COLORS.textLight, marginTop: 2, },
-  
-  // === STYLE MỚI CHO ACTION MENU ===
   menuOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)", justifyContent: "flex-end", },
   menuSheetContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: Platform.OS === "ios" ? 40 : 20, },
   menuItem: { flexDirection: "row", alignItems: "center", paddingVertical: 16, },

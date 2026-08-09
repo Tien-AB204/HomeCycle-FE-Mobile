@@ -84,22 +84,37 @@ export default function ChatListScreen() {
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
+  // ĐÃ FIX: Xử lý Alert.alert bị vô hiệu hóa sự kiện onPress trên Web
   const handleAcceptOffer = async (offerId: string) => {
     const executeAccept = async () => {
       try {
         setIsProcessingAction(true);
         await offerApi.acceptOffer(offerId);
-        Alert.alert("Thành công", "Đã chấp nhận thương lượng! Phòng chat đã được mở.");
+        
+        if (Platform.OS === "web") {
+          window.alert("Đã chấp nhận thương lượng! Phòng chat đã được mở.");
+        } else {
+          Alert.alert("Thành công", "Đã chấp nhận thương lượng! Phòng chat đã được mở.");
+        }
+        
         fetchData();
       } catch (error: any) {
-        Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi đồng ý.");
+        const errorMsg = error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi đồng ý.";
+        Platform.OS === "web" ? window.alert(errorMsg) : Alert.alert("Lỗi", errorMsg);
       } finally { setIsProcessingAction(false); }
     };
-    Alert.alert("Xác nhận", "Bạn đồng ý mở phiên thương lượng với mức giá này?", [
-      { text: "Hủy", style: "cancel" }, { text: "Đồng ý", onPress: executeAccept },
-    ]);
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Bạn đồng ý mở phiên thương lượng với mức giá này?");
+      if (confirmed) executeAccept();
+    } else {
+      Alert.alert("Xác nhận", "Bạn đồng ý mở phiên thương lượng với mức giá này?", [
+        { text: "Hủy", style: "cancel" }, { text: "Đồng ý", onPress: executeAccept },
+      ]);
+    }
   };
 
+  // ĐÃ FIX: Xử lý Alert.alert bị vô hiệu hóa sự kiện onPress trên Web
   const handleRejectOffer = async (offerId: string) => {
     const executeReject = async () => {
       try {
@@ -107,12 +122,19 @@ export default function ChatListScreen() {
         await offerApi.rejectOffer(offerId);
         fetchData(); 
       } catch (error: any) {
-        Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi từ chối.");
+        const errorMsg = error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi từ chối.";
+        Platform.OS === "web" ? window.alert(errorMsg) : Alert.alert("Lỗi", errorMsg);
       } finally { setIsProcessingAction(false); }
     };
-    Alert.alert("Xác nhận", "Từ chối đề nghị này?", [
-      { text: "Hủy", style: "cancel" }, { text: "Từ chối", style: "destructive", onPress: executeReject },
-    ]);
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Từ chối đề nghị này?");
+      if (confirmed) executeReject();
+    } else {
+      Alert.alert("Xác nhận", "Từ chối đề nghị này?", [
+        { text: "Hủy", style: "cancel" }, { text: "Từ chối", style: "destructive", onPress: executeReject },
+      ]);
+    }
   };
 
   const handleOpenCounterModal = (offer: any) => {
@@ -129,17 +151,25 @@ export default function ChatListScreen() {
     const qty = parseInt(counterQuantity);
 
     if (isNaN(price) || price <= 0 || isNaN(qty) || qty <= 0) {
-      Alert.alert("Lỗi", "Vui lòng nhập giá và số lượng hợp lệ."); return;
+      Platform.OS === "web" ? window.alert("Vui lòng nhập giá và số lượng hợp lệ.") : Alert.alert("Lỗi", "Vui lòng nhập giá và số lượng hợp lệ."); 
+      return;
     }
 
     try {
       setIsProcessingAction(true);
       await offerApi.counterInitialOffer(selectedOffer.offerId, { offerPrice: price, offerQuantity: qty, messageContent: counterMessage });
-      Alert.alert("Thành công", "Đã gửi đề xuất giá mới thành công!");
+      
+      if (Platform.OS === "web") {
+        window.alert("Đã gửi đề xuất giá mới thành công!");
+      } else {
+        Alert.alert("Thành công", "Đã gửi đề xuất giá mới thành công!");
+      }
+
       setShowCounterModal(false);
       fetchData();
     } catch (error: any) {
-      Alert.alert("Lỗi", error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi gửi đề xuất.");
+      const errorMsg = error.response?.data?.error?.message || error.response?.data?.message || "Lỗi khi gửi đề xuất.";
+      Platform.OS === "web" ? window.alert(errorMsg) : Alert.alert("Lỗi", errorMsg);
     } finally { setIsProcessingAction(false); }
   };
 
@@ -170,7 +200,8 @@ export default function ChatListScreen() {
   const renderOfferItem = ({ item }: { item: any }) => {
     const isMySentOffer = item.senderId === (user?.userId || user?.id);
     const partnerName = isMySentOffer ? item.receiverName : item.senderName;
-    const avatarUri = getRobustAvatar(null, partnerName || "Đối tác");
+    const partnerAvatarUrl = isMySentOffer ? item.receiverAvatarUrl : item.senderAvatarUrl;
+    const avatarUri = getRobustAvatar(partnerAvatarUrl, partnerName || "Đối tác");
     const timeString = item.createdAt ? new Date(item.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }) : "";
 
     return (

@@ -53,7 +53,11 @@ export default function PostDetailScreen() {
       if (user && resPost?.data?.ownerId !== currentUserId) {
         const resOffers = await offerApi.getSentOffers({ PageSize: 50, PageNumber: 1 }); // ĐỔI SANG offerApi
         const items = resOffers?.data?.items || [];
-        const pendingOffer = items.find((o: any) => o.postId === id && o.offerStatus === 0);
+        // SỬA LẠI ĐIỀU KIỆN TÌM KIẾM Ở ĐÂY
+        const pendingOffer = items.find((o: any) => 
+          o.postId === id && 
+          (o.offerStatus === 0 || o.offerStatus === "Pending" || o.offerStatus === "pending")
+        );
         if (pendingOffer) setExistingOfferId(pendingOffer.offerId);
         else setExistingOfferId(null);
       }
@@ -301,7 +305,8 @@ export default function PostDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.productName}>{post.productName}</Text>
+          {/* Lấy tên trong cục product (p), nếu không có mới lấy ở ngoài */}
+          <Text style={styles.productName}>{p.productName || post.productName || "Sản phẩm chưa cập nhật tên"}</Text>
           <View style={styles.priceRow}>
             <Text style={styles.price}>{formatPrice(post.basePrice)}</Text>
             {p.originalPrice ? <Text style={styles.originalPrice}>{formatPrice(p.originalPrice)}</Text> : null}
@@ -323,7 +328,7 @@ export default function PostDetailScreen() {
             {p.modelNumber && (<View style={[styles.specItem, { width: "100%" }]}><Ionicons name="barcode-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Mã Model</Text><Text style={styles.specValue}>{p.modelNumber}</Text></View></View>)}
             {p.functionalityStatus && (<View style={styles.specItem}><Ionicons name="build-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Tình trạng</Text><Text style={styles.specValue}>{translateFuncStatus(p.functionalityStatus)}</Text></View></View>)}
             {p.damageLevel && (<View style={styles.specItem}><Ionicons name="bandage-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Hư hại</Text><Text style={styles.specValue}>{translateDamage(p.damageLevel)}</Text></View></View>)}
-            {p.usageDuration && (<View style={styles.specItem}><Ionicons name="time-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Thời gian SD</Text><Text style={styles.specValue}>{p.usageDuration} tháng</Text></View></View>)}
+            {p.usageDuration && (<View style={styles.specItem}><Ionicons name="time-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Thời gian SD</Text><Text style={styles.specValue}>{p.usageDuration} năm</Text></View></View>)}
             {p.spaceUsage && (<View style={styles.specItem}><Ionicons name="home-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Không gian</Text><Text style={styles.specValue}>{translateSpace(p.spaceUsage)}</Text></View></View>)}
             {(p.length || p.width || p.height) && (<View style={styles.specItem}><Ionicons name="expand-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Kích thước (DxRxC)</Text><Text style={styles.specValue}>{p.length || 0} x {p.width || 0} x {p.height || 0} cm</Text></View></View>)}
             {p.weight && (<View style={styles.specItem}><Ionicons name="barbell-outline" size={18} color={COLORS.textLight} /><View style={styles.specContent}><Text style={styles.specLabel}>Khối lượng</Text><Text style={styles.specValue}>{p.weight} kg</Text></View></View>)}
@@ -401,9 +406,18 @@ export default function PostDetailScreen() {
                   <Ionicons name="cart-outline" size={20} color={COLORS.primary} />
                   <Text style={styles.cartBtnText}>Thêm giỏ hàng</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.negotiateBtn, existingOfferId ? { backgroundColor: "#0F172A" } : {}]} onPress={handleOpenOffer}>
-                  <Ionicons name="chatbubbles" size={20} color={COLORS.white} />
-                  <Text style={styles.negotiateBtnText}>Thương lượng</Text>
+                <TouchableOpacity 
+                  style={[styles.negotiateBtn, existingOfferId ? { backgroundColor: "#0F172A" } : {}]} 
+                  onPress={handleOpenOffer}
+                >
+                  <Ionicons 
+                    name={existingOfferId ? "create-outline" : "chatbubbles"} 
+                    size={20} 
+                    color={COLORS.white} 
+                  />
+                  <Text style={styles.negotiateBtnText}>
+                    {existingOfferId ? "Sửa đề nghị" : "Thương lượng"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : (

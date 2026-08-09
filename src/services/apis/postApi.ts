@@ -5,8 +5,15 @@ export const postApi = {
   // 1. QUẢN LÝ TIN ĐĂNG (POSTS)
   // ==========================================
   
-  getAllPosts: async (params?: any) => {
-    const response = await apiClient.get('/posts/get-all', { params });
+  // Lấy tất cả bài đăng (Bao gồm cả các trạng thái khác)
+  // getAllPosts: async (params?: any) => {
+  //   const response = await apiClient.get('/posts/get-all', { params });
+  //   return response.data;
+  // },
+
+  // THÊM MỚI: Chỉ lấy danh sách bài đăng đang hoạt động (cho trang chủ)
+  getAllActivePosts: async (params?: any) => {
+    const response = await apiClient.get('/posts/get-all-active', { params });
     return response.data;
   },
 
