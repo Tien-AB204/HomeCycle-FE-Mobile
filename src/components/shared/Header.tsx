@@ -22,7 +22,7 @@ export default function Header({
   rightContent,
 }: HeaderProps) {
   const router = useRouter();
-  
+
   // 2. Lấy thông số safe area phía trên của thiết bị
   const insets = useSafeAreaInsets();
 
@@ -37,7 +37,12 @@ export default function Header({
 
   return (
     // Đã đổi height thành 60 + insets.top để đạt chuẩn 60px
-    <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top }]}>
+    <View
+      style={[
+        styles.header,
+        { paddingTop: insets.top, height: 60 + insets.top },
+      ]}
+    >
       <View style={styles.headerLeft}>
         {showBack && (
           <TouchableOpacity onPress={handleBack} style={styles.backButton}>

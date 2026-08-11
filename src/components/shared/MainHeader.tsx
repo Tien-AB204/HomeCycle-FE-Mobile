@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { TouchableOpacity, Image } from "react-native"; // ĐỔI SANG Image CỦA REACT NATIVE
+import { Image, TouchableOpacity } from "react-native"; // ĐỔI SANG Image CỦA REACT NATIVE
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import Header from "./Header";
@@ -32,7 +32,8 @@ export default function MainHeader({
   }, [user?.avatarUrl]);
 
   const actualAvatar = user?.avatarUrl || user?.avatar;
-  const isValidAvatar = actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
+  const isValidAvatar =
+    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
   const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || "U")}&background=208AEF&color=fff&size=100`;
 
   const avatarSource =
@@ -68,7 +69,11 @@ export default function MainHeader({
             onError={() => setImageError(true)}
           />
         ) : (
-          <Ionicons name="person-circle-outline" size={28} color={COLORS.text} />
+          <Ionicons
+            name="person-circle-outline"
+            size={28}
+            color={COLORS.text}
+          />
         )}
       </TouchableOpacity>
     </>

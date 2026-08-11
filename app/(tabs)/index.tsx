@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Platform,
   RefreshControl,
@@ -13,11 +14,23 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
-  FlatList,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
-import { postApi } from "../../src/services/apis/postApi";
+import apiClient from "../../src/services/apis/axiosClient";
+
+const postApi = {
+  getAllActivePosts: (params?: any) =>
+    apiClient
+      .get("/posts/get-all-active", { params })
+      .then((response) => response.data),
+  getActiveCategories: () =>
+    apiClient
+      .get("/categories/active", {
+        params: { PageSize: 100, PageNumber: 1 },
+      })
+      .then((response) => response.data),
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -41,7 +54,8 @@ export default function HomeScreen() {
       if (!isRefresh) setIsLoading(true);
 
       const [postsRes, catRes] = await Promise.all([
-        postApi.getAllPosts({ PageNumber: 1, PageSize: 50 }),
+        // Chỉ gọi API lấy tin Active
+        postApi.getAllActivePosts({ PageNumber: 1, PageSize: 50 }),
         postApi.getActiveCategories(),
       ]);
 
@@ -53,18 +67,19 @@ export default function HomeScreen() {
         setCategories(catRes);
       }
 
-      const allPosts = postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
+      const allPosts =
+        postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
 
-      // CHỈ LẤY BÀI ĐĂNG CÓ STATUS LÀ "Active", tự động bỏ qua Closed, Suspended,...
-      const sells = allPosts.filter((p: any) => p.postType === "Sell" && p.status === "Active");
-      const buys = allPosts.filter((p: any) => p.postType === "Buy" && p.status === "Active");
+      // KHÔNG CẦN CHECK STATUS NỮA, BE ĐÃ LỌC SẴN ACTIVE
+      const sells = allPosts.filter((p: any) => p.postType === "Sell");
+      const buys = allPosts.filter((p: any) => p.postType === "Buy");
 
       setSellPosts(sells);
       setBuyPosts(buys);
 
-      const activePosts = allPosts.filter((p: any) => p.status === "Active");
-      const shuffled = [...activePosts].sort(() => 0.5 - Math.random());
-      setSuggestedPosts(shuffled.slice(0, 10)); 
+      // Random bài cho mục Gợi ý
+      const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
+      setSuggestedPosts(shuffled.slice(0, 10));
     } catch (error) {
       console.error("Lỗi lấy dữ liệu trang chủ:", error);
     } finally {
@@ -92,10 +107,16 @@ export default function HomeScreen() {
     }
   };
 
-  // === LỌC DỮ LIỆU ===
-  const displayedSells = activeCategoryId ? sellPosts.filter(p => p.categoryId === activeCategoryId) : sellPosts;
-  const displayedBuys = activeCategoryId ? buyPosts.filter(p => p.categoryId === activeCategoryId) : buyPosts;
-  const displayedSuggested = activeCategoryId ? suggestedPosts.filter(p => p.categoryId === activeCategoryId) : suggestedPosts;
+  // === LỌC DỮ LIỆU THEO DANH MỤC ===
+  const displayedSells = activeCategoryId
+    ? sellPosts.filter((p) => p.categoryId === activeCategoryId)
+    : sellPosts;
+  const displayedBuys = activeCategoryId
+    ? buyPosts.filter((p) => p.categoryId === activeCategoryId)
+    : buyPosts;
+  const displayedSuggested = activeCategoryId
+    ? suggestedPosts.filter((p) => p.categoryId === activeCategoryId)
+    : suggestedPosts;
 
   // === FORMATTERS ===
   const formatPrice = (price: number) => {
@@ -107,11 +128,15 @@ export default function HomeScreen() {
     if (post.medias && post.medias.length > 0) {
       return { uri: post.medias[0].url || post.medias[0].mediaUrl };
     }
-    return { uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image" };
+    return {
+      uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image",
+    };
   };
 
   const getFullAddress = (post: any) => {
-    return [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
+    return [post.streetAddress, post.ward, post.city]
+      .filter(Boolean)
+      .join(", ");
   };
 
   // ================= RENDER CARD =================
@@ -122,8 +147,7 @@ export default function HomeScreen() {
     >
       <View style={styles.imageContainer}>
         <Image source={getCoverImage(post)} style={styles.productImage} />
-        
-        {/* HIỂN THỊ TÊN DANH MỤC THAY VÌ TRẠNG THÁI ACTIVE */}
+
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText} numberOfLines={1}>
             {post.categoryName || "Sản phẩm"}
@@ -132,15 +156,23 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{post.productName || post.description}</Text>
-        <Text style={styles.productPrice}>{formatPrice(post.basePrice || post.expectedPrice)}</Text>
+        <Text style={styles.productName} numberOfLines={2}>
+          {post.productName || post.description}
+        </Text>
+        <Text style={styles.productPrice}>
+          {formatPrice(post.basePrice || post.expectedPrice)}
+        </Text>
 
         <Text style={styles.metaText} numberOfLines={1}>
           SL: {post.remainingQuantity}/{post.quantity} • {post.deliveryMethod}
         </Text>
-        
+
         <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={12} color={COLORS.textLight} />
+          <Ionicons
+            name="location-outline"
+            size={12}
+            color={COLORS.textLight}
+          />
           <Text style={styles.locationText} numberOfLines={1}>
             {getFullAddress(post)}
           </Text>
@@ -155,10 +187,11 @@ export default function HomeScreen() {
     if (name.includes("điện máy")) return "tv-outline";
     if (name.includes("nội thất")) return "bed-outline";
     if (name.includes("đồ chơi")) return "apps-outline";
-    if (name.includes("lặt vặt") || name.includes("nhỏ lẻ")) return "cube-outline";
+    if (name.includes("lặt vặt") || name.includes("nhỏ lẻ"))
+      return "cube-outline";
     if (name.includes("quần áo")) return "shirt-outline";
     if (name.includes("sinh hoạt")) return "basket-outline";
-    return "grid-outline"; 
+    return "grid-outline";
   };
 
   return (
@@ -167,28 +200,51 @@ export default function HomeScreen() {
         <MainHeader title="HomeCycle" />
 
         {isLoading ? (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <View
+            style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+          >
             <ActivityIndicator size="large" color={COLORS.primary} />
           </View>
         ) : (
           <ScrollView
             style={styles.container}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                colors={[COLORS.primary]}
+              />
+            }
           >
             {/* Thanh tìm kiếm */}
             <View style={styles.searchContainer}>
               <TouchableOpacity
-                style={[styles.searchInput, { flexDirection: "row", alignItems: "center" }]}
+                style={[
+                  styles.searchInput,
+                  { flexDirection: "row", alignItems: "center" },
+                ]}
                 onPress={() => router.push("/search")}
               >
-                <Ionicons name="search" size={20} color={COLORS.textLight} style={{ marginRight: 8 }} />
+                <Ionicons
+                  name="search"
+                  size={20}
+                  color={COLORS.textLight}
+                  style={{ marginRight: 8 }}
+                />
                 <Text style={{ color: COLORS.textLight, fontSize: 14 }}>
                   Bạn đang tìm món đồ cũ nào?
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.filterButton} onPress={() => router.push("/search")}>
-                <Ionicons name="options-outline" size={20} color={COLORS.white} />
+              <TouchableOpacity
+                style={styles.filterButton}
+                onPress={() => router.push("/search")}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={20}
+                  color={COLORS.white}
+                />
               </TouchableOpacity>
             </View>
 
@@ -196,8 +252,13 @@ export default function HomeScreen() {
             <View style={styles.bannerContainer}>
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>Thanh lý nhanh chóng</Text>
-                <Text style={styles.bannerSubtitle}>Kết nối trực tiếp với các doanh nghiệp thu mua uy tín.</Text>
-                <TouchableOpacity style={styles.bannerButton} onPress={() => router.push("/posts/post-form")}>
+                <Text style={styles.bannerSubtitle}>
+                  Kết nối trực tiếp với các doanh nghiệp thu mua uy tín.
+                </Text>
+                <TouchableOpacity
+                  style={styles.bannerButton}
+                  onPress={() => router.push("/posts/post-form")}
+                >
                   <Text style={styles.bannerButtonText}>Đăng tin bán ngay</Text>
                 </TouchableOpacity>
               </View>
@@ -213,7 +274,11 @@ export default function HomeScreen() {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Danh mục nổi bật</Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoriesRow}
+              >
                 {categories.length > 0 ? (
                   categories.map((cat) => {
                     const isActive = activeCategoryId === cat.categoryId;
@@ -223,38 +288,66 @@ export default function HomeScreen() {
                         style={styles.categoryItem}
                         onPress={() => handleCategoryToggle(cat.categoryId)}
                       >
-                        <View style={[styles.categoryIconBox, isActive && styles.categoryIconBoxActive]}>
+                        <View
+                          style={[
+                            styles.categoryIconBox,
+                            isActive && styles.categoryIconBoxActive,
+                          ]}
+                        >
                           <Ionicons
                             name={getCategoryIcon(cat.categoryName) as any}
                             size={24}
                             color={isActive ? COLORS.white : COLORS.primary}
                           />
                         </View>
-                        <Text style={[styles.categoryText, isActive && styles.categoryTextActive]} numberOfLines={2}>
+                        <Text
+                          style={[
+                            styles.categoryText,
+                            isActive && styles.categoryTextActive,
+                          ]}
+                          numberOfLines={2}
+                        >
                           {cat.categoryName}
                         </Text>
                       </TouchableOpacity>
                     );
                   })
                 ) : (
-                  <Text style={{ color: COLORS.textLight, paddingHorizontal: 20 }}>Đang cập nhật danh mục...</Text>
+                  <Text
+                    style={{ color: COLORS.textLight, paddingHorizontal: 20 }}
+                  >
+                    Đang cập nhật danh mục...
+                  </Text>
                 )}
               </ScrollView>
             </View>
 
-            {activeCategoryId && displayedBuys.length === 0 && displayedSells.length === 0 && displayedSuggested.length === 0 && (
-              <View style={{ alignItems: 'center', marginVertical: 30 }}>
-                <Ionicons name="folder-open-outline" size={48} color={COLORS.border} />
-                <Text style={{ color: COLORS.textLight, marginTop: 12 }}>Chưa có bài đăng nào trong danh mục này.</Text>
-              </View>
-            )}
+            {activeCategoryId &&
+              displayedBuys.length === 0 &&
+              displayedSells.length === 0 &&
+              displayedSuggested.length === 0 && (
+                <View style={{ alignItems: "center", marginVertical: 30 }}>
+                  <Ionicons
+                    name="folder-open-outline"
+                    size={48}
+                    color={COLORS.border}
+                  />
+                  <Text style={{ color: COLORS.textLight, marginTop: 12 }}>
+                    Chưa có bài đăng nào trong danh mục này.
+                  </Text>
+                </View>
+              )}
 
             {/* Tin Thu Mua */}
             {displayedBuys.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Tin thu mua từ Doanh nghiệp</Text>
-                  <TouchableOpacity><Text style={styles.seeAllText}>Xem tất cả</Text></TouchableOpacity>
+                  <Text style={styles.sectionTitle}>
+                    Tin thu mua từ Doanh nghiệp
+                  </Text>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>Xem tất cả</Text>
+                  </TouchableOpacity>
                 </View>
                 <FlatList
                   horizontal
@@ -272,7 +365,9 @@ export default function HomeScreen() {
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
-                  <TouchableOpacity><Text style={styles.seeAllText}>Xem tất cả</Text></TouchableOpacity>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>Xem tất cả</Text>
+                  </TouchableOpacity>
                 </View>
                 <FlatList
                   horizontal
@@ -321,61 +416,154 @@ const styles = StyleSheet.create({
   },
   container: { flex: 1, backgroundColor: "#F8F9FA" },
 
-  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginTop: 16, marginBottom: 24, gap: 12 },
-  searchInput: { flex: 1, height: 50, backgroundColor: COLORS.white, borderRadius: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: COLORS.border },
-  filterButton: { width: 50, height: 50, backgroundColor: COLORS.primary, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    gap: 12,
+  },
+  searchInput: {
+    flex: 1,
+    height: 50,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filterButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
   sectionContainer: { marginBottom: 32 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 16 },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: COLORS.text },
   seeAllText: { fontSize: 14, color: COLORS.primary, fontWeight: "600" },
 
   categoriesRow: { paddingHorizontal: 20, gap: 24, paddingRight: 40 },
   categoryItem: { alignItems: "center", gap: 8, width: 72 },
-  categoryIconBox: { width: 56, height: 56, backgroundColor: "#EFFFFE", borderRadius: 16, justifyContent: "center", alignItems: "center" },
-  categoryIconBoxActive: { backgroundColor: COLORS.primary }, 
-  categoryText: { fontSize: 12, color: COLORS.text, fontWeight: "500", textAlign: "center" },
+  categoryIconBox: {
+    width: 56,
+    height: 56,
+    backgroundColor: "#EFFFFE",
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryIconBoxActive: { backgroundColor: COLORS.primary },
+  categoryText: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: "500",
+    textAlign: "center",
+  },
   categoryTextActive: { color: COLORS.primary, fontWeight: "bold" },
 
-  bannerContainer: { marginHorizontal: 20, marginBottom: 32, backgroundColor: COLORS.primary, borderRadius: 20, padding: 24, overflow: "hidden", position: "relative" },
+  bannerContainer: {
+    marginHorizontal: 20,
+    marginBottom: 32,
+    backgroundColor: COLORS.primary,
+    borderRadius: 20,
+    padding: 24,
+    overflow: "hidden",
+    position: "relative",
+  },
   bannerContent: { zIndex: 2, width: "75%" },
-  bannerTitle: { fontSize: 20, fontWeight: "bold", color: COLORS.white, marginBottom: 8 },
-  bannerSubtitle: { fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 20, marginBottom: 16 },
-  bannerButton: { backgroundColor: COLORS.white, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignSelf: "flex-start" },
+  bannerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: COLORS.white,
+    marginBottom: 8,
+  },
+  bannerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.8)",
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  bannerButton: {
+    backgroundColor: COLORS.white,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
   bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
-  bannerLogo: { position: "absolute", right: -15, bottom: -20, width: 140, height: 140, opacity: 0.15, transform: [{ rotate: "-15deg" }] },
+  bannerLogo: {
+    position: "absolute",
+    right: -15,
+    bottom: -20,
+    width: 140,
+    height: 140,
+    opacity: 0.15,
+    transform: [{ rotate: "-15deg" }],
+  },
 
   horizontalListContent: { paddingHorizontal: 20, gap: 16 },
-  horizontalCard: { 
-    backgroundColor: COLORS.white, 
-    borderRadius: 12, 
-    overflow: "hidden", 
-    borderWidth: 1, 
+  horizontalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
     borderColor: COLORS.border,
-    width: 160, 
+    width: 160,
   },
-  
-  imageContainer: { position: "relative", width: "100%", aspectRatio: 1, backgroundColor: "#F1F5F9" },
+
+  imageContainer: {
+    position: "relative",
+    width: "100%",
+    aspectRatio: 1,
+    backgroundColor: "#F1F5F9",
+  },
   productImage: { width: "100%", height: "100%" },
-  
-  // Style mới cho Badge Danh mục
-  categoryBadge: { 
-    position: "absolute", 
-    top: 8, 
-    left: 8, 
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // Nền tối trong suốt giúp chữ nổi bật
-    paddingHorizontal: 8, 
-    paddingVertical: 4, 
-    borderRadius: 6, 
-    maxWidth: "85%" 
+
+  categoryBadge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    maxWidth: "85%",
   },
   categoryBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: "bold" },
 
   productInfo: { padding: 12 },
-  productName: { fontSize: 13, color: COLORS.text, fontWeight: "600", lineHeight: 18, marginBottom: 6, height: 36 },
-  productPrice: { fontSize: 15, fontWeight: "bold", color: "#E74C3C", marginBottom: 6 },
+  productName: {
+    fontSize: 13,
+    color: COLORS.text,
+    fontWeight: "600",
+    lineHeight: 18,
+    marginBottom: 6,
+    height: 36,
+  },
+  productPrice: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#E74C3C",
+    marginBottom: 6,
+  },
   metaText: { fontSize: 11, color: "#64748B", marginBottom: 6 },
-  
+
   locationRow: { flexDirection: "row", alignItems: "center" },
-  locationText: { fontSize: 11, color: COLORS.textLight, marginLeft: 4, flex: 1 },
+  locationText: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginLeft: 4,
+    flex: 1,
+  },
 });
