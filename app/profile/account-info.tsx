@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -13,7 +14,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Image, // ĐỔI SANG Image CỦA REACT NATIVE
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -28,11 +28,17 @@ const getRobustUrl = (url: string) => {
 };
 
 const sanitize = (val: any) => {
-  if (val === "string" || val === "null" || val === null || val === undefined) return "";
+  if (val === "string" || val === "null" || val === null || val === undefined)
+    return "";
   return val;
 };
 
-const appendFileToForm = async (formData: FormData, key: string, asset: any, defaultName: string) => {
+const appendFileToForm = async (
+  formData: FormData,
+  key: string,
+  asset: any,
+  defaultName: string,
+) => {
   if (Platform.OS === "web") {
     const response = await fetch(asset.uri);
     const blob = await response.blob();
@@ -80,7 +86,7 @@ export default function AccountInfoScreen() {
       setUsername(sanitize(user.username));
       setFullName(sanitize(user.fullName || user.name));
       setPhoneNumber(sanitize(user.phoneNumber || user.phone));
-      
+
       const userAvatar = user.avatarUrl || user.avatar;
       setAvatarUrl(sanitize(userAvatar));
 
@@ -137,8 +143,17 @@ export default function AccountInfoScreen() {
 
       if (newAvatarFile) {
         const formData = new FormData();
-        await appendFileToForm(formData, "AvatarUrl", newAvatarFile, "avatar.jpg");
-        apiTasks.push(apiClient.patch("/personal-profiles/me/avatar", formData, { timeout: 60000 }));
+        await appendFileToForm(
+          formData,
+          "AvatarUrl",
+          newAvatarFile,
+          "avatar.jpg",
+        );
+        apiTasks.push(
+          apiClient.patch("/personal-profiles/me/avatar", formData, {
+            timeout: 60000,
+          }),
+        );
       }
 
       const identityChanged =
@@ -156,10 +171,26 @@ export default function AccountInfoScreen() {
         formData.append("RepresentativeDob", repDob || "");
         formData.append("RepresentativeAddress", repAddress || "");
 
-        if (frontImage) await appendFileToForm(formData, "FrontIDCardImage", frontImage, "front.jpg");
-        if (backImage) await appendFileToForm(formData, "BackIDCardImage", backImage, "back.jpg");
+        if (frontImage)
+          await appendFileToForm(
+            formData,
+            "FrontIDCardImage",
+            frontImage,
+            "front.jpg",
+          );
+        if (backImage)
+          await appendFileToForm(
+            formData,
+            "BackIDCardImage",
+            backImage,
+            "back.jpg",
+          );
 
-        apiTasks.push(apiClient.put("/personal-profiles/me/identity", formData, { timeout: 60000 }));
+        apiTasks.push(
+          apiClient.put("/personal-profiles/me/identity", formData, {
+            timeout: 60000,
+          }),
+        );
       }
 
       const bankChanged =
@@ -209,7 +240,10 @@ export default function AccountInfoScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
@@ -227,11 +261,21 @@ export default function AccountInfoScreen() {
           <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.avatarWrapper}>
             <View style={styles.avatarContainer}>
-              <Image source={displayAvatar} style={styles.avatar} onError={() => setImageError(true)} />
-              <TouchableOpacity style={styles.cameraIcon} onPress={() => pickImage("avatar")}>
+              <Image
+                source={displayAvatar}
+                style={styles.avatar}
+                onError={() => setImageError(true)}
+              />
+              <TouchableOpacity
+                style={styles.cameraIcon}
+                onPress={() => pickImage("avatar")}
+              >
                 <Ionicons name="camera" size={16} color={COLORS.white} />
               </TouchableOpacity>
             </View>
@@ -241,48 +285,87 @@ export default function AccountInfoScreen() {
 
           <Text style={styles.label}>Tên đăng nhập (Username)</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" />
+            <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+            />
           </View>
 
           <Text style={styles.label}>Họ và Tên</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="Nhập họ và tên..." />
+            <TextInput
+              style={styles.input}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Nhập họ và tên..."
+            />
           </View>
 
           <Text style={styles.label}>Số điện thoại</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={phoneNumber} onChangeText={setPhoneNumber} keyboardType="phone-pad" />
+            <TextInput
+              style={styles.input}
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+            />
           </View>
 
           <SectionHeader title="HỒ SƠ PHÁP LÝ" />
 
           <Text style={styles.label}>CCCD của bạn</Text>
           <View style={styles.cccdRow}>
-            <TouchableOpacity style={styles.cccdBox} onPress={() => pickImage("front")}>
+            <TouchableOpacity
+              style={styles.cccdBox}
+              onPress={() => pickImage("front")}
+            >
               {frontImage?.uri || sanitize(user?.frontIDCardImage) ? (
                 <Image
-                  source={{ uri: getRobustUrl(frontImage?.uri || sanitize(user?.frontIDCardImage)) }}
+                  source={{
+                    uri: getRobustUrl(
+                      frontImage?.uri || sanitize(user?.frontIDCardImage),
+                    ),
+                  }}
                   style={{ width: "100%", height: "100%", borderRadius: 12 }}
                   resizeMode="cover"
                 />
               ) : (
                 <>
-                  <Ionicons name="camera-outline" size={24} color={COLORS.primary} style={{ marginBottom: 4 }} />
+                  <Ionicons
+                    name="camera-outline"
+                    size={24}
+                    color={COLORS.primary}
+                    style={{ marginBottom: 4 }}
+                  />
                   <Text style={styles.uploadText}>Mặt trước</Text>
                 </>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cccdBox} onPress={() => pickImage("back")}>
+            <TouchableOpacity
+              style={styles.cccdBox}
+              onPress={() => pickImage("back")}
+            >
               {backImage?.uri || sanitize(user?.backIDCardImage) ? (
                 <Image
-                  source={{ uri: getRobustUrl(backImage?.uri || sanitize(user?.backIDCardImage)) }}
+                  source={{
+                    uri: getRobustUrl(
+                      backImage?.uri || sanitize(user?.backIDCardImage),
+                    ),
+                  }}
                   style={{ width: "100%", height: "100%", borderRadius: 12 }}
                   resizeMode="cover"
                 />
               ) : (
                 <>
-                  <Ionicons name="camera-outline" size={24} color={COLORS.primary} style={{ marginBottom: 4 }} />
+                  <Ionicons
+                    name="camera-outline"
+                    size={24}
+                    color={COLORS.primary}
+                    style={{ marginBottom: 4 }}
+                  />
                   <Text style={styles.uploadText}>Mặt sau</Text>
                 </>
               )}
@@ -291,44 +374,103 @@ export default function AccountInfoScreen() {
 
           <Text style={styles.label}>Số CCCD</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={repCode} onChangeText={setRepCode} keyboardType="number-pad" placeholder="Nhập số thẻ CCCD..." />
+            <TextInput
+              style={styles.input}
+              value={repCode}
+              onChangeText={setRepCode}
+              keyboardType="number-pad"
+              placeholder="Nhập số thẻ CCCD..."
+            />
           </View>
 
           <Text style={styles.label}>Họ tên trên CCCD</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={repName} onChangeText={setRepName} autoCapitalize="characters" placeholder="Nhập chính xác họ tên..." />
+            <TextInput
+              style={styles.input}
+              value={repName}
+              onChangeText={setRepName}
+              autoCapitalize="characters"
+              placeholder="Nhập chính xác họ tên..."
+            />
           </View>
 
           <Text style={styles.label}>Ngày sinh (trên CCCD)</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={repDob} onChangeText={setRepDob} placeholder="YYYY-MM-DD" />
-            <Ionicons name="calendar-outline" size={20} color={COLORS.textLight} />
+            <TextInput
+              style={styles.input}
+              value={repDob}
+              onChangeText={setRepDob}
+              placeholder="YYYY-MM-DD"
+            />
+            <Ionicons
+              name="calendar-outline"
+              size={20}
+              color={COLORS.textLight}
+            />
           </View>
 
           <Text style={styles.label}>Địa chỉ thường trú</Text>
-          <View style={[styles.inputContainer, { height: 80, alignItems: "flex-start", paddingTop: 12 }]}>
-            <TextInput style={styles.input} value={repAddress} onChangeText={setRepAddress} multiline placeholder="Nhập địa chỉ thường trú..." />
+          <View
+            style={[
+              styles.inputContainer,
+              { height: 80, alignItems: "flex-start", paddingTop: 12 },
+            ]}
+          >
+            <TextInput
+              style={styles.input}
+              value={repAddress}
+              onChangeText={setRepAddress}
+              multiline
+              placeholder="Nhập địa chỉ thường trú..."
+            />
           </View>
 
           <SectionHeader title="THÔNG TIN THANH TOÁN" />
 
           <Text style={styles.label}>Ngân hàng thụ hưởng</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={bankName} onChangeText={setBankName} placeholder="VD: Vietcombank, Techcombank..." />
+            <TextInput
+              style={styles.input}
+              value={bankName}
+              onChangeText={setBankName}
+              placeholder="VD: Vietcombank, Techcombank..."
+            />
           </View>
 
           <Text style={styles.label}>Số tài khoản</Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={accountNumber} onChangeText={setAccountNumber} keyboardType="number-pad" placeholder="Nhập số tài khoản..." />
+            <TextInput
+              style={styles.input}
+              value={accountNumber}
+              onChangeText={setAccountNumber}
+              keyboardType="number-pad"
+              placeholder="Nhập số tài khoản..."
+            />
           </View>
 
-          <Text style={styles.label}>Tên chủ tài khoản (Phải khớp với CCCD)</Text>
+          <Text style={styles.label}>
+            Tên chủ tài khoản (Phải khớp với CCCD)
+          </Text>
           <View style={styles.inputContainer}>
-            <TextInput style={styles.input} value={accountName} onChangeText={setAccountName} autoCapitalize="characters" placeholder="VD: NGUYEN VAN A" />
+            <TextInput
+              style={styles.input}
+              value={accountName}
+              onChangeText={setAccountName}
+              autoCapitalize="characters"
+              placeholder="VD: NGUYEN VAN A"
+            />
           </View>
 
-          <TouchableOpacity style={styles.primaryButton} onPress={handleSaveChanges} disabled={isSaving}>
-            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>LƯU THAY ĐỔI</Text>}
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleSaveChanges}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>LƯU THAY ĐỔI</Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -338,23 +480,94 @@ export default function AccountInfoScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
   backButton: { padding: 4 },
   headerTitle: { fontSize: 17, fontWeight: "bold", color: COLORS.text },
   scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
   avatarWrapper: { alignItems: "center", marginTop: 24, marginBottom: 16 },
   avatarContainer: { position: "relative" },
-  avatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: COLORS.border, borderWidth: 1, borderColor: COLORS.border, },
-  cameraIcon: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#2C5A56", width: 28, height: 28, borderRadius: 14, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: COLORS.white, },
-  sectionHeader: { flexDirection: "row", alignItems: "center", marginTop: 24, marginBottom: 16, },
-  sectionBar: { width: 4, height: 16, backgroundColor: "#2C5A56", borderRadius: 2, marginRight: 8, },
+  avatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: COLORS.border,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cameraIcon: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: "#2C5A56",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 24,
+    marginBottom: 16,
+  },
+  sectionBar: {
+    width: 4,
+    height: 16,
+    backgroundColor: "#2C5A56",
+    borderRadius: 2,
+    marginRight: 8,
+  },
   sectionTitle: { fontSize: 14, fontWeight: "700", color: "#172B30" },
   label: { fontSize: 13, fontWeight: "600", color: "#334155", marginBottom: 8 },
-  inputContainer: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, paddingHorizontal: 16, minHeight: 52, backgroundColor: COLORS.white, marginBottom: 20, },
-  input: { flex: 1, fontSize: 15, color: COLORS.text, height: "100%", ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}), } as any,
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    minHeight: 52,
+    backgroundColor: COLORS.white,
+    marginBottom: 20,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
+    height: "100%",
+    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}),
+  } as any,
   cccdRow: { flexDirection: "row", gap: 12, marginBottom: 20 },
-  cccdBox: { flex: 1, height: 90, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, justifyContent: "center", alignItems: "center", overflow: "hidden", },
+  cccdBox: {
+    flex: 1,
+    height: 90,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
   uploadText: { fontSize: 13, color: "#475569", fontWeight: "500" },
-  primaryButton: { backgroundColor: "#2C5A56", borderRadius: 12, height: 54, justifyContent: "center", alignItems: "center", marginTop: 24, },
+  primaryButton: {
+    backgroundColor: "#2C5A56",
+    borderRadius: 12,
+    height: 54,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 24,
+  },
   primaryButtonText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
 });

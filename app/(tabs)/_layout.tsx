@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
-import { COLORS } from "../../src/constants/theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { COLORS } from "../../src/constants/theme";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();

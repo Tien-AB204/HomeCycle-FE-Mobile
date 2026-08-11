@@ -1,10 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
+import {
+  ActivityIndicator,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
-import { agreementApi } from "../../src/services/apis/agreementApi";
+import apiClient from "../../src/services/apis/axiosClient";
+
+const agreementApi = {
+  getAgreementById: (agreementId: string) =>
+    apiClient
+      .get(`/agreements/${agreementId}`)
+      .then((response) => response.data),
+};
 
 export default function PaymentSuccessScreen() {
   const router = useRouter();
@@ -12,7 +26,6 @@ export default function PaymentSuccessScreen() {
   const [negotiationId, setNegotiationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Lấy negotiationId từ agreementId để định hướng nút quay lại chat
   useEffect(() => {
     const fetchNegotiation = async () => {
       if (!agreementId) return;
@@ -32,11 +45,9 @@ export default function PaymentSuccessScreen() {
     fetchNegotiation();
   }, [agreementId]);
 
-  const handleGoToChat = () => {
-    if (negotiationId) {
-      router.replace(`/chat/${negotiationId}`);
-    } else {
-      router.replace("/(tabs)/chat");
+  const handleGoToOrder = () => {
+    if (agreementId) {
+      router.replace(`/orders/${agreementId}` as any); // Bay sang trang chi tiết đơn hàng
     }
   };
 
@@ -54,20 +65,41 @@ export default function PaymentSuccessScreen() {
           </View>
           <Text style={styles.title}>Thanh toán thành công!</Text>
           <Text style={styles.subtitle}>
-            Giao dịch của bạn đã được ghi nhận. Hệ thống đang cập nhật trạng thái đơn hàng.
+            Giao dịch của bạn đã được ghi nhận. Đơn hàng đã được tạo và chuyển
+            cho đối tác.
           </Text>
 
           {loading ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+            <ActivityIndicator
+              color={COLORS.primary}
+              style={{ marginVertical: 20 }}
+            />
           ) : (
             <View style={styles.btnContainer}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleGoToChat}>
-                <Ionicons name="chatbubbles-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
-                <Text style={styles.primaryBtnText}>Quay lại trang chat</Text>
+              {/* NÚT MỚI: XEM ĐƠN HÀNG */}
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={handleGoToOrder}
+              >
+                <Ionicons
+                  name="receipt-outline"
+                  size={18}
+                  color={COLORS.white}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.secondaryBtn} onPress={handleGoHome}>
-                <Ionicons name="home-outline" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={handleGoHome}
+              >
+                <Ionicons
+                  name="home-outline"
+                  size={18}
+                  color={COLORS.primary}
+                  style={{ marginRight: 8 }}
+                />
                 <Text style={styles.secondaryBtnText}>Về trang chủ</Text>
               </TouchableOpacity>
             </View>
@@ -80,14 +112,62 @@ export default function PaymentSuccessScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  container: { flex: 1, padding: 20, justifyContent: "center", alignItems: "center" },
-  card: { backgroundColor: COLORS.white, width: "100%", padding: 24, borderRadius: 20, alignItems: "center", borderWidth: 1, borderColor: COLORS.border },
-  iconCircle: { width: 100, height: 100, borderRadius: 50, justifyContent: "center", alignItems: "center", marginBottom: 20 },
-  title: { fontSize: 22, fontWeight: "bold", color: COLORS.text, marginBottom: 10, textAlign: "center" },
-  subtitle: { fontSize: 14, color: COLORS.textLight, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  card: {
+    backgroundColor: COLORS.white,
+    width: "100%",
+    padding: 24,
+    borderRadius: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
   btnContainer: { width: "100%", gap: 12 },
-  primaryBtn: { backgroundColor: COLORS.primary, height: 50, borderRadius: 12, flexDirection: "row", justifyContent: "center", alignItems: "center" },
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+    height: 50,
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
-  secondaryBtn: { backgroundColor: COLORS.white, height: 50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.primary, flexDirection: "row", justifyContent: "center", alignItems: "center" },
+  secondaryBtn: {
+    backgroundColor: COLORS.white,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   secondaryBtnText: { color: COLORS.primary, fontSize: 15, fontWeight: "bold" },
 });
