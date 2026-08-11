@@ -71,12 +71,17 @@ apiClient.interceptors.response.use(
         }
 
         // Gọi API cấp lại token mới (dùng axios gốc để tránh lặp vô hạn interceptor)
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
-          refreshToken,
-        });
+        const response = await axios.post(
+          `${API_BASE_URL}/auth/refresh-token`,
+          {
+            refreshToken,
+          },
+        );
 
-        const newAccessToken = response.data.accessToken || response.data.data?.accessToken;
-        const newRefreshToken = response.data.refreshToken || response.data.data?.refreshToken;
+        const newAccessToken =
+          response.data.accessToken || response.data.data?.accessToken;
+        const newRefreshToken =
+          response.data.refreshToken || response.data.data?.refreshToken;
 
         await AsyncStorage.setItem("accessToken", newAccessToken);
         if (newRefreshToken) {
@@ -85,7 +90,7 @@ apiClient.interceptors.response.use(
 
         apiClient.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
         processQueue(null, newAccessToken);
-        
+
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         isRefreshing = false;
         return apiClient(originalRequest);
@@ -99,7 +104,7 @@ apiClient.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

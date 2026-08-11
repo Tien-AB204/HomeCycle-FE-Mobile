@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -11,11 +12,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator, // Thêm component này để báo loading
 } from "react-native";
+import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
-import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -45,7 +45,7 @@ export default function RegisterScreen() {
 
     try {
       setIsLoading(true);
-      
+
       // 1. GỌI API SEND OTP XUỐNG BACKEND
       await authApi.sendOtp(email);
 
@@ -56,7 +56,10 @@ export default function RegisterScreen() {
       });
     } catch (error: any) {
       console.error("Lỗi gửi OTP:", error);
-      alert(error.response?.data?.message || "Không thể gửi OTP. Vui lòng kiểm tra lại email!");
+      alert(
+        error.response?.data?.message ||
+          "Không thể gửi OTP. Vui lòng kiểm tra lại email!",
+      );
     } finally {
       setIsLoading(false);
     }

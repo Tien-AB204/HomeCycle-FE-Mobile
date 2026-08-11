@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -10,7 +11,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator
 } from "react-native";
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
@@ -68,13 +68,15 @@ export default function OTPScreen() {
 
     try {
       setIsLoading(true);
-      
+
       // 1. GỌI API XÁC THỰC OTP
       const response = await authApi.verifyOtp(email as string, fullOtp);
-      
+
       // Bắt lấy Registration Token từ Backend trả về
       // (Tùy thuộc vào cấu trúc json backend trả về, thường nằm trong data)
-      const token = response.data?.registrationToken || response.data?.data?.registrationToken;
+      const token =
+        response.data?.registrationToken ||
+        response.data?.data?.registrationToken;
 
       if (flow === "login") {
         router.replace("/(tabs)");
@@ -89,7 +91,10 @@ export default function OTPScreen() {
       }
     } catch (error: any) {
       console.error("Lỗi xác thực OTP:", error);
-      alert(error.response?.data?.message || "Mã OTP không chính xác hoặc đã hết hạn!");
+      alert(
+        error.response?.data?.message ||
+          "Mã OTP không chính xác hoặc đã hết hạn!",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -146,7 +151,11 @@ export default function OTPScreen() {
 
           {/* HIỂN THỊ LOADING NHỎ KHI ĐANG KIỂM TRA OTP */}
           {isLoading && (
-             <ActivityIndicator size="small" color={COLORS.primary} style={{ marginBottom: 16 }} />
+            <ActivityIndicator
+              size="small"
+              color={COLORS.primary}
+              style={{ marginBottom: 16 }}
+            />
           )}
 
           <View style={styles.timerContainer}>
