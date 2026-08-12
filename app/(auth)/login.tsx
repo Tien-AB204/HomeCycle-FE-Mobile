@@ -13,9 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { notifyUser } from "../../src/components/shared/ActionFeedback";
 import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -24,21 +26,26 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] =
+    useState(false);
+  const [isLoading, setIsLoading] =
+    useState(false);
 
-  // === ĐĂNG NHẬP BẰNG TÀI KHOẢN MẶC ĐỊNH ===
   const handleLogin = async () => {
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
     if (!cleanEmail || !cleanPassword) {
-      alert("Vui lòng nhập đầy đủ email và mật khẩu!");
+      notifyUser(
+        "Vui lòng nhập đầy đủ email và mật khẩu.",
+        "error",
+      );
       return;
     }
 
     try {
       setIsLoading(true);
+
       await login(cleanEmail, cleanPassword);
 
       if (returnUrl) {
@@ -46,8 +53,14 @@ export default function LoginScreen() {
       } else {
         router.replace("/(tabs)");
       }
-    } catch (error: any) {
-      alert(error.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại!");
+    } catch (error: unknown) {
+      notifyUser(
+        getApiErrorMessage(
+          error,
+          "Đăng nhập thất bại. Vui lòng kiểm tra lại.",
+        ),
+        "error",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -56,8 +69,12 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : "height"
+        }
+        style={styles.keyboardContainer}
       >
         <View style={styles.header}>
           <TouchableOpacity
@@ -70,24 +87,36 @@ export default function LoginScreen() {
             }}
             style={styles.backButton}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={COLORS.text}
+            />
           </TouchableOpacity>
+
           <View style={styles.logoContainer}>
             <Image
               source={require("../../assets/images/logo-favicon.png")}
-              style={{ width: 28, height: 28, resizeMode: "contain" }}
+              style={styles.logoImage}
             />
-            <Text style={styles.logoText}>HomeCycle</Text>
+            <Text style={styles.logoText}>
+              HomeCycle
+            </Text>
           </View>
-          <View style={{ width: 28 }} />
+
+          <View style={styles.headerPlaceholder} />
         </View>
 
         <View style={styles.content}>
           <View style={styles.card}>
-            <Text style={styles.title}>Đăng nhập vào tài khoản của bạn</Text>
+            <Text style={styles.title}>
+              Đăng nhập vào tài khoản của bạn
+            </Text>
 
-            {/* Email Input */}
-            <Text style={styles.label}>ĐỊA CHỈ EMAIL</Text>
+            <Text style={styles.label}>
+              ĐỊA CHỈ EMAIL
+            </Text>
+
             <View style={styles.inputContainer}>
               <Ionicons
                 name="mail-outline"
@@ -95,10 +124,15 @@ export default function LoginScreen() {
                 color={COLORS.textLight}
                 style={styles.inputIcon}
               />
+
               <TextInput
                 style={[
                   styles.input,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
                 ]}
                 placeholder="Nhập email..."
                 value={email}
@@ -108,8 +142,15 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* Password Input */}
-            <Text style={[styles.label, { marginTop: 16 }]}>MẬT KHẨU</Text>
+            <Text
+              style={[
+                styles.label,
+                styles.passwordLabel,
+              ]}
+            >
+              MẬT KHẨU
+            </Text>
+
             <View style={styles.inputContainer}>
               <Ionicons
                 name="lock-closed-outline"
@@ -117,70 +158,117 @@ export default function LoginScreen() {
                 color={COLORS.textLight}
                 style={styles.inputIcon}
               />
+
               <TextInput
                 style={[
                   styles.input,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
                 ]}
                 placeholder="Nhập mật khẩu..."
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowPassword(
+                    (current) => !current,
+                  )
+                }
+              >
                 <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  name={
+                    showPassword
+                      ? "eye-off-outline"
+                      : "eye-outline"
+                  }
                   size={20}
                   color={COLORS.textLight}
                 />
               </TouchableOpacity>
             </View>
 
-            {/* Quên mật khẩu */}
             <TouchableOpacity
               style={styles.forgotPassword}
-              onPress={() => router.push("/forgot-password")}
+              onPress={() =>
+                router.push("/forgot-password")
+              }
             >
-              <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
+              <Text
+                style={styles.forgotPasswordText}
+              >
+                Quên mật khẩu?
+              </Text>
             </TouchableOpacity>
 
-            {/* Nút Đăng nhập */}
             <TouchableOpacity
-              style={[styles.primaryButton, isLoading && { opacity: 0.7 }]}
-              onPress={handleLogin}
+              style={[
+                styles.primaryButton,
+                isLoading
+                  ? styles.disabledButton
+                  : undefined,
+              ]}
+              onPress={() => void handleLogin()}
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator color={COLORS.white} />
+                <ActivityIndicator
+                  color={COLORS.white}
+                />
               ) : (
                 <>
-                  <Text style={styles.primaryButtonText}>ĐĂNG NHẬP</Text>
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    ĐĂNG NHẬP
+                  </Text>
+
                   <Ionicons
                     name="arrow-forward"
                     size={20}
                     color={COLORS.white}
-                    style={{ marginLeft: 8 }}
+                    style={styles.forwardIcon}
                   />
                 </>
               )}
             </TouchableOpacity>
 
-            {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>HOẶC TIẾP TỤC VỚI</Text>
+
+              <Text style={styles.dividerText}>
+                HOẶC TIẾP TỤC VỚI
+              </Text>
+
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Nút Google Login (Đã được chuyển sang Component chung) */}
-            <GoogleLoginButton title="Google" disabled={isLoading} />
+            <GoogleLoginButton
+              title="Google"
+              disabled={isLoading}
+            />
           </View>
 
-          {/* Nút sang trang Đăng ký */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Bạn chưa có tài khoản? </Text>
-            <TouchableOpacity onPress={() => router.push("/register")}>
-              <Text style={styles.footerLink}>Đăng ký tài khoản</Text>
+            <Text style={styles.footerText}>
+              Bạn chưa có tài khoản?{" "}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                router.push("/register")
+              }
+            >
+              <Text style={styles.footerLink}>
+                Đăng ký tài khoản
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -190,7 +278,15 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+
+  keyboardContainer: {
+    flex: 1,
+  },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -199,20 +295,54 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 10,
   },
-  backButton: { padding: 4 },
-  logoContainer: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logoText: { fontSize: 20, fontWeight: "bold", color: "#172B30" },
 
-  content: { flex: 1, paddingHorizontal: 20, justifyContent: "center" },
+  backButton: {
+    padding: 4,
+  },
+
+  logoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  logoImage: {
+    width: 28,
+    height: 28,
+    resizeMode: "contain",
+  },
+
+  logoText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#172B30",
+  },
+
+  headerPlaceholder: {
+    width: 28,
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: "center",
+  },
+
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
     ...Platform.select({
-      web: { boxShadow: "0px 4px 10px rgba(0,0,0,0.05)" } as any,
+      web: {
+        boxShadow:
+          "0px 4px 10px rgba(0,0,0,0.05)",
+      } as any,
       default: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
         shadowOpacity: 0.05,
         shadowRadius: 10,
         elevation: 4,
@@ -235,6 +365,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
   },
+
+  passwordLabel: {
+    marginTop: 16,
+  },
+
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -245,10 +380,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 54,
   },
-  inputIcon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 15, color: COLORS.text, height: "100%" },
 
-  forgotPassword: { alignSelf: "flex-end", marginTop: 12, marginBottom: 24 },
+  inputIcon: {
+    marginRight: 10,
+  },
+
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
+    height: "100%",
+  },
+
+  forgotPassword: {
+    alignSelf: "flex-end",
+    marginTop: 12,
+    marginBottom: 24,
+  },
+
   forgotPasswordText: {
     fontSize: 13,
     color: COLORS.primary,
@@ -263,14 +412,33 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
+
+  disabledButton: {
+    opacity: 0.7,
+  },
+
+  primaryButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+
+  forwardIcon: {
+    marginLeft: 8,
+  },
 
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 24,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
+
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+
   dividerText: {
     fontSize: 11,
     color: COLORS.textLight,
@@ -278,7 +446,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: 30 },
-  footerText: { fontSize: 14, color: COLORS.textLight },
-  footerLink: { fontSize: 14, fontWeight: "bold", color: "#172B30" },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 30,
+  },
+
+  footerText: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+
+  footerLink: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#172B30",
+  },
 });

@@ -1,99 +1,266 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import {
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  NativeSyntheticEvent,
   Platform,
   SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
+  TextInputKeyPressEventData,
   TouchableOpacity,
   View,
 } from "react-native";
+import { notifyUser } from "../../src/components/shared/ActionFeedback";
 import { COLORS } from "../../src/constants/theme";
-import { authApi } from "../../src/services/apis/authApi"; // IMPORT API CLIENT
+import { authApi } from "../../src/services/apis/authApi";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+
+const OTP_LENGTH = 6;
+const INITIAL_TIME = 118;
+
+const getStringParam = (
+  value: string | string[] | undefined,
+) => {
+  return Array.isArray(value)
+    ? value[0] ?? ""
+    : value ?? "";
+};
 
 export default function OTPScreen() {
   const router = useRouter();
-  const { email, flow, role } = useLocalSearchParams();
+  const params = useLocalSearchParams();
 
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
-  const [timeLeft, setTimeLeft] = useState(118);
-  const [isLoading, setIsLoading] = useState(false); // THÊM STATE LOADING
+  const email = getStringParam(params.email);
+  const flow = getStringParam(params.flow);
+  const role = getStringParam(params.role);
+
+  const [otp, setOtp] = useState(
+    Array.from(
+      { length: OTP_LENGTH },
+      () => "",
+    ),
+  );
+
+  const inputRefs =
+    useRef<Array<TextInput | null>>([]);
+
+  const [timeLeft, setTimeLeft] =
+    useState(INITIAL_TIME);
+  const [isLoading, setIsLoading] =
+    useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setTimeLeft((current) =>
+        current > 0 ? current - 1 : 0,
+      );
     }, 1000);
-    return () => clearInterval(timer);
+
+    return () => {
+      clearInterval(timer);
+    };
   }, []);
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
+  const formatTime = (
+    seconds: number,
+  ) => {
+    const minutes = Math.floor(
+      seconds / 60,
+    )
       .toString()
       .padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
+
+    const remainingSeconds = (
+      seconds % 60
+    )
+      .toString()
+      .padStart(2, "0");
+
+    return `${minutes}:${remainingSeconds}`;
   };
 
-  const handleOtpChange = (text: string, index: number) => {
-    const value = text.length > 0 ? text[text.length - 1] : "";
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
+  const handleOtpChange = (
+    text: string,
+    index: number,
+  ) => {
+    if (isLoading) {
+      return;
     }
 
-    if (newOtp.every((val) => val !== "")) {
-      handleVerify(newOtp.join(""));
+    const numericText = text.replace(
+      /\D/g,
+      "",
+    );
+
+    const value =
+      numericText.length > 0
+        ? numericText[
+            numericText.length - 1
+          ]
+        : "";
+
+    const nextOtp = [...otp];
+    nextOtp[index] = value;
+    setOtp(nextOtp);
+
+    if (
+      value &&
+      index < OTP_LENGTH - 1
+    ) {
+      inputRefs.current[
+        index + 1
+      ]?.focus();
+    }
+
+    if (
+      nextOtp.every(
+        (item) => item !== "",
+      )
+    ) {
+      void handleVerify(
+        nextOtp.join(""),
+      );
     }
   };
 
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+  const handleKeyPress = (
+    event: NativeSyntheticEvent<TextInputKeyPressEventData>,
+    index: number,
+  ) => {
+    if (
+      event.nativeEvent.key ===
+        "Backspace" &&
+      !otp[index] &&
+      index > 0
+    ) {
+      inputRefs.current[
+        index - 1
+      ]?.focus();
     }
   };
 
-  const handleVerify = async (fullOtp: string) => {
-    if (!flow) {
-      alert("Lỗi: Không nhận được dữ liệu luồng!");
+  const handleVerify = async (
+    fullOtp: string,
+  ) => {
+    if (isLoading) {
+      return;
+    }
+
+    if (!flow || !email) {
+      notifyUser(
+        "Không nhận được dữ liệu xác thực.",
+        "error",
+      );
       return;
     }
 
     try {
       setIsLoading(true);
 
-      // 1. GỌI API XÁC THỰC OTP
-      const response = await authApi.verifyOtp(email as string, fullOtp);
+      const response =
+        await authApi.verifyOtp(
+          email,
+          fullOtp,
+        );
 
-      // Bắt lấy Registration Token từ Backend trả về
-      // (Tùy thuộc vào cấu trúc json backend trả về, thường nằm trong data)
-      const token =
+      const registrationToken =
         response.data?.registrationToken ||
-        response.data?.data?.registrationToken;
+        response.data?.data
+          ?.registrationToken;
 
       if (flow === "login") {
         router.replace("/(tabs)");
-      } else if (flow === "register") {
-        // LUỒNG ĐĂNG KÝ: Chuyển qua trang tiếp theo và NHÉT THÊM TOKEN vào Params
-        router.push({
-          pathname: "/(auth)/register-password",
-          params: { email, role, registrationToken: token },
-        });
-      } else if (flow === "forgot_password") {
-        router.push("/(auth)/reset-password");
+        return;
       }
-    } catch (error: any) {
-      console.error("Lỗi xác thực OTP:", error);
-      alert(
-        error.response?.data?.message ||
-          "Mã OTP không chính xác hoặc đã hết hạn!",
+
+      if (flow === "register") {
+        if (!registrationToken) {
+          throw new Error(
+            "Máy chủ không trả về mã đăng ký.",
+          );
+        }
+
+        router.push({
+          pathname:
+            "/(auth)/register-password",
+          params: {
+            email,
+            role,
+            registrationToken,
+          },
+        });
+
+        return;
+      }
+
+      if (flow === "forgot_password") {
+        router.push(
+          "/(auth)/reset-password",
+        );
+      }
+    } catch (error: unknown) {
+      console.error(
+        "Lỗi xác thực OTP:",
+        error,
+      );
+
+      notifyUser(
+        getApiErrorMessage(
+          error,
+          "Mã OTP không chính xác hoặc đã hết hạn.",
+        ),
+        "error",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (
+      isLoading ||
+      timeLeft > 0 ||
+      !email
+    ) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      await authApi.sendOtp(email);
+
+      setOtp(
+        Array.from(
+          { length: OTP_LENGTH },
+          () => "",
+        ),
+      );
+      setTimeLeft(INITIAL_TIME);
+      inputRefs.current[0]?.focus();
+
+      notifyUser(
+        "Mã OTP mới đã được gửi.",
+        "success",
+      );
+    } catch (error: unknown) {
+      notifyUser(
+        getApiErrorMessage(
+          error,
+          "Không thể gửi lại mã OTP.",
+        ),
+        "error",
       );
     } finally {
       setIsLoading(false);
@@ -103,27 +270,50 @@ export default function OTPScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : "height"
+        }
         style={styles.container}
       >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backButton}
+            disabled={isLoading}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={COLORS.text}
+            />
           </TouchableOpacity>
         </View>
 
         <View style={styles.contentCard}>
-          <View style={styles.iconCenterContainer}>
+          <View
+            style={
+              styles.iconCenterContainer
+            }
+          >
             <View style={styles.lockIconBox}>
-              <Ionicons name="lock-closed" size={32} color={COLORS.white} />
+              <Ionicons
+                name="lock-closed"
+                size={32}
+                color={COLORS.white}
+              />
             </View>
-            <Text style={styles.title}>Xác thực Email</Text>
+
+            <Text style={styles.title}>
+              Xác thực email
+            </Text>
+
             <Text style={styles.subtitle}>
-              Hệ thống đã gửi mã OTP gồm 6 chữ số đến email của bạn. Vui lòng
-              kiểm tra và gõ vào ô bên dưới.
+              Hệ thống đã gửi mã OTP gồm 6
+              chữ số đến email của bạn. Vui
+              lòng kiểm tra và nhập vào các
+              ô bên dưới.
             </Text>
           </View>
 
@@ -132,52 +322,124 @@ export default function OTPScreen() {
               <TextInput
                 key={index}
                 ref={(ref) => {
-                  inputRefs.current[index] = ref;
+                  inputRefs.current[index] =
+                    ref;
                 }}
                 style={[
                   styles.otpInput,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-                  digit ? styles.otpInputActive : null,
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
+                  digit
+                    ? styles.otpInputActive
+                    : undefined,
                 ]}
                 keyboardType="number-pad"
+                inputMode="numeric"
                 maxLength={1}
                 value={digit}
-                onChangeText={(text) => handleOtpChange(text, index)}
-                onKeyPress={(e) => handleKeyPress(e, index)}
-                editable={!isLoading} // Không cho gõ thêm nếu đang gọi API
+                onChangeText={(text) =>
+                  handleOtpChange(
+                    text,
+                    index,
+                  )
+                }
+                onKeyPress={(event) =>
+                  handleKeyPress(
+                    event,
+                    index,
+                  )
+                }
+                editable={!isLoading}
               />
             ))}
           </View>
 
-          {/* HIỂN THỊ LOADING NHỎ KHI ĐANG KIỂM TRA OTP */}
-          {isLoading && (
+          {isLoading ? (
             <ActivityIndicator
               size="small"
               color={COLORS.primary}
-              style={{ marginBottom: 16 }}
+              style={styles.loader}
             />
-          )}
+          ) : null}
 
           <View style={styles.timerContainer}>
-            <Ionicons name="time" size={16} color={COLORS.error} />
-            <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+            <Ionicons
+              name="time"
+              size={16}
+              color={
+                timeLeft > 0
+                  ? COLORS.error
+                  : COLORS.textLight
+              }
+            />
+
+            <Text
+              style={[
+                styles.timerText,
+                timeLeft === 0
+                  ? styles.timerExpired
+                  : undefined,
+              ]}
+            >
+              {formatTime(timeLeft)}
+            </Text>
           </View>
 
           <View style={styles.resendContainer}>
-            <Text style={styles.resendTextBase}>Chưa nhận được mã? </Text>
-            <TouchableOpacity>
-              <Text style={styles.resendTextHighlight}>Gửi lại mã</Text>
+            <Text
+              style={styles.resendTextBase}
+            >
+              Chưa nhận được mã?{" "}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                void handleResend()
+              }
+              disabled={
+                timeLeft > 0 || isLoading
+              }
+            >
+              <Text
+                style={[
+                  styles.resendTextHighlight,
+                  timeLeft > 0 || isLoading
+                    ? styles.resendDisabled
+                    : undefined,
+                ]}
+              >
+                Gửi lại mã
+              </Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.divider} />
 
           <TouchableOpacity
-            onPress={() => router.push("/(auth)/login")}
+            onPress={() =>
+              router.push(
+                "/(auth)/login",
+              )
+            }
             style={styles.backToLoginButton}
+            disabled={isLoading}
           >
-            <Ionicons name="arrow-back" size={16} color={COLORS.primary} />
-            <Text style={styles.backToLoginText}>Quay lại đăng nhập</Text>
+            <Ionicons
+              name="arrow-back"
+              size={16}
+              color={COLORS.primary}
+            />
+
+            <Text
+              style={
+                styles.backToLoginText
+              }
+            >
+              Quay lại đăng nhập
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -186,15 +448,28 @@ export default function OTPScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.background },
-  container: { flex: 1, paddingHorizontal: 20 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+
+  container: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 20,
     marginBottom: 20,
   },
-  backButton: { padding: 8, marginLeft: -8 },
+
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+
   contentCard: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
@@ -202,15 +477,28 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
-      android: { elevation: 2 },
-      web: { boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)" } as any,
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow:
+          "0px 2px 8px rgba(0, 0, 0, 0.05)",
+      } as any,
     }),
   },
-  iconCenterContainer: { alignItems: "center", marginBottom: 32 },
+
+  iconCenterContainer: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+
   lockIconBox: {
     backgroundColor: COLORS.primary,
     width: 64,
@@ -220,12 +508,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
+
   title: {
     fontSize: 22,
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 12,
   },
+
   subtitle: {
     fontSize: 14,
     color: COLORS.textLight,
@@ -233,11 +523,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     paddingHorizontal: 10,
   },
+
   otpContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 24,
   },
+
   otpInput: {
     width: 45,
     height: 55,
@@ -250,7 +542,16 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     backgroundColor: COLORS.white,
   },
-  otpInputActive: { borderColor: "#2F80ED", borderWidth: 2 },
+
+  otpInputActive: {
+    borderColor: "#2F80ED",
+    borderWidth: 2,
+  },
+
+  loader: {
+    marginBottom: 16,
+  },
+
   timerContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -258,25 +559,55 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 16,
   },
-  timerText: { color: COLORS.error, fontWeight: "bold", fontSize: 14 },
+
+  timerText: {
+    color: COLORS.error,
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+
+  timerExpired: {
+    color: COLORS.textLight,
+  },
+
   resendContainer: {
     flexDirection: "row",
     justifyContent: "center",
     marginBottom: 32,
   },
-  resendTextBase: { color: COLORS.textLight, fontSize: 14 },
-  resendTextHighlight: { color: "#4F7C7B", fontSize: 14, fontWeight: "600" },
+
+  resendTextBase: {
+    color: COLORS.textLight,
+    fontSize: 14,
+  },
+
+  resendTextHighlight: {
+    color: "#4F7C7B",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  resendDisabled: {
+    opacity: 0.45,
+  },
+
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
     marginBottom: 24,
     marginHorizontal: 10,
   },
+
   backToLoginButton: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
   },
-  backToLoginText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
+
+  backToLoginText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "bold",
+  },
 });

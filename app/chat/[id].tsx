@@ -1,6 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as signalR from "@microsoft/signalr";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -27,6 +25,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 
 const agreementApi = {
@@ -34,6 +33,7 @@ const agreementApi = {
     apiClient
       .get(`/agreements/preview/${negotiationId}`)
       .then((response) => response.data),
+
   getAgreementById: (agreementId: string) =>
     apiClient
       .get(`/agreements/${agreementId}`)
@@ -43,14 +43,21 @@ const agreementApi = {
 const messageApi = {
   sendMessage: (negotiationId: string, payload: any) =>
     apiClient
-      .post("/Messages", payload, { params: { negotiationId } })
+      .post("/Messages", payload, {
+        params: { negotiationId },
+      })
       .then((response) => response.data),
+
   getMessages: (params?: any) =>
-    apiClient.get("/Messages", { params }).then((response) => response.data),
+    apiClient
+      .get("/Messages", { params })
+      .then((response) => response.data),
+
   markAsRead: async (negotiationId: string) => {
     await apiClient.patch("/Messages/read", null, {
       params: { negotiationId },
     });
+
     return true;
   },
 };
@@ -60,25 +67,38 @@ const negotiationApi = {
     apiClient
       .get(`/negotiations/${negotiationId}`)
       .then((response) => response.data),
+
   counterNegotiation: (
     negotiationId: string,
-    data: { offerPrice: number; offerQuantity: number },
+    data: {
+      offerPrice: number;
+      offerQuantity: number;
+    },
   ) =>
     apiClient
       .post(`/negotiations/${negotiationId}/counter`, data)
       .then((response) => response.data),
-  acceptProposal: (negotiationId: string, proposalMessageId: string) =>
+
+  acceptProposal: (
+    negotiationId: string,
+    proposalMessageId: string,
+  ) =>
     apiClient
       .patch(
         `/negotiations/${negotiationId}/proposals/${proposalMessageId}/accept`,
       )
       .then((response) => response.data),
-  rejectProposal: (negotiationId: string, proposalMessageId: string) =>
+
+  rejectProposal: (
+    negotiationId: string,
+    proposalMessageId: string,
+  ) =>
     apiClient
       .patch(
         `/negotiations/${negotiationId}/proposals/${proposalMessageId}/reject`,
       )
       .then((response) => response.data),
+
   cancelNegotiation: (negotiationId: string) =>
     apiClient
       .post(`/negotiations/${negotiationId}/cancel`)
@@ -99,9 +119,15 @@ const postApi = {
       .then((response) => response.data),
 };
 
-const getRobustAvatar = (url: string | null | undefined, name: string) => {
+const getRobustAvatar = (
+  url: string | null | undefined,
+  name: string,
+) => {
   const isValid =
-    url && url !== "string" && url !== "null" && url.startsWith("http");
+    url &&
+    url !== "string" &&
+    url !== "null" &&
+    url.startsWith("http");
 
   if (isValid) {
     if (url.includes("googleusercontent.com")) {
@@ -111,7 +137,9 @@ const getRobustAvatar = (url: string | null | undefined, name: string) => {
     return url;
   }
 
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "U")}&background=547B7D&color=fff`;
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    name || "U",
+  )}&background=547B7D&color=fff`;
 };
 
 const normalizeAgreementUiText = (text?: string | null) => {
@@ -130,13 +158,18 @@ export default function ChatDetailScreen() {
 
   const params = useLocalSearchParams();
 
-  const negotiationId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const negotiationId = Array.isArray(params.id)
+    ? params.id[0]
+    : params.id;
 
   const { user, isLoading: isAuthLoading } = useAuth();
 
+  const { connection } = useChatRealtime();
+
   const currentUserId = user?.userId || user?.id;
 
-  const [negotiationInfo, setNegotiationInfo] = useState<any>(null);
+  const [negotiationInfo, setNegotiationInfo] =
+    useState<any>(null);
 
   const negotiationInfoRef = useRef<any>(null);
 
@@ -144,21 +177,35 @@ export default function ChatDetailScreen() {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] =
+    useState<string | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const [agreementPreview, setAgreementPreview] = useState<any>(null);
+  const [agreementPreview, setAgreementPreview] =
+    useState<any>(null);
 
   const [inputText, setInputText] = useState("");
 
-  const [isActionMenuVisible, setActionMenuVisible] = useState(false);
+  const [
+    isActionMenuVisible,
+    setActionMenuVisible,
+  ] = useState(false);
 
-  const [isCounterModalVisible, setCounterModalVisible] = useState(false);
+  const [
+    isCounterModalVisible,
+    setCounterModalVisible,
+  ] = useState(false);
 
-  const [counterPriceInput, setCounterPriceInput] = useState("");
+  const [
+    counterPriceInput,
+    setCounterPriceInput,
+  ] = useState("");
 
-  const [counterQuantityInput, setCounterQuantityInput] = useState("1");
+  const [
+    counterQuantityInput,
+    setCounterQuantityInput,
+  ] = useState("1");
 
   const fetchBaseInfo = useCallback(async () => {
     if (!negotiationId || !currentUserId) {
@@ -167,9 +214,12 @@ export default function ChatDetailScreen() {
 
     try {
       const negotiationResponse =
-        await negotiationApi.getNegotiationById(negotiationId);
+        await negotiationApi.getNegotiationById(
+          negotiationId,
+        );
 
-      const info = negotiationResponse?.data || negotiationResponse;
+      const info =
+        negotiationResponse?.data || negotiationResponse;
 
       const productDetails: any = {
         postId: "",
@@ -185,26 +235,33 @@ export default function ChatDetailScreen() {
 
       if (info?.offerId) {
         try {
-          const offerResponse = await offerApi.getOfferById(info.offerId);
+          const offerResponse =
+            await offerApi.getOfferById(info.offerId);
 
-          const offer = offerResponse?.data || offerResponse;
+          const offer =
+            offerResponse?.data || offerResponse;
 
           if (offer) {
-            const senderId = offer.sender?.userId?.toLowerCase();
+            const senderId =
+              offer.sender?.userId?.toLowerCase();
 
             const isCurrentUserSender =
-              senderId === String(currentUserId).toLowerCase();
+              senderId ===
+              String(currentUserId).toLowerCase();
 
-            const currentUserData = isCurrentUserSender
-              ? offer.sender
-              : offer.receiver;
+            const currentUserData =
+              isCurrentUserSender
+                ? offer.sender
+                : offer.receiver;
 
-            const partnerData = isCurrentUserSender
-              ? offer.receiver
-              : offer.sender;
+            const partnerData =
+              isCurrentUserSender
+                ? offer.receiver
+                : offer.sender;
 
             if (currentUserData?.avatarUrl) {
-              productDetails.myAvatar = currentUserData.avatarUrl;
+              productDetails.myAvatar =
+                currentUserData.avatarUrl;
             }
 
             if (partnerData) {
@@ -221,34 +278,51 @@ export default function ChatDetailScreen() {
           }
 
           if (offer?.postId) {
-            const postResponse = await postApi.getPostById(offer.postId);
+            const postResponse =
+              await postApi.getPostById(offer.postId);
 
-            const post = postResponse?.data || postResponse;
+            const post =
+              postResponse?.data || postResponse;
 
-            productDetails.postId = post?.postId || "";
+            productDetails.postId =
+              post?.postId || "";
 
             productDetails.name =
-              post?.product?.productName || post?.productName || "Sản phẩm";
+              post?.product?.productName ||
+              post?.productName ||
+              "Sản phẩm";
 
-            productDetails.basePrice = Number(post?.basePrice || 0);
+            productDetails.basePrice =
+              Number(post?.basePrice || 0);
 
-            productDetails.city = post?.city || "Chưa cập nhật";
+            productDetails.city =
+              post?.city || "Chưa cập nhật";
 
             productDetails.productTypeName =
-              post?.product?.productTypeName || post?.productTypeName || "";
+              post?.product?.productTypeName ||
+              post?.productTypeName ||
+              "";
 
-            if (Array.isArray(post?.medias) && post.medias.length > 0) {
+            if (
+              Array.isArray(post?.medias) &&
+              post.medias.length > 0
+            ) {
               productDetails.image =
-                post.medias[0].url || post.medias[0].mediaUrl;
+                post.medias[0].url ||
+                post.medias[0].mediaUrl;
             }
           }
         } catch (error) {
-          console.log("Lỗi tải thông tin offer/post:", error);
+          console.log(
+            "Lỗi tải thông tin offer/post:",
+            error,
+          );
         }
       }
 
       productDetails.partnerName =
-        productDetails.partnerName || "Đối tác giao dịch";
+        productDetails.partnerName ||
+        "Đối tác giao dịch";
 
       const combinedInfo = {
         ...info,
@@ -260,207 +334,439 @@ export default function ChatDetailScreen() {
         info?.negotiationStatus === "Accepted"
       ) {
         try {
-          const previewResponse = await agreementApi.getPreview(negotiationId);
+          const previewResponse =
+            await agreementApi.getPreview(
+              negotiationId,
+            );
 
-          const preview = previewResponse?.data || previewResponse;
+          const preview =
+            previewResponse?.data ||
+            previewResponse;
 
           setAgreementPreview(preview);
 
-          combinedInfo.agreementPreview = preview;
+          combinedInfo.agreementPreview =
+            preview;
 
-          if (preview?.hasAgreement && preview?.agreementId) {
-            const agreementResponse = await agreementApi.getAgreementById(
-              preview.agreementId,
-            );
+          if (
+            preview?.hasAgreement &&
+            preview?.agreementId
+          ) {
+            const agreementResponse =
+              await agreementApi.getAgreementById(
+                preview.agreementId,
+              );
 
             combinedInfo.agreementData =
-              agreementResponse?.data || agreementResponse;
+              agreementResponse?.data ||
+              agreementResponse;
           }
         } catch (error) {
-          console.log("Lỗi tải Agreement Preview:", error);
+          console.log(
+            "Lỗi tải Agreement Preview:",
+            error,
+          );
         }
       }
 
-      negotiationInfoRef.current = combinedInfo;
+      negotiationInfoRef.current =
+        combinedInfo;
 
       setNegotiationInfo(combinedInfo);
 
       return combinedInfo;
     } catch (error) {
-      console.error("Lỗi tải thông tin thương lượng:", error);
+      console.error(
+        "Lỗi tải thông tin thương lượng:",
+        error,
+      );
 
       return null;
     }
-  }, [currentUserId, negotiationId, user]);
+  }, [
+    currentUserId,
+    negotiationId,
+    user,
+  ]);
 
-  const fetchMessagesOnly = useCallback(async () => {
-    if (!negotiationId || !currentUserId) {
-      return;
-    }
-
-    const info = negotiationInfoRef.current;
-
-    if (!info) return;
-
-    try {
-      const messageResponse = await messageApi.getMessages({
-        negotiationId,
-        PageNumber: 1,
-        PageSize: 50,
-      });
-
-      const messageData = messageResponse?.data || messageResponse;
-
-      let rawMessages: any[] = [];
-
-      if (Array.isArray(messageData)) {
-        rawMessages = [...messageData];
-      } else if (Array.isArray(messageData?.items)) {
-        rawMessages = [...messageData.items];
-      }
-
-      if (info.agreementData) {
-        rawMessages.push({
-          messageId: `agreement-card-${info.agreementData.agreementId}`,
-          senderId: info.agreementData.sellerId,
-          messageType: "AgreementCard",
-          createdAt: info.agreementData.createdAt,
-          agreementData: info.agreementData,
-        });
-      }
-
-      const sortedMessages = [...rawMessages].sort(
-        (firstMessage, secondMessage) => {
-          const firstTime = new Date(firstMessage.createdAt).getTime();
-
-          const secondTime = new Date(secondMessage.createdAt).getTime();
-
-          if (firstTime === secondTime) {
-            return String(firstMessage.messageType || "").localeCompare(
-              String(secondMessage.messageType || ""),
-            );
-          }
-
-          return firstTime - secondTime;
-        },
-      );
-
-      const formattedMessages: any[] = [];
-
-      sortedMessages.forEach((message, index) => {
-        const isMe =
-          String(message.senderId).toLowerCase() ===
-          String(currentUserId).toLowerCase();
-
-        if (message.messageType === "AgreementCard") {
-          formattedMessages.push({
-            id: message.messageId,
-            type: "agreement_card",
-            agreementId: message.agreementData.agreementId,
-            agreementData: message.agreementData,
-            sender: isMe ? "me" : "them",
-            avatar: isMe ? info.myAvatar : info.partnerAvatar,
-            senderName: isMe ? "Bạn" : info.partnerName,
-            time: new Date(message.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            isRead: true,
-          });
-
-          return;
-        }
-
-        if (message.messageType === "Agreement" || message.messageType === 4) {
-          formattedMessages.push({
-            id: message.messageId,
-            type: "system_agreed",
-            text: normalizeAgreementUiText(message.messageContent),
-            avatar: isMe ? info.myAvatar : info.partnerAvatar,
-            accepterName: isMe ? "Bạn" : info.partnerName,
-          });
-
-          return;
-        }
-
-        const isOfferType =
-          message.messageType === 2 ||
-          message.messageType === 3 ||
-          message.messageType === "Offer" ||
-          message.messageType === "CounterOffer" ||
-          Number(message.offerPrice) > 0;
-
-        const formattedMessage = {
-          id: message.messageId || String(index),
-          type: isOfferType ? "offer" : "text",
-          text: message.messageContent || "",
-          price: Number(message.offerPrice || 0),
-          quantity: Number(message.offerQuantity || 1),
-          status: message.offerStatus
-            ? String(message.offerStatus).toLowerCase()
-            : "pending",
-          isRead: message.isRead === true,
-          sender: isMe ? "me" : "them",
-          avatar: isMe ? info.myAvatar : info.partnerAvatar,
-          senderName: isMe ? "Bạn" : info.partnerName,
-          time: message.createdAt
-            ? new Date(message.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "Vừa xong",
-        };
-
-        formattedMessages.push(formattedMessage);
-
-        if (isOfferType && formattedMessage.status === "accepted") {
-          const currentUserAccepted = !isMe;
-
-          const accepterName = currentUserAccepted ? "Bạn" : info.partnerName;
-
-          formattedMessages.push({
-            id: `system-agreed-${formattedMessage.id}`,
-            type: "system_agreed",
-            text: currentUserAccepted
-              ? "Bạn đã chấp nhận thương lượng"
-              : `${accepterName} đã chấp nhận thương lượng`,
-            avatar: currentUserAccepted ? info.myAvatar : info.partnerAvatar,
-            accepterName,
-          });
-        }
-      });
-
-      setMessages(formattedMessages);
-    } catch (error) {
-      console.error("Lỗi tải tin nhắn:", error);
-    }
-  }, [currentUserId, negotiationId]);
-
-  const initialLoad = useCallback(async () => {
-    if (!negotiationId || !currentUserId) return;
-
-    setIsLoading(true);
-    setLoadError(null);
-
-    try {
-      const loadedInfo = await fetchBaseInfo();
-
-      if (!loadedInfo) {
-        setLoadError("Không thể tải cuộc trò chuyện. Vui lòng thử lại.");
+  const fetchMessagesOnly =
+    useCallback(async () => {
+      if (!negotiationId || !currentUserId) {
         return;
       }
 
-      await fetchMessagesOnly();
+      const info =
+        negotiationInfoRef.current;
+
+      if (!info) {
+        return;
+      }
 
       try {
-        await messageApi.markAsRead(negotiationId);
-      } catch {
-        // Không chặn UI nếu API read lỗi.
-      }
-    } finally {
-      setIsLoading(false);
+        const messageResponse =
+          await messageApi.getMessages({
+            negotiationId,
+            PageNumber: 1,
+            PageSize: 50,
+          });
+
+        const messageData =
+          messageResponse?.data ||
+          messageResponse;
+
+        let rawMessages: any[] = [];
+
+        if (Array.isArray(messageData)) {
+          rawMessages = [...messageData];
+        } else if (
+          Array.isArray(messageData?.items)
+        ) {
+          rawMessages = [
+            ...messageData.items,
+          ];
+        }
+
+        if (info.agreementData) {
+          rawMessages.push({
+            messageId: `agreement-card-${info.agreementData.agreementId}`,
+            senderId:
+              info.agreementData.sellerId,
+            messageType: "AgreementCard",
+            createdAt:
+              info.agreementData.createdAt,
+            agreementData:
+              info.agreementData,
+          });
+        }
+
+        const getMessageTypeOrder = (
+  messageType: unknown,
+) => {
+  const normalizedType = String(
+    messageType ?? "",
+  )
+    .trim()
+    .toLowerCase();
+
+  /*
+   * Khi BE trả cùng createdAt:
+   * Offer ban đầu phải đứng trước CounterOffer.
+   */
+  if (
+    normalizedType === "offer" ||
+    normalizedType === "2"
+  ) {
+    return 0;
+  }
+
+  if (
+    normalizedType ===
+      "counteroffer" ||
+    normalizedType === "3"
+  ) {
+    return 1;
+  }
+
+  if (
+    normalizedType ===
+    "agreement"
+  ) {
+    return 3;
+  }
+
+  return 2;
+};
+
+const sortedMessages = [
+  ...rawMessages,
+].sort(
+  (
+    firstMessage,
+    secondMessage,
+  ) => {
+    const firstCreatedTime =
+      new Date(
+        firstMessage.createdAt || 0,
+      ).getTime();
+
+    const secondCreatedTime =
+      new Date(
+        secondMessage.createdAt || 0,
+      ).getTime();
+
+    if (
+      firstCreatedTime !==
+      secondCreatedTime
+    ) {
+      return (
+        firstCreatedTime -
+        secondCreatedTime
+      );
     }
-  }, [fetchBaseInfo, fetchMessagesOnly, negotiationId]);
+
+    /*
+     * createdAt bằng nhau:
+     * sắp Offer trước CounterOffer.
+     */
+    const messageTypeDifference =
+      getMessageTypeOrder(
+        firstMessage.messageType,
+      ) -
+      getMessageTypeOrder(
+        secondMessage.messageType,
+      );
+
+    if (
+      messageTypeDifference !== 0
+    ) {
+      return messageTypeDifference;
+    }
+
+    /*
+     * Nếu cùng loại message,
+     * dùng updatedAt làm tie-breaker.
+     */
+    const firstUpdatedTime =
+      new Date(
+        firstMessage.updatedAt ||
+          firstMessage.createdAt ||
+          0,
+      ).getTime();
+
+    const secondUpdatedTime =
+      new Date(
+        secondMessage.updatedAt ||
+          secondMessage.createdAt ||
+          0,
+      ).getTime();
+
+    if (
+      firstUpdatedTime !==
+      secondUpdatedTime
+    ) {
+      return (
+        firstUpdatedTime -
+        secondUpdatedTime
+      );
+    }
+
+    return String(
+      firstMessage.messageId || "",
+    ).localeCompare(
+      String(
+        secondMessage.messageId ||
+          "",
+      ),
+    );
+  },
+);
+
+        const formattedMessages: any[] =
+          [];
+
+        sortedMessages.forEach(
+          (message, index) => {
+            const isMe =
+              String(
+                message.senderId,
+              ).toLowerCase() ===
+              String(
+                currentUserId,
+              ).toLowerCase();
+
+            if (
+              message.messageType ===
+              "AgreementCard"
+            ) {
+              formattedMessages.push({
+                id: message.messageId,
+                type: "agreement_card",
+                agreementId:
+                  message.agreementData
+                    .agreementId,
+                agreementData:
+                  message.agreementData,
+                sender: isMe
+                  ? "me"
+                  : "them",
+                avatar: isMe
+                  ? info.myAvatar
+                  : info.partnerAvatar,
+                senderName: isMe
+                  ? "Bạn"
+                  : info.partnerName,
+                time: new Date(
+                  message.createdAt,
+                ).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                isRead: true,
+              });
+
+              return;
+            }
+
+            if (
+              message.messageType ===
+                "Agreement" ||
+              message.messageType === 4
+            ) {
+              formattedMessages.push({
+                id: message.messageId,
+                type: "system_agreed",
+                text: normalizeAgreementUiText(
+                  message.messageContent,
+                ),
+                avatar: isMe
+                  ? info.myAvatar
+                  : info.partnerAvatar,
+                accepterName: isMe
+                  ? "Bạn"
+                  : info.partnerName,
+              });
+
+              return;
+            }
+
+            const isOfferType =
+              message.messageType === 2 ||
+              message.messageType === 3 ||
+              message.messageType ===
+                "Offer" ||
+              message.messageType ===
+                "CounterOffer" ||
+              Number(message.offerPrice) > 0;
+
+            const formattedMessage = {
+              id:
+                message.messageId ||
+                String(index),
+              type: isOfferType
+                ? "offer"
+                : "text",
+              text:
+                message.messageContent ||
+                "",
+              price: Number(
+                message.offerPrice || 0,
+              ),
+              quantity: Number(
+                message.offerQuantity || 1,
+              ),
+              status: message.offerStatus
+                ? String(
+                    message.offerStatus,
+                  ).toLowerCase()
+                : "pending",
+              isRead:
+                message.isRead === true,
+              sender: isMe
+                ? "me"
+                : "them",
+              avatar: isMe
+                ? info.myAvatar
+                : info.partnerAvatar,
+              senderName: isMe
+                ? "Bạn"
+                : info.partnerName,
+              time: message.createdAt
+                ? new Date(
+                    message.createdAt,
+                  ).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "Vừa xong",
+            };
+
+            formattedMessages.push(
+              formattedMessage,
+            );
+
+            if (
+              isOfferType &&
+              formattedMessage.status ===
+                "accepted"
+            ) {
+              const currentUserAccepted =
+                !isMe;
+
+              const accepterName =
+                currentUserAccepted
+                  ? "Bạn"
+                  : info.partnerName;
+
+              formattedMessages.push({
+                id: `system-agreed-${formattedMessage.id}`,
+                type: "system_agreed",
+                text: currentUserAccepted
+                  ? "Bạn đã chấp nhận thương lượng"
+                  : `${accepterName} đã chấp nhận thương lượng`,
+                avatar:
+                  currentUserAccepted
+                    ? info.myAvatar
+                    : info.partnerAvatar,
+                accepterName,
+              });
+            }
+          },
+        );
+
+        setMessages(formattedMessages);
+      } catch (error) {
+        console.error(
+          "Lỗi tải tin nhắn:",
+          error,
+        );
+      }
+    }, [
+      currentUserId,
+      negotiationId,
+    ]);
+
+  const initialLoad =
+    useCallback(async () => {
+      if (
+        !negotiationId ||
+        !currentUserId
+      ) {
+        return;
+      }
+
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const loadedInfo =
+          await fetchBaseInfo();
+
+        if (!loadedInfo) {
+          setLoadError(
+            "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+          );
+
+          return;
+        }
+
+        await fetchMessagesOnly();
+
+        try {
+          await messageApi.markAsRead(
+            negotiationId,
+          );
+        } catch {
+          // Không chặn UI nếu API read lỗi.
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }, [
+      currentUserId,
+      fetchBaseInfo,
+      fetchMessagesOnly,
+      negotiationId,
+    ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -470,86 +776,234 @@ export default function ChatDetailScreen() {
       }
 
       if (!negotiationId) {
-        setLoadError("Không tìm thấy cuộc trò chuyện này.");
+        setLoadError(
+          "Không tìm thấy cuộc trò chuyện này.",
+        );
+
         setIsLoading(false);
         return;
       }
 
       if (!currentUserId) {
-        setLoadError("Bạn cần đăng nhập để xem cuộc trò chuyện.");
+        setLoadError(
+          "Bạn cần đăng nhập để xem cuộc trò chuyện.",
+        );
+
         setIsLoading(false);
         return;
       }
 
       void initialLoad();
-    }, [currentUserId, initialLoad, isAuthLoading, negotiationId]),
+    }, [
+      currentUserId,
+      initialLoad,
+      isAuthLoading,
+      negotiationId,
+    ]),
   );
 
   useEffect(() => {
-    let connection: signalR.HubConnection | null = null;
+    if (!connection || !negotiationId) {
+      return;
+    }
 
-    const setupSignalR = async () => {
-      const token = await AsyncStorage.getItem("accessToken");
+    let isMounted = true;
 
-      if (!negotiationId || !token) {
+    const handleMessageCreated = async (newMsg: any) => {
+      if (!isMounted) return;
+
+      const isMe =
+        String(newMsg.senderId).toLowerCase() ===
+        String(currentUserId).toLowerCase();
+
+      // Đánh dấu đã đọc ngay lập tức CHỈ KHI TIN NHẮN ĐÓ LÀ DO NGƯỜI KHÁC GỬI (Fix lỗi gọi API read liên tục)
+      if (!isMe) {
+        messageApi.markAsRead(negotiationId).catch(() => {});
+      }
+
+      // Kiểm tra nếu là Offer / Agreement thì load lại toàn bộ để đồng bộ UI Card
+      const isSpecialEvent =
+        newMsg.messageType === 2 ||
+        newMsg.messageType === 3 ||
+        newMsg.messageType === "Offer" ||
+        newMsg.messageType === "CounterOffer" ||
+        newMsg.messageType === "Agreement" ||
+        newMsg.messageType === 4 ||
+        newMsg.messageType === "AgreementCard" ||
+        Number(newMsg.offerPrice) > 0;
+
+      if (isSpecialEvent) {
+        await fetchBaseInfo();
+        await fetchMessagesOnly();
+      } else {
+        // Tối ưu hóa: Nếu chỉ là tin nhắn text bình thường, gắn thẳng vào list (0 API Call)
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === newMsg.messageId)) return prev;
+
+          const info = negotiationInfoRef.current;
+
+          const formatted = {
+            id: newMsg.messageId || Date.now().toString(),
+            type: "text",
+            text: newMsg.messageContent || "",
+            price: 0,
+            quantity: 1,
+            status: "pending",
+            isRead: newMsg.isRead === true,
+            sender: isMe ? "me" : "them",
+            avatar: isMe ? info?.myAvatar : info?.partnerAvatar,
+            senderName: isMe ? "Bạn" : info?.partnerName,
+            time: new Date(newMsg.createdAt || Date.now()).toLocaleTimeString(
+              [],
+              { hour: "2-digit", minute: "2-digit" },
+            ),
+          };
+          return [...prev, formatted];
+        });
+      }
+    };
+
+    const handleMessagesRead = () => {
+      // Cập nhật trạng thái 'đã đọc' trực tiếp trên UI (0 API Call)
+      if (isMounted) {
+        setMessages((prev) =>
+          prev.map((m) => (m.sender === "me" ? { ...m, isRead: true } : m)),
+        );
+      }
+    };
+
+    const joinRoom = async () => {
+      try {
+        await connection.invoke(
+          "JoinNegotiation",
+          negotiationId,
+        );
+      } catch (error) {
+        console.log(
+          "Không thể tham gia phòng chat:",
+          error,
+        );
+      }
+    };
+
+    connection.on(
+      "MessageCreated",
+      handleMessageCreated,
+    );
+
+    connection.on(
+      "MessagesRead",
+      handleMessagesRead,
+    );
+
+    connection.onreconnected(() => {
+      if (!isMounted) {
         return;
       }
 
-      connection = new signalR.HubConnectionBuilder()
-        .withUrl("https://homecycle-backend.onrender.com/hubs/chat", {
-          accessTokenFactory: () => token,
-        })
-        .withAutomaticReconnect()
-        .build();
+      void joinRoom().then(() =>
+        fetchMessagesOnly(),
+      );
+    });
 
-      connection.on("MessageCreated", async () => {
-        await fetchBaseInfo();
-        await fetchMessagesOnly();
-
-        try {
-          await messageApi.markAsRead(negotiationId);
-        } catch {
-          // Không chặn luồng realtime.
-        }
-      });
-
-      connection.on("MessagesRead", () => {
-        void fetchMessagesOnly();
-      });
-
-      connection.onreconnected(async () => {
-        try {
-          await connection?.invoke("JoinNegotiation", negotiationId);
-
-          await fetchMessagesOnly();
-        } catch {
-          // SignalR sẽ tự reconnect tiếp.
-        }
-      });
-
-      try {
-        await connection.start();
-
-        await connection.invoke("JoinNegotiation", negotiationId);
-      } catch (error) {
-        console.log("Không thể kết nối SignalR:", error);
-      }
-    };
-
-    void setupSignalR();
+    void joinRoom();
 
     return () => {
-      if (connection) {
-        void connection.stop();
-      }
+      isMounted = false;
+
+      connection.off(
+        "MessageCreated",
+        handleMessageCreated,
+      );
+
+      connection.off(
+        "MessagesRead",
+        handleMessagesRead,
+      );
+
+      void connection
+        .invoke(
+          "LeaveNegotiation",
+          negotiationId,
+        )
+        .catch(() => undefined);
     };
-  }, [fetchBaseInfo, fetchMessagesOnly, negotiationId]);
+  }, [
+    connection,
+    fetchBaseInfo,
+    fetchMessagesOnly,
+    negotiationId,
+  ]);
 
-  const currentActiveOffer = useMemo(() => {
-    const offers = messages.filter((message) => message.type === "offer");
+  const currentActiveOffer =
+  useMemo(() => {
+    const offers =
+      messages.filter(
+        (message) =>
+          message.type === "offer",
+      );
 
-    return offers.length > 0 ? offers[offers.length - 1] : null;
-  }, [messages]);
+    if (offers.length === 0) {
+      return null;
+    }
+
+    /*
+     * Ưu tiên proposal Pending trùng với
+     * currentOfferPrice/currentOfferQuantity
+     * của negotiation.
+     */
+    const matchingPendingOffer =
+      offers.find(
+        (message) =>
+          message.status ===
+            "pending" &&
+          Number(message.price) ===
+            Number(
+              negotiationInfo
+                ?.currentOfferPrice,
+            ) &&
+          Number(
+            message.quantity,
+          ) ===
+            Number(
+              negotiationInfo
+                ?.currentOfferQuantity,
+            ),
+      );
+
+    if (matchingPendingOffer) {
+      return matchingPendingOffer;
+    }
+
+    /*
+     * Nếu response negotiation chưa cập nhật,
+     * vẫn ưu tiên proposal đang Pending.
+     */
+    const pendingOffers =
+      offers.filter(
+        (message) =>
+          message.status ===
+          "pending",
+      );
+
+    if (
+      pendingOffers.length > 0
+    ) {
+      return pendingOffers[
+        pendingOffers.length - 1
+      ];
+    }
+
+    return offers[
+      offers.length - 1
+    ];
+  }, [
+    messages,
+    negotiationInfo
+      ?.currentOfferPrice,
+    negotiationInfo
+      ?.currentOfferQuantity,
+  ]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("vi-VN", {
@@ -560,10 +1014,14 @@ export default function ChatDetailScreen() {
   const reloadAll = async () => {
     setLoadError(null);
 
-    const loadedInfo = await fetchBaseInfo();
+    const loadedInfo =
+      await fetchBaseInfo();
 
     if (!loadedInfo) {
-      setLoadError("Không thể tải cuộc trò chuyện. Vui lòng thử lại.");
+      setLoadError(
+        "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+      );
+
       return;
     }
 
@@ -573,10 +1031,16 @@ export default function ChatDetailScreen() {
   const openCounterModal = () => {
     if (currentActiveOffer) {
       setCounterPriceInput(
-        Number(currentActiveOffer.price).toLocaleString("vi-VN"),
+        Number(
+          currentActiveOffer.price,
+        ).toLocaleString("vi-VN"),
       );
 
-      setCounterQuantityInput(String(currentActiveOffer.quantity));
+      setCounterQuantityInput(
+        String(
+          currentActiveOffer.quantity,
+        ),
+      );
     } else {
       setCounterPriceInput("");
       setCounterQuantityInput("1");
@@ -585,29 +1049,45 @@ export default function ChatDetailScreen() {
     setCounterModalVisible(true);
   };
 
-  const handlePriceChange = (text: string) => {
-    const numericValue = text.replace(/\D/g, "");
+  const handlePriceChange = (
+    text: string,
+  ) => {
+    const numericValue =
+      text.replace(/\D/g, "");
 
     if (!numericValue) {
       setCounterPriceInput("");
       return;
     }
 
-    setCounterPriceInput(Number(numericValue).toLocaleString("vi-VN"));
+    setCounterPriceInput(
+      Number(
+        numericValue,
+      ).toLocaleString("vi-VN"),
+    );
   };
 
-  const handleAcceptOffer = async (proposalMessageId: string) => {
-    if (!negotiationId) return;
+  const handleAcceptOffer = async (
+    proposalMessageId: string,
+  ) => {
+    if (!negotiationId) {
+      return;
+    }
 
     try {
       setIsProcessing(true);
 
-      await negotiationApi.acceptProposal(negotiationId, proposalMessageId);
+      await negotiationApi.acceptProposal(
+        negotiationId,
+        proposalMessageId,
+      );
 
       await reloadAll();
     } catch (error: any) {
       const message =
-        error?.response?.data?.error?.message || "Không thể chấp nhận đề xuất.";
+        error?.response?.data?.error
+          ?.message ||
+        "Không thể chấp nhận đề xuất.";
 
       Platform.OS === "web"
         ? window.alert(message)
@@ -617,18 +1097,27 @@ export default function ChatDetailScreen() {
     }
   };
 
-  const handleRejectOffer = async (proposalMessageId: string) => {
-    if (!negotiationId) return;
+  const handleRejectOffer = async (
+    proposalMessageId: string,
+  ) => {
+    if (!negotiationId) {
+      return;
+    }
 
     try {
       setIsProcessing(true);
 
-      await negotiationApi.rejectProposal(negotiationId, proposalMessageId);
+      await negotiationApi.rejectProposal(
+        negotiationId,
+        proposalMessageId,
+      );
 
       await reloadAll();
     } catch (error: any) {
       const message =
-        error?.response?.data?.error?.message || "Không thể từ chối đề xuất.";
+        error?.response?.data?.error
+          ?.message ||
+        "Không thể từ chối đề xuất.";
 
       Platform.OS === "web"
         ? window.alert(message)
@@ -639,14 +1128,23 @@ export default function ChatDetailScreen() {
   };
 
   const submitCounterOffer = async () => {
-    if (!negotiationId) return;
+    if (!negotiationId) {
+      return;
+    }
 
-    const price = Number(counterPriceInput.replace(/\D/g, ""));
+    const price = Number(
+      counterPriceInput.replace(/\D/g, ""),
+    );
 
-    const quantity = Number(counterQuantityInput) || 1;
+    const quantity =
+      Number(counterQuantityInput) || 1;
 
-    if (!Number.isFinite(price) || price <= 0) {
-      const message = "Vui lòng nhập mức giá hợp lệ.";
+    if (
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      const message =
+        "Vui lòng nhập mức giá hợp lệ.";
 
       Platform.OS === "web"
         ? window.alert(message)
@@ -658,17 +1156,22 @@ export default function ChatDetailScreen() {
     try {
       setIsProcessing(true);
 
-      await negotiationApi.counterNegotiation(negotiationId, {
-        offerPrice: price,
-        offerQuantity: quantity,
-      });
+      await negotiationApi.counterNegotiation(
+        negotiationId,
+        {
+          offerPrice: price,
+          offerQuantity: quantity,
+        },
+      );
 
       setCounterModalVisible(false);
 
       await reloadAll();
     } catch (error: any) {
       const message =
-        error?.response?.data?.error?.message || "Không thể gửi đề xuất mới.";
+        error?.response?.data?.error
+          ?.message ||
+        "Không thể gửi đề xuất mới.";
 
       Platform.OS === "web"
         ? window.alert(message)
@@ -679,22 +1182,31 @@ export default function ChatDetailScreen() {
   };
 
   const handleCancelNegotiation = () => {
-    if (!negotiationId) return;
+    if (!negotiationId) {
+      return;
+    }
 
     const executeCancel = async () => {
       try {
         setIsProcessing(true);
 
-        await negotiationApi.cancelNegotiation(negotiationId);
+        await negotiationApi.cancelNegotiation(
+          negotiationId,
+        );
 
         if (Platform.OS !== "web") {
-          Alert.alert("Thành công", "Đã hủy phiên thương lượng.");
+          Alert.alert(
+            "Thành công",
+            "Đã hủy phiên thương lượng.",
+          );
         }
 
         await reloadAll();
       } catch (error: any) {
         const message =
-          error?.response?.data?.error?.message || "Không thể hủy giao dịch.";
+          error?.response?.data?.error
+            ?.message ||
+          "Không thể hủy giao dịch.";
 
         Platform.OS === "web"
           ? window.alert(message)
@@ -704,7 +1216,8 @@ export default function ChatDetailScreen() {
       }
     };
 
-    const message = "Bạn có chắc chắn muốn hủy phiên thương lượng này không?";
+    const message =
+      "Bạn có chắc chắn muốn hủy phiên thương lượng này không?";
 
     if (Platform.OS === "web") {
       if (window.confirm(message)) {
@@ -714,21 +1227,29 @@ export default function ChatDetailScreen() {
       return;
     }
 
-    Alert.alert("Hủy giao dịch", message, [
-      {
-        text: "Không",
-        style: "cancel",
-      },
-      {
-        text: "Hủy giao dịch",
-        style: "destructive",
-        onPress: () => void executeCancel(),
-      },
-    ]);
+    Alert.alert(
+      "Hủy giao dịch",
+      message,
+      [
+        {
+          text: "Không",
+          style: "cancel",
+        },
+        {
+          text: "Hủy giao dịch",
+          style: "destructive",
+          onPress: () =>
+            void executeCancel(),
+        },
+      ],
+    );
   };
 
   const handleSendMessage = async () => {
-    if (!inputText.trim() || !negotiationId) {
+    if (
+      !inputText.trim() ||
+      !negotiationId
+    ) {
       return;
     }
 
@@ -737,26 +1258,36 @@ export default function ChatDetailScreen() {
     setInputText("");
 
     try {
-      const clientMessageId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-        /[xy]/g,
-        (character) => {
-          const random = (Math.random() * 16) | 0;
+      const clientMessageId =
+        "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+          /[xy]/g,
+          (character) => {
+            const random =
+              (Math.random() * 16) | 0;
 
-          const value = character === "x" ? random : (random & 0x3) | 0x8;
+            const value =
+              character === "x"
+                ? random
+                : (random & 0x3) | 0x8;
 
-          return value.toString(16);
+            return value.toString(16);
+          },
+        );
+
+      await messageApi.sendMessage(
+        negotiationId,
+        {
+          messageContent: content,
+          clientMessageId,
         },
       );
 
-      await messageApi.sendMessage(negotiationId, {
-        messageContent: content,
-        clientMessageId,
-      });
-
-      await fetchMessagesOnly();
+      // Đã loại bỏ việc gọi lại api fetchMessagesOnly() ở đây.
+      // Khi gửi xong, backend sẽ báo lại qua SignalR và render message lên màn hình bằng cơ chế optimize (0 call api)
     } catch (error: any) {
       const message =
-        error?.response?.data?.error?.message ||
+        error?.response?.data?.error
+          ?.message ||
         "Không thể gửi tin nhắn lúc này.";
 
       Platform.OS === "web"
@@ -783,35 +1314,53 @@ export default function ChatDetailScreen() {
     >
       <Image
         source={{
-          uri: negotiationInfo?.image || "https://placehold.co/100x100/png",
+          uri:
+            negotiationInfo?.image ||
+            "https://placehold.co/100x100/png",
         }}
         style={styles.productImg}
       />
 
       <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={1}>
+        <Text
+          style={styles.productName}
+          numberOfLines={1}
+        >
           {negotiationInfo?.name}
         </Text>
 
-        <Text style={styles.productSubText} numberOfLines={1}>
-          {negotiationInfo?.productTypeName || "Khác"} •{" "}
+        <Text
+          style={styles.productSubText}
+          numberOfLines={1}
+        >
+          {negotiationInfo?.productTypeName ||
+            "Khác"}{" "}
+          •{" "}
           {negotiationInfo?.city || "N/A"}
         </Text>
 
         <Text style={styles.productPrice}>
           Giá niêm yết:{" "}
           <Text style={styles.boldText}>
-            {formatCurrency(negotiationInfo?.basePrice)}
+            {formatCurrency(
+              negotiationInfo?.basePrice,
+            )}
           </Text>
         </Text>
       </View>
 
-      <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
+      <Ionicons
+        name="chevron-forward"
+        size={20}
+        color={COLORS.textLight}
+      />
     </TouchableOpacity>
   );
 
   const renderHeader = () => {
-    const partnerName = negotiationInfo?.partnerName || "Đối tác giao dịch";
+    const partnerName =
+      negotiationInfo?.partnerName ||
+      "Đối tác giao dịch";
 
     const avatarUri = getRobustAvatar(
       negotiationInfo?.partnerAvatar,
@@ -820,10 +1369,18 @@ export default function ChatDetailScreen() {
 
     const centerContent = (
       <View style={styles.headerCenter}>
-        <Image source={{ uri: avatarUri }} style={styles.headerAvatar} />
+        <Image
+          source={{ uri: avatarUri }}
+          style={styles.headerAvatar}
+        />
 
-        <View style={styles.headerTextBlock}>
-          <Text style={styles.headerName} numberOfLines={1}>
+        <View
+          style={styles.headerTextBlock}
+        >
+          <Text
+            style={styles.headerName}
+            numberOfLines={1}
+          >
             {partnerName}
           </Text>
         </View>
@@ -833,35 +1390,62 @@ export default function ChatDetailScreen() {
     const rightContent = (
       <TouchableOpacity
         style={styles.headerIcon}
-        onPress={() => void reloadAll()}
+        onPress={() =>
+          void reloadAll()
+        }
       >
-        <Ionicons name="reload" size={20} color={COLORS.primary} />
+        <Ionicons
+          name="reload"
+          size={20}
+          color={COLORS.primary}
+        />
       </TouchableOpacity>
     );
 
     return (
       <Header
-        showBack={true}
+        showBack
         centerContent={centerContent}
         rightContent={rightContent}
       />
     );
   };
 
-  const renderMessage = ({ item }: { item: any }) => {
+  const renderMessage = ({
+    item,
+  }: {
+    item: any;
+  }) => {
     const isMe = item.sender === "me";
 
-    if (item.type === "system_agreed") {
-      const avatarUri = getRobustAvatar(item.avatar, item.accepterName);
+    if (
+      item.type === "system_agreed"
+    ) {
+      const avatarUri = getRobustAvatar(
+        item.avatar,
+        item.accepterName,
+      );
 
       return (
-        <View style={styles.systemAgreedContainer}>
+        <View
+          style={
+            styles.systemAgreedContainer
+          }
+        >
           <Image
             source={{ uri: avatarUri }}
-            style={styles.systemAgreedAvatar}
+            style={
+              styles.systemAgreedAvatar
+            }
           />
 
-          <Text style={styles.systemAgreedText}>{item.text}</Text>
+          <Text
+            style={
+              styles.systemAgreedText
+            }
+          >
+            {item.text}
+          </Text>
         </View>
       );
     }
@@ -869,17 +1453,29 @@ export default function ChatDetailScreen() {
     const avatarComponent = (
       <Image
         source={{
-          uri: getRobustAvatar(item.avatar, item.senderName),
+          uri: getRobustAvatar(
+            item.avatar,
+            item.senderName,
+          ),
         }}
         style={styles.chatAvatar}
       />
     );
 
     const renderContent = () => {
-      if (item.type === "agreement_card") {
+      if (
+        item.type === "agreement_card"
+      ) {
         return (
-          <View style={[styles.offerCard, styles.fullWidth]}>
-            <View style={styles.offerHeader}>
+          <View
+            style={[
+              styles.offerCard,
+              styles.fullWidth,
+            ]}
+          >
+            <View
+              style={styles.offerHeader}
+            >
               <Ionicons
                 name="document-text"
                 size={18}
@@ -887,51 +1483,102 @@ export default function ChatDetailScreen() {
                 style={styles.offerIcon}
               />
 
-              <Text style={styles.offerTitle}>Hợp đồng giao dịch</Text>
+              <Text
+                style={styles.offerTitle}
+              >
+                Hợp đồng giao dịch
+              </Text>
             </View>
 
-            <View style={styles.offerPriceBox}>
-              <Text style={styles.offerPriceValue}>
-                {formatCurrency(item.agreementData?.finalPrice)}
+            <View
+              style={
+                styles.offerPriceBox
+              }
+            >
+              <Text
+                style={
+                  styles.offerPriceValue
+                }
+              >
+                {formatCurrency(
+                  item.agreementData
+                    ?.finalPrice,
+                )}
               </Text>
 
-              <Text style={styles.offerQuantity}>
-                Số lượng: {item.agreementData?.quantity}
+              <Text
+                style={
+                  styles.offerQuantity
+                }
+              >
+                Số lượng:{" "}
+                {
+                  item.agreementData
+                    ?.quantity
+                }
               </Text>
             </View>
 
             <TouchableOpacity
-              style={styles.viewAgreementBtnFill}
+              style={
+                styles.viewAgreementBtnFill
+              }
               onPress={() => {
-                router.push(
-                  `/agreements/preview?agreementId=${item.agreementId}&negotiationId=${negotiationId}`,
-                );
+                router.push({
+                  pathname:
+                    "/agreements/preview",
+                  params: {
+                    agreementId: String(
+                      item.agreementId,
+                    ),
+                    negotiationId: String(
+                      negotiationId,
+                    ),
+                  },
+                });
               }}
             >
-              <Text style={styles.viewAgreementBtnFillText}>Xem chi tiết</Text>
+              <Text
+                style={
+                  styles.viewAgreementBtnFillText
+                }
+              >
+                Xem chi tiết
+              </Text>
             </TouchableOpacity>
           </View>
         );
       }
 
       if (item.type === "offer") {
-        const isLatestOffer = currentActiveOffer?.id === item.id;
+        const isLatestOffer =
+          currentActiveOffer?.id ===
+          item.id;
 
-        const negotiationStatus = negotiationInfo?.negotiationStatus;
+        const negotiationStatus =
+          negotiationInfo?.negotiationStatus;
 
-        const defaultTitle = isMe ? "Bạn đề xuất" : "Đối tác đề xuất";
+        const defaultTitle = isMe
+          ? "Bạn đề xuất"
+          : "Đối tác đề xuất";
 
-        const title = item.text?.trim() ? item.text : defaultTitle;
+        const title = item.text?.trim()
+          ? item.text
+          : defaultTitle;
 
         return (
           <View
             style={[
               styles.offerCard,
-              (!isLatestOffer || item.status === "superseded") &&
+              (!isLatestOffer ||
+                item.status ===
+                  "superseded") &&
                 styles.outdatedCard,
             ]}
           >
-            <View style={styles.offerHeader}>
+            <View
+              style={styles.offerHeader}
+            >
               <Ionicons
                 name="pricetag"
                 size={18}
@@ -939,107 +1586,241 @@ export default function ChatDetailScreen() {
                 style={styles.offerIcon}
               />
 
-              <Text style={styles.offerTitle}>{title}</Text>
+              <Text
+                style={styles.offerTitle}
+              >
+                {title}
+              </Text>
             </View>
 
-            <View style={styles.offerPriceBox}>
-              <Text style={styles.offerPriceValue}>
-                {formatCurrency(item.price)}
+            <View
+              style={
+                styles.offerPriceBox
+              }
+            >
+              <Text
+
+                style={
+                  styles.offerPriceValue
+                }
+              >
+                {formatCurrency(
+                  item.price,
+                )}
               </Text>
 
-              <Text style={styles.offerQuantity}>
-                Số lượng: {item.quantity}
+              <Text
+                style={
+                  styles.offerQuantity
+                }
+              >
+                Số lượng:{" "}
+                {item.quantity}
               </Text>
             </View>
 
             {isLatestOffer &&
-              negotiationStatus === "Open" &&
-              item.status === "pending" &&
+              negotiationStatus ===
+                "Open" &&
+              item.status ===
+                "pending" &&
               (isMe ? (
-                <Text style={styles.pendingText}>
-                  Đang chờ đối tác phản hồi...
+                <Text
+                  style={
+                    styles.pendingText
+                  }
+                >
+                  Đang chờ đối tác phản
+                  hồi...
                 </Text>
               ) : (
-                <View style={styles.actionBlock}>
-                  <View style={styles.offerActionRow}>
+                <View
+                  style={
+                    styles.actionBlock
+                  }
+                >
+                  <View
+                    style={
+                      styles.offerActionRow
+                    }
+                  >
                     <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => void handleRejectOffer(item.id)}
-                      disabled={isProcessing}
+                      style={
+                        styles.rejectBtn
+                      }
+                      onPress={() =>
+                        void handleRejectOffer(
+                          item.id,
+                        )
+                      }
+                      disabled={
+                        isProcessing
+                      }
                     >
-                      <Text style={styles.rejectBtnText}>Từ chối</Text>
+                      <Text
+                        style={
+                          styles.rejectBtnText
+                        }
+                      >
+                        Từ chối
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.acceptBtn}
-                      onPress={() => void handleAcceptOffer(item.id)}
-                      disabled={isProcessing}
+                      style={
+                        styles.acceptBtn
+                      }
+                      onPress={() =>
+                        void handleAcceptOffer(
+                          item.id,
+                        )
+                      }
+                      disabled={
+                        isProcessing
+                      }
                     >
-                      <Text style={styles.acceptBtnText}>Đồng ý</Text>
+                      <Text
+                        style={
+                          styles.acceptBtnText
+                        }
+                      >
+                        Đồng ý
+                      </Text>
                     </TouchableOpacity>
                   </View>
 
                   <TouchableOpacity
-                    style={styles.counterBtn}
-                    onPress={openCounterModal}
-                    disabled={isProcessing}
+                    style={
+                      styles.counterBtn
+                    }
+                    onPress={
+                      openCounterModal
+                    }
+                    disabled={
+                      isProcessing
+                    }
                   >
-                    <Text style={styles.counterBtnText}>Đề xuất giá khác</Text>
+                    <Text
+                      style={
+                        styles.counterBtnText
+                      }
+                    >
+                      Đề xuất giá khác
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ))}
 
-            {item.status === "accepted" &&
-              (negotiationStatus === "Accepted" ||
-                negotiationStatus === "Agreed") &&
+            {item.status ===
+              "accepted" &&
+              (negotiationStatus ===
+                "Accepted" ||
+                negotiationStatus ===
+                  "Agreed") &&
               !agreementPreview?.hasAgreement &&
               agreementPreview?.canCreate && (
-                <View style={styles.agreedBlock}>
+                <View
+                  style={
+                    styles.agreedBlock
+                  }
+                >
                   <TouchableOpacity
-                    style={styles.inlineCreateFormBtn}
+                    style={
+                      styles.inlineCreateFormBtn
+                    }
                     onPress={() => {
-                      router.push(
-                        `/agreements/form?negotiationId=${negotiationId}`,
-                      );
+                      router.push({
+                        pathname:
+                          "/agreements/form",
+                        params: {
+                          negotiationId:
+                            String(
+                              negotiationId,
+                            ),
+                        },
+                      });
                     }}
                   >
                     <Ionicons
                       name="create-outline"
                       size={18}
                       color={COLORS.white}
-                      style={styles.offerIcon}
+                      style={
+                        styles.offerIcon
+                      }
                     />
 
-                    <Text style={styles.inlineCreateFormBtnText}>
+                    <Text
+                      style={
+                        styles.inlineCreateFormBtnText
+                      }
+                    >
                       Tạo hợp đồng
                     </Text>
                   </TouchableOpacity>
                 </View>
               )}
 
-            {item.status === "rejected" && (
-              <View style={styles.statusBadgeError}>
-                <Ionicons name="close-circle" size={16} color={COLORS.white} />
+            {item.status ===
+              "rejected" && (
+              <View
+                style={
+                  styles.statusBadgeError
+                }
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={16}
+                  color={COLORS.white}
+                />
 
-                <Text style={styles.statusBadgeText}>
+                <Text
+                  style={
+                    styles.statusBadgeText
+                  }
+                >
                   Đã từ chối đề xuất này
                 </Text>
               </View>
             )}
 
-            {isLatestOffer && negotiationStatus === "Cancelled" && (
-              <View style={styles.statusBadgeError}>
-                <Ionicons name="close-circle" size={16} color={COLORS.white} />
+            {isLatestOffer &&
+              negotiationStatus ===
+                "Cancelled" && (
+                <View
+                  style={
+                    styles.statusBadgeError
+                  }
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={COLORS.white}
+                  />
 
-                <Text style={styles.statusBadgeText}>
-                  Phiên thương lượng đã hủy
+                  <Text
+                    style={
+                      styles.statusBadgeText
+                    }
+                  >
+                    Phiên thương lượng
+                    đã hủy
+                  </Text>
+                </View>
+              )}
+
+            {(!isLatestOffer ||
+              item.status ===
+                "superseded") &&
+              item.status !==
+                "rejected" && (
+                <Text
+                  style={
+                    styles.outdatedOfferText
+                  }
+                >
+                  (Đề xuất cũ)
                 </Text>
-              </View>
-            )}
-
-            {(!isLatestOffer || item.status === "superseded") &&
-              item.status !== "rejected" && (
-                <Text style={styles.outdatedOfferText}>(Đề xuất cũ)</Text>
               )}
           </View>
         );
@@ -1047,12 +1828,19 @@ export default function ChatDetailScreen() {
 
       return (
         <View
-          style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
+          style={[
+            styles.bubble,
+            isMe
+              ? styles.bubbleMe
+              : styles.bubbleThem,
+          ]}
         >
           <Text
             style={[
               styles.messageText,
-              isMe ? styles.messageTextMe : styles.messageTextThem,
+              isMe
+                ? styles.messageTextMe
+                : styles.messageTextThem,
             ]}
           >
             {item.text}
@@ -1065,7 +1853,9 @@ export default function ChatDetailScreen() {
       <View
         style={[
           styles.messageWrapper,
-          isMe ? styles.messageWrapperMe : styles.messageWrapperThem,
+          isMe
+            ? styles.messageWrapperMe
+            : styles.messageWrapperThem,
         ]}
       >
         {!isMe && avatarComponent}
@@ -1073,7 +1863,9 @@ export default function ChatDetailScreen() {
         <View
           style={[
             styles.messageContentBlock,
-            item.type === "offer" || item.type === "agreement_card"
+            item.type === "offer" ||
+            item.type ===
+              "agreement_card"
               ? styles.cardMessageWidth
               : styles.textMessageWidth,
           ]}
@@ -1083,16 +1875,30 @@ export default function ChatDetailScreen() {
           <View
             style={[
               styles.timeRow,
-              isMe ? styles.timeRowMe : styles.timeRowThem,
+              isMe
+                ? styles.timeRowMe
+                : styles.timeRowThem,
             ]}
           >
-            <Text style={styles.timeText}>{item.time}</Text>
+            <Text
+              style={styles.timeText}
+            >
+              {item.time}
+            </Text>
 
             {isMe && (
               <Ionicons
-                name={item.isRead ? "checkmark-done" : "checkmark"}
+                name={
+                  item.isRead
+                    ? "checkmark-done"
+                    : "checkmark"
+                }
                 size={14}
-                color={item.isRead ? COLORS.primary : COLORS.textLight}
+                color={
+                  item.isRead
+                    ? COLORS.primary
+                    : COLORS.textLight
+                }
                 style={styles.readIcon}
               />
             )}
@@ -1103,39 +1909,91 @@ export default function ChatDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+    >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : "height"
+        }
         style={styles.mobileWrapper}
       >
         {isAuthLoading || isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Đang tải cuộc trò chuyện...</Text>
+          <View
+            style={
+              styles.loadingContainer
+            }
+          >
+            <ActivityIndicator
+              size="large"
+              color={COLORS.primary}
+            />
+
+            <Text
+              style={styles.loadingText}
+            >
+              Đang tải cuộc trò
+              chuyện...
+            </Text>
           </View>
-        ) : loadError || !negotiationInfo ? (
-          <View style={styles.loadingContainer}>
+        ) : loadError ||
+          !negotiationInfo ? (
+          <View
+            style={
+              styles.loadingContainer
+            }
+          >
             <Ionicons
               name="chatbubble-ellipses-outline"
               size={42}
               color={COLORS.textLight}
             />
-            <Text style={styles.loadErrorText}>
-              {loadError || "Không thể tải cuộc trò chuyện."}
+
+            <Text
+              style={
+                styles.loadErrorText
+              }
+            >
+              {loadError ||
+                "Không thể tải cuộc trò chuyện."}
             </Text>
-            {negotiationId && currentUserId ? (
+
+            {negotiationId &&
+            currentUserId ? (
               <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => void initialLoad()}
+                style={
+                  styles.retryButton
+                }
+                onPress={() =>
+                  void initialLoad()
+                }
               >
-                <Text style={styles.retryButtonText}>Thử lại</Text>
+                <Text
+                  style={
+                    styles.retryButtonText
+                  }
+                >
+                  Thử lại
+                </Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => router.back()}
+                style={
+                  styles.retryButton
+                }
+                onPress={() =>
+                  router.back()
+                }
               >
-                <Text style={styles.retryButtonText}>Quay lại</Text>
+                <Text
+                  style={
+                    styles.retryButtonText
+                  }
+                >
+                  Quay lại
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1146,61 +2004,110 @@ export default function ChatDetailScreen() {
 
             <FlatList
               data={messages}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={renderMessage}
-              contentContainerStyle={styles.chatList}
-              showsVerticalScrollIndicator={false}
+              keyExtractor={(item) =>
+                String(item.id)
+              }
+              renderItem={
+                renderMessage
+              }
+              contentContainerStyle={
+                styles.chatList
+              }
+              showsVerticalScrollIndicator={
+                false
+              }
               ListHeaderComponent={
-                <Text style={styles.dateSeparator}>Giao dịch bắt đầu</Text>
+                <Text
+                  style={
+                    styles.dateSeparator
+                  }
+                >
+                  Giao dịch bắt đầu
+                </Text>
               }
             />
 
-            <View style={styles.inputContainer}>
+            <View
+              style={
+                styles.inputContainer
+              }
+            >
               <TouchableOpacity
                 style={styles.attachBtn}
-                onPress={() => setActionMenuVisible(true)}
+                onPress={() =>
+                  setActionMenuVisible(
+                    true,
+                  )
+                }
               >
                 <Ionicons
                   name="add-circle-outline"
                   size={28}
-                  color={COLORS.primary}
+                  color={
+                    COLORS.primary
+                  }
                 />
               </TouchableOpacity>
 
               <TextInput
                 style={styles.textInput}
                 placeholder="Nhập tin nhắn..."
-                placeholderTextColor={COLORS.textLight}
+                placeholderTextColor={
+                  COLORS.textLight
+                }
                 value={inputText}
-                onChangeText={setInputText}
-                onSubmitEditing={() => void handleSendMessage()}
+                onChangeText={
+                  setInputText
+                }
+                onSubmitEditing={() =>
+                  void handleSendMessage()
+                }
                 blurOnSubmit={false}
               />
 
               <TouchableOpacity
                 style={styles.sendBtn}
-                onPress={() => void handleSendMessage()}
+                onPress={() =>
+                  void handleSendMessage()
+                }
               >
-                <Ionicons name="send" size={18} color={COLORS.white} />
+                <Ionicons
+                  name="send"
+                  size={18}
+                  color={COLORS.white}
+                />
               </TouchableOpacity>
             </View>
           </>
         )}
       </KeyboardAvoidingView>
 
-      <Modal visible={isActionMenuVisible} transparent animationType="fade">
+      <Modal
+        visible={isActionMenuVisible}
+        transparent
+        animationType="fade"
+      >
         <TouchableOpacity
           style={styles.menuOverlay}
           activeOpacity={1}
-          onPress={() => setActionMenuVisible(false)}
+          onPress={() =>
+            setActionMenuVisible(false)
+          }
         >
-          <View style={styles.menuSheetContent}>
-            {negotiationInfo?.negotiationStatus === "Open" && (
+          <View
+            style={
+              styles.menuSheetContent
+            }
+          >
+            {negotiationInfo?.negotiationStatus ===
+              "Open" && (
               <>
                 <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => {
-                    setActionMenuVisible(false);
+                    setActionMenuVisible(
+                      false,
+                    );
 
                     openCounterModal();
                   }}
@@ -1208,20 +2115,34 @@ export default function ChatDetailScreen() {
                   <Ionicons
                     name="pricetag-outline"
                     size={22}
-                    color={COLORS.primary}
+                    color={
+                      COLORS.primary
+                    }
                   />
 
-                  <Text style={styles.menuItemText}>Đề xuất giá mới</Text>
+                  <Text
+                    style={
+                      styles.menuItemText
+                    }
+                  >
+                    Đề xuất giá mới
+                  </Text>
                 </TouchableOpacity>
 
-                <View style={styles.menuDivider} />
+                <View
+                  style={
+                    styles.menuDivider
+                  }
+                />
               </>
             )}
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
-                setActionMenuVisible(false);
+                setActionMenuVisible(
+                  false,
+                );
 
                 handleCancelNegotiation();
               }}
@@ -1232,57 +2153,110 @@ export default function ChatDetailScreen() {
                 color={COLORS.error}
               />
 
-              <Text style={[styles.menuItemText, styles.errorText]}>
+              <Text
+                style={[
+                  styles.menuItemText,
+                  styles.errorText,
+                ]}
+              >
                 Hủy giao dịch
               </Text>
             </TouchableOpacity>
 
-            {agreementPreview?.canCreate && !agreementPreview?.hasAgreement && (
-              <>
-                <View style={styles.menuDivider} />
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setActionMenuVisible(false);
-
-                    router.push(
-                      `/agreements/form?negotiationId=${negotiationId}`,
-                    );
-                  }}
-                >
-                  <Ionicons
-                    name="document-text-outline"
-                    size={22}
-                    color={COLORS.primary}
+            {agreementPreview?.canCreate &&
+              !agreementPreview?.hasAgreement && (
+                <>
+                  <View
+                    style={
+                      styles.menuDivider
+                    }
                   />
 
-                  <Text style={styles.menuItemText}>Tạo hợp đồng</Text>
-                </TouchableOpacity>
-              </>
-            )}
+                  <TouchableOpacity
+                    style={
+                      styles.menuItem
+                    }
+                    onPress={() => {
+                      setActionMenuVisible(
+                        false,
+                      );
+
+                      router.push({
+                        pathname:
+                          "/agreements/form",
+                        params: {
+                          negotiationId:
+                            String(
+                              negotiationId,
+                            ),
+                        },
+                      });
+                    }}
+                  >
+                    <Ionicons
+                      name="document-text-outline"
+                      size={22}
+                      color={
+                        COLORS.primary
+                      }
+                    />
+
+                    <Text
+                      style={
+                        styles.menuItemText
+                      }
+                    >
+                      Tạo hợp đồng
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
             {agreementPreview?.hasAgreement && (
               <>
-                <View style={styles.menuDivider} />
+                <View
+                  style={
+                    styles.menuDivider
+                  }
+                />
 
                 <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => {
-                    setActionMenuVisible(false);
-
-                    router.push(
-                      `/agreements/preview?agreementId=${agreementPreview.agreementId}&negotiationId=${negotiationId}`,
+                    setActionMenuVisible(
+                      false,
                     );
+
+                    router.push({
+                      pathname:
+                        "/agreements/preview",
+                      params: {
+                        agreementId: String(
+                          agreementPreview.agreementId,
+                        ),
+                        negotiationId:
+                          String(
+                            negotiationId,
+                          ),
+                      },
+                    });
                   }}
                 >
                   <Ionicons
                     name="eye-outline"
                     size={22}
-                    color={COLORS.primary}
+                    color={
+                      COLORS.primary
+                    }
                   />
 
-                  <Text style={styles.menuItemText}>Xem chi tiết hợp đồng</Text>
+                  <Text
+                    style={
+                      styles.menuItemText
+                    }
+                  >
+                    Xem chi tiết hợp đồng
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1290,63 +2264,99 @@ export default function ChatDetailScreen() {
         </TouchableOpacity>
       </Modal>
 
-      <Modal visible={isCounterModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Đề xuất mức giá mới</Text>
+      <Modal
+        visible={isCounterModalVisible}
+        transparent
+        animationType="slide"
+      >
+        <View
+          style={styles.modalOverlay}
+        >
+          <View
+            style={styles.modalContent}
+          >
+            <View
+              style={styles.modalHeader}
+            >
+              <Text
+                style={styles.modalTitle}
+              >
+                Đề xuất mức giá mới
+              </Text>
 
-              <TouchableOpacity onPress={() => setCounterModalVisible(false)}>
-                <Ionicons name="close" size={24} color={COLORS.text} />
+              <TouchableOpacity
+                onPress={() =>
+                  setCounterModalVisible(
+                    false,
+                  )
+                }
+              >
+                <Ionicons
+                  name="close"
+                  size={24}
+                  color={COLORS.text}
+                />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.inputGroup}>
-              <TextInput
-                style={styles.priceInput}
-                placeholder={
-                  currentActiveOffer
-                    ? Number(currentActiveOffer.price).toLocaleString("vi-VN")
-                    : "Ví dụ: 1.500.000"
-                }
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                value={counterPriceInput}
-                onChangeText={handlePriceChange}
-                selectTextOnFocus
-                autoFocus
-              />
+            <View style={styles.modalBody}>
+              <View>
+                <Text style={styles.inputLabel}>
+                  Giá đề xuất (VNĐ) <Text style={{ color: COLORS.error }}>*</Text>
+                </Text>
+                <View style={styles.inputGroup}>
+                  <TextInput
+                    style={styles.priceInput}
+                    placeholder={
+                      currentActiveOffer
+                        ? Number(currentActiveOffer.price).toLocaleString("vi-VN")
+                        : "Ví dụ: 1.500.000"
+                    }
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="number-pad"
+                    value={counterPriceInput}
+                    onChangeText={handlePriceChange}
+                    selectTextOnFocus
+                    autoFocus
+                  />
+                  <Text style={styles.currencyLabel}>VNĐ</Text>
+                </View>
+              </View>
 
-              <Text style={styles.currencyLabel}>VNĐ</Text>
+              <View>
+                <Text style={styles.inputLabel}>
+                  Số lượng <Text style={{ color: COLORS.error }}>*</Text>
+                </Text>
+                <View style={[styles.inputGroup, styles.quantityInputGroup]}>
+                  <TextInput
+                    style={[styles.priceInput, styles.quantityInput]}
+                    placeholder={
+                      currentActiveOffer
+                        ? String(currentActiveOffer.quantity)
+                        : "1"
+                    }
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="number-pad"
+                    value={counterQuantityInput}
+                    onChangeText={setCounterQuantityInput}
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.currencyLabel}>SL</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.submitOfferBtn}
+                onPress={() => void submitCounterOffer()}
+                disabled={isProcessing}
+              >
+                {isProcessing ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.submitOfferText}>Gửi đề xuất</Text>
+                )}
+              </TouchableOpacity>
             </View>
-
-            <View style={[styles.inputGroup, styles.quantityInputGroup]}>
-              <TextInput
-                style={[styles.priceInput, styles.quantityInput]}
-                placeholder={
-                  currentActiveOffer ? String(currentActiveOffer.quantity) : "1"
-                }
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                value={counterQuantityInput}
-                onChangeText={setCounterQuantityInput}
-                selectTextOnFocus
-              />
-
-              <Text style={styles.currencyLabel}>SL</Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.submitOfferBtn}
-              onPress={() => void submitCounterOffer()}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <Text style={styles.submitOfferText}>Gửi đề xuất</Text>
-              )}
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1368,7 +2378,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     ...(Platform.OS === "web"
       ? ({
-          boxShadow: "0px 0px 20px rgba(0,0,0,0.1)",
+          boxShadow:
+            "0px 0px 20px rgba(0,0,0,0.1)",
         } as any)
       : {}),
   },
@@ -1875,6 +2886,17 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  modalBody: {
+    gap: 16,
+  },
+
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+
   inputGroup: {
     flexDirection: "row",
     alignItems: "center",
@@ -1883,7 +2905,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 56,
-    marginBottom: 16,
     backgroundColor: COLORS.background,
   },
 
@@ -1939,7 +2960,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    paddingBottom: Platform.OS === "ios" ? 40 : 20,
+    paddingBottom:
+      Platform.OS === "ios" ? 40 : 20,
   },
 
   menuItem: {

@@ -11,21 +11,41 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  InlineFeedback,
+  useActionFeedback,
+} from "../../src/components/shared/ActionFeedback";
 import { COLORS } from "../../src/constants/theme";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const { feedback, clearFeedback, showError } = useActionFeedback();
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+
+    if (feedback) {
+      clearFeedback();
+    }
+  };
 
   const handleSendCode = () => {
-    if (!email) {
-      alert("Vui lòng nhập email của bạn");
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail) {
+      showError("Vui lòng nhập email của bạn.");
       return;
     }
-    // Chuyển sang trang OTP, mang theo email và luồng 'forgot_password'
+
+    clearFeedback();
+
     router.push({
       pathname: "/(auth)/otp",
-      params: { email: email, flow: "forgot_password" },
+      params: {
+        email: normalizedEmail,
+        flow: "forgot_password",
+      },
     });
   };
 
@@ -35,7 +55,6 @@ export default function ForgotPasswordScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
@@ -45,21 +64,26 @@ export default function ForgotPasswordScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Khung nội dung chính */}
         <View style={styles.contentCard}>
           <View style={styles.logoCenterContainer}>
             <View style={styles.logoBox}>
-              <Ionicons name="sync-circle" size={32} color={COLORS.white} />
+              <Ionicons
+                name="sync-circle"
+                size={32}
+                color={COLORS.white}
+              />
             </View>
+
             <Text style={styles.logoText}>HomeCycle</Text>
             <Text style={styles.title}>Khôi phục mật khẩu</Text>
+
             <Text style={styles.subtitle}>
               Nhập email của bạn để nhận mã OTP xác thực khôi phục tài khoản.
             </Text>
           </View>
 
-          {/* Ô nhập Email */}
           <Text style={styles.label}>ĐỊA CHỈ EMAIL</Text>
+
           <View style={styles.inputContainer}>
             <Ionicons
               name="mail-outline"
@@ -67,36 +91,54 @@ export default function ForgotPasswordScreen() {
               color={COLORS.textLight}
               style={styles.inputIcon}
             />
+
             <TextInput
               style={[
                 styles.input,
-                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                Platform.OS === "web" &&
+                  ({ outlineStyle: "none" } as any),
               ]}
               placeholder="user@example.com"
               placeholderTextColor={COLORS.textLight}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={handleEmailChange}
+              onSubmitEditing={handleSendCode}
+              returnKeyType="next"
             />
           </View>
 
-          {/* Nút Gửi mã */}
+          <InlineFeedback
+            feedback={feedback}
+            onDismiss={clearFeedback}
+            style={styles.actionFeedback}
+          />
+
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={handleSendCode}
           >
-            <Text style={styles.primaryButtonText}>GỬI MÃ KHÔI PHỤC</Text>
+            <Text style={styles.primaryButtonText}>
+              GỬI MÃ KHÔI PHỤC
+            </Text>
           </TouchableOpacity>
 
-          {/* Quay lại đăng nhập */}
           <View style={styles.footer}>
             <TouchableOpacity
               style={styles.backToLoginButton}
               onPress={() => router.push("/(auth)/login")}
             >
-              <Ionicons name="arrow-back" size={16} color={COLORS.primary} />
-              <Text style={styles.backToLoginText}>Quay lại đăng nhập</Text>
+              <Ionicons
+                name="arrow-back"
+                size={16}
+                color={COLORS.primary}
+              />
+
+              <Text style={styles.backToLoginText}>
+                Quay lại đăng nhập
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -135,8 +177,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
-      android: { elevation: 2 },
-      web: { boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)" } as any,
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)",
+      } as any,
     }),
   },
   logoCenterContainer: {
@@ -187,7 +233,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 52,
     backgroundColor: "#FAFAFA",
-    marginBottom: 24,
+    marginBottom: 12,
   },
   inputIcon: {
     marginRight: 12,
@@ -196,6 +242,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: COLORS.text,
+  },
+  actionFeedback: {
+    marginBottom: 12,
+    marginTop: 0,
   },
   primaryButton: {
     backgroundColor: COLORS.primary,
