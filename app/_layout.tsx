@@ -1,17 +1,27 @@
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppFeedbackProvider } from "../src/components/shared/ActionFeedback";
 import { AuthProvider } from "../src/contexts/AuthContext";
+import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(tabs)" />
-        </Stack>
-      </AuthProvider>
+      <AppFeedbackProvider>
+        <AuthProvider>
+          <ChatRealtimeProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+              }}
+            >
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+            </Stack>
+          </ChatRealtimeProvider>
+        </AuthProvider>
+      </AppFeedbackProvider>
     </SafeAreaProvider>
   );
 }

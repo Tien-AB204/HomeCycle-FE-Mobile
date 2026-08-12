@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -19,9 +18,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import {
+  confirmUserAction,
+  notifyUser,
+} from "../../src/components/shared/ActionFeedback";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
+import {
+  getApiErrorMessage,
+  getApiSuccessMessage,
+} from "../../src/utils/apiFeedback";
 
 interface Bank {
   id: number;
@@ -32,41 +40,63 @@ interface Bank {
   logo: string;
 }
 
-// HÀM CHUYỂN ĐỔI URI THÀNH FILE/BLOB CHUẨN ĐỂ GỬI LÊN MULTIPART FORM-DATA
 const appendFileToForm = async (
   formData: FormData,
   key: string,
   fileUri: string,
   defaultName: string,
 ) => {
-  if (!fileUri || fileUri === "undefined" || fileUri === "null") return;
+  if (!fileUri || fileUri === "undefined" || fileUri === "null") {
+    return;
+  }
 
-  console.log(`[DEBUG] Đang xử lý file cho trường [${key}] với uri:`, fileUri);
+  console.log(
+    `[DEBUG] Đang xử lý file cho trường [${key}] với uri:`,
+    fileUri,
+  );
 
   if (Platform.OS === "web") {
     try {
       const response = await fetch(fileUri);
       const blob = await response.blob();
-      formData.append(key, blob, defaultName);
-      console.log(`[DEBUG] Đã đính kèm file Web thành công cho ${key}`);
-    } catch (err) {
-      console.error(`[DEBUG] Lỗi fetch blob trên web cho ${key}:`, err);
-    }
-  } else {
-    const filename = fileUri.split("/").pop() || defaultName;
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-    formData.append(key, {
-      uri: Platform.OS === "ios" ? fileUri.replace("file://", "") : fileUri,
-      name: filename,
-      type: type,
-    } as any);
-    console.log(`[DEBUG] Đã đính kèm file Mobile thành công cho ${key}`, {
+      formData.append(key, blob, defaultName);
+
+      console.log(
+        `[DEBUG] Đã đính kèm file Web thành công cho ${key}`,
+      );
+    } catch (error) {
+      console.error(
+        `[DEBUG] Lỗi fetch blob trên web cho ${key}:`,
+        error,
+      );
+
+      throw error;
+    }
+
+    return;
+  }
+
+  const filename = fileUri.split("/").pop() || defaultName;
+  const match = /\.(\w+)$/.exec(filename);
+  const type = match ? `image/${match[1]}` : "image/jpeg";
+
+  formData.append(key, {
+    uri:
+      Platform.OS === "ios"
+        ? fileUri.replace("file://", "")
+        : fileUri,
+    name: filename,
+    type,
+  } as any);
+
+  console.log(
+    `[DEBUG] Đã đính kèm file Mobile thành công cho ${key}`,
+    {
       name: filename,
       type,
-    });
-  }
+    },
+  );
 };
 
 export default function VerificationSetupScreen() {
@@ -85,7 +115,7 @@ export default function VerificationSetupScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // State Hồ sơ pháp lý
+  // Hồ sơ pháp lý
   const [repCode, setRepCode] = useState("");
   const [repName, setRepName] = useState("");
   const [repDob, setRepDob] = useState("");
@@ -93,7 +123,7 @@ export default function VerificationSetupScreen() {
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
 
-  // State Ngân hàng
+  // Ngân hàng
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankDisplayCode, setBankDisplayCode] = useState("");
@@ -111,35 +141,63 @@ export default function VerificationSetupScreen() {
     const fetchBanks = async () => {
       try {
         setIsBankLoading(true);
+
         const response = await fetch("https://api.vietqr.io/v2/banks");
+
+        if (!response.ok) {
+          throw new Error(
+            `Không thể tải danh sách ngân hàng: HTTP ${response.status}`,
+          );
+        }
+
         const json = await response.json();
-        if (json.code === "00") {
+
+        if (json.code === "00" && Array.isArray(json.data)) {
           setBanks(json.data);
           setFilteredBanks(json.data);
+          return;
         }
-      } catch (error) {
+
+        throw new Error(
+          json?.desc || "Dữ liệu ngân hàng không hợp lệ.",
+        );
+      } catch (error: unknown) {
         console.error("Lỗi tải danh sách ngân hàng:", error);
+
+        notifyUser(
+          getApiErrorMessage(
+            error,
+            "Không thể tải danh sách ngân hàng.",
+          ),
+          "error",
+        );
       } finally {
         setIsBankLoading(false);
       }
     };
+
     fetchBanks();
   }, []);
 
   const handleSearchBank = (text: string) => {
     setSearchBankQuery(text);
-    if (text) {
-      const lowerText = text.toLowerCase();
-      const filtered = banks.filter(
-        (b) =>
-          b.shortName.toLowerCase().includes(lowerText) ||
-          b.name.toLowerCase().includes(lowerText) ||
-          b.code.toLowerCase().includes(lowerText),
-      );
-      setFilteredBanks(filtered);
-    } else {
+
+    const normalizedQuery = text.trim().toLowerCase();
+
+    if (!normalizedQuery) {
       setFilteredBanks(banks);
+      return;
     }
+
+    const filtered = banks.filter((bank) => {
+      return (
+        bank.shortName.toLowerCase().includes(normalizedQuery) ||
+        bank.name.toLowerCase().includes(normalizedQuery) ||
+        bank.code.toLowerCase().includes(normalizedQuery)
+      );
+    });
+
+    setFilteredBanks(filtered);
   };
 
   const handleSelectBank = (bank: Bank) => {
@@ -147,28 +205,50 @@ export default function VerificationSetupScreen() {
     setBankName(bank.shortName);
     setBankDisplayCode(bank.code);
     setBankLogo(bank.logo);
+
     setShowBankModal(false);
     setSearchBankQuery("");
     setFilteredBanks(banks);
   };
 
   const pickImage = async (side: "front" | "back") => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-    if (!result.canceled) {
-      if (side === "front") setFrontImage(result.assets[0].uri);
-      else setBackImage(result.assets[0].uri);
+      if (result.canceled) {
+        return;
+      }
+
+      const selectedUri = result.assets?.[0]?.uri;
+
+      if (!selectedUri) {
+        notifyUser("Không thể đọc ảnh đã chọn.", "error");
+        return;
+      }
+
+      if (side === "front") {
+        setFrontImage(selectedUri);
+      } else {
+        setBackImage(selectedUri);
+      }
+    } catch (error: unknown) {
+      console.error("Lỗi chọn ảnh CCCD:", error);
+
+      notifyUser(
+        getApiErrorMessage(error, "Không thể chọn ảnh."),
+        "error",
+      );
     }
   };
 
-  // --- HÀM XÁC NHẬN VÀ GỬI ĐĂNG KÝ ---
-  const executeRegistration = async (includeVerification: boolean) => {
-    // Kiểm tra nếu chưa chọn avatar thì bật cảnh báo
+  const executeRegistration = async (
+    includeVerification: boolean,
+  ) => {
     const hasAvatar =
       avatarUri &&
       avatarUri !== "undefined" &&
@@ -176,52 +256,77 @@ export default function VerificationSetupScreen() {
       String(avatarUri).trim() !== "";
 
     if (!hasAvatar) {
-      const confirmSkip =
-        Platform.OS === "web"
-          ? window.confirm(
-              "Bạn chưa chọn ảnh đại diện. Xác nhận bỏ qua avatar?",
-            )
-          : await new Promise((resolve) => {
-              Alert.alert(
-                "Thiếu ảnh đại diện",
-                "Bạn chưa chọn ảnh đại diện. Xác nhận bỏ qua avatar?",
-                [
-                  {
-                    text: "Không",
-                    onPress: () => resolve(false),
-                    style: "cancel",
-                  },
-                  { text: "Có, tiếp tục", onPress: () => resolve(true) },
-                ],
-              );
-            });
+      const confirmSkip = await confirmUserAction({
+        title: "Thiếu ảnh đại diện",
+        message:
+          "Bạn chưa chọn ảnh đại diện. Bạn có muốn tiếp tục không?",
+        confirmLabel: "Tiếp tục",
+        cancelLabel: "Chọn ảnh",
+      });
 
       if (!confirmSkip) {
-        return; // Dừng lại để người dùng quay lại chọn ảnh
+        return;
       }
     }
 
     if (includeVerification) {
-      const hasBankData = bankCode || bankAccount || bankAccountName;
-      if (hasBankData && (!bankCode || !bankAccount || !bankAccountName)) {
-        alert(
-          "Vui lòng nhập ĐẦY ĐỦ Số tài khoản và Tên chủ tài khoản ngân hàng!",
+      const hasBankData =
+        Boolean(bankCode.trim()) ||
+        Boolean(bankAccount.trim()) ||
+        Boolean(bankAccountName.trim());
+
+      if (
+        hasBankData &&
+        (!bankCode.trim() ||
+          !bankAccount.trim() ||
+          !bankAccountName.trim())
+      ) {
+        notifyUser(
+          "Vui lòng nhập đầy đủ ngân hàng, số tài khoản và tên chủ tài khoản.",
+          "error",
         );
         return;
       }
 
-      const hasCccdData = repCode || repName || repDob || repAddress;
-      if (hasCccdData && (!repCode || !repName || !repDob || !repAddress)) {
-        alert("Vui lòng điền ĐẦY ĐỦ 4 trường thông tin của CCCD!");
+      const hasCccdData =
+        Boolean(repCode.trim()) ||
+        Boolean(repName.trim()) ||
+        Boolean(repDob.trim()) ||
+        Boolean(repAddress.trim()) ||
+        Boolean(frontImage) ||
+        Boolean(backImage);
+
+      if (
+        hasCccdData &&
+        (!repCode.trim() ||
+          !repName.trim() ||
+          !repDob.trim() ||
+          !repAddress.trim())
+      ) {
+        notifyUser(
+          "Vui lòng điền đầy đủ số CCCD, họ tên, ngày sinh và địa chỉ thường trú.",
+          "error",
+        );
+        return;
+      }
+
+      if (
+        (frontImage && !backImage) ||
+        (!frontImage && backImage)
+      ) {
+        notifyUser(
+          "Vui lòng cung cấp đầy đủ cả mặt trước và mặt sau CCCD.",
+          "error",
+        );
         return;
       }
     }
 
     try {
       setIsLoading(true);
+
       const formData = new FormData();
 
-      // LOG THÔNG TIN CƠ BẢN ĐỂ DEBUG
       console.log("[DEBUG REGISTRATION] Params nhận được:", {
         username,
         email,
@@ -230,145 +335,233 @@ export default function VerificationSetupScreen() {
         avatarUri,
       });
 
-      formData.append("Username", username as string);
-      formData.append("Password", password as string);
-      formData.append("PhoneNumber", phoneNumber as string);
-      formData.append("FullName", fullName as string);
+      formData.append("Username", String(username || ""));
+      formData.append("Password", String(password || ""));
+      formData.append("PhoneNumber", String(phoneNumber || ""));
+      formData.append("FullName", String(fullName || ""));
 
-      // ĐÍNH KÈM AVATAR CHUẨN XÁC
       if (hasAvatar) {
         await appendFileToForm(
           formData,
           "AvatarUrl",
-          avatarUri as string,
+          String(avatarUri),
           "avatar.jpg",
         );
       }
 
-      // GẮN XÁC MINH
       if (includeVerification) {
-        if (repCode.trim())
-          formData.append("RepresentativeCode", repCode.trim());
-        if (repName.trim())
-          formData.append("RepresentativeName", repName.trim());
-        if (repDob.trim()) formData.append("RepresentativeDob", repDob.trim());
-        if (repAddress.trim())
-          formData.append("RepresentativeAddress", repAddress.trim());
+        if (repCode.trim()) {
+          formData.append(
+            "RepresentativeCode",
+            repCode.trim(),
+          );
+        }
 
-        if (bankCode.trim()) formData.append("BankCode", bankCode.trim());
-        if (bankName.trim()) formData.append("BankName", bankName.trim());
-        if (bankAccount.trim())
-          formData.append("AccountNumber", bankAccount.trim());
-        if (bankAccountName.trim())
-          formData.append("AccountName", bankAccountName.trim());
+        if (repName.trim()) {
+          formData.append(
+            "RepresentativeName",
+            repName.trim(),
+          );
+        }
 
-        if (frontImage)
+        if (repDob.trim()) {
+          formData.append(
+            "RepresentativeDob",
+            repDob.trim(),
+          );
+        }
+
+        if (repAddress.trim()) {
+          formData.append(
+            "RepresentativeAddress",
+            repAddress.trim(),
+          );
+        }
+
+        if (bankCode.trim()) {
+          formData.append("BankCode", bankCode.trim());
+        }
+
+        if (bankName.trim()) {
+          formData.append("BankName", bankName.trim());
+        }
+
+        if (bankAccount.trim()) {
+          formData.append(
+            "AccountNumber",
+            bankAccount.trim(),
+          );
+        }
+
+        if (bankAccountName.trim()) {
+          formData.append(
+            "AccountName",
+            bankAccountName.trim(),
+          );
+        }
+
+        if (frontImage) {
           await appendFileToForm(
             formData,
             "FrontIDCardImage",
             frontImage,
             "front.jpg",
           );
-        if (backImage)
+        }
+
+        if (backImage) {
           await appendFileToForm(
             formData,
             "BackIDCardImage",
             backImage,
             "back.jpg",
           );
+        }
       }
 
       const response = await authApi.registerPersonal(
-        registrationToken as string,
+        String(registrationToken || ""),
         formData,
       );
-      console.log("[DEBUG REGISTRATION RESPONSE]:", response.data);
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      console.log(
+        "[DEBUG REGISTRATION RESPONSE]:",
+        response.data,
+      );
+
+      notifyUser(
+        getApiSuccessMessage(
+          response.data,
+          "Tạo tài khoản thành công.",
+        ),
+        "success",
+      );
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000);
+      });
 
       try {
-        const realEmail = response.data?.data?.user?.email || email;
-        if (realEmail && password) {
-          await login(realEmail as string, password as string);
-        } else {
-          throw new Error("Thiếu thông tin đăng nhập tự động");
+        const realEmail =
+          response.data?.data?.user?.email || email;
+
+        if (!realEmail || !password) {
+          throw new Error(
+            "Thiếu thông tin đăng nhập tự động.",
+          );
         }
-      } catch (loginErr) {
-        console.error("Lỗi Auto-login:", loginErr);
-        alert("Tạo tài khoản thành công! Vui lòng đăng nhập lại.");
+
+        await login(
+          String(realEmail),
+          String(password),
+        );
+      } catch (loginError: unknown) {
+        console.error("Lỗi tự động đăng nhập:", loginError);
+
+        notifyUser(
+          "Tạo tài khoản thành công. Vui lòng đăng nhập lại.",
+          "success",
+        );
+
         router.replace("/(auth)/login");
       }
-    } catch (error: any) {
-      console.error("Lỗi đăng ký API:", error.response || error);
-      alert(
-        error.response?.data?.message || "Có lỗi xảy ra khi tạo tài khoản!",
+    } catch (error: unknown) {
+      console.error("Lỗi đăng ký API:", error);
+
+      notifyUser(
+        getApiErrorMessage(
+          error,
+          "Không thể tạo tài khoản.",
+        ),
+        "error",
       );
+    } finally {
       setIsLoading(false);
     }
   };
 
+  const webInputStyle =
+    Platform.OS === "web"
+      ? ({ outlineStyle: "none" } as any)
+      : undefined;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        behavior={
+          Platform.OS === "ios" ? "padding" : "height"
+        }
+        style={styles.flex}
       >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backButton}
+            disabled={isLoading}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={COLORS.text}
+            />
           </TouchableOpacity>
         </View>
 
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.headerCenter}>
             <Ionicons
               name="shield-checkmark"
               size={48}
               color="#27AE60"
-              style={{ marginBottom: 8 }}
+              style={styles.headerIcon}
             />
-            <Text style={styles.title}>Xác minh & Thanh toán</Text>
+
+            <Text style={styles.title}>
+              Xác minh & Thanh toán
+            </Text>
+
             <Text style={styles.subtitle}>
-              Bước 2/2: Bổ sung để tăng uy tín và nhận tiền bán hàng. Có thể
-              thiết lập sau.
+              Bước 2/2: Bổ sung để tăng uy tín và nhận tiền
+              bán hàng. Có thể thiết lập sau.
             </Text>
           </View>
 
-          {/* ================= HỒ SƠ PHÁP LÝ ================= */}
           <View style={styles.sectionHeader}>
             <View style={styles.verticalBar} />
-            <Text style={styles.sectionTitle}>HỒ SƠ PHÁP LÝ</Text>
+
+            <Text style={styles.sectionTitle}>
+              HỒ SƠ PHÁP LÝ
+            </Text>
           </View>
 
-          <Text style={styles.fieldLabel}>Số CCCD/CMND</Text>
+          <Text style={styles.fieldLabel}>
+            Số CCCD/CMND
+          </Text>
+
           <View style={styles.inputContainerWhite}>
             <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-              ]}
+              style={[styles.input, webInputStyle]}
               placeholder="Nhập số CCCD (12 số)..."
               placeholderTextColor={COLORS.textLight}
               keyboardType="numeric"
               value={repCode}
               onChangeText={setRepCode}
               editable={!isLoading}
+              maxLength={12}
             />
           </View>
 
-          <Text style={styles.fieldLabel}>Họ và tên (Theo CCCD)</Text>
+          <Text style={styles.fieldLabel}>
+            Họ và tên (Theo CCCD)
+          </Text>
+
           <View style={styles.inputContainerWhite}>
             <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-              ]}
+              style={[styles.input, webInputStyle]}
               placeholder="VD: NGUYEN VAN A"
               placeholderTextColor={COLORS.textLight}
               autoCapitalize="characters"
@@ -378,13 +571,13 @@ export default function VerificationSetupScreen() {
             />
           </View>
 
-          <Text style={styles.fieldLabel}>Ngày sinh (YYYY-MM-DD)</Text>
+          <Text style={styles.fieldLabel}>
+            Ngày sinh (YYYY-MM-DD)
+          </Text>
+
           <View style={styles.inputContainerWhite}>
             <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-              ]}
+              style={[styles.input, webInputStyle]}
               placeholder="VD: 2000-01-25"
               placeholderTextColor={COLORS.textLight}
               value={repDob}
@@ -393,13 +586,13 @@ export default function VerificationSetupScreen() {
             />
           </View>
 
-          <Text style={styles.fieldLabel}>Địa chỉ thường trú</Text>
+          <Text style={styles.fieldLabel}>
+            Địa chỉ thường trú
+          </Text>
+
           <View style={styles.inputContainerWhite}>
             <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-              ]}
+              style={[styles.input, webInputStyle]}
               placeholder="Nhập địa chỉ theo CCCD..."
               placeholderTextColor={COLORS.textLight}
               value={repAddress}
@@ -408,7 +601,10 @@ export default function VerificationSetupScreen() {
             />
           </View>
 
-          <Text style={styles.fieldLabel}>Hình ảnh CCCD</Text>
+          <Text style={styles.fieldLabel}>
+            Hình ảnh CCCD
+          </Text>
+
           <View style={styles.cccdContainer}>
             <TouchableOpacity
               style={styles.cccdUploadBox}
@@ -428,7 +624,10 @@ export default function VerificationSetupScreen() {
                     size={24}
                     color={COLORS.textLight}
                   />
-                  <Text style={styles.cccdUploadText}>Mặt trước</Text>
+
+                  <Text style={styles.cccdUploadText}>
+                    Mặt trước
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -451,20 +650,28 @@ export default function VerificationSetupScreen() {
                     size={24}
                     color={COLORS.textLight}
                   />
-                  <Text style={styles.cccdUploadText}>Mặt sau</Text>
+
+                  <Text style={styles.cccdUploadText}>
+                    Mặt sau
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
 
-          {/* ================= THÔNG TIN THANH TOÁN ================= */}
           <View style={styles.sectionHeader}>
             <View style={styles.verticalBar} />
-            <Text style={styles.sectionTitle}>THÔNG TIN THANH TOÁN</Text>
+
+            <Text style={styles.sectionTitle}>
+              THÔNG TIN THANH TOÁN
+            </Text>
           </View>
 
           <View style={styles.paymentWrapper}>
-            <Text style={styles.fieldLabel}>Ngân hàng thụ hưởng</Text>
+            <Text style={styles.fieldLabel}>
+              Ngân hàng thụ hưởng
+            </Text>
+
             <TouchableOpacity
               style={styles.bankSelector}
               onPress={() => setShowBankModal(true)}
@@ -472,14 +679,15 @@ export default function VerificationSetupScreen() {
             >
               {bankName ? (
                 <View style={styles.selectedBankRow}>
-                  {bankLogo && (
+                  {bankLogo ? (
                     <Image
                       source={{ uri: bankLogo }}
                       style={styles.selectedBankLogo}
                       resizeMode="contain"
                     />
-                  )}
-                  <Text style={styles.input}>
+                  ) : null}
+
+                  <Text style={styles.selectedBankText}>
                     {bankName} ({bankDisplayCode})
                   </Text>
                 </View>
@@ -488,6 +696,7 @@ export default function VerificationSetupScreen() {
                   Chọn ngân hàng của bạn...
                 </Text>
               )}
+
               <Ionicons
                 name="chevron-down"
                 size={20}
@@ -495,13 +704,13 @@ export default function VerificationSetupScreen() {
               />
             </TouchableOpacity>
 
-            <Text style={styles.fieldLabel}>Số tài khoản</Text>
+            <Text style={styles.fieldLabel}>
+              Số tài khoản
+            </Text>
+
             <View style={styles.inputContainerWhite}>
               <TextInput
-                style={[
-                  styles.input,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-                ]}
+                style={[styles.input, webInputStyle]}
                 placeholder="Nhập số tài khoản..."
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="numeric"
@@ -514,12 +723,10 @@ export default function VerificationSetupScreen() {
             <Text style={styles.fieldLabel}>
               Tên chủ tài khoản (Khớp với CCCD)
             </Text>
+
             <View style={styles.inputContainerWhite}>
               <TextInput
-                style={[
-                  styles.input,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-                ]}
+                style={[styles.input, webInputStyle]}
                 placeholder="VD: NGUYEN VAN A"
                 placeholderTextColor={COLORS.textLight}
                 autoCapitalize="characters"
@@ -531,14 +738,19 @@ export default function VerificationSetupScreen() {
           </View>
 
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[
+              styles.primaryButton,
+              isLoading ? styles.disabledButton : undefined,
+            ]}
             onPress={() => executeRegistration(true)}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.primaryButtonText}>HOÀN THÀNH</Text>
+              <Text style={styles.primaryButtonText}>
+                HOÀN THÀNH
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -547,22 +759,35 @@ export default function VerificationSetupScreen() {
             onPress={() => executeRegistration(false)}
             disabled={isLoading}
           >
-            <Text style={styles.skipButtonText}>Bỏ qua & Đăng ký ngay</Text>
+            <Text style={styles.skipButtonText}>
+              Bỏ qua & Đăng ký ngay
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ================= MODAL CHỌN NGÂN HÀNG ================= */}
-      <Modal visible={showBankModal} animationType="slide" transparent={true}>
+      <Modal
+        visible={showBankModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowBankModal(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Chọn Ngân Hàng</Text>
+              <Text style={styles.modalTitle}>
+                Chọn Ngân Hàng
+              </Text>
+
               <TouchableOpacity
                 onPress={() => setShowBankModal(false)}
-                style={{ padding: 4 }}
+                style={styles.modalCloseButton}
               >
-                <Ionicons name="close" size={24} color={COLORS.text} />
+                <Ionicons
+                  name="close"
+                  size={24}
+                  color={COLORS.text}
+                />
               </TouchableOpacity>
             </View>
 
@@ -571,16 +796,16 @@ export default function VerificationSetupScreen() {
                 name="search"
                 size={20}
                 color={COLORS.textLight}
-                style={{ marginRight: 8 }}
+                style={styles.searchIcon}
               />
+
               <TextInput
-                style={[
-                  styles.input,
-                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-                ]}
+                style={[styles.input, webInputStyle]}
                 placeholder="Tìm tên hoặc mã ngân hàng..."
+                placeholderTextColor={COLORS.textLight}
                 value={searchBankQuery}
                 onChangeText={handleSearchBank}
+                autoCapitalize="none"
               />
             </View>
 
@@ -588,47 +813,51 @@ export default function VerificationSetupScreen() {
               <ActivityIndicator
                 size="large"
                 color={COLORS.primary}
-                style={{ marginTop: 40 }}
+                style={styles.bankLoading}
               />
             ) : (
               <FlatList
                 data={filteredBanks}
-                keyExtractor={(item) => item.id.toString()}
+                keyExtractor={(item) =>
+                  item.id.toString()
+                }
+                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.bankItem}
-                    onPress={() => handleSelectBank(item)}
+                    onPress={() =>
+                      handleSelectBank(item)
+                    }
                   >
                     <Image
                       source={{ uri: item.logo }}
                       style={styles.bankLogo}
                       resizeMode="contain"
                     />
+
                     <View style={styles.bankInfo}>
                       <Text style={styles.bankShortName}>
                         {item.shortName}{" "}
-                        <Text style={{ color: COLORS.primary }}>
+                        <Text style={styles.bankCodeText}>
                           ({item.code})
                         </Text>
                       </Text>
-                      <Text style={styles.bankFullName} numberOfLines={1}>
+
+                      <Text
+                        style={styles.bankFullName}
+                        numberOfLines={1}
+                      >
                         {item.name}
                       </Text>
                     </View>
                   </TouchableOpacity>
                 )}
-                ListEmptyComponent={() => (
-                  <Text
-                    style={{
-                      textAlign: "center",
-                      marginTop: 40,
-                      color: COLORS.textLight,
-                    }}
-                  >
+                ListEmptyComponent={
+                  <Text style={styles.emptyBankText}>
                     Không tìm thấy ngân hàng
                   </Text>
-                )}
+                }
               />
             )}
           </View>
@@ -639,17 +868,48 @@ export default function VerificationSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white },
-  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  backButton: { padding: 4, marginLeft: -4, alignSelf: "flex-start" },
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
-  headerCenter: { alignItems: "center", marginBottom: 32 },
+  flex: {
+    flex: 1,
+  },
+
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+  },
+
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+
+  backButton: {
+    padding: 4,
+    marginLeft: -4,
+    alignSelf: "flex-start",
+  },
+
+  scrollContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+
+  headerCenter: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+
+  headerIcon: {
+    marginBottom: 8,
+  },
+
   title: {
     fontSize: 22,
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 8,
   },
+
   subtitle: {
     fontSize: 14,
     color: COLORS.textLight,
@@ -657,12 +917,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 10,
   },
+
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 16,
     marginTop: 8,
   },
+
   verticalBar: {
     width: 4,
     height: 16,
@@ -670,6 +932,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     borderRadius: 2,
   },
+
   sectionTitle: {
     fontSize: 14,
     fontWeight: "bold",
@@ -677,12 +940,14 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+
   fieldLabel: {
     fontSize: 13,
     fontWeight: "bold",
     color: "#2C3E50",
     marginBottom: 8,
   },
+
   inputContainerWhite: {
     flexDirection: "row",
     alignItems: "center",
@@ -694,9 +959,31 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     marginBottom: 16,
   },
-  input: { flex: 1, fontSize: 14, color: COLORS.text },
-  placeholderText: { flex: 1, fontSize: 14, color: COLORS.textLight },
-  cccdContainer: { flexDirection: "row", gap: 12, marginBottom: 32 },
+
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+
+  selectedBankText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+
+  placeholderText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+
+  cccdContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 32,
+  },
+
   cccdUploadBox: {
     flex: 1,
     height: 100,
@@ -709,14 +996,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#FAFAFA",
     overflow: "hidden",
   },
-  cccdUploadText: { fontSize: 12, color: COLORS.textLight, marginTop: 8 },
-  cccdImage: { width: "100%", height: "100%" },
+
+  cccdUploadText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 8,
+  },
+
+  cccdImage: {
+    width: "100%",
+    height: "100%",
+  },
+
   paymentWrapper: {
     backgroundColor: "#F4F7F8",
     padding: 16,
     borderRadius: 12,
     marginBottom: 32,
   },
+
   primaryButton: {
     backgroundColor: COLORS.primary,
     borderRadius: 12,
@@ -725,9 +1023,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
-  skipButton: { height: 48, justifyContent: "center", alignItems: "center" },
-  skipButtonText: { color: "#607D8B", fontSize: 15, fontWeight: "600" },
+
+  disabledButton: {
+    opacity: 0.7,
+  },
+
+  primaryButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+
+  skipButton: {
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  skipButtonText: {
+    color: "#607D8B",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+
   bankSelector: {
     flexDirection: "row",
     alignItems: "center",
@@ -739,13 +1057,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     marginBottom: 16,
   },
-  selectedBankRow: { flex: 1, flexDirection: "row", alignItems: "center" },
-  selectedBankLogo: { width: 24, height: 24, marginRight: 8 },
+
+  selectedBankRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  selectedBankLogo: {
+    width: 24,
+    height: 24,
+    marginRight: 8,
+  },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
+
   modalContent: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
@@ -753,13 +1083,24 @@ const styles = StyleSheet.create({
     padding: 20,
     height: "80%",
   },
+
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: COLORS.text,
+  },
+
+  modalCloseButton: {
+    padding: 4,
+  },
+
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -769,6 +1110,15 @@ const styles = StyleSheet.create({
     height: 44,
     marginBottom: 16,
   },
+
+  searchIcon: {
+    marginRight: 8,
+  },
+
+  bankLoading: {
+    marginTop: 40,
+  },
+
   bankItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -776,6 +1126,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#F0F0F0",
   },
+
   bankLogo: {
     width: 40,
     height: 40,
@@ -783,12 +1134,31 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLORS.white,
   },
-  bankInfo: { flex: 1, justifyContent: "center" },
+
+  bankInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+
   bankShortName: {
     fontSize: 15,
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 4,
   },
-  bankFullName: { fontSize: 12, color: COLORS.textLight },
+
+  bankCodeText: {
+    color: COLORS.primary,
+  },
+
+  bankFullName: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+
+  emptyBankText: {
+    textAlign: "center",
+    marginTop: 40,
+    color: COLORS.textLight,
+  },
 });

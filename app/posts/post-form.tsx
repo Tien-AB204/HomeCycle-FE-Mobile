@@ -88,7 +88,6 @@ const postApi = {
       .then((response) => response.data),
 };
 
-// ================= CONSTANTS =================
 const SPACE_USAGE_OPTIONS = [
   { label: "Phòng khách", value: "Living_room" },
   { label: "Nhà bếp", value: "Kitchen" },
@@ -118,8 +117,6 @@ const DELIVERY_OPTIONS = [
   { label: "Người bán tự giao", value: "SellerDelivers" },
   { label: "Người mua đến lấy", value: "BuyerPickUp" },
 ];
-
-// CHUẨN HÓA LẠI THEO ĐÚNG ENUM TỪ C#
 const PRIORITY_OPTIONS = [
   { label: "Ưu tiên Thấp", value: "Low" },
   { label: "Bình thường", value: "Medium" },
@@ -154,7 +151,6 @@ export default function PostFormScreen() {
           : "Sell";
   const [editPostType, setEditPostType] = useState<"Buy" | "Sell" | null>(null);
 
-  // Khi edit, loại bài lấy từ dữ liệu thật của bài đăng; route/role chỉ là phương án dự phòng.
   const effectivePostType = isEditMode
     ? (editPostType ?? fallbackPostType)
     : fallbackPostType;
@@ -173,7 +169,6 @@ export default function PostFormScreen() {
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
   const [oldEavData, setOldEavData] = useState<any[]>([]);
 
-  // === FORM STATES ===
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
@@ -197,9 +192,8 @@ export default function PostFormScreen() {
   const [originalPrice, setOriginalPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [deliveryMethod, setDeliveryMethod] = useState("");
-  const [priorityLevel, setPriorityLevel] = useState(""); // Đã chuyển thành chuẩn Chọn Dropdown
+  const [priorityLevel, setPriorityLevel] = useState("");
 
-  // ====== ĐỊA CHỈ (AUTOCOMPLETE INLINE) ======
   const [city, setCity] = useState("");
   const [cityCode, setCityCode] = useState<string | null>(null);
   const [ward, setWard] = useState("");
@@ -219,91 +213,37 @@ export default function PostFormScreen() {
   const [wardLoadError, setWardLoadError] = useState(false);
 
   useEffect(() => {
-    let isActive = true;
-
     locationApi
       .getProvinces()
       .then((data) => {
-        if (!isActive) return;
-        setProvinceLoadError(false);
-        const provinces = Array.isArray(data) ? data : [];
         setProvincesList(
-          provinces.map((p: any) => ({
-            label: p.name,
-            value: p.province_code,
-          })),
+          Array.isArray(data)
+            ? data.map((p: any) => ({ label: p.name, value: p.province_code }))
+            : [],
         );
       })
-      .catch((error) => {
-        console.error("Lỗi tải danh sách Tỉnh/Thành:", error);
-        if (isActive) {
-          setProvinceLoadError(true);
-          setProvincesList([]);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
+      .catch(() => setProvinceLoadError(true));
   }, []);
 
   useEffect(() => {
-    let isActive = true;
-
-    if (!cityCode) {
+    if (cityCode) {
+      setIsFetchingLocation(true);
+      locationApi
+        .getWards(cityCode)
+        .then((data) => {
+          const wards = Array.isArray(data) ? data : [];
+          const uniqueWards = Array.from(
+            new Set(wards.map((w: any) => w.ward_name)),
+          ).map((name) => ({ label: name as string, value: name as string }));
+          setWardsList(uniqueWards);
+        })
+        .catch(() => setWardLoadError(true))
+        .finally(() => setIsFetchingLocation(false));
+    } else {
       setWardsList([]);
-      setIsFetchingLocation(false);
-      setWardLoadError(false);
-      return () => {
-        isActive = false;
-      };
     }
-
-    setIsFetchingLocation(true);
-    setWardLoadError(false);
-    locationApi
-      .getWards(cityCode)
-      .then((data) => {
-        if (!isActive) return;
-        const wards = Array.isArray(data) ? data : [];
-        const wardNames = wards
-          .map((w: any) => w.ward_name)
-          .filter(
-            (name: unknown): name is string =>
-              typeof name === "string" && name.trim().length > 0,
-          );
-        const uniqueWards = Array.from(new Set(wardNames)).map((name) => ({
-          label: name,
-          value: name,
-        }));
-        setWardsList(uniqueWards);
-      })
-      .catch((error) => {
-        console.error("Lỗi tải danh sách Phường/Xã:", error);
-        if (isActive) {
-          setWardLoadError(true);
-          setWardsList([]);
-        }
-      })
-      .finally(() => {
-        if (isActive) setIsFetchingLocation(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
   }, [cityCode]);
 
-  // Dữ liệu edit có thể được tải trước danh sách tỉnh; ghép cityCode sau khi cả hai đã sẵn sàng.
-  useEffect(() => {
-    if (!city || cityCode || provincesList.length === 0) return;
-    const matchProv = provincesList.find(
-      (prov) => prov.label.toLowerCase() === city.toLowerCase(),
-    );
-    if (matchProv) setCityCode(matchProv.value);
-  }, [city, cityCode, provincesList]);
-
-  // ================= MODAL CHỌN DROPDOWN DÙNG CHUNG =================
   const [showSelectModal, setShowSelectModal] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalOptions, setModalOptions] = useState<
@@ -333,7 +273,6 @@ export default function PostFormScreen() {
     return found ? found.label : value;
   };
 
-  // 1. TẢI MASTER DATA
   useEffect(() => {
     const fetchMasterData = async () => {
       try {
@@ -342,17 +281,10 @@ export default function PostFormScreen() {
           postApi.getAllProductTypes(),
           postApi.getAllBrands(),
         ]);
-
-        const catList =
-          catRes?.items ||
-          catRes?.data?.items ||
-          catRes?.data ||
-          (Array.isArray(catRes) ? catRes : []);
         setCategories(
-          catList.map((c: any) => ({
-            label: c.categoryName,
-            value: c.categoryId,
-          })),
+          (catRes?.items || catRes?.data?.items || catRes?.data || []).map(
+            (c: any) => ({ label: c.categoryName, value: c.categoryId }),
+          ),
         );
         if (ptRes?.data?.items)
           setAllProductTypes(
@@ -362,7 +294,6 @@ export default function PostFormScreen() {
               categoryId: pt.categoryId,
             })),
           );
-
         const brandList = brandRes?.data?.items || brandRes?.data || [];
         if (Array.isArray(brandList))
           setBrands(
@@ -372,13 +303,12 @@ export default function PostFormScreen() {
             })),
           );
       } catch (error) {
-        console.error("Lỗi lấy Master Data:", error);
+        console.error("Lỗi:", error);
       }
     };
     fetchMasterData();
   }, []);
 
-  // 2. TẢI DỮ LIỆU CŨ VÀO FORM (KHI EDIT)
   useEffect(() => {
     if (!isEditMode) return;
     const loadOldData = async () => {
@@ -387,22 +317,6 @@ export default function PostFormScreen() {
         const res = await postApi.getPostById(editId as string);
         const data = res?.data || res;
         const p = data.product || data.requirement || {};
-
-        const postTypeFromData =
-          typeof data.postType === "string"
-            ? data.postType
-            : data.requirement
-              ? "Buy"
-              : data.product
-                ? "Sell"
-                : null;
-        const normalizedPostType = postTypeFromData?.trim().toLowerCase();
-        if (normalizedPostType === "buy") setEditPostType("Buy");
-        else if (normalizedPostType === "sell") setEditPostType("Sell");
-        else
-          console.warn(
-            "Không xác định được postType từ dữ liệu bài đăng; đang dùng route/role làm dự phòng.",
-          );
 
         setProductName(data.productName || p.productName || "");
         setDescription(data.description || "");
@@ -413,11 +327,16 @@ export default function PostFormScreen() {
             "",
         );
         setQuantity(data.quantity?.toString() || "1");
-
-        // Load Location
         setCity(data.city || "");
         setWard(data.ward || "");
         setStreetAddress(data.streetAddress || "");
+
+        if (data.city) {
+          const matchProv = provincesList.find(
+            (prov) => prov.label.toLowerCase() === data.city.toLowerCase(),
+          );
+          if (matchProv) setCityCode(matchProv.value);
+        }
 
         setDeliveryMethod(data.deliveryMethod || "");
         setPriorityLevel(data.priorityLevel || "");
@@ -436,22 +355,19 @@ export default function PostFormScreen() {
         setWidth(p.width?.toString() || "");
         setHeight(p.height?.toString() || "");
 
-        if (data.medias && data.medias.length > 0) {
+        if (data.medias && data.medias.length > 0)
           setImages(data.medias.map((m: any) => m.url || m.mediaUrl));
-        }
-        if (p.attributeValues && Array.isArray(p.attributeValues)) {
+        if (p.attributeValues && Array.isArray(p.attributeValues))
           setOldEavData(p.attributeValues);
-        }
       } catch (error) {
-        console.error("Lỗi tải dữ liệu cũ:", error);
+        console.error(error);
       } finally {
         setIsFetchingOldData(false);
       }
     };
-    loadOldData();
-  }, [editId, isEditMode]);
+    if (provincesList.length > 0) loadOldData();
+  }, [editId, provincesList]);
 
-  // 3. LỌC PRODUCT TYPE
   useEffect(() => {
     if (selectedCategory)
       setFilteredProductTypes(
@@ -460,7 +376,6 @@ export default function PostFormScreen() {
     else setFilteredProductTypes([]);
   }, [selectedCategory, allProductTypes]);
 
-  // 4. TẢI DYNAMIC SCHEMA EAV
   useEffect(() => {
     const fetchDynamicSchema = async () => {
       if (!selectedProductType) {
@@ -472,35 +387,24 @@ export default function PostFormScreen() {
         const res =
           await postApi.getAttributesByProductType(selectedProductType);
         const schemaData = res?.data || [];
-
         const initializedEav = schemaData.map((attr: any) => {
           const oldVal = oldEavData.find(
             (old) => old.attributeId === attr.attributeId,
           );
-          let initBool = null;
-          if (
-            oldVal &&
-            oldVal.valueBoolean !== null &&
-            oldVal.valueBoolean !== undefined
-          ) {
-            initBool =
-              oldVal.valueBoolean === "true" || oldVal.valueBoolean === true;
-          }
           return {
             ...attr,
             selectedOptionId: oldVal ? oldVal.optionId || "" : "",
-            valueBoolean: initBool,
+            valueBoolean: oldVal?.valueBoolean ?? null,
             valueText: oldVal ? oldVal.valueText || "" : "",
             valueNumber: oldVal ? oldVal.valueNumber?.toString() || "" : "",
           };
         });
-
         initializedEav.sort(
           (a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0),
         );
         setEavAttributes(initializedEav);
       } catch (error) {
-        console.error("Lỗi lấy Schema EAV:", error);
+        console.error(error);
       } finally {
         setIsLoadingSchema(false);
       }
@@ -514,23 +418,20 @@ export default function PostFormScreen() {
   const pickImages = async () => {
     const remainingSlots = MAX_IMAGES - images.length;
     if (remainingSlots <= 0) {
-      alert(`Bạn chỉ có thể chọn tối đa ${MAX_IMAGES} ảnh.`);
+      alert(`Tối đa ${MAX_IMAGES} ảnh.`);
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       selectionLimit: remainingSlots,
       quality: 0.8,
     });
-    if (!result.canceled) {
-      const selectedUris = result.assets.map((asset) => asset.uri);
-      setImages((prev) => {
-        const availableSlots = MAX_IMAGES - prev.length;
-        return [...prev, ...selectedUris.slice(0, availableSlots)];
-      });
-    }
+    if (!result.canceled)
+      setImages((prev) => [
+        ...prev,
+        ...result.assets.map((a) => a.uri).slice(0, remainingSlots),
+      ]);
   };
   const removeImage = (indexToRemove: number) =>
     setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
@@ -545,22 +446,14 @@ export default function PostFormScreen() {
 
   const handlePublish = async () => {
     if (!productName || !basePrice || images.length === 0) {
-      alert("Vui lòng điền tên sản phẩm, giá và chọn ít nhất 1 ảnh!");
+      alert("Vui lòng điền đủ thông tin!");
       return;
     }
-    if (images.length > MAX_IMAGES) {
-      alert(`Bạn chỉ có thể gửi tối đa ${MAX_IMAGES} ảnh.`);
-      return;
-    }
-
     try {
       setIsLoading(true);
       const formData = new FormData();
-
       formData.append("Quantity", quantity);
       if (description) formData.append("Description", description);
-      // Không gửi ExpiryDate; Backend chịu trách nhiệm áp dụng thời hạn mặc định.
-
       if (city) formData.append("City", city);
       if (ward) formData.append("Ward", ward);
       if (streetAddress) formData.append("StreetAddress", streetAddress);
@@ -568,21 +461,18 @@ export default function PostFormScreen() {
       if (priorityLevel) formData.append("PriorityLevel", priorityLevel);
 
       const prefix = isBuyPost ? "Requirement" : "Product";
-
       if (isBuyPost) {
         formData.append("ExpectedPrice", basePrice);
         formData.append(`${prefix}.ExpectedPrice`, basePrice);
       } else {
         formData.append("BasePrice", basePrice);
       }
-
       formData.append(`${prefix}.ProductName`, productName);
       if (selectedCategory)
         formData.append(`${prefix}.CategoryId`, selectedCategory);
       if (selectedProductType)
         formData.append(`${prefix}.ProductTypeId`, selectedProductType);
       if (brandId) formData.append(`${prefix}.BrandId`, brandId);
-
       if (spaceUsage) formData.append(`${prefix}.SpaceUsage`, spaceUsage);
       if (functionalityStatus)
         formData.append(`${prefix}.FunctionalityStatus`, functionalityStatus);
@@ -603,74 +493,50 @@ export default function PostFormScreen() {
       }
 
       eavAttributes.forEach((attr) => {
-        const hasOption = !!attr.selectedOptionId;
-        const hasText = !!attr.valueText;
-        const hasNumber = !!attr.valueNumber;
-        const hasBool =
-          attr.valueBoolean !== null && attr.valueBoolean !== undefined;
-
-        if (
-          !hasOption &&
-          !hasText &&
-          !hasNumber &&
-          !hasBool &&
-          !attr.isRequired
-        )
-          return;
-
         const item: any = { attributeId: attr.attributeId };
-        if (hasOption) item.optionId = attr.selectedOptionId;
-        else if (hasBool) item.valueBoolean = attr.valueBoolean;
-        else if (hasNumber) item.valueNumber = Number(attr.valueNumber);
-        else if (hasText) item.valueText = attr.valueText;
-
+        if (attr.selectedOptionId) item.optionId = attr.selectedOptionId;
+        else if (attr.valueBoolean !== null)
+          item.valueBoolean = attr.valueBoolean;
+        else if (attr.valueNumber) item.valueNumber = Number(attr.valueNumber);
+        else if (attr.valueText) item.valueText = attr.valueText;
+        else return;
         formData.append(`${prefix}.AttributeValues`, JSON.stringify(item));
       });
 
-      await Promise.all(
-        images.map(async (imageUri, index) => {
-          if (imageUri.startsWith("http")) return;
+      await Promise.all(images.map(async (imageUri, index) => {
+        if (imageUri.startsWith("http")) return;
 
-          let filename =
-            imageUri.split("/").pop()?.split("?")[0] || `image_${index}.jpg`;
-          if (!filename.includes(".")) filename = `${filename}.jpg`;
-
-          const match = /\.(\w+)$/.exec(filename.toLowerCase());
-          let type = match ? `image/${match[1]}` : `image/jpeg`;
-          if (type === "image/jpg") type = "image/jpeg";
-
-          if (Platform.OS === "web") {
+        if (Platform.OS === "web") {
             const response = await fetch(imageUri);
             const blob = await response.blob();
-            formData.append("Medias", blob, filename);
-          } else {
-            formData.append("Medias", {
-              uri:
-                Platform.OS === "ios"
-                  ? imageUri.replace("file://", "")
-                  : imageUri,
-              name: filename,
-              type: type,
+            // Lấy định dạng từ MIME type của blob (ví dụ: image/png -> png)
+            const ext = blob.type.split('/')[1] || 'jpg';
+            formData.append("Medias", blob, `image_${index}.${ext}`);
+        } else {
+            // Đối với Mobile, giữ nguyên logic cũ vì nó đang hoạt động ổn định trên file hệ thống
+            let filename = imageUri.split("/").pop()?.split("?")[0] || `image_${index}.jpg`;
+            if (!filename.includes(".")) filename = `${filename}.jpg`;
+            formData.append("Medias", { 
+                uri: imageUri.replace("file://", ""), 
+                name: filename, 
+                type: 'image/jpeg' 
             } as any);
-          }
-        }),
-      );
+        }
+      }));
 
-      if (isEditMode) {
-        if (isBuyPost) await postApi.updateBuyPost(editId as string, formData);
-        else await postApi.updateSellPost(editId as string, formData);
-        alert("Cập nhật tin đăng thành công!");
-      } else {
-        if (isBuyPost) await postApi.createBuyPost(formData);
-        else await postApi.createSellPost(formData);
-        alert("Đã gửi yêu cầu tạo tin thành công!");
-      }
+      if (isEditMode)
+        isBuyPost
+          ? await postApi.updateBuyPost(editId as string, formData)
+          : await postApi.updateSellPost(editId as string, formData);
+      else
+        isBuyPost
+          ? await postApi.createBuyPost(formData)
+          : await postApi.createSellPost(formData);
+
+      alert("Thành công!");
       router.back();
     } catch (error: any) {
-      console.error("Lỗi form:", error);
-      alert(
-        error.response?.data?.message || "Có lỗi xảy ra, vui lòng thử lại!",
-      );
+      alert(error.response?.data?.message || "Có lỗi xảy ra");
     } finally {
       setIsLoading(false);
     }
@@ -978,17 +844,26 @@ export default function PostFormScreen() {
                   mode === "CustomOnly" ||
                   mode === 3 ||
                   mode === "OptionOrCustom";
-
                 const optionList =
                   attr.options?.map((o: any) => ({
                     label: o.optionValue,
                     value: o.optionId,
                   })) || [];
 
+                // FIX UNIT: Nếu unit là chuỗi "string" thì coi như không có unit
+                const rawUnit = attr.unit;
+                const displayUnit =
+                  rawUnit &&
+                  typeof rawUnit === "string" &&
+                  rawUnit.toLowerCase() !== "string"
+                    ? ` (${rawUnit})`
+                    : "";
+
                 return (
                   <View key={attr.attributeId} style={styles.rawBlock}>
                     <Text style={styles.rawLabel}>
-                      {attr.attributeName} {attr.unit ? ` (${attr.unit})` : ""}
+                      {attr.attributeName}
+                      {displayUnit}
                       {attr.isRequired ? (
                         <Text style={styles.required}> *</Text>
                       ) : null}
@@ -1116,7 +991,7 @@ export default function PostFormScreen() {
                                 ? ({ outlineStyle: "none" } as any)
                                 : undefined,
                             ]}
-                            placeholder={`Nhập số... ${attr.unit ? `(${attr.unit})` : ""}`}
+                            placeholder={`Nhập số...`}
                             placeholderTextColor="#94A3B8"
                             keyboardType="numeric"
                             value={attr.valueNumber}
@@ -1124,17 +999,6 @@ export default function PostFormScreen() {
                               updateEavValue(index, "valueNumber", text)
                             }
                           />
-                          {attr.unit && (
-                            <Text
-                              style={{
-                                color: "#94A3B8",
-                                fontSize: 13,
-                                marginLeft: 8,
-                              }}
-                            >
-                              {attr.unit}
-                            </Text>
-                          )}
                         </View>
                       </View>
                     )}
@@ -1450,7 +1314,6 @@ export default function PostFormScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* ĐÃ CHUYỂN ƯU TIÊN THÀNH CHUẨN DROPDOWN ONLY */}
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Ưu tiên</Text>
                 <TouchableOpacity
@@ -1503,9 +1366,7 @@ export default function PostFormScreen() {
                 <TextInput
                   style={[
                     styles.input,
-                    Platform.OS === "web"
-                      ? ({ outlineStyle: "none" } as any)
-                      : undefined,
+                    Platform.OS === "web" && ({ outlineStyle: "none" } as any),
                   ]}
                   placeholder="Nhập hoặc Chọn Tỉnh/Thành..."
                   placeholderTextColor="#94A3B8"
@@ -1616,9 +1477,8 @@ export default function PostFormScreen() {
                   <TextInput
                     style={[
                       styles.input,
-                      Platform.OS === "web"
-                        ? ({ outlineStyle: "none" } as any)
-                        : undefined,
+                      Platform.OS === "web" &&
+                        ({ outlineStyle: "none" } as any),
                     ]}
                     placeholder="Nhập hoặc Chọn Phường/Xã..."
                     placeholderTextColor="#94A3B8"

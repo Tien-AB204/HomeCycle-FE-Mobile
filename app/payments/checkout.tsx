@@ -4,7 +4,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -12,9 +11,17 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  InlineFeedback,
+  useActionFeedback,
+} from "../../src/components/shared/ActionFeedback";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import {
+  getApiErrorMessage,
+  getApiSuccessMessage,
+} from "../../src/utils/apiFeedback";
 
 const agreementApi = {
   getAgreementById: (agreementId: string) =>
@@ -28,6 +35,7 @@ const paymentApi = {
     apiClient
       .post(`/payments/payos/checkout/${agreementId}`)
       .then((response) => response.data),
+
   checkoutWithWallet: (agreementId: string) =>
     apiClient
       .post(`/payments/wallet/checkout/${agreementId}`)
@@ -36,100 +44,133 @@ const paymentApi = {
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { agreementId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+
+  const agreementId = Array.isArray(params.agreementId)
+    ? params.agreementId[0]
+    : params.agreementId;
 
   const [agreement, setAgreement] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPaymentCompleted, setIsPaymentCompleted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
 
-  // 1. LẤY THÔNG TIN ĐƠN ĐỂ TÍNH TIỀN THỰC TẾ
+  const { feedback, clearFeedback, showError, showInfo, showSuccess } =
+    useActionFeedback();
+
   const fetchAgreementData = useCallback(async () => {
-    if (!agreementId) return;
+    if (!agreementId) {
+      setAgreement(null);
+      setIsLoading(false);
+      showError("Không tìm thấy mã hợp đồng cần thanh toán.");
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const res = await agreementApi.getAgreementById(agreementId as string);
-      setAgreement(res?.data || res);
-    } catch (error) {
+      clearFeedback();
+
+      const response = await agreementApi.getAgreementById(agreementId);
+      setAgreement(response?.data || response);
+    } catch (error: unknown) {
       console.error("Lỗi lấy thông tin thanh toán:", error);
-      const msg = "Không thể tải thông tin thanh toán.";
-      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Lỗi", msg);
+      setAgreement(null);
+      showError(
+        getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
+      );
     } finally {
       setIsLoading(false);
     }
-  }, [agreementId]);
+  }, [agreementId, clearFeedback, showError]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchAgreementData();
+      void fetchAgreementData();
     }, [fetchAgreementData]),
   );
 
-  // 2. TÍNH TOÁN SỐ TIỀN CẦN THANH TOÁN THEO CÔNG THỨC CHUẨN
   const finalPrice = agreement?.finalPrice || 0;
   const isDeposit = agreement?.paymentType === "Deposit";
 
-  // Tiền cọc là 20% giá chốt giao dịch
+  // Giữ nguyên công thức hiện tại của project: tiền cọc bằng 20% giá chốt.
   const amountToPay = isDeposit ? finalPrice * 0.2 : finalPrice;
-
-  // Phí nền tảng hiện tại đang là 0đ
   const platformFee = 0;
   const totalPayment = amountToPay + platformFee;
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("vi-VN", {
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("vi-VN", {
       style: "currency",
       currency: "VND",
     }).format(value);
+
+  const openPayOSCheckout = async (checkoutUrl: string) => {
+    if (Platform.OS === "web") {
+      const openedWindow = window.open(checkoutUrl, "_blank");
+
+      if (!openedWindow) {
+        throw new Error(
+          "Trình duyệt đã chặn trang thanh toán. Vui lòng cho phép mở cửa sổ mới và thử lại.",
+        );
+      }
+
+      return;
+    }
+
+    const canOpen = await Linking.canOpenURL(checkoutUrl);
+
+    if (!canOpen) {
+      throw new Error("Thiết bị không thể mở đường dẫn thanh toán PayOS.");
+    }
+
+    await Linking.openURL(checkoutUrl);
   };
 
-  // 3. XỬ LÝ NÚT BẤM THANH TOÁN
   const handlePaymentSubmit = async () => {
+    if (!agreementId) {
+      showError("Không tìm thấy mã hợp đồng cần thanh toán.");
+      return;
+    }
+
+    if (isPaymentCompleted) {
+      return;
+    }
+
+    clearFeedback();
+
     try {
       setIsProcessing(true);
 
       if (paymentMethod === "wallet") {
-        // --- THANH TOÁN BẰNG VÍ ---
-        await paymentApi.checkoutWithWallet(agreementId as string);
+        const response = await paymentApi.checkoutWithWallet(agreementId);
 
-        if (Platform.OS === "web") {
-          window.alert("Thanh toán qua Ví thành công!");
-          router.back();
-        } else {
-          Alert.alert("Thành công", "Thanh toán qua Ví thành công!", [
-            { text: "OK", onPress: () => router.back() },
-          ]);
-        }
-      } else {
-        // --- THANH TOÁN BẰNG PAYOS ---
-        const res = await paymentApi.checkoutWithPayOS(agreementId as string);
-        const checkoutUrl = res?.data?.checkoutUrl || res?.checkoutUrl;
-
-        if (checkoutUrl) {
-          // Mở link sang trang quét QR của PayOS
-          if (Platform.OS === "web") {
-            window.open(checkoutUrl, "_blank");
-          } else {
-            Linking.openURL(checkoutUrl);
-          }
-          // Quay lại màn hình trước để chờ BE tự động update status qua Webhook
-          router.back();
-        } else {
-          throw new Error("Không nhận được link thanh toán từ hệ thống.");
-        }
+        setIsPaymentCompleted(true);
+        showSuccess(
+          getApiSuccessMessage(response, "Thanh toán qua ví thành công."),
+        );
+        return;
       }
-    } catch (error: any) {
+
+      const response = await paymentApi.checkoutWithPayOS(agreementId);
+      const checkoutUrl = response?.data?.checkoutUrl || response?.checkoutUrl;
+
+      if (!checkoutUrl) {
+        throw new Error("Không nhận được link thanh toán từ hệ thống.");
+      }
+
+      await openPayOSCheckout(checkoutUrl);
+
+      showInfo(
+        getApiSuccessMessage(
+          response,
+          "Đã mở trang thanh toán PayOS. Sau khi hoàn tất, hãy quay lại ứng dụng để kiểm tra kết quả.",
+        ),
+      );
+    } catch (error: unknown) {
       console.error("Lỗi thanh toán:", error);
-      const errorMsg =
-        error.response?.data?.error?.message ||
-        error.response?.data?.message ||
-        error.message ||
-        "Giao dịch thất bại.";
-      Platform.OS === "web"
-        ? window.alert(`Lỗi: ${errorMsg}`)
-        : Alert.alert("Lỗi", errorMsg);
+      showError(getApiErrorMessage(error, "Giao dịch thất bại."));
     } finally {
       setIsProcessing(false);
     }
@@ -139,8 +180,44 @@ export default function CheckoutScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Header title="Thanh toán" showBack={true} />
+
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!agreement) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Header title="Thanh toán" showBack={true} />
+
+        <View style={styles.emptyContainer}>
+          <Ionicons
+            name="card-outline"
+            size={48}
+            color={COLORS.textLight}
+          />
+
+          <Text style={styles.emptyTitle}>
+            Chưa tải được thông tin thanh toán
+          </Text>
+
+          <InlineFeedback
+            feedback={feedback}
+            onDismiss={clearFeedback}
+            style={styles.emptyFeedback}
+          />
+
+          {agreementId ? (
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => void fetchAgreementData()}
+            >
+              <Text style={styles.retryBtnText}>Thử lại</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -151,7 +228,6 @@ export default function CheckoutScreen() {
       <Header title="Thanh toán" showBack={true} />
 
       <View style={styles.container}>
-        {/* TỔNG HÓA ĐƠN */}
         <View style={styles.invoiceCard}>
           <Text style={styles.sectionTitle}>Tổng hóa đơn</Text>
 
@@ -159,7 +235,10 @@ export default function CheckoutScreen() {
             <Text style={styles.label}>
               {isDeposit ? "Tiền cọc (20%):" : "Thanh toán toàn phần:"}
             </Text>
-            <Text style={styles.value}>{formatCurrency(amountToPay)}</Text>
+
+            <Text style={styles.value}>
+              {formatCurrency(amountToPay)}
+            </Text>
           </View>
 
           <View style={styles.row}>
@@ -177,106 +256,192 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        {/* PHƯƠNG THỨC THANH TOÁN */}
         <Text
           style={[styles.sectionTitle, { marginTop: 24, marginBottom: 12 }]}
         >
           Phương thức thanh toán
         </Text>
 
-        {/* Tuỳ chọn: VÍ HOMECYCLE */}
         <TouchableOpacity
           style={[
             styles.methodCard,
             paymentMethod === "wallet" && styles.methodCardActive,
           ]}
-          onPress={() => setPaymentMethod("wallet")}
+          onPress={() => {
+            clearFeedback();
+            setPaymentMethod("wallet");
+          }}
           activeOpacity={0.8}
+          disabled={isProcessing || isPaymentCompleted}
         >
-          <View style={styles.methodIconBox}>
+          <View
+            style={[
+              styles.methodIconBox,
+              paymentMethod === "wallet" && styles.methodIconBoxActive,
+            ]}
+          >
             <Ionicons
               name="wallet"
               size={24}
               color={
-                paymentMethod === "wallet" ? COLORS.white : COLORS.textLight
+                paymentMethod === "wallet"
+                  ? COLORS.white
+                  : COLORS.textLight
               }
             />
           </View>
+
           <View style={styles.methodInfo}>
             <Text style={styles.methodTitle}>Ví HomeCycle</Text>
-            {/* Tạm thời để No data vì chưa có API lấy số dư ví */}
-            <Text style={styles.methodSubtitle}>Số dư: Chưa có dữ liệu</Text>
+            <Text style={styles.methodSubtitle}>
+              Số dư: Chưa có dữ liệu
+            </Text>
           </View>
+
           <View
             style={[
               styles.radioCircle,
               paymentMethod === "wallet" && styles.radioCircleActive,
             ]}
           >
-            {paymentMethod === "wallet" && <View style={styles.radioInner} />}
+            {paymentMethod === "wallet" ? (
+              <View style={styles.radioInner} />
+            ) : null}
           </View>
         </TouchableOpacity>
 
-        {/* Tuỳ chọn: PAYOS */}
         <TouchableOpacity
           style={[
             styles.methodCard,
             paymentMethod === "payos" && styles.methodCardActive,
           ]}
-          onPress={() => setPaymentMethod("payos")}
+          onPress={() => {
+            clearFeedback();
+            setPaymentMethod("payos");
+          }}
           activeOpacity={0.8}
+          disabled={isProcessing || isPaymentCompleted}
         >
-          <View style={styles.methodIconBoxPayOS}>
+          <View
+            style={[
+              styles.methodIconBox,
+              paymentMethod === "payos" && styles.methodIconBoxActive,
+            ]}
+          >
             <Ionicons
               name="qr-code-outline"
               size={24}
               color={
-                paymentMethod === "payos" ? COLORS.white : COLORS.textLight
+                paymentMethod === "payos"
+                  ? COLORS.white
+                  : COLORS.textLight
               }
             />
           </View>
+
           <View style={styles.methodInfo}>
             <Text style={styles.methodTitle}>PayOS</Text>
             <Text style={styles.methodSubtitle}>
-              Chuyển khoản Ngân hàng / Mã QR
+              Chuyển khoản ngân hàng / Mã QR
             </Text>
           </View>
+
           <View
             style={[
               styles.radioCircle,
               paymentMethod === "payos" && styles.radioCircleActive,
             ]}
           >
-            {paymentMethod === "payos" && <View style={styles.radioInner} />}
+            {paymentMethod === "payos" ? (
+              <View style={styles.radioInner} />
+            ) : null}
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* NÚT THANH TOÁN CỐ ĐỊNH Ở ĐÁY */}
       <View style={styles.bottomBar}>
+        <InlineFeedback
+          feedback={feedback}
+          onDismiss={clearFeedback}
+          style={styles.actionFeedback}
+        />
+
         <TouchableOpacity
-          style={[styles.submitBtn, isProcessing && { opacity: 0.7 }]}
-          onPress={handlePaymentSubmit}
-          disabled={isProcessing}
+          style={[
+            styles.submitBtn,
+            (isProcessing || isPaymentCompleted) && styles.disabledBtn,
+          ]}
+          onPress={() => void handlePaymentSubmit()}
+          disabled={isProcessing || isPaymentCompleted}
         >
           {isProcessing ? (
             <ActivityIndicator color={COLORS.white} />
           ) : (
             <Text style={styles.submitBtnText}>
-              Thanh toán {formatCurrency(totalPayment)}
+              {isPaymentCompleted
+                ? "Thanh toán thành công"
+                : `Thanh toán ${formatCurrency(totalPayment)}`}
             </Text>
           )}
         </TouchableOpacity>
+
+        {isPaymentCompleted ? (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backBtnText}>Quay lại</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  container: { flex: 1, padding: 16 },
-
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 16,
+    marginTop: 12,
+    textAlign: "center",
+  },
+  emptyFeedback: {
+    marginBottom: 12,
+    maxWidth: 420,
+    width: "100%",
+  },
+  retryBtn: {
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+  },
+  retryBtnText: {
+    color: COLORS.white,
+    fontWeight: "700",
+  },
   invoiceCard: {
     backgroundColor: COLORS.white,
     borderRadius: 16,
@@ -301,12 +466,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  label: { fontSize: 14, color: COLORS.textLight },
-  value: { fontSize: 15, fontWeight: "600", color: COLORS.text },
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 12 },
-  totalLabel: { fontSize: 16, fontWeight: "bold", color: COLORS.text },
-  totalValue: { fontSize: 20, fontWeight: "bold", color: COLORS.primary },
-
+  label: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  value: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 12,
+  },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: COLORS.text,
+  },
+  totalValue: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: COLORS.primary,
+  },
   methodCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -317,7 +500,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  methodCardActive: { borderColor: COLORS.primary, backgroundColor: "#F0F9FF" },
+  methodCardActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: "#F0F9FF",
+  },
   methodIconBox: {
     width: 44,
     height: 44,
@@ -327,24 +513,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 16,
   },
-  methodIconBoxPayOS: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "#CBD5E1",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
+  methodIconBoxActive: {
+    backgroundColor: COLORS.primary,
   },
-  methodInfo: { flex: 1 },
+  methodInfo: {
+    flex: 1,
+  },
   methodTitle: {
     fontSize: 16,
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 4,
   },
-  methodSubtitle: { fontSize: 13, color: COLORS.textLight },
-
+  methodSubtitle: {
+    fontSize: 13,
+    color: COLORS.textLight,
+  },
   radioCircle: {
     width: 24,
     height: 24,
@@ -354,19 +538,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  radioCircleActive: { borderColor: COLORS.primary },
+  radioCircleActive: {
+    borderColor: COLORS.primary,
+  },
   radioInner: {
     width: 12,
     height: 12,
     borderRadius: 6,
     backgroundColor: COLORS.primary,
   },
-
   bottomBar: {
     padding: 16,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+    gap: 10,
+  },
+  actionFeedback: {
+    marginBottom: 2,
   },
   submitBtn: {
     backgroundColor: COLORS.primary,
@@ -375,5 +564,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  submitBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
+  disabledBtn: {
+    opacity: 0.7,
+  },
+  submitBtnText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  backBtn: {
+    alignItems: "center",
+    borderColor: COLORS.primary,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: "center",
+  },
+  backBtnText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
 });

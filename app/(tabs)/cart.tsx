@@ -1,9 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import {
+  useFocusEffect,
+  useRouter,
+} from "expo-router";
+import {
+  useCallback,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Platform,
@@ -14,10 +19,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import {
+  InlineFeedback,
+  useActionFeedback,
+  useConfirmAction,
+} from "../../src/components/shared/ActionFeedback";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import {
+  getApiErrorMessage,
+  getApiSuccessMessage,
+} from "../../src/utils/apiFeedback";
 
 type CartPost = {
   postId: string;
@@ -66,7 +81,10 @@ const EMPTY_CART: CartData = {
 };
 
 const cartApi = {
-  getCart: () => apiClient.get("/cart").then((response) => response.data),
+  getCart: () =>
+    apiClient
+      .get("/cart")
+      .then((response) => response.data),
 
   removeItem: (cartItemId: string) =>
     apiClient
@@ -74,41 +92,92 @@ const cartApi = {
       .then((response) => response.data),
 };
 
-const getErrorMessage = (error: any, fallback: string) =>
-  error?.response?.data?.error?.message ||
-  error?.response?.data?.message ||
-  error?.message ||
-  fallback;
-
-const formatCurrency = (value: number | null | undefined) =>
-  `${Number(value || 0).toLocaleString("vi-VN")} đ`;
+const formatCurrency = (
+  value: number | null | undefined,
+) => {
+  return `${Number(value || 0).toLocaleString(
+    "vi-VN",
+  )} đ`;
+};
 
 const getPostImage = (post?: CartPost) => {
-  if (!Array.isArray(post?.medias) || post.medias.length === 0) {
+  if (
+    !Array.isArray(post?.medias) ||
+    post.medias.length === 0
+  ) {
     return null;
   }
 
-  const sortedMedias = [...post.medias].sort(
-    (first, second) =>
-      Number(first.displayOrder || 0) - Number(second.displayOrder || 0),
-  );
+  const sortedMedias = [
+    ...post.medias,
+  ].sort((first, second) => {
+    return (
+      Number(first.displayOrder || 0) -
+      Number(second.displayOrder || 0)
+    );
+  });
 
-  return sortedMedias.find((media) => Boolean(media.url))?.url || null;
+  return (
+    sortedMedias.find((media) =>
+      Boolean(media.url),
+    )?.url || null
+  );
 };
 
 export default function CartScreen() {
   const router = useRouter();
-  const { user, isLoading: isAuthLoading } = useAuth();
 
-  const [cartData, setCartData] = useState<CartData>(EMPTY_CART);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const {
+    user,
+    isLoading: isAuthLoading,
+  } = useAuth();
+
+  const [cartData, setCartData] =
+    useState<CartData>(EMPTY_CART);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  const [isRefreshing, setIsRefreshing] =
+    useState(false);
+
+  const [loadError, setLoadError] =
+    useState<string | null>(null);
+
+  const [
+    deletingItemId,
+    setDeletingItemId,
+  ] = useState<string | null>(null);
+
+  /*
+   * ID của sản phẩm đang sở hữu message inline.
+   *
+   * State này được tách khỏi deletingItemId vì loading chỉ tồn tại
+   * trong lúc request chạy, còn message cần tiếp tục hiển thị sau
+   * khi request đã hoàn tất.
+   */
+  const [
+    feedbackItemId,
+    setFeedbackItemId,
+  ] = useState<string | null>(null);
+
+  const {
+    feedback,
+    clearFeedback,
+    showError,
+    showSuccess,
+  } = useActionFeedback();
+
+  const {
+    confirm,
+    confirmationModal,
+  } = useConfirmAction();
 
   const fetchCart = useCallback(
     async (showLoader = true) => {
-      if (!user) return;
+      if (!user) {
+        return;
+      }
 
       if (showLoader) {
         setIsLoading(true);
@@ -117,24 +186,41 @@ export default function CartScreen() {
       setLoadError(null);
 
       try {
-        const response = await cartApi.getCart();
+        const response =
+          await cartApi.getCart();
 
         if (response?.isSuccess === false) {
           throw new Error(
-            response?.error?.message || "Không thể tải giỏ hàng.",
+            response?.error?.message ||
+              "Không thể tải giỏ hàng.",
           );
         }
 
-        const data = response?.data || response || {};
-        const items = Array.isArray(data.items) ? data.items : [];
+        const data =
+          response?.data || response || {};
+
+        const items = Array.isArray(
+          data.items,
+        )
+          ? data.items
+          : [];
 
         setCartData({
           items,
-          totalQuantity: Number(data.totalQuantity || 0),
-          totalPrice: Number(data.totalPrice || 0),
+          totalQuantity: Number(
+            data.totalQuantity || 0,
+          ),
+          totalPrice: Number(
+            data.totalPrice || 0,
+          ),
         });
-      } catch (error: any) {
-        setLoadError(getErrorMessage(error, "Không thể tải giỏ hàng."));
+      } catch (error: unknown) {
+        setLoadError(
+          getApiErrorMessage(
+            error,
+            "Không thể tải giỏ hàng.",
+          ),
+        );
       } finally {
         if (showLoader) {
           setIsLoading(false);
@@ -159,186 +245,302 @@ export default function CartScreen() {
       }
 
       void fetchCart();
-    }, [fetchCart, isAuthLoading, user]),
+    }, [
+      fetchCart,
+      isAuthLoading,
+      user,
+    ]),
   );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+
     await fetchCart(false);
+
     setIsRefreshing(false);
   };
 
-  const handleRemoveItem = (item: CartItem) => {
-    const executeRemove = async () => {
-      try {
-        setDeletingItemId(item.cartItemId);
+  const dismissItemFeedback = () => {
+    clearFeedback();
+    setFeedbackItemId(null);
+  };
 
-        const response = await cartApi.removeItem(item.cartItemId);
+  const handleRemoveItem = async (
+    item: CartItem,
+  ) => {
+    const productName =
+      item.post?.productName ||
+      "sản phẩm này";
 
-        if (response?.isSuccess === false || response?.data === false) {
-          throw new Error(
-            response?.error?.message ||
-              "Không thể xóa sản phẩm khỏi giỏ hàng.",
-          );
-        }
+    const accepted = await confirm({
+      title: "Xóa khỏi giỏ hàng",
+      message: `Bạn có chắc muốn xóa ${productName} khỏi giỏ hàng?`,
+      confirmLabel: "Xóa",
+      cancelLabel: "Giữ lại",
+      destructive: true,
+    });
 
-        await fetchCart(false);
-      } catch (error: any) {
-        const message = getErrorMessage(
-          error,
-          "Không thể xóa sản phẩm khỏi giỏ hàng.",
-        );
-
-        if (Platform.OS === "web") {
-          window.alert(message);
-        } else {
-          Alert.alert("Lỗi", message);
-        }
-      } finally {
-        setDeletingItemId(null);
-      }
-    };
-
-    const productName = item.post?.productName || "sản phẩm này";
-    const message = `Bạn có chắc muốn xóa ${productName} khỏi giỏ hàng?`;
-
-    if (Platform.OS === "web") {
-      if (window.confirm(message)) {
-        void executeRemove();
-      }
-
+    if (!accepted) {
       return;
     }
 
-    Alert.alert("Xóa khỏi giỏ hàng", message, [
-      {
-        text: "Không",
-        style: "cancel",
-      },
-      {
-        text: "Xóa",
-        style: "destructive",
-        onPress: () => void executeRemove(),
-      },
-    ]);
+    clearFeedback();
+    setFeedbackItemId(item.cartItemId);
+
+    try {
+      setDeletingItemId(
+        item.cartItemId,
+      );
+
+      const response =
+        await cartApi.removeItem(
+          item.cartItemId,
+        );
+
+      if (
+        response?.isSuccess === false ||
+        response?.data === false
+      ) {
+        throw response;
+      }
+
+      /*
+       * Giữ message thành công ngay dưới thẻ vừa xóa.
+       * Chưa tải lại ngay ở đây vì item sẽ biến khỏi danh sách,
+       * khiến message thành công cũng biến mất.
+       */
+      showSuccess(
+        getApiSuccessMessage(
+          response,
+          "Đã xóa sản phẩm khỏi giỏ hàng.",
+        ),
+      );
+
+      /*
+       * Cập nhật giỏ hàng tại client để thẻ vẫn tồn tại trong lúc
+       * hiển thị message, sau đó người dùng có thể đóng message.
+       *
+       * Khi đóng message, danh sách sẽ được tải lại chính xác từ BE.
+       */
+    } catch (error: unknown) {
+      showError(
+        getApiErrorMessage(
+          error,
+          "Không thể xóa sản phẩm khỏi giỏ hàng.",
+        ),
+      );
+    } finally {
+      setDeletingItemId(null);
+    }
   };
 
-  const renderCartItem = ({ item }: { item: CartItem }) => {
-    const post = item.post || ({} as CartPost);
-    const imageUrl = getPostImage(post);
-    const remainingQuantity = Number(post.remainingQuantity || 0);
+  const handleDismissCartItemFeedback =
+    async () => {
+      const shouldReload =
+        feedback?.type === "success";
+
+      dismissItemFeedback();
+
+      if (shouldReload) {
+        await fetchCart(false);
+      }
+    };
+
+  const renderCartItem = ({
+    item,
+  }: {
+    item: CartItem;
+  }) => {
+    const post =
+      item.post || ({} as CartPost);
+
+    const imageUrl =
+      getPostImage(post);
+
+    const remainingQuantity = Number(
+      post.remainingQuantity || 0,
+    );
 
     const isUnavailable =
-      post.status !== "Active" || remainingQuantity <= 0;
+      post.status !== "Active" ||
+      remainingQuantity <= 0;
 
     const exceedsStock =
-      !isUnavailable && item.quantity > remainingQuantity;
+      !isUnavailable &&
+      item.quantity > remainingQuantity;
 
-    const isDeleting = deletingItemId === item.cartItemId;
+    const isDeleting =
+      deletingItemId === item.cartItemId;
+
+    const showItemFeedback =
+      feedbackItemId ===
+        item.cartItemId &&
+      Boolean(feedback);
 
     return (
-      <TouchableOpacity
-        style={[styles.cartItem, isUnavailable && styles.unavailableItem]}
-        activeOpacity={0.8}
-        onPress={() =>
-          router.push({
-            pathname: "/posts/[id]",
-            params: {
-              id: item.postId,
-            },
-          })
-        }
-      >
-        {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={[styles.image, isUnavailable && styles.faded]}
-          />
-        ) : (
-          <View style={[styles.image, styles.imagePlaceholder]}>
-            <Ionicons name="image-outline" size={28} color="#94A3B8" />
-          </View>
-        )}
-
-        <View style={styles.info}>
-          <Text style={styles.metaText} numberOfLines={1}>
-            {[post.categoryName, post.brandName]
-              .filter(Boolean)
-              .join(" • ") ||
-              post.productTypeName ||
-              "Sản phẩm"}
-          </Text>
-
-          <Text
-            style={[
-              styles.productName,
-              isUnavailable && styles.unavailableText,
-            ]}
-            numberOfLines={2}
-          >
-            {post.productName || "Sản phẩm không còn thông tin"}
-          </Text>
-
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>
-              {formatCurrency(post.basePrice)}
-            </Text>
-
-            <Text style={styles.quantity}>SL: {item.quantity}</Text>
-          </View>
-
-          {!isUnavailable && !exceedsStock && (
-            <Text style={styles.subtotal}>
-              Thành tiền:{" "}
-              {formatCurrency(
-                Number(post.basePrice || 0) * item.quantity,
-              )}
-            </Text>
-          )}
-
-          {isUnavailable && (
-            <Text style={styles.warningText}>
-              Sản phẩm hiện không khả dụng
-            </Text>
-          )}
-
-          {exceedsStock && (
-            <Text style={styles.warningText}>
-              Chỉ còn {remainingQuantity} sản phẩm
-            </Text>
-          )}
-        </View>
-
+      <View style={styles.cartItemWrapper}>
         <TouchableOpacity
-          style={styles.deleteBtn}
-          onPress={(event) => {
-            event.stopPropagation();
-            handleRemoveItem(item);
+          style={[
+            styles.cartItem,
+            isUnavailable
+              ? styles.unavailableItem
+              : undefined,
+          ]}
+          activeOpacity={0.8}
+          onPress={() => {
+            router.push({
+              pathname: "/posts/[id]",
+              params: {
+                id: item.postId,
+              },
+            });
           }}
-          disabled={isDeleting}
-          hitSlop={8}
         >
-          {isDeleting ? (
-            <ActivityIndicator size="small" color={COLORS.error} />
-          ) : (
-            <Ionicons
-              name="trash-outline"
-              size={21}
-              color={COLORS.error}
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              style={[
+                styles.image,
+                isUnavailable
+                  ? styles.faded
+                  : undefined,
+              ]}
             />
+          ) : (
+            <View
+              style={[
+                styles.image,
+                styles.imagePlaceholder,
+              ]}
+            >
+              <Ionicons
+                name="image-outline"
+                size={28}
+                color="#94A3B8"
+              />
+            </View>
           )}
+
+          <View style={styles.info}>
+            <Text
+              style={styles.metaText}
+              numberOfLines={1}
+            >
+              {[post.categoryName, post.brandName]
+                .filter(Boolean)
+                .join(" • ") ||
+                post.productTypeName ||
+                "Sản phẩm"}
+            </Text>
+
+            <Text
+              style={[
+                styles.productName,
+                isUnavailable
+                  ? styles.unavailableText
+                  : undefined,
+              ]}
+              numberOfLines={2}
+            >
+              {post.productName ||
+                "Sản phẩm không còn thông tin"}
+            </Text>
+
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>
+                {formatCurrency(
+                  post.basePrice,
+                )}
+              </Text>
+
+              <Text style={styles.quantity}>
+                SL: {item.quantity}
+              </Text>
+            </View>
+
+            {!isUnavailable &&
+            !exceedsStock ? (
+              <Text style={styles.subtotal}>
+                Thành tiền:{" "}
+                {formatCurrency(
+                  Number(
+                    post.basePrice || 0,
+                  ) * item.quantity,
+                )}
+              </Text>
+            ) : null}
+
+            {isUnavailable ? (
+              <Text
+                style={styles.warningText}
+              >
+                Sản phẩm hiện không khả dụng
+              </Text>
+            ) : null}
+
+            {exceedsStock ? (
+              <Text
+                style={styles.warningText}
+              >
+                Chỉ còn {remainingQuantity} sản
+                phẩm
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={(event) => {
+              event.stopPropagation();
+
+              void handleRemoveItem(item);
+            }}
+            disabled={isDeleting}
+            hitSlop={8}
+          >
+            {isDeleting ? (
+              <ActivityIndicator
+                size="small"
+                color={COLORS.error}
+              />
+            ) : (
+              <Ionicons
+                name="trash-outline"
+                size={21}
+                color={COLORS.error}
+              />
+            )}
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
+
+        {showItemFeedback ? (
+          <InlineFeedback
+            feedback={feedback}
+            onDismiss={() => {
+              void handleDismissCartItemFeedback();
+            }}
+            style={styles.itemFeedback}
+          />
+        ) : null}
+      </View>
     );
   };
 
   const renderContent = () => {
-    if (isAuthLoading || isLoading) {
+    if (
+      isAuthLoading ||
+      isLoading
+    ) {
       return (
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator
+            size="large"
+            color={COLORS.primary}
+          />
 
-          <Text style={styles.stateDescription}>
+          <Text
+            style={styles.stateDescription}
+          >
             Đang tải giỏ hàng...
           </Text>
         </View>
@@ -356,30 +558,45 @@ export default function CartScreen() {
             />
           </View>
 
-          <Text style={styles.stateTitle}>Bạn cần đăng nhập</Text>
+          <Text style={styles.stateTitle}>
+            Bạn cần đăng nhập
+          </Text>
 
-          <Text style={styles.stateDescription}>
-            Đăng nhập để xem và quản lý các sản phẩm trong giỏ hàng.
+          <Text
+            style={styles.stateDescription}
+          >
+            Đăng nhập để xem và quản lý các sản
+            phẩm trong giỏ hàng.
           </Text>
 
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() =>
+            onPress={() => {
               router.push({
                 pathname: "/(auth)/login",
                 params: {
-                  returnUrl: "/(tabs)/cart",
+                  returnUrl:
+                    "/(tabs)/cart",
                 },
-              })
-            }
+              });
+            }}
           >
-            <Text style={styles.primaryButtonText}>Đăng nhập</Text>
+            <Text
+              style={
+                styles.primaryButtonText
+              }
+            >
+              Đăng nhập
+            </Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (loadError && cartData.items.length === 0) {
+    if (
+      loadError &&
+      cartData.items.length === 0
+    ) {
       return (
         <View style={styles.centerState}>
           <View style={styles.stateIcon}>
@@ -390,15 +607,29 @@ export default function CartScreen() {
             />
           </View>
 
-          <Text style={styles.stateTitle}>Không thể tải giỏ hàng</Text>
+          <Text style={styles.stateTitle}>
+            Không thể tải giỏ hàng
+          </Text>
 
-          <Text style={styles.stateDescription}>{loadError}</Text>
+          <Text
+            style={styles.stateDescription}
+          >
+            {loadError}
+          </Text>
 
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => void fetchCart()}
+            onPress={() => {
+              void fetchCart();
+            }}
           >
-            <Text style={styles.primaryButtonText}>Thử lại</Text>
+            <Text
+              style={
+                styles.primaryButtonText
+              }
+            >
+              Thử lại
+            </Text>
           </TouchableOpacity>
         </View>
       );
@@ -407,17 +638,25 @@ export default function CartScreen() {
     return (
       <FlatList
         data={cartData.items}
-        keyExtractor={(item) => item.cartItemId}
+        keyExtractor={(item) =>
+          item.cartItemId
+        }
         renderItem={renderCartItem}
         contentContainerStyle={[
           styles.list,
-          cartData.items.length === 0 && styles.emptyList,
+          cartData.items.length === 0
+            ? styles.emptyList
+            : undefined,
         ]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={() => void handleRefresh()}
+            onRefresh={() => {
+              void handleRefresh();
+            }}
             colors={[COLORS.primary]}
             tintColor={COLORS.primary}
           />
@@ -432,17 +671,32 @@ export default function CartScreen() {
               />
             </View>
 
-            <Text style={styles.stateTitle}>Giỏ hàng đang trống</Text>
+            <Text
+              style={styles.stateTitle}
+            >
+              Giỏ hàng đang trống
+            </Text>
 
-            <Text style={styles.stateDescription}>
-              Những sản phẩm bạn muốn mua sẽ xuất hiện tại đây.
+            <Text
+              style={
+                styles.stateDescription
+              }
+            >
+              Những sản phẩm bạn muốn mua sẽ
+              xuất hiện tại đây.
             </Text>
 
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => router.push("/(tabs)")}
+              onPress={() =>
+                router.push("/(tabs)")
+              }
             >
-              <Text style={styles.primaryButtonText}>
+              <Text
+                style={
+                  styles.primaryButtonText
+                }
+              >
                 Khám phá sản phẩm
               </Text>
             </TouchableOpacity>
@@ -465,26 +719,44 @@ export default function CartScreen() {
 
         {renderContent()}
 
-        {showFooter && (
+        {showFooter ? (
           <View style={styles.footer}>
             <View style={styles.totalBlock}>
-              <Text style={styles.totalLabel}>
-                Tổng cộng ({cartData.totalQuantity} sản phẩm)
+              <Text
+                style={styles.totalLabel}
+              >
+                Tổng cộng (
+                {cartData.totalQuantity} sản
+                phẩm)
               </Text>
 
-              <Text style={styles.totalPrice}>
-                {formatCurrency(cartData.totalPrice)}
+              <Text
+                style={styles.totalPrice}
+              >
+                {formatCurrency(
+                  cartData.totalPrice,
+                )}
               </Text>
             </View>
 
             <TouchableOpacity
               style={styles.continueButton}
-              onPress={() => router.push("/(tabs)")}
+              onPress={() =>
+                router.push("/(tabs)")
+              }
             >
-              <Text style={styles.continueButtonText}>Mua thêm</Text>
+              <Text
+                style={
+                  styles.continueButtonText
+                }
+              >
+                Mua thêm
+              </Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
+
+        {confirmationModal}
       </View>
     </SafeAreaView>
   );
@@ -502,9 +774,11 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 480,
     backgroundColor: "#F6F8FA",
+
     ...(Platform.OS === "web"
       ? ({
-          boxShadow: "0px 0px 20px rgba(0,0,0,0.08)",
+          boxShadow:
+            "0px 0px 20px rgba(0,0,0,0.08)",
         } as any)
       : {}),
   },
@@ -517,6 +791,10 @@ const styles = StyleSheet.create({
 
   emptyList: {
     flexGrow: 1,
+  },
+
+  cartItemWrapper: {
+    width: "100%",
   },
 
   cartItem: {
@@ -536,6 +814,10 @@ const styles = StyleSheet.create({
       height: 2,
     },
     elevation: 1,
+  },
+
+  itemFeedback: {
+    marginTop: 8,
   },
 
   unavailableItem: {
