@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Image, TouchableOpacity } from "react-native"; // ĐỔI SANG Image CỦA REACT NATIVE
+import { Image, Text, TouchableOpacity } from "react-native"; // BỔ SUNG TEXT ĐỂ LÀM NÚT ĐĂNG NHẬP
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import Header from "./Header";
@@ -41,43 +41,67 @@ export default function MainHeader({
       ? { uri: getRobustUrl(actualAvatar) }
       : { uri: defaultAvatar };
 
-  const renderRightButtons = () => (
-    <>
-      <TouchableOpacity onPress={() => router.push("/chat" as any)}>
-        <Ionicons name="chatbubbles-outline" size={24} color={COLORS.text} />
-      </TouchableOpacity>
+  const renderRightButtons = () => {
+    if (user) {
+      // ĐÃ ĐĂNG NHẬP -> HIỆN 3 NÚT (CHAT, THÔNG BÁO, AVATAR)
+      return (
+        <>
+          <TouchableOpacity onPress={() => router.push("/chat" as any)}>
+            <Ionicons
+              name="chatbubbles-outline"
+              size={24}
+              color={COLORS.text}
+            />
+          </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push("/notifications" as any)}>
-        <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
-      </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/notifications" as any)}
+          >
+            <Ionicons
+              name="notifications-outline"
+              size={24}
+              color={COLORS.text}
+            />
+          </TouchableOpacity>
 
+          <TouchableOpacity
+            onPress={() => router.push("/(tabs)/profile")}
+            style={{ justifyContent: "center", alignItems: "center" }}
+          >
+            <Image
+              source={avatarSource}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: "#E2E8F0",
+                borderWidth: 1,
+                borderColor: "#E2E8F0",
+              }}
+              onError={() => setImageError(true)}
+            />
+          </TouchableOpacity>
+        </>
+      );
+    }
+
+    // CHƯA ĐĂNG NHẬP -> HIỆN NÚT ĐĂNG NHẬP
+    return (
       <TouchableOpacity
-        onPress={() => router.push("/(tabs)/profile")}
-        style={{ justifyContent: "center", alignItems: "center" }}
+        onPress={() => router.push("/(auth)/login" as any)}
+        style={{
+          backgroundColor: COLORS.primary,
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          borderRadius: 8,
+        }}
       >
-        {user ? (
-          <Image
-            source={avatarSource}
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 14,
-              backgroundColor: "#E2E8F0",
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-            }}
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <Ionicons
-            name="person-circle-outline"
-            size={28}
-            color={COLORS.text}
-          />
-        )}
+        <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "bold" }}>
+          Đăng nhập
+        </Text>
       </TouchableOpacity>
-    </>
-  );
+    );
+  };
 
   const isHome = title === "HomeCycle";
 

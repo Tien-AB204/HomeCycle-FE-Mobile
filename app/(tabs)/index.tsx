@@ -20,16 +20,26 @@ import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 
 const postApi = {
-  getAllActivePosts: (params?: any) =>
-    apiClient
-      .get("/posts/get-all-active", { params })
-      .then((response) => response.data),
-  getActiveCategories: () =>
-    apiClient
-      .get("/categories/active", {
+  getAllActivePosts: async (params?: any) => {
+    try {
+      const res = await apiClient.get("/posts/get-all-active", { params });
+      return res.data;
+    } catch (error) {
+      console.warn("Lỗi lấy bài đăng (có thể do chưa đăng nhập):", error);
+      return { items: [] }; 
+    }
+  },
+  getActiveCategories: async () => {
+    try {
+      const res = await apiClient.get("/categories/active", {
         params: { PageSize: 100, PageNumber: 1 },
-      })
-      .then((response) => response.data),
+      });
+      return res.data;
+    } catch (error) {
+      console.warn("Lỗi lấy danh mục:", error);
+      return { items: [] };
+    }
+  },
 };
 
 export default function HomeScreen() {
@@ -37,51 +47,47 @@ export default function HomeScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
-  // === STATES DỮ LIỆU ===
   const [categories, setCategories] = useState<any[]>([]);
   const [sellPosts, setSellPosts] = useState<any[]>([]);
   const [buyPosts, setBuyPosts] = useState<any[]>([]);
   const [suggestedPosts, setSuggestedPosts] = useState<any[]>([]);
 
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [activeCategoryName, setActiveCategoryName] = useState<string>("Tất cả");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // === FETCH API TRANG CHỦ ===
   const fetchHomeData = async (isRefresh = false) => {
     try {
       if (!isRefresh) setIsLoading(true);
 
-      const [postsRes, catRes] = await Promise.all([
-        // Chỉ gọi API lấy tin Active
-        postApi.getAllActivePosts({ PageNumber: 1, PageSize: 50 }),
-        postApi.getActiveCategories(),
-      ]);
+      const postsRes = await postApi.getAllActivePosts({ PageNumber: 1, PageSize: 50 });
+      const catRes = await postApi.getActiveCategories();
 
+      let fetchedCats = [];
       if (catRes?.data?.items) {
-        setCategories(catRes.data.items);
+        fetchedCats = catRes.data.items;
       } else if (catRes?.items) {
-        setCategories(catRes.items);
+        fetchedCats = catRes.items;
       } else if (Array.isArray(catRes)) {
-        setCategories(catRes);
+        fetchedCats = catRes;
       }
+
+      setCategories([{ categoryId: "all", categoryName: "Tất cả" }, ...fetchedCats]);
 
       const allPosts =
         postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
 
-      // KHÔNG CẦN CHECK STATUS NỮA, BE ĐÃ LỌC SẴN ACTIVE
       const sells = allPosts.filter((p: any) => p.postType === "Sell");
       const buys = allPosts.filter((p: any) => p.postType === "Buy");
 
       setSellPosts(sells);
       setBuyPosts(buys);
 
-      // Random bài cho mục Gợi ý
       const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
       setSuggestedPosts(shuffled.slice(0, 10));
     } catch (error) {
-      console.error("Lỗi lấy dữ liệu trang chủ:", error);
+      console.error("Lỗi hệ thống trang chủ:", error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -99,26 +105,22 @@ export default function HomeScreen() {
     fetchHomeData(true);
   };
 
-  const handleCategoryToggle = (categoryId: string) => {
-    if (activeCategoryId === categoryId) {
-      setActiveCategoryId(null);
-    } else {
-      setActiveCategoryId(categoryId);
-    }
+  const handleCategoryToggle = (categoryName: string) => {
+    setActiveCategoryName(categoryName);
   };
 
-  // === LỌC DỮ LIỆU THEO DANH MỤC ===
-  const displayedSells = activeCategoryId
-    ? sellPosts.filter((p) => p.categoryId === activeCategoryId)
-    : sellPosts;
-  const displayedBuys = activeCategoryId
-    ? buyPosts.filter((p) => p.categoryId === activeCategoryId)
-    : buyPosts;
-  const displayedSuggested = activeCategoryId
-    ? suggestedPosts.filter((p) => p.categoryId === activeCategoryId)
-    : suggestedPosts;
+  const displayedSells = activeCategoryName === "Tất cả"
+    ? sellPosts
+    : sellPosts.filter((p) => p.categoryName === activeCategoryName);
+    
+  const displayedBuys = activeCategoryName === "Tất cả"
+    ? buyPosts
+    : buyPosts.filter((p) => p.categoryName === activeCategoryName);
+    
+  const displayedSuggested = activeCategoryName === "Tất cả"
+    ? suggestedPosts
+    : suggestedPosts.filter((p) => p.categoryName === activeCategoryName);
 
-  // === FORMATTERS ===
   const formatPrice = (price: number) => {
     if (!price) return "0 đ";
     return price.toLocaleString("vi-VN") + " đ";
@@ -139,43 +141,83 @@ export default function HomeScreen() {
       .join(", ");
   };
 
-  // ================= RENDER CARD =================
+  const getPriorityLabel = (level: string, type: string) => {
+    if (level === "Urgent") return "Khẩn cấp";
+    if (level === "High") return type === "Buy" ? "Mua gấp" : "Bán gấp";
+    return "";
+  };
+
+  const getPriorityColor = (level: string) => {
+    if (level === "Urgent") return "#EF4444";
+    if (level === "High") return "#EA580C";
+    return "#10B981";
+  };
+
   const renderCard = ({ item: post }: { item: any }) => (
     <TouchableOpacity
-      style={styles.horizontalCard}
+      style={styles.card}
       onPress={() => router.push(`/posts/${post.postId}`)}
+      activeOpacity={0.8}
     >
-      <View style={styles.imageContainer}>
+      <View style={styles.imageWrapper}>
         <Image source={getCoverImage(post)} style={styles.productImage} />
 
-        <View style={styles.categoryBadge}>
-          <Text style={styles.categoryBadgeText} numberOfLines={1}>
-            {post.categoryName || "Sản phẩm"}
-          </Text>
+        <View style={styles.topBadgeRow}>
+          {post.categoryName ? (
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                {post.categoryName}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      <View style={styles.productInfo}>
+      <View style={styles.infoWrapper}>
+        {post.brandName ? (
+          <View style={styles.brandBadgeWhite}>
+            <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
+          </View>
+        ) : null}
+
         <Text style={styles.productName} numberOfLines={2}>
-          {post.productName || post.description}
-        </Text>
-        <Text style={styles.productPrice}>
-          {formatPrice(post.basePrice || post.expectedPrice)}
+          {post.productName || post.description || "Sản phẩm"}
         </Text>
 
-        <Text style={styles.metaText} numberOfLines={1}>
-          SL: {post.remainingQuantity}/{post.quantity} • {post.deliveryMethod}
-        </Text>
-
-        <View style={styles.locationRow}>
-          <Ionicons
-            name="location-outline"
-            size={12}
-            color={COLORS.textLight}
-          />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {getFullAddress(post)}
+        <View style={styles.priceRow}>
+          <Text style={styles.productPrice}>
+            {formatPrice(post.basePrice || post.expectedPrice)}
           </Text>
+          <Text style={styles.quantityText}>
+            SL: {post.remainingQuantity ?? post.quantity ?? 1}/
+            {post.quantity ?? 1}
+          </Text>
+        </View>
+
+        <View style={styles.footerRow}>
+          <View style={styles.locationContainer}>
+            <Ionicons
+              name="location-outline"
+              size={13}
+              color={COLORS.textLight}
+            />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {getFullAddress(post) || "Chưa cập nhật"}
+            </Text>
+          </View>
+
+          {post.priorityLevel &&
+            post.priorityLevel !== "Medium" &&
+            post.priorityLevel !== "Low" && (
+              <Text
+                style={[
+                  styles.priorityText,
+                  { color: getPriorityColor(post.priorityLevel) },
+                ]}
+              >
+                {getPriorityLabel(post.priorityLevel, post.postType)}
+              </Text>
+            )}
         </View>
       </View>
     </TouchableOpacity>
@@ -184,6 +226,7 @@ export default function HomeScreen() {
   const getCategoryIcon = (categoryName: string) => {
     if (!categoryName) return "grid-outline";
     const name = categoryName.toLowerCase();
+    if (name === "tất cả") return "apps-outline";
     if (name.includes("điện máy")) return "tv-outline";
     if (name.includes("nội thất")) return "bed-outline";
     if (name.includes("đồ chơi")) return "apps-outline";
@@ -217,7 +260,6 @@ export default function HomeScreen() {
               />
             }
           >
-            {/* Thanh tìm kiếm */}
             <View style={styles.searchContainer}>
               <TouchableOpacity
                 style={[
@@ -248,7 +290,6 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Banner */}
             <View style={styles.bannerContainer}>
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>Thanh lý nhanh chóng</Text>
@@ -269,7 +310,6 @@ export default function HomeScreen() {
               />
             </View>
 
-            {/* Danh mục */}
             <View style={styles.sectionContainer}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Danh mục nổi bật</Text>
@@ -281,12 +321,12 @@ export default function HomeScreen() {
               >
                 {categories.length > 0 ? (
                   categories.map((cat) => {
-                    const isActive = activeCategoryId === cat.categoryId;
+                    const isActive = activeCategoryName === cat.categoryName;
                     return (
                       <TouchableOpacity
-                        key={cat.categoryId}
+                        key={cat.categoryId || "all"}
                         style={styles.categoryItem}
-                        onPress={() => handleCategoryToggle(cat.categoryId)}
+                        onPress={() => handleCategoryToggle(cat.categoryName)}
                       >
                         <View
                           style={[
@@ -322,7 +362,7 @@ export default function HomeScreen() {
               </ScrollView>
             </View>
 
-            {activeCategoryId &&
+            {activeCategoryName !== "Tất cả" &&
               displayedBuys.length === 0 &&
               displayedSells.length === 0 &&
               displayedSuggested.length === 0 && (
@@ -338,14 +378,14 @@ export default function HomeScreen() {
                 </View>
               )}
 
-            {/* Tin Thu Mua */}
             {displayedBuys.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>
                     Tin thu mua từ Doanh nghiệp
                   </Text>
-                  <TouchableOpacity>
+                  {/* TRUYỀN PARAM CHUYỂN SANG SEARCH VÀ FILTER "MUA" */}
+                  <TouchableOpacity onPress={() => router.push({ pathname: "/search", params: { autoSearch: "true", postType: "Mua" } })}>
                     <Text style={styles.seeAllText}>Xem tất cả</Text>
                   </TouchableOpacity>
                 </View>
@@ -360,12 +400,12 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Tin Đăng Bán */}
             {displayedSells.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
-                  <TouchableOpacity>
+                  {/* TRUYỀN PARAM CHUYỂN SANG SEARCH VÀ FILTER "BÁN" */}
+                  <TouchableOpacity onPress={() => router.push({ pathname: "/search", params: { autoSearch: "true", postType: "Bán" } })}>
                     <Text style={styles.seeAllText}>Xem tất cả</Text>
                   </TouchableOpacity>
                 </View>
@@ -380,7 +420,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Gợi ý */}
             {displayedSuggested.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
@@ -414,7 +453,7 @@ const styles = StyleSheet.create({
       web: { boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any,
     }),
   },
-  container: { flex: 1, backgroundColor: "#F8F9FA" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" }, 
 
   searchContainer: {
     flexDirection: "row",
@@ -450,8 +489,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 16,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: COLORS.text },
-  seeAllText: { fontSize: 14, color: COLORS.primary, fontWeight: "600" },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#0F172A" },
+  seeAllText: { fontSize: 14, color: "#64748B", fontWeight: "600" },
 
   categoriesRow: { paddingHorizontal: 20, gap: 24, paddingRight: 40 },
   categoryItem: { alignItems: "center", gap: 8, width: 72 },
@@ -513,57 +552,95 @@ const styles = StyleSheet.create({
   },
 
   horizontalListContent: { paddingHorizontal: 20, gap: 16 },
-  horizontalCard: {
+
+  card: {
     backgroundColor: COLORS.white,
+    width: 170, 
     borderRadius: 12,
     overflow: "hidden",
+    marginBottom: 4,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    width: 160,
+    borderColor: "#EEF0F2",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-
-  imageContainer: {
-    position: "relative",
+  imageWrapper: {
     width: "100%",
-    aspectRatio: 1,
-    backgroundColor: "#F1F5F9",
+    aspectRatio: 1, 
+    backgroundColor: "#FAFAFA",
+    position: "relative",
   },
-  productImage: { width: "100%", height: "100%" },
+  productImage: { width: "100%", height: "100%", resizeMode: "cover" },
 
-  categoryBadge: {
+  topBadgeRow: {
     position: "absolute",
-    top: 8,
-    left: 8,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    maxWidth: "85%",
+    top: 6,
+    left: 6,
+    flexDirection: "row",
+    gap: 4,
+    flexWrap: "wrap",
+    right: 6,
   },
-  categoryBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: "bold" },
+  categoryBadge: {
+    backgroundColor: "rgba(51, 65, 85, 0.9)", 
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  categoryBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
 
-  productInfo: { padding: 12 },
+  infoWrapper: { padding: 10 },
+  
+  brandBadgeWhite: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  brandBadgeTextWhite: {
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+
   productName: {
     fontSize: 13,
-    color: COLORS.text,
+    color: "#1E293B",
     fontWeight: "600",
     lineHeight: 18,
     marginBottom: 6,
-    height: 36,
+    height: 36, 
+  },
+  priceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
   },
   productPrice: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "bold",
-    color: "#E74C3C",
-    marginBottom: 6,
+    color: "#B91C1C", 
   },
-  metaText: { fontSize: 11, color: "#64748B", marginBottom: 6 },
+  quantityText: { fontSize: 11, color: "#64748B", fontWeight: "600" },
 
-  locationRow: { flexDirection: "row", alignItems: "center" },
-  locationText: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    marginLeft: 4,
-    flex: 1,
+  footerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
+  locationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+    paddingRight: 6,
+  },
+  locationText: { fontSize: 11, color: "#64748B", flex: 1 },
+  priorityText: { fontSize: 10, fontWeight: "bold" },
 });

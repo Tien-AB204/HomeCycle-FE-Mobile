@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { COLORS } from "../src/constants/theme";
 import apiClient from "../src/services/apis/axiosClient";
+
 const locationApi = {
   getProvinces: async () => {
     try {
@@ -65,13 +66,13 @@ const DELIVERY_METHODS = [
   "Không xác định",
   "Người mua tự lấy",
   "Người bán giao",
-  "Giao hàng qua App",
+  "Giao hàng nhanh (GHN)",
 ];
 const DELIVERY_MAP: Record<string, string> = {
   "Không xác định": "Unknown",
   "Người mua tự lấy": "BuyerPickUp",
   "Người bán giao": "SellerDelivers",
-  "Giao hàng qua App": "GhnDelivery",
+  "Giao hàng nhanh (GHN)": "GhnDelivery",
 };
 
 const PRIORITY_LEVELS = ["Ưu tiên Thấp", "Bình thường", "Bán gấp", "Khẩn cấp"];
@@ -224,6 +225,36 @@ export default function SearchScreen() {
     setViewState("RESULTS");
     setIsLoading(true);
 
+    let actualMinPrice = minPrice ? Number(minPrice) : null;
+    let actualMaxPrice = maxPrice ? Number(maxPrice) : null;
+    if (
+      actualMinPrice !== null &&
+      actualMaxPrice !== null &&
+      actualMinPrice > actualMaxPrice
+    ) {
+      [actualMinPrice, actualMaxPrice] = [actualMaxPrice, actualMinPrice];
+    }
+
+    let actualMinUsage = minUsage ? Number(minUsage) : null;
+    let actualMaxUsage = maxUsage ? Number(maxUsage) : null;
+    if (
+      actualMinUsage !== null &&
+      actualMaxUsage !== null &&
+      actualMinUsage > actualMaxUsage
+    ) {
+      [actualMinUsage, actualMaxUsage] = [actualMaxUsage, actualMinUsage];
+    }
+
+    let actualMinDamage = minDamage;
+    let actualMaxDamage = maxDamage;
+    if (
+      actualMinDamage !== null &&
+      actualMaxDamage !== null &&
+      actualMinDamage > actualMaxDamage
+    ) {
+      [actualMinDamage, actualMaxDamage] = [actualMaxDamage, actualMinDamage];
+    }
+
     try {
       const payload: any = {
         pageNumber: 1,
@@ -241,18 +272,13 @@ export default function SearchScreen() {
       if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
       if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
 
-      if (minPrice) payload.minPrice = Number(minPrice);
-      if (maxPrice) payload.maxPrice = Number(maxPrice);
-      if (minUsage) payload.minUsageDuration = Number(minUsage);
-      if (maxUsage) payload.maxUsageDuration = Number(maxUsage);
-
-      if (minDamage !== null) payload.minDamageLevel = minDamage;
-      if (maxDamage !== null) payload.maxDamageLevel = maxDamage;
+      if (actualMinPrice !== null) payload.minPrice = actualMinPrice;
+      if (actualMaxPrice !== null) payload.maxPrice = actualMaxPrice;
+      if (actualMinUsage !== null) payload.minUsageDuration = actualMinUsage;
+      if (actualMaxUsage !== null) payload.maxUsageDuration = actualMaxUsage;
+      if (actualMinDamage !== null) payload.minDamageLevel = actualMinDamage;
+      if (actualMaxDamage !== null) payload.maxDamageLevel = actualMaxDamage;
       if (city) payload.city = city;
-
-      // Phần giữ lại cho tương lai (nếu BE bật):
-      // if (selectedSpace) payload.spaceUsage = selectedSpace;
-      // if (postedWithinDays) payload.postedWithinDays = Number(postedWithinDays);
 
       const response = await apiClient.post("/posts/search", payload);
       const fetchedData =
@@ -431,7 +457,7 @@ export default function SearchScreen() {
         <View style={styles.inputRow}>
           <TextInput
             style={styles.numberInput}
-            placeholder="Tối thiểu"
+            placeholder="Giá 1"
             keyboardType="numeric"
             value={minPrice}
             onChangeText={setMinPrice}
@@ -439,7 +465,7 @@ export default function SearchScreen() {
           <View style={styles.divider} />
           <TextInput
             style={styles.numberInput}
-            placeholder="Tối đa"
+            placeholder="Giá 2"
             keyboardType="numeric"
             value={maxPrice}
             onChangeText={setMaxPrice}
@@ -450,7 +476,7 @@ export default function SearchScreen() {
         <View style={styles.inputRow}>
           <TextInput
             style={styles.numberInput}
-            placeholder="Từ (Tháng)"
+            placeholder="Số tháng"
             keyboardType="numeric"
             value={minUsage}
             onChangeText={setMinUsage}
@@ -458,7 +484,7 @@ export default function SearchScreen() {
           <View style={styles.divider} />
           <TextInput
             style={styles.numberInput}
-            placeholder="Đến (Tháng)"
+            placeholder="Số tháng"
             keyboardType="numeric"
             value={maxUsage}
             onChangeText={setMaxUsage}
@@ -481,7 +507,7 @@ export default function SearchScreen() {
             >
               {minDamage !== null
                 ? DAMAGE_LEVELS.find((d) => d.value === minDamage)?.label
-                : "Từ mức độ"}
+                : "Mức độ 1"}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -505,7 +531,7 @@ export default function SearchScreen() {
             >
               {maxDamage !== null
                 ? DAMAGE_LEVELS.find((d) => d.value === maxDamage)?.label
-                : "Đến mức độ"}
+                : "Mức độ 2"}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -739,20 +765,6 @@ export default function SearchScreen() {
           })}
         </View>
 
-        {/* ===================== GIỮ LẠI CÁC TÙY CHỌN DẠNG COMMENT ĐỂ SAU DÙNG ===================== 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-          <Text style={styles.subLabel}>Chỉ hiện hàng chưa bán</Text>
-          <TouchableOpacity style={[styles.chip, onlyAvailable ? styles.chipActive : undefined]} onPress={() => setOnlyAvailable(!onlyAvailable)}>
-            <Text style={[styles.chipText, onlyAvailable ? styles.chipTextActive : undefined]}>{onlyAvailable ? 'Bật' : 'Tắt'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}>
-          <Text style={[styles.subLabel, { marginTop: 0, marginRight: 12 }]}>Đăng trong vòng (Ngày):</Text>
-          <TextInput style={[styles.numberInput, { width: 100 }]} placeholder="Ví dụ: 7" keyboardType="numeric" value={postedWithinDays} onChangeText={setPostedWithinDays} />
-        </View> 
-        */}
-
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -964,11 +976,6 @@ export default function SearchScreen() {
                         </Text>
                       </View>
                     ) : null}
-                    {post.brandName ? (
-                      <View style={styles.brandBadge}>
-                        <Text style={styles.brandText}>{post.brandName}</Text>
-                      </View>
-                    ) : null}
                   </View>
                 </View>
                 <View
@@ -976,6 +983,15 @@ export default function SearchScreen() {
                     isGridView ? styles.gridInfoWrapper : styles.listInfoWrapper
                   }
                 >
+                  {/* ĐƯA BRAND XUỐNG KHU VỰC TRẮNG NÀY ĐÂY */}
+                  {post.brandName ? (
+                    <View style={styles.brandBadgeWhite}>
+                      <Text style={styles.brandBadgeTextWhite}>
+                        {post.brandName}
+                      </Text>
+                    </View>
+                  ) : null}
+
                   <Text style={styles.productName} numberOfLines={2}>
                     {post.productName || "Sản phẩm"}
                   </Text>
@@ -1091,10 +1107,7 @@ export default function SearchScreen() {
           >
             <View style={styles.pickerModalContent}>
               <View style={styles.modalDragIndicator} />
-              <Text style={styles.actionModalTitle}>
-                Chọn mức độ hư hại{" "}
-                {showDamagePicker === "min" ? "tối thiểu" : "tối đa"}
-              </Text>
+              <Text style={styles.actionModalTitle}>Chọn mức độ hư hại</Text>
               <TouchableOpacity
                 style={styles.actionModalBtn}
                 onPress={() => {
@@ -1478,19 +1491,28 @@ const styles = StyleSheet.create({
     right: 6,
   },
   categoryBadge: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: "rgba(51, 65, 85, 0.9)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 4,
   },
   categoryText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
-  brandBadge: {
-    backgroundColor: "rgba(0,0,0,0.6)",
+
+  // STYLE CHO BRAND DƯỚI NỀN TRẮNG
+  brandBadgeWhite: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 4,
+    marginBottom: 4,
   },
-  brandText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
+  brandBadgeTextWhite: {
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+
   priceRow: {
     flexDirection: "row",
     justifyContent: "space-between",

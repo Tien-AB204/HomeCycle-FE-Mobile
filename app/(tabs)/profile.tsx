@@ -479,7 +479,7 @@ export default function ProfileScreen() {
             icon: "book-outline",
             title:
               "Quy định & Chính sách",
-            route: "/business-rules",
+            route: "/policy", // Đã sửa đường dẫn
           },
           {
             icon: "settings-outline",
@@ -506,7 +506,7 @@ export default function ProfileScreen() {
             icon: "book-outline",
             title:
               "Quy định & Chính sách",
-            route: "/business-rules",
+            route: "/policy", // Đã sửa đường dẫn
           },
           {
             icon: "settings-outline",
