@@ -914,37 +914,30 @@ export default function PostDetailScreen() {
                   : "Tin Mua"}
               </Text>
             </View>
-
-            <View
-              style={[
-                styles.tag,
-                {
-                  backgroundColor:
-                    post.status === "Active"
-                      ? "#D1FAE5"
-                      : post.status === "Closed"
-                        ? "#E2E8F0"
-                        : "#FEF3C7",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tagText,
-                  {
-                    color:
-                      post.status === "Active"
-                        ? "#10B981"
-                        : post.status === "Closed"
-                          ? "#475569"
-                          : "#F59E0B",
-                  },
-                ]}
-              >
-                {post.status}
-              </Text>
-            </View>
+            {/* ĐÃ ẨN NHÃN TRẠNG THÁI (Active/Closed/...) */}
           </View>
+        </View>
+
+        {/* MÔ TẢ CHUNG VÀ MÔ TẢ CHI TIẾT ĐƯỢC DI CHUYỂN LÊN ĐÂY */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            Mô tả chung
+          </Text>
+          <Text style={styles.description}>
+            {post.description}
+          </Text>
+
+          {product.detailDescription && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>
+                Mô tả tình trạng chi tiết
+              </Text>
+              <Text style={styles.detailDescription}>
+                {product.detailDescription}
+              </Text>
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -1216,7 +1209,6 @@ export default function PostDetailScreen() {
 
             <Text style={styles.infoValue}>
               {post.remainingQuantity} / {post.quantity}{" "}
-              (Còn lại / Tổng)
             </Text>
           </View>
 
@@ -1241,40 +1233,12 @@ export default function PostDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Mô tả chung
-          </Text>
-
-          <Text style={styles.description}>
-            {post.description}
-          </Text>
-
-          {product.detailDescription && (
-            <>
-              <View style={styles.divider} />
-
-              <Text style={styles.sectionTitle}>
-                Mô tả tình trạng chi tiết
-              </Text>
-
-              <Text style={styles.detailDescription}>
-                {product.detailDescription}
-              </Text>
-            </>
-          )}
-        </View>
-
         <View
           style={[
             styles.section,
             { marginBottom: 30 },
           ]}
         >
-          <Text style={styles.dateText}>
-            Mã Tin: {post.postId}
-          </Text>
-
           <Text style={styles.dateText}>
             Ngày đăng: {formatDate(post.createdAt)}
           </Text>
@@ -1414,6 +1378,7 @@ export default function PostDetailScreen() {
         </View>
       )}
 
+      {/* CÁC MODAL GIỮ NGUYÊN BÊN DƯỚI */}
       <Modal
         visible={showCartModal}
         transparent

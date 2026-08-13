@@ -22,9 +22,14 @@ const agreementApi = {
 
 export default function PaymentSuccessScreen() {
   const router = useRouter();
-  const { agreementId } = useLocalSearchParams();
+
+  // Hứng toàn bộ query params: Cả cái mình nhét vào (agreementId) và cái PayOS trả về (status, cancel)
+  const { agreementId, status, cancel } = useLocalSearchParams();
   const [negotiationId, setNegotiationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Xác nhận xem có bị hủy hoặc lỗi trong lúc thanh toán không
+  const isPaid = status === "PAID" && cancel === "false";
 
   useEffect(() => {
     const fetchNegotiation = async () => {
@@ -42,12 +47,16 @@ export default function PaymentSuccessScreen() {
         setLoading(false);
       }
     };
-    fetchNegotiation();
-  }, [agreementId]);
+
+    // Chỉ gọi API xem thông tin nếu giao dịch thực sự thành công
+    if (isPaid) {
+      fetchNegotiation();
+    }
+  }, [agreementId, isPaid]);
 
   const handleGoToOrder = () => {
     if (agreementId) {
-      router.replace(`/orders/${agreementId}` as any); // Bay sang trang chi tiết đơn hàng
+      router.replace(`/orders/${agreementId}` as any);
     }
   };
 
@@ -60,13 +69,27 @@ export default function PaymentSuccessScreen() {
       <Header title="Kết quả thanh toán" showBack={false} />
       <View style={styles.container}>
         <View style={styles.card}>
-          <View style={[styles.iconCircle, { backgroundColor: "#D1FAE5" }]}>
-            <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: isPaid ? "#D1FAE5" : "#FEE2E2" },
+            ]}
+          >
+            <Ionicons
+              name={isPaid ? "checkmark-circle" : "close-circle"}
+              size={64}
+              color={isPaid ? "#10B981" : COLORS.error}
+            />
           </View>
-          <Text style={styles.title}>Thanh toán thành công!</Text>
+
+          <Text style={styles.title}>
+            {isPaid ? "Thanh toán thành công!" : "Thanh toán thất bại!"}
+          </Text>
+
           <Text style={styles.subtitle}>
-            Giao dịch của bạn đã được ghi nhận. Đơn hàng đã được tạo và chuyển
-            cho đối tác.
+            {isPaid
+              ? "Giao dịch của bạn đã được ghi nhận. Đơn hàng đã được tạo và chuyển cho đối tác."
+              : "Giao dịch đã bị hủy hoặc xảy ra lỗi. Vui lòng kiểm tra lại."}
           </Text>
 
           {loading ? (
@@ -76,31 +99,38 @@ export default function PaymentSuccessScreen() {
             />
           ) : (
             <View style={styles.btnContainer}>
-              {/* NÚT MỚI: XEM ĐƠN HÀNG */}
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleGoToOrder}
-              >
-                <Ionicons
-                  name="receipt-outline"
-                  size={18}
-                  color={COLORS.white}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
-              </TouchableOpacity>
+              {isPaid && (
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleGoToOrder}
+                >
+                  <Ionicons
+                    name="receipt-outline"
+                    size={18}
+                    color={COLORS.white}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
-                style={styles.secondaryBtn}
+                style={isPaid ? styles.secondaryBtn : styles.primaryBtn}
                 onPress={handleGoHome}
               >
                 <Ionicons
                   name="home-outline"
                   size={18}
-                  color={COLORS.primary}
+                  color={isPaid ? COLORS.primary : COLORS.white}
                   style={{ marginRight: 8 }}
                 />
-                <Text style={styles.secondaryBtnText}>Về trang chủ</Text>
+                <Text
+                  style={
+                    isPaid ? styles.secondaryBtnText : styles.primaryBtnText
+                  }
+                >
+                  Về trang chủ
+                </Text>
               </TouchableOpacity>
             </View>
           )}
