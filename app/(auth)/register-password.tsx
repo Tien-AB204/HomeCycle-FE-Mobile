@@ -4,9 +4,8 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { useState } from "react";
 import {
-  ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -15,8 +14,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
+import { useRef, useState } from "react";
+
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
@@ -31,57 +32,115 @@ const getStringParam = (
 
 export default function RegisterPasswordScreen() {
   const router = useRouter();
-
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);
   const role = getStringParam(params.role);
+
   const registrationToken = getStringParam(
     params.registrationToken,
   );
+
   const isGoogleAuth = getStringParam(
     params.isGoogleAuth,
   );
 
   const [password, setPassword] =
     useState("");
+
   const [showPassword, setShowPassword] =
     useState(false);
+
   const [isLoading, setIsLoading] =
     useState(false);
 
+  // Lỗi validation hiển thị ngay dưới ô mật khẩu.
+  const [passwordError, setPasswordError] =
+    useState("");
+
+  // Lỗi API hoặc dữ liệu luồng hiển thị gần nút Tiếp tục.
+  const [submitError, setSubmitError] =
+    useState("");
+
+  // Tránh Enter và nút bấm gọi cùng lúc.
+  const isSubmittingRef = useRef(false);
+
   const handleBack = () => {
+    if (isLoading) {
+      return;
+    }
+
     if (router.canGoBack()) {
       router.back();
-    } else {
-      router.replace("/(auth)/register");
+      return;
     }
+
+    router.replace("/(auth)/register");
+  };
+
+  const validatePassword = () => {
+    const normalizedPassword =
+      password.trim();
+
+    setPasswordError("");
+    setSubmitError("");
+
+    if (!normalizedPassword) {
+      setPasswordError(
+        "Vui lòng nhập mật khẩu.",
+      );
+
+      return null;
+    }
+
+    // Giữ đúng validation hiện tại của FE.
+    // Swagger chưa công bố yêu cầu phức tạp hơn.
+    if (normalizedPassword.length < 6) {
+      setPasswordError(
+        "Mật khẩu phải có ít nhất 6 ký tự.",
+      );
+
+      return null;
+    }
+
+    return normalizedPassword;
   };
 
   const handleNext = async () => {
-    if (password.length < 6) {
-      notifyUser(
-        "Mật khẩu phải từ 6 ký tự trở lên.",
-        "error",
-      );
+    if (
+      isLoading ||
+      isSubmittingRef.current
+    ) {
+      return;
+    }
+
+    const validPassword =
+      validatePassword();
+
+    if (!validPassword) {
       return;
     }
 
     if (!registrationToken) {
-      notifyUser(
+      setSubmitError(
         "Không tìm thấy mã đăng ký. Vui lòng thực hiện lại quá trình đăng ký.",
-        "error",
       );
+
       return;
     }
 
+    /*
+     * Tài khoản cá nhân chưa gọi API ở màn này.
+     * Mật khẩu tiếp tục được chuyển sang profile-setup
+     * theo đúng flow hiện tại của project.
+     */
     if (role !== "business") {
       router.push({
         pathname:
           "/(auth)/profile-setup",
         params: {
           email,
-          password,
+          password: validPassword,
           registrationToken,
           isGoogleAuth,
         },
@@ -91,26 +150,42 @@ export default function RegisterPasswordScreen() {
     }
 
     try {
+      isSubmittingRef.current = true;
       setIsLoading(true);
+      setSubmitError("");
 
+      /*
+       * Swagger:
+       * POST /api/auth/business/register
+       * Header: X-Registration-Token
+       * Body: { password }
+       */
       const response =
         await authApi.registerBusiness(
           registrationToken,
-          password,
+          validPassword,
         );
 
+      /*
+       * Hỗ trợ cả các cấu trúc:
+       * { data: { accessToken } }
+       * { data: { data: { accessToken } } }
+       * { accessToken }
+       */
       const responseData =
-        response?.data?.data ||
-        response?.data;
+        response?.data?.data ??
+        response?.data ??
+        response;
 
       const accessToken =
         responseData?.accessToken;
+
       const refreshToken =
         responseData?.refreshToken;
 
       if (!accessToken) {
         throw new Error(
-          "Không nhận được token từ máy chủ.",
+          "Máy chủ không trả về mã đăng nhập.",
         );
       }
 
@@ -145,15 +220,29 @@ export default function RegisterPasswordScreen() {
         error,
       );
 
-      notifyUser(
+      setSubmitError(
         getApiErrorMessage(
           error,
           "Không thể tạo tài khoản.",
         ),
-        "error",
       );
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
+    }
+  };
+
+  const handlePasswordChange = (
+    value: string,
+  ) => {
+    setPassword(value);
+
+    if (passwordError) {
+      setPasswordError("");
+    }
+
+    if (submitError) {
+      setSubmitError("");
     }
   };
 
@@ -175,7 +264,7 @@ export default function RegisterPasswordScreen() {
           >
             <Ionicons
               name="arrow-back"
-              size={24}
+              size={26}
               color={COLORS.text}
             />
           </TouchableOpacity>
@@ -183,19 +272,16 @@ export default function RegisterPasswordScreen() {
 
         <View style={styles.contentCard}>
           <View
-            style={styles.logoCenterContainer}
+            style={
+              styles.logoCenterContainer
+            }
           >
-            <View style={styles.logoBox}>
-              <Ionicons
-                name="sync-circle"
-                size={32}
-                color={COLORS.white}
-              />
-            </View>
-
-            <Text style={styles.logoText}>
-              HomeCycle
-            </Text>
+            {/* Logo HomeCycle thật, không dùng icon mock. */}
+            <Image
+              source={require("../../src/assets/images/logo-dark-transparent.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
 
             <Text style={styles.title}>
               Tạo mật khẩu
@@ -225,12 +311,14 @@ export default function RegisterPasswordScreen() {
                 styles.disabledInputText,
                 Platform.OS === "web"
                   ? ({
-                      outlineStyle: "none",
+                      outlineStyle:
+                        "none",
                     } as any)
                   : undefined,
               ]}
               value={email}
               editable={false}
+              accessibilityLabel="Email tài khoản"
             />
           </View>
 
@@ -238,11 +326,22 @@ export default function RegisterPasswordScreen() {
             Mật khẩu
           </Text>
 
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              passwordError
+                ? styles.inputContainerError
+                : undefined,
+            ]}
+          >
             <Ionicons
               name="lock-closed-outline"
               size={20}
-              color={COLORS.textLight}
+              color={
+                passwordError
+                  ? COLORS.error
+                  : COLORS.textLight
+              }
               style={styles.inputIcon}
             />
 
@@ -251,7 +350,8 @@ export default function RegisterPasswordScreen() {
                 styles.input,
                 Platform.OS === "web"
                   ? ({
-                      outlineStyle: "none",
+                      outlineStyle:
+                        "none",
                     } as any)
                   : undefined,
               ]}
@@ -261,8 +361,25 @@ export default function RegisterPasswordScreen() {
               }
               secureTextEntry={!showPassword}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={
+                handlePasswordChange
+              }
               editable={!isLoading}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+
+              /*
+               * Đây là phần sửa Enter:
+               * nhập xong mật khẩu và nhấn Enter
+               * sẽ gọi đúng handler Tiếp tục.
+               */
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={() => {
+                void handleNext();
+              }}
             />
 
             <TouchableOpacity
@@ -286,6 +403,50 @@ export default function RegisterPasswordScreen() {
             </TouchableOpacity>
           </View>
 
+          {passwordError ? (
+            <View
+              style={
+                styles.fieldErrorRow
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color={COLORS.error}
+              />
+
+              <Text
+                style={
+                  styles.fieldErrorText
+                }
+              >
+                {passwordError}
+              </Text>
+            </View>
+          ) : null}
+
+          {submitError ? (
+            <View
+              style={
+                styles.submitErrorRow
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={17}
+                color={COLORS.error}
+              />
+
+              <Text
+                style={
+                  styles.submitErrorText
+                }
+              >
+                {submitError}
+              </Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[
               styles.primaryButton,
@@ -293,15 +454,28 @@ export default function RegisterPasswordScreen() {
                 ? styles.disabledButton
                 : undefined,
             ]}
-            onPress={() =>
-              void handleNext()
-            }
+            onPress={() => {
+              void handleNext();
+            }}
             disabled={isLoading}
           >
             {isLoading ? (
-              <ActivityIndicator
-                color={COLORS.white}
-              />
+              <View
+                style={styles.loadingRow}
+              >
+                <ActivityIndicator
+                  color={COLORS.white}
+                  size="small"
+                />
+
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
+                  ĐANG XỬ LÝ
+                </Text>
+              </View>
             ) : (
               <Text
                 style={
@@ -361,9 +535,10 @@ const styles = StyleSheet.create({
   },
 
   contentCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 24,
     padding: 24,
+    borderRadius: 24,
+    backgroundColor: COLORS.white,
+
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -374,9 +549,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
+
       android: {
         elevation: 2,
       },
+
       web: {
         boxShadow:
           "0px 2px 8px rgba(0, 0, 0, 0.05)",
@@ -389,46 +566,40 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
 
-  logoBox: {
-    backgroundColor: COLORS.primary,
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-
-  logoText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: COLORS.primary,
+  logoImage: {
+    width: 230,
+    height: 58,
     marginBottom: 16,
   },
 
   title: {
-    fontSize: 20,
-    fontWeight: "bold",
     color: COLORS.text,
+    fontSize: 22,
+    fontWeight: "bold",
   },
 
   label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: COLORS.textLight,
     marginBottom: 8,
+    color: COLORS.textLight,
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   inputContainer: {
+    height: 64,
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 16,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 52,
     backgroundColor: COLORS.white,
-    marginBottom: 24,
+  },
+
+  inputContainerError: {
+    marginBottom: 0,
+    borderColor: COLORS.error,
   },
 
   inputIcon: {
@@ -446,24 +617,59 @@ const styles = StyleSheet.create({
 
   input: {
     flex: 1,
-    fontSize: 15,
     color: COLORS.text,
+    fontSize: 16,
   },
 
   eyeIcon: {
-    padding: 4,
+    padding: 6,
+  },
+
+  fieldErrorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+    marginTop: 7,
+    marginBottom: 18,
+  },
+
+  fieldErrorText: {
+    flex: 1,
+    color: COLORS.error,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  submitErrorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginBottom: 12,
+  },
+
+  submitErrorText: {
+    flex: 1,
+    color: COLORS.error,
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 52,
+    height: 64,
     justifyContent: "center",
     alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
   },
 
   disabledButton: {
     opacity: 0.7,
+  },
+
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
 
   primaryButtonText: {
@@ -479,13 +685,13 @@ const styles = StyleSheet.create({
   },
 
   footerText: {
-    fontSize: 14,
     color: COLORS.textLight,
+    fontSize: 14,
   },
 
   registerText: {
+    color: COLORS.primary,
     fontSize: 14,
     fontWeight: "bold",
-    color: COLORS.primary,
   },
 });

@@ -4,8 +4,12 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { useState } from "react";
 import {
+  useRef,
+  useState,
+} from "react";
+import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -17,7 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
+
 import { COLORS } from "../../src/constants/theme";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
@@ -33,23 +37,60 @@ export default function ProfileSetupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  /*
+   * Giữ nguyên dữ liệu nhận từ bước trước.
+   * Màn hình này không tự gọi API đăng ký.
+   */
   const email = getStringParam(params.email);
+
   const password = getStringParam(
     params.password,
   );
+
   const registrationToken = getStringParam(
     params.registrationToken,
   );
 
+  const usernameInputRef =
+    useRef<TextInput | null>(null);
+
+  const phoneInputRef =
+    useRef<TextInput | null>(null);
+
   const [fullName, setFullName] =
     useState("");
+
   const [username, setUsername] =
     useState("");
+
   const [phone, setPhone] = useState("");
+
   const [avatarUri, setAvatarUri] =
     useState<string | null>(null);
+
   const [isPickingImage, setIsPickingImage] =
     useState(false);
+
+  const [avatarError, setAvatarError] =
+    useState("");
+
+  const [fullNameError, setFullNameError] =
+    useState("");
+
+  const [usernameError, setUsernameError] =
+    useState("");
+
+  const [phoneError, setPhoneError] =
+    useState("");
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/(auth)/register");
+  };
 
   const pickAvatar = async () => {
     if (isPickingImage) {
@@ -58,6 +99,7 @@ export default function ProfileSetupScreen() {
 
     try {
       setIsPickingImage(true);
+      setAvatarError("");
 
       const result =
         await ImagePicker.launchImageLibraryAsync(
@@ -76,42 +118,100 @@ export default function ProfileSetupScreen() {
         setAvatarUri(
           result.assets[0].uri,
         );
+
+        setAvatarError("");
       }
     } catch (error: unknown) {
-      notifyUser(
+      console.error(
+        "Lỗi chọn ảnh đại diện:",
+        error,
+      );
+
+      setAvatarError(
         getApiErrorMessage(
           error,
           "Không thể mở thư viện ảnh.",
         ),
-        "error",
       );
     } finally {
       setIsPickingImage(false);
     }
   };
 
-  const handleNext = () => {
+  const validateForm = () => {
     const normalizedFullName =
       fullName.trim();
+
     const normalizedUsername =
       username.trim();
-    const normalizedPhone = phone.trim();
 
-    if (
-      !normalizedFullName ||
-      !normalizedUsername ||
-      !normalizedPhone
-    ) {
-      notifyUser(
-        "Họ tên, username và số điện thoại là bắt buộc.",
-        "error",
+    const normalizedPhone =
+      phone.trim();
+
+    let isValid = true;
+
+    setFullNameError("");
+    setUsernameError("");
+    setPhoneError("");
+
+    /*
+     * Chỉ kiểm tra các trường bắt buộc giống
+     * logic cũ. Không tự thêm quy tắc định dạng
+     * số điện thoại hoặc username vì chưa có
+     * yêu cầu xác nhận từ BE.
+     */
+    if (!normalizedFullName) {
+      setFullNameError(
+        "Vui lòng nhập họ và tên.",
       );
+
+      isValid = false;
+    }
+
+    if (!normalizedUsername) {
+      setUsernameError(
+        "Vui lòng nhập username.",
+      );
+
+      isValid = false;
+    }
+
+    if (!normalizedPhone) {
+      setPhoneError(
+        "Vui lòng nhập số điện thoại.",
+      );
+
+      isValid = false;
+    }
+
+    return {
+      isValid,
+      normalizedFullName,
+      normalizedUsername,
+      normalizedPhone,
+    };
+  };
+
+  const handleNext = () => {
+    const {
+      isValid,
+      normalizedFullName,
+      normalizedUsername,
+      normalizedPhone,
+    } = validateForm();
+
+    if (!isValid) {
       return;
     }
 
+    /*
+     * Giữ nguyên route và toàn bộ params mà
+     * verification-setup.tsx đang sử dụng.
+     */
     router.push({
       pathname:
         "/(auth)/verification-setup",
+
       params: {
         email,
         registrationToken,
@@ -141,170 +241,317 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.headerCenter}>
-            <Ionicons
-              name="person-circle"
-              size={48}
-              color={COLORS.primary}
-              style={styles.headerIcon}
+          <View style={styles.topHeader}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={styles.backButton}
+              accessibilityRole="button"
+              accessibilityLabel="Quay lại"
+            >
+              <Ionicons
+                name="arrow-back"
+                size={26}
+                color={COLORS.text}
+              />
+            </TouchableOpacity>
+
+            <Image
+              source={require("../../src/assets/images/logo-dark-transparent.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
+              accessibilityLabel="HomeCycle"
             />
 
-            <Text style={styles.title}>
-              Thiết lập hồ sơ cá nhân
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Bước 1/2: Thông tin cơ bản
-              giúp bạn trải nghiệm mua bán
-              tốt hơn.
-            </Text>
+            <View
+              style={styles.headerPlaceholder}
+            />
           </View>
 
-          <View
-            style={styles.avatarContainer}
-          >
-            <TouchableOpacity
-              style={styles.avatarBox}
-              onPress={() =>
-                void pickAvatar()
-              }
-              disabled={isPickingImage}
-            >
-              {avatarUri ? (
-                <Image
-                  source={{
-                    uri: avatarUri,
-                  }}
-                  style={styles.avatarImage}
-                />
-              ) : (
+          <View style={styles.contentCard}>
+            <View style={styles.headerCenter}>
+              <View style={styles.headerIconBox}>
                 <Ionicons
                   name="person-outline"
-                  size={40}
-                  color="#B0B8C1"
-                />
-              )}
-
-              <View style={styles.cameraBadge}>
-                <Ionicons
-                  name="camera"
-                  size={14}
+                  size={30}
                   color={COLORS.white}
                 />
               </View>
+
+              <Text style={styles.title}>
+                Thiết lập hồ sơ cá nhân
+              </Text>
+
+              <Text style={styles.subtitle}>
+                Bước 1/2: Điền thông tin cơ
+                bản để hoàn thiện tài khoản.
+              </Text>
+            </View>
+
+            <View
+              style={styles.avatarContainer}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.avatarBox,
+                  avatarError
+                    ? styles.avatarBoxError
+                    : undefined,
+                ]}
+                onPress={() =>
+                  void pickAvatar()
+                }
+                disabled={isPickingImage}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  avatarUri
+                    ? "Thay ảnh đại diện"
+                    : "Chọn ảnh đại diện"
+                }
+                accessibilityState={{
+                  disabled: isPickingImage,
+                  busy: isPickingImage,
+                }}
+              >
+                {isPickingImage ? (
+                  <ActivityIndicator
+                    color={COLORS.primary}
+                  />
+                ) : avatarUri ? (
+                  <Image
+                    source={{
+                      uri: avatarUri,
+                    }}
+                    style={styles.avatarImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Ionicons
+                    name="person-outline"
+                    size={40}
+                    color="#B0B8C1"
+                  />
+                )}
+
+                <View style={styles.cameraBadge}>
+                  <Ionicons
+                    name="camera"
+                    size={14}
+                    color={COLORS.white}
+                  />
+                </View>
+              </TouchableOpacity>
+
+              <Text style={styles.avatarHint}>
+                Ảnh đại diện không bắt buộc
+              </Text>
+
+              {avatarError ? (
+                <Text
+                  style={styles.avatarErrorText}
+                  accessibilityRole="alert"
+                >
+                  {avatarError}
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={styles.sectionHeader}>
+              <View
+                style={styles.verticalBar}
+              />
+
+              <Text style={styles.sectionTitle}>
+                THÔNG TIN CÁ NHÂN
+              </Text>
+            </View>
+
+            <Text style={styles.fieldLabel}>
+              Họ và tên *
+            </Text>
+
+            <View
+              style={[
+                styles.inputContainer,
+                fullNameError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
+              <TextInput
+                style={[
+                  styles.input,
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
+                ]}
+                placeholder="Nhập họ và tên..."
+                placeholderTextColor={
+                  COLORS.textLight
+                }
+                value={fullName}
+                onChangeText={(value) => {
+                  setFullName(value);
+                  setFullNameError("");
+                }}
+                autoCapitalize="words"
+                autoCorrect={false}
+                autoComplete="name"
+                textContentType="name"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() =>
+                  usernameInputRef.current?.focus()
+                }
+              />
+            </View>
+
+            {fullNameError ? (
+              <Text
+                style={styles.fieldErrorText}
+                accessibilityRole="alert"
+              >
+                {fullNameError}
+              </Text>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>
+              Username *
+            </Text>
+
+            <View
+              style={[
+                styles.inputContainer,
+                usernameError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
+              <TextInput
+                ref={usernameInputRef}
+                style={[
+                  styles.input,
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
+                ]}
+                placeholder="username_cua_ban"
+                placeholderTextColor={
+                  COLORS.textLight
+                }
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={username}
+                onChangeText={(value) => {
+                  setUsername(value);
+                  setUsernameError("");
+                }}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() =>
+                  phoneInputRef.current?.focus()
+                }
+              />
+            </View>
+
+            {usernameError ? (
+              <Text
+                style={styles.fieldErrorText}
+                accessibilityRole="alert"
+              >
+                {usernameError}
+              </Text>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>
+              Số điện thoại *
+            </Text>
+
+            <View
+              style={[
+                styles.inputContainer,
+                phoneError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
+              <TextInput
+                ref={phoneInputRef}
+                style={[
+                  styles.input,
+                  Platform.OS === "web"
+                    ? ({
+                        outlineStyle: "none",
+                      } as any)
+                    : undefined,
+                ]}
+                placeholder="Nhập số điện thoại..."
+                placeholderTextColor={
+                  COLORS.textLight
+                }
+                keyboardType="phone-pad"
+                inputMode="tel"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                value={phone}
+                onChangeText={(value) => {
+                  setPhone(value);
+                  setPhoneError("");
+                }}
+                returnKeyType="done"
+                onSubmitEditing={handleNext}
+              />
+            </View>
+
+            {phoneError ? (
+              <Text
+                style={styles.fieldErrorText}
+                accessibilityRole="alert"
+              >
+                {phoneError}
+              </Text>
+            ) : null}
+
+            <View
+              style={
+                styles.privacyNoteContainer
+              }
+            >
+              <Ionicons
+                name="lock-closed-outline"
+                size={14}
+                color={COLORS.textLight}
+              />
+
+              <Text
+                style={styles.privacyNoteText}
+              >
+                Số điện thoại của bạn sẽ được
+                bảo mật.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleNext}
+              accessibilityRole="button"
+            >
+              <Text
+                style={styles.primaryButtonText}
+              >
+                TIẾP TỤC
+              </Text>
+
+              <Ionicons
+                name="arrow-forward"
+                size={20}
+                color={COLORS.white}
+              />
             </TouchableOpacity>
           </View>
-
-          <View style={styles.sectionHeader}>
-            <View style={styles.verticalBar} />
-
-            <Text style={styles.sectionTitle}>
-              THÔNG TIN CÁ NHÂN
-            </Text>
-          </View>
-
-          <Text style={styles.fieldLabel}>
-            Họ và tên *
-          </Text>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web"
-                  ? ({
-                      outlineStyle: "none",
-                    } as any)
-                  : undefined,
-              ]}
-              placeholder="Nhập họ và tên..."
-              placeholderTextColor={
-                COLORS.textLight
-              }
-              value={fullName}
-              onChangeText={setFullName}
-            />
-          </View>
-
-          <Text style={styles.fieldLabel}>
-            Username *
-          </Text>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web"
-                  ? ({
-                      outlineStyle: "none",
-                    } as any)
-                  : undefined,
-              ]}
-              placeholder="username_cua_ban"
-              placeholderTextColor={
-                COLORS.textLight
-              }
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={username}
-              onChangeText={setUsername}
-            />
-          </View>
-
-          <Text style={styles.fieldLabel}>
-            Số điện thoại *
-          </Text>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[
-                styles.input,
-                Platform.OS === "web"
-                  ? ({
-                      outlineStyle: "none",
-                    } as any)
-                  : undefined,
-              ]}
-              placeholder="Nhập số điện thoại..."
-              placeholderTextColor={
-                COLORS.textLight
-              }
-              keyboardType="phone-pad"
-              inputMode="tel"
-              value={phone}
-              onChangeText={setPhone}
-            />
-          </View>
-
-          <View
-            style={
-              styles.privacyNoteContainer
-            }
-          >
-            <Ionicons
-              name="lock-closed-outline"
-              size={14}
-              color={COLORS.textLight}
-            />
-
-            <Text
-              style={styles.privacyNoteText}
-            >
-              Số điện thoại của bạn sẽ được
-              bảo mật.
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleNext}
-          >
-            <Text
-              style={styles.primaryButtonText}
-            >
-              TIẾP TỤC
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -314,7 +561,7 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
 
   keyboardContainer: {
@@ -322,24 +569,81 @@ const styles = StyleSheet.create({
   },
 
   scrollContainer: {
+    flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 40,
     paddingBottom: 40,
+  },
+
+  topHeader: {
+    minHeight: 82,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  backButton: {
+    width: 42,
+    height: 42,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+
+  brandLogo: {
+    width: 178,
+    height: 46,
+  },
+
+  headerPlaceholder: {
+    width: 42,
+  },
+
+  contentCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 24,
+
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      },
+
+      android: {
+        elevation: 2,
+      },
+
+      web: {
+        boxShadow:
+          "0px 2px 8px rgba(0, 0, 0, 0.05)",
+      } as any,
+    }),
   },
 
   headerCenter: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 28,
   },
 
-  headerIcon: {
-    marginBottom: 8,
+  headerIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+    marginBottom: 14,
   },
 
   title: {
-    fontSize: 22,
-    fontWeight: "bold",
+    fontSize: 24,
+    fontWeight: "800",
     color: COLORS.text,
+    textAlign: "center",
     marginBottom: 8,
   },
 
@@ -353,19 +657,24 @@ const styles = StyleSheet.create({
 
   avatarContainer: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 28,
   },
 
   avatarBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
+    width: 88,
+    height: 88,
+    borderRadius: 26,
     borderWidth: 2,
     borderColor: "#E0E4EC",
     borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
     position: "relative",
+    backgroundColor: "#FAFAFA",
+  },
+
+  avatarBoxError: {
+    borderColor: COLORS.error,
   },
 
   avatarImage: {
@@ -379,68 +688,94 @@ const styles = StyleSheet.create({
     bottom: -8,
     right: -8,
     backgroundColor: COLORS.primary,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
     borderColor: COLORS.white,
   },
 
+  avatarHint: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 14,
+  },
+
+  avatarErrorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
+    marginTop: 6,
+  },
+
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 18,
   },
 
   verticalBar: {
     width: 4,
-    height: 16,
-    backgroundColor: "#34495E",
+    height: 18,
+    backgroundColor: COLORS.primary,
     marginRight: 8,
     borderRadius: 2,
   },
 
   sectionTitle: {
     fontSize: 14,
-    fontWeight: "bold",
-    color: "#34495E",
-    textTransform: "uppercase",
+    fontWeight: "800",
+    color: COLORS.primary,
     letterSpacing: 0.5,
   },
 
   fieldLabel: {
     fontSize: 13,
-    fontWeight: "bold",
-    color: "#2C3E50",
+    fontWeight: "700",
+    color: COLORS.text,
     marginBottom: 8,
   },
 
   inputContainer: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 16,
-    height: 48,
     backgroundColor: COLORS.white,
-    marginBottom: 16,
+  },
+
+  inputContainerError: {
+    borderColor: COLORS.error,
+    borderWidth: 1.5,
   },
 
   input: {
     flex: 1,
+    minHeight: 50,
     fontSize: 14,
     color: COLORS.text,
+  },
+
+  fieldErrorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+    marginBottom: 14,
   },
 
   privacyNoteContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 6,
-    marginTop: -8,
-    marginBottom: 32,
+    marginTop: 8,
+    marginBottom: 28,
   },
 
   privacyNoteText: {
@@ -451,17 +786,19 @@ const styles = StyleSheet.create({
   },
 
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 52,
+    minHeight: 54,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    gap: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingHorizontal: 18,
   },
 
   primaryButtonText: {
     color: COLORS.white,
     fontSize: 15,
-    fontWeight: "bold",
+    fontWeight: "800",
   },
 });

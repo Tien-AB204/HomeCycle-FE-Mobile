@@ -5,7 +5,9 @@ import {
 } from "expo-router";
 import React, {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -29,6 +31,8 @@ import {
   useActionFeedback,
   useConfirmAction,
 } from "../../src/components/shared/ActionFeedback";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -42,6 +46,116 @@ type ActiveTab =
   | "chat"
   | "received"
   | "sent";
+
+type OfferTab = "received" | "sent";
+
+type OfferTabChanges = Record<
+  OfferTab,
+  boolean
+>;
+
+const OFFER_POLLING_DELAYS: number[] = [
+  // Lần polling đầu tiên sau 10 giây
+  10_000,
+
+  // 5 lần, mỗi lần cách 5 giây
+  5_000,
+  5_000,
+  5_000,
+  5_000,
+  5_000,
+
+  // 3 lần, mỗi lần cách 7 giây
+  7_000,
+  7_000,
+  7_000,
+
+  // 3 lần, mỗi lần cách 11 giây
+  11_000,
+  11_000,
+  11_000,
+
+  // 3 lần, mỗi lần cách 13 giây
+  13_000,
+  13_000,
+  13_000,
+
+  // 3 lần, mỗi lần cách 17 giây
+  17_000,
+  17_000,
+  17_000,
+
+  // 3 lần, mỗi lần cách 19 giây
+  19_000,
+  19_000,
+  19_000,
+];
+
+// Sau khi chạy hết lịch trên, tiếp tục polling mỗi 19 giây.
+const MAX_OFFER_POLLING_DELAY = 19_000;
+
+const getOfferItems = (
+  response: any,
+): any[] => {
+  const items =
+    response?.items ??
+    response?.data?.items ??
+    [];
+
+  return Array.isArray(items)
+    ? items
+    : [];
+};
+
+const getPendingOffers = (
+  response: any,
+): any[] => {
+  return getOfferItems(response)
+    .filter((offer: any) => {
+      return (
+        offer.offerStatus === "Pending" ||
+        offer.offerStatus === 0
+      );
+    })
+    .sort((first: any, second: any) => {
+      return (
+        new Date(
+          second.createdAt,
+        ).getTime() -
+        new Date(
+          first.createdAt,
+        ).getTime()
+      );
+    });
+};
+
+/**
+ * Snapshot chỉ chứa các trường có ý nghĩa với tab Offer:
+ * - Offer mới.
+ * - Thay đổi giá.
+ * - Thay đổi số lượng.
+ * - Thay đổi trạng thái.
+ *
+ * Không dùng updatedAt để tránh báo chấm đỏ vì metadata
+ * không liên quan bị Backend cập nhật.
+ */
+const createOfferSnapshot = (
+  offers: any[],
+): string => {
+  return offers
+    .map((offer: any) => {
+      return [
+        String(offer.offerId ?? ""),
+        String(offer.offerPrice ?? ""),
+        String(
+          offer.offerQuantity ?? "",
+        ),
+        String(offer.offerStatus ?? ""),
+      ].join(":");
+    })
+    .sort()
+    .join("|");
+};
 
 type FeedbackTarget =
   | {
@@ -171,9 +285,61 @@ export default function ChatListScreen() {
       : screenWidth;
 
   const { user } = useAuth();
+  const { connection } = useChatRealtime();
+
+  const currentUserId =
+  user?.userId || user?.id;
+
+  /**
+   * Dùng để loại bỏ response cũ khi:
+   * - Người dùng đổi tab.
+   * - Người dùng rời màn hình.
+   * - Có hai request vô tình chạy gần nhau.
+   */
+  const fetchRequestIdRef = useRef(0);
 
   const [activeTab, setActiveTab] =
     useState<ActiveTab>("chat");
+
+  const activeTabRef =
+    useRef<ActiveTab>("chat");
+
+  const seenOfferSnapshotsRef =
+    useRef<
+      Partial<Record<OfferTab, string>>
+    >({});
+
+  const latestOfferSnapshotsRef =
+    useRef<
+      Partial<Record<OfferTab, string>>
+    >({});
+
+  const [
+    offerTabChanges,
+    setOfferTabChanges,
+  ] = useState<OfferTabChanges>({
+    received: false,
+    sent: false,
+  });
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  /**
+   * Khi đổi tài khoản phải bỏ cache trong RAM.
+   * Key AsyncStorage bên dưới đã được tách theo userId.
+   */
+  useEffect(() => {
+    seenOfferSnapshotsRef.current = {};
+    latestOfferSnapshotsRef.current =
+      {};
+
+    setOfferTabChanges({
+      received: false,
+      sent: false,
+    });
+  }, [currentUserId]);
 
   const [
     searchQuery,
@@ -240,18 +406,30 @@ export default function ChatListScreen() {
     confirmationModal,
   } = useConfirmAction();
 
-  const currentUserId =
-    user?.userId || user?.id;
+  const fetchData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
 
-  const fetchData =
-    useCallback(async () => {
+      // Mỗi lần gọi có một ID riêng.
+      const requestId =
+        ++fetchRequestIdRef.current;
+
       if (!user) {
         setOffersList([]);
         setNegotiationsList([]);
+
+        if (!silent) {
+          setIsLoading(false);
+        }
+
         return;
       }
 
-      setIsLoading(true);
+      // Chỉ lần tải trực tiếp mới hiện loading.
+      // Polling nền không làm giao diện nhấp nháy.
+      if (!silent) {
+        setIsLoading(true);
+      }
 
       try {
         if (activeTab === "chat") {
@@ -260,6 +438,14 @@ export default function ChatListScreen() {
               PageSize: 50,
               PageNumber: 1,
             });
+
+          // Bỏ response cũ nếu đã có request mới hơn.
+          if (
+            requestId !==
+            fetchRequestIdRef.current
+          ) {
+            return;
+          }
 
           if (
             response?.isSuccess === false
@@ -283,16 +469,23 @@ export default function ChatListScreen() {
 
         const response =
           activeTab === "received"
-            ? await offerApi.getReceivedOffers(
-                {
-                  PageSize: 50,
-                  PageNumber: 1,
-                },
-              )
+            ? await offerApi.getReceivedOffers({
+                PageSize: 50,
+                PageNumber: 1,
+              })
             : await offerApi.getSentOffers({
                 PageSize: 50,
                 PageNumber: 1,
               });
+
+        // Người dùng đã đổi tab hoặc có request mới:
+        // không cho response cũ ghi đè danh sách mới.
+        if (
+          requestId !==
+          fetchRequestIdRef.current
+        ) {
+          return;
+        }
 
         if (
           response?.isSuccess === false
@@ -330,34 +523,93 @@ export default function ChatListScreen() {
 
         setOffersList(pendingOffers);
       } catch (error: unknown) {
+        // Không xử lý response của request đã lỗi thời.
+        if (
+          requestId !==
+          fetchRequestIdRef.current
+        ) {
+          return;
+        }
+
         console.error(
           `Lỗi lấy dữ liệu (${activeTab}):`,
           error,
         );
 
-        setFeedbackTarget({
-          type: "page",
-        });
+        /**
+         * Polling nền lỗi thì giữ nguyên dữ liệu cũ.
+         * Không bật thông báo liên tục mỗi 30 giây.
+         *
+         * Lần tải trực tiếp vẫn hiện lỗi inline như cũ.
+         */
+        if (!silent) {
+          setFeedbackTarget({
+            type: "page",
+          });
 
-        showError(
-          getApiErrorMessage(
-            error,
-            "Không thể tải danh sách thương lượng.",
-          ),
-        );
+          showError(
+            getApiErrorMessage(
+              error,
+              "Không thể tải danh sách thương lượng.",
+            ),
+          );
+        }
       } finally {
-        setIsLoading(false);
+        /**
+         * Chỉ request mới nhất và không phải polling nền
+         * mới được tắt loading.
+         */
+        if (
+          !silent &&
+          requestId ===
+            fetchRequestIdRef.current
+        ) {
+          setIsLoading(false);
+        }
       }
-    }, [
+    },
+    [
       activeTab,
       showError,
       user,
-    ]);
+    ],
+  );
 
+  /**
+   * Danh sách Negotiation không polling.
+   *
+   * Khi BE phát ConversationUpdated, FE gọi lại /negotiations
+   * đúng một lần để lấy dữ liệu đầy đủ của thẻ chat.
+   */
   useFocusEffect(
     useCallback(() => {
-      void fetchData();
-    }, [fetchData]),
+      if (!connection) {
+        return;
+      }
+
+      const handleConversationUpdated = () => {
+        // Chỉ refresh khi người dùng đang xem tab Đoạn chat.
+        if (activeTabRef.current !== "chat") {
+          return;
+        }
+
+        void fetchData({
+          silent: true,
+        });
+      };
+
+      connection.on(
+        "ConversationUpdated",
+        handleConversationUpdated,
+      );
+
+      return () => {
+        connection.off(
+          "ConversationUpdated",
+          handleConversationUpdated,
+        );
+      };
+    }, [connection, fetchData]),
   );
 
   const filteredNegotiations =
@@ -393,20 +645,76 @@ export default function ChatListScreen() {
       searchQuery,
     ]);
 
-  const filteredOffers = useMemo(() => {
-    const query =
-      normalizeSearchText(
-        searchQuery,
-      );
+  const getOfferSenderId = useCallback(
+  (item: any) =>
+    String(
+      item?.senderId ??
+        item?.sender?.userId ??
+        item?.sender?.id ??
+        item?.fromUserId ??
+        "",
+    ),
+  [],
+);
 
-    if (!query) {
-      return offersList;
-    }
+const getOfferReceiverId = useCallback(
+  (item: any) =>
+    String(
+      item?.receiverId ??
+        item?.receiver?.userId ??
+        item?.receiver?.id ??
+        item?.toUserId ??
+        "",
+    ),
+  [],
+);
 
-    return offersList.filter((item) => {
+const filteredOffers = useMemo(() => {
+  const myUserId = String(
+    currentUserId ?? "",
+  );
+
+  const offersOfCurrentTab =
+    offersList.filter((item) => {
+      const senderId =
+        getOfferSenderId(item);
+
+      const receiverId =
+        getOfferReceiverId(item);
+
+      if (activeTab === "received") {
+        // Yêu cầu mới:
+        // mình phải là người nhận và không phải người gửi.
+        return (
+          receiverId === myUserId &&
+          senderId !== myUserId
+        );
+      }
+
+      if (activeTab === "sent") {
+        // Đã gửi:
+        // mình phải là người gửi.
+        return senderId === myUserId;
+      }
+
+      return false;
+    });
+
+  const query = normalizeSearchText(
+    searchQuery,
+  );
+
+  if (!query) {
+    return offersOfCurrentTab;
+  }
+
+  return offersOfCurrentTab.filter(
+    (item) => {
       const searchableText = [
         item.senderName,
+        item.sender?.displayName,
         item.receiverName,
+        item.receiver?.displayName,
         item.productName,
         item.postTitle,
         item.offerPrice,
@@ -418,24 +726,348 @@ export default function ChatListScreen() {
       return searchableText.includes(
         query,
       );
-    });
-  }, [
-    offersList,
-    searchQuery,
-  ]);
+    },
+  );
+}, [
+  activeTab,
+  currentUserId,
+  getOfferReceiverId,
+  getOfferSenderId,
+  offersList,
+  searchQuery,
+]);
 
   const clearCurrentFeedback = () => {
     clearFeedback();
     setFeedbackTarget(null);
   };
 
-  const handleChangeTab = (
-    nextTab: ActiveTab,
+  const updateOfferTabDot = useCallback(
+  (
+    tab: OfferTab,
+    hasChanges: boolean,
   ) => {
-    clearCurrentFeedback();
-    setSearchQuery("");
-    setActiveTab(nextTab);
-  };
+    setOfferTabChanges((current) => {
+      if (
+        current[tab] === hasChanges
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [tab]: hasChanges,
+      };
+    });
+  },
+  [],
+);
+
+const getSeenSnapshotKey = useCallback(
+  (tab: OfferTab) => {
+    return [
+      "homecycle",
+      "offer-seen-snapshot",
+      String(currentUserId),
+      tab,
+    ].join(":");
+  },
+  [currentUserId],
+);
+
+const saveSeenOfferSnapshot =
+  useCallback(
+    async (
+      tab: OfferTab,
+      snapshot: string,
+    ) => {
+      if (!currentUserId) {
+        return;
+      }
+
+      seenOfferSnapshotsRef.current[
+        tab
+      ] = snapshot;
+
+      await AsyncStorage.setItem(
+        getSeenSnapshotKey(tab),
+        snapshot,
+      );
+
+      updateOfferTabDot(tab, false);
+    },
+    [
+      currentUserId,
+      getSeenSnapshotKey,
+      updateOfferTabDot,
+    ],
+  );
+
+const checkOfferTabChanges =
+  useCallback(
+    async (
+      tab: OfferTab,
+      response: any,
+    ) => {
+      if (
+        response?.isSuccess === false
+      ) {
+        throw response;
+      }
+
+      const pendingOffers =
+        getPendingOffers(response);
+
+      const currentSnapshot =
+        createOfferSnapshot(
+          pendingOffers,
+        );
+
+      latestOfferSnapshotsRef.current[
+        tab
+      ] = currentSnapshot;
+
+      let seenSnapshot =
+        seenOfferSnapshotsRef.current[
+          tab
+        ];
+
+      if (seenSnapshot === undefined) {
+        const storedSnapshot =
+          await AsyncStorage.getItem(
+            getSeenSnapshotKey(tab),
+          );
+
+        if (storedSnapshot === null) {
+          /**
+           * Lần đầu chạy tính năng:
+           * lấy dữ liệu hiện tại làm mốc đã xem.
+           * Không đánh dấu toàn bộ Offer cũ là chưa đọc.
+           */
+          await saveSeenOfferSnapshot(
+            tab,
+            currentSnapshot,
+          );
+
+          seenSnapshot =
+            currentSnapshot;
+        } else {
+          seenSnapshot =
+            storedSnapshot;
+
+          seenOfferSnapshotsRef.current[
+            tab
+          ] = storedSnapshot;
+        }
+      }
+
+      const isViewingThisTab =
+        activeTabRef.current === tab;
+
+      if (isViewingThisTab) {
+        // Người dùng đang nhìn thấy dữ liệu mới.
+        setOffersList(pendingOffers);
+
+        await saveSeenOfferSnapshot(
+          tab,
+          currentSnapshot,
+        );
+
+        return;
+      }
+
+      updateOfferTabDot(
+        tab,
+        currentSnapshot !==
+          seenSnapshot,
+      );
+    },
+    [
+      getSeenSnapshotKey,
+      saveSeenOfferSnapshot,
+      updateOfferTabDot,
+    ],
+  );
+
+const pollOfferTabs = useCallback(async () => {
+  const [receivedResult, sentResult] =
+    await Promise.allSettled([
+      offerApi.getReceivedOffers({
+        PageNumber: 1,
+        PageSize: 50,
+      }),
+      offerApi.getSentOffers({
+        PageNumber: 1,
+        PageSize: 50,
+      }),
+    ]);
+
+  if (
+    receivedResult.status === "fulfilled"
+  ) {
+    await checkOfferTabChanges(
+      "received",
+      receivedResult.value,
+    );
+  } else {
+    console.error(
+      "Polling received offers thất bại:",
+      receivedResult.reason,
+    );
+  }
+
+  if (sentResult.status === "fulfilled") {
+    await checkOfferTabChanges(
+      "sent",
+      sentResult.value,
+    );
+  } else {
+    console.error(
+      "Polling sent offers thất bại:",
+      sentResult.reason,
+    );
+  }
+}, [checkOfferTabChanges]);
+
+const markOfferTabAsSeen =
+  useCallback(
+    (tab: OfferTab) => {
+      updateOfferTabDot(tab, false);
+
+      const latestSnapshot =
+        latestOfferSnapshotsRef.current[
+          tab
+        ];
+
+      if (
+        latestSnapshot !== undefined
+      ) {
+        void saveSeenOfferSnapshot(
+          tab,
+          latestSnapshot,
+        );
+      }
+    },
+    [
+      saveSeenOfferSnapshot,
+      updateOfferTabDot,
+    ],
+  );
+
+  /**
+   * Polling chỉ dành cho:
+   * - GET /offers/received
+   * - GET /offers/sent
+   *
+   * Không gọi GET /negotiations ở đây.
+   * Tab Đoạn chat được cập nhật bằng SignalR ConversationUpdated.
+   */
+  useFocusEffect(
+  useCallback(() => {
+    if (!user) {
+      return;
+    }
+
+    let isCancelled = false;
+    let pollingTimer:
+      | ReturnType<typeof setTimeout>
+      | null = null;
+
+    let delayIndex = 0;
+
+    /**
+     * Mỗi khi vào màn hình hoặc chuyển tab:
+     * - chat gọi negotiations một lần;
+     * - received gọi received một lần;
+     * - sent gọi sent một lần.
+     */
+    void fetchData();
+
+    const scheduleNextPoll = () => {
+      if (isCancelled) {
+        return;
+      }
+
+      const nextDelay =
+        delayIndex <
+        OFFER_POLLING_DELAYS.length
+          ? OFFER_POLLING_DELAYS[
+              delayIndex
+            ]
+          : MAX_OFFER_POLLING_DELAY;
+
+      pollingTimer = setTimeout(
+        async () => {
+          if (isCancelled) {
+            return;
+          }
+
+          /**
+           * Dùng chung một nhịp polling cho:
+           * - dữ liệu tab offer đang mở;
+           * - chấm đỏ của tab offer còn lại.
+           *
+           * Không có request riêng cho badge.
+           */
+          await pollOfferTabs();
+
+          if (isCancelled) {
+            return;
+          }
+
+          delayIndex += 1;
+          scheduleNextPoll();
+        },
+        nextDelay,
+      );
+    };
+
+    // Lần polling đầu tiên sau 10 giây.
+    scheduleNextPoll();
+
+    return () => {
+      isCancelled = true;
+
+      // Vô hiệu hóa request tải trực tiếp của tab cũ.
+      fetchRequestIdRef.current += 1;
+
+      if (pollingTimer) {
+        clearTimeout(pollingTimer);
+      }
+    };
+  }, [
+    activeTab,
+    fetchData,
+    pollOfferTabs,
+    user,
+  ]),
+);
+
+  const handleChangeTab = useCallback(
+    (nextTab: ActiveTab) => {
+      if (nextTab === activeTabRef.current) {
+        if (nextTab === "received" || nextTab === "sent") {
+          void markOfferTabAsSeen(nextTab);
+        }
+        return;
+      }
+
+      // Hủy hiệu lực response cũ đang chạy.
+      fetchRequestIdRef.current += 1;
+
+      // Xóa dữ liệu tab cũ ngay lập tức để "Đã gửi"
+      // không xuất hiện tạm thời trong "Yêu cầu mới" và ngược lại.
+      setOffersList([]);
+
+      activeTabRef.current = nextTab;
+      setActiveTab(nextTab);
+
+      if (nextTab === "received" || nextTab === "sent") {
+        void markOfferTabAsSeen(nextTab);
+      }
+    },
+    [markOfferTabAsSeen],
+  );
 
   const handleAcceptOffer = async (
     offerId: string,
@@ -810,7 +1442,8 @@ export default function ChatListScreen() {
     item: any;
   }) => {
     const isMySentOffer =
-      item.senderId === currentUserId;
+      getOfferSenderId(item) ===
+      String(currentUserId ?? "");
 
     const partnerName =
       (isMySentOffer
@@ -1089,16 +1722,22 @@ export default function ChatListScreen() {
               )
             }
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === "received"
-                  ? styles.tabTextActive
-                  : undefined,
-              ]}
-            >
-              Yêu cầu mới
-            </Text>
+            <View style={styles.tabLabelRow}>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "received"
+                    ? styles.tabTextActive
+                    : undefined,
+                ]}
+              >
+                Yêu cầu mới
+              </Text>
+
+              {offerTabChanges.received ? (
+                <View style={styles.tabUnreadDot} />
+              ) : null}
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1112,16 +1751,22 @@ export default function ChatListScreen() {
               handleChangeTab("sent")
             }
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === "sent"
-                  ? styles.tabTextActive
-                  : undefined,
-              ]}
-            >
-              Đã gửi
-            </Text>
+            <View style={styles.tabLabelRow}>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "sent"
+                    ? styles.tabTextActive
+                    : undefined,
+                ]}
+              >
+                Đã gửi
+              </Text>
+
+              {offerTabChanges.sent ? (
+                <View style={styles.tabUnreadDot} />
+              ) : null}
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -1513,6 +2158,20 @@ const styles = StyleSheet.create({
 
   tabTextActive: {
     color: COLORS.primary,
+  },
+
+  tabLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+
+  tabUnreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.error,
   },
 
   contentArea: {

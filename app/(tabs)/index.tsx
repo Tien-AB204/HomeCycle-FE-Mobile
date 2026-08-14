@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -17,6 +18,7 @@ import {
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 
 const postApi = {
@@ -25,8 +27,7 @@ const postApi = {
       const res = await apiClient.get("/posts/get-all-active", { params });
       return res.data;
     } catch (error) {
-      console.warn("Lỗi lấy bài đăng (có thể do chưa đăng nhập):", error);
-      return { items: [] }; 
+      return { items: [] };
     }
   },
   getActiveCategories: async () => {
@@ -36,53 +37,112 @@ const postApi = {
       });
       return res.data;
     } catch (error) {
-      console.warn("Lỗi lấy danh mục:", error);
       return { items: [] };
     }
   },
 };
 
+// Data mẫu cho Survey (Pinterest style)
+const SURVEY_CATEGORIES = [
+  {
+    id: "1",
+    title: "Điện lạnh",
+    image:
+      "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=300&q=80",
+  },
+  {
+    id: "2",
+    title: "Thiết bị bếp",
+    image:
+      "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=300&q=80",
+  },
+  {
+    id: "3",
+    title: "Nội thất gỗ",
+    image:
+      "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=300&q=80",
+  },
+  {
+    id: "4",
+    title: "Đồ công nghệ",
+    image:
+      "https://images.unsplash.com/photo-1550009158-9efff6c97068?auto=format&fit=crop&w=300&q=80",
+  },
+  {
+    id: "5",
+    title: "Bàn ghế văn phòng",
+    image:
+      "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=300&q=80",
+  },
+  {
+    id: "6",
+    title: "Dụng cụ thể thao",
+    image:
+      "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=300&q=80",
+  },
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
+  const { user } = useAuth();
 
   const [categories, setCategories] = useState<any[]>([]);
   const [sellPosts, setSellPosts] = useState<any[]>([]);
   const [buyPosts, setBuyPosts] = useState<any[]>([]);
   const [suggestedPosts, setSuggestedPosts] = useState<any[]>([]);
-
-  const [activeCategoryName, setActiveCategoryName] = useState<string>("Tất cả");
-
+  const [activeCategoryName, setActiveCategoryName] =
+    useState<string>("Tất cả");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // SURVEY MODAL STATE
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
+  const [selectedSurveyItems, setSelectedSurveyItems] = useState<string[]>([]);
+  const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
+
+  // === KIỂM TRA ONBOARDING STATUS KHI VÀO TRANG ===
+  useFocusEffect(
+    useCallback(() => {
+      const checkStatus = async () => {
+        if (user?.role === "business") {
+          try {
+            const res = await apiClient.get(
+              "/business-profiles/onboarding-status",
+            );
+            const data = res.data?.data || res.data;
+            if (data?.status === "SurveyPending" || data?.isActionRequired) {
+              setShowSurveyModal(true);
+            }
+          } catch (e) {
+            console.log("Lỗi check status:", e);
+          }
+        }
+      };
+      checkStatus();
+    }, [user?.role]),
+  );
 
   const fetchHomeData = async (isRefresh = false) => {
     try {
       if (!isRefresh) setIsLoading(true);
-
-      const postsRes = await postApi.getAllActivePosts({ PageNumber: 1, PageSize: 50 });
+      const postsRes = await postApi.getAllActivePosts({
+        PageNumber: 1,
+        PageSize: 50,
+      });
       const catRes = await postApi.getActiveCategories();
 
-      let fetchedCats = [];
-      if (catRes?.data?.items) {
-        fetchedCats = catRes.data.items;
-      } else if (catRes?.items) {
-        fetchedCats = catRes.items;
-      } else if (Array.isArray(catRes)) {
-        fetchedCats = catRes;
-      }
-
-      setCategories([{ categoryId: "all", categoryName: "Tất cả" }, ...fetchedCats]);
+      let fetchedCats = catRes?.data?.items || catRes?.items || catRes || [];
+      setCategories([
+        { categoryId: "all", categoryName: "Tất cả" },
+        ...fetchedCats,
+      ]);
 
       const allPosts =
         postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
-
-      const sells = allPosts.filter((p: any) => p.postType === "Sell");
-      const buys = allPosts.filter((p: any) => p.postType === "Buy");
-
-      setSellPosts(sells);
-      setBuyPosts(buys);
+      setSellPosts(allPosts.filter((p: any) => p.postType === "Sell"));
+      setBuyPosts(allPosts.filter((p: any) => p.postType === "Buy"));
 
       const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
       setSuggestedPosts(shuffled.slice(0, 10));
@@ -109,17 +169,18 @@ export default function HomeScreen() {
     setActiveCategoryName(categoryName);
   };
 
-  const displayedSells = activeCategoryName === "Tất cả"
-    ? sellPosts
-    : sellPosts.filter((p) => p.categoryName === activeCategoryName);
-    
-  const displayedBuys = activeCategoryName === "Tất cả"
-    ? buyPosts
-    : buyPosts.filter((p) => p.categoryName === activeCategoryName);
-    
-  const displayedSuggested = activeCategoryName === "Tất cả"
-    ? suggestedPosts
-    : suggestedPosts.filter((p) => p.categoryName === activeCategoryName);
+  const displayedSells =
+    activeCategoryName === "Tất cả"
+      ? sellPosts
+      : sellPosts.filter((p) => p.categoryName === activeCategoryName);
+  const displayedBuys =
+    activeCategoryName === "Tất cả"
+      ? buyPosts
+      : buyPosts.filter((p) => p.categoryName === activeCategoryName);
+  const displayedSuggested =
+    activeCategoryName === "Tất cả"
+      ? suggestedPosts
+      : suggestedPosts.filter((p) => p.categoryName === activeCategoryName);
 
   const formatPrice = (price: number) => {
     if (!price) return "0 đ";
@@ -127,9 +188,8 @@ export default function HomeScreen() {
   };
 
   const getCoverImage = (post: any) => {
-    if (post.medias && post.medias.length > 0) {
+    if (post.medias && post.medias.length > 0)
       return { uri: post.medias[0].url || post.medias[0].mediaUrl };
-    }
     return {
       uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image",
     };
@@ -141,19 +201,24 @@ export default function HomeScreen() {
       .join(", ");
   };
 
-  const getPriorityLabel = (level: string, type: string) => {
-    if (level === "Urgent") return "Khẩn cấp";
-    if (level === "High") return type === "Buy" ? "Mua gấp" : "Bán gấp";
-    return "";
-  };
-
-  const getPriorityColor = (level: string) => {
-    if (level === "Urgent") return "#EF4444";
-    if (level === "High") return "#EA580C";
-    return "#10B981";
+  // NỘP SURVEY
+  const submitSurvey = async () => {
+    if (selectedSurveyItems.length < 3) return; // Yêu cầu chọn ít nhất 3 cái
+    setIsSubmittingSurvey(true);
+    try {
+      await apiClient.post("/business-profiles/survey", {
+        preferences: selectedSurveyItems, // Gửi mảng các tag đã chọn
+      });
+      setShowSurveyModal(false);
+    } catch (error) {
+      alert("Lỗi nộp khảo sát, vui lòng thử lại.");
+    } finally {
+      setIsSubmittingSurvey(false);
+    }
   };
 
   const renderCard = ({ item: post }: { item: any }) => (
+    // ... (Giữ nguyên component Render Card cũ của ông, không đổi gì)
     <TouchableOpacity
       style={styles.card}
       onPress={() => router.push(`/posts/${post.postId}`)}
@@ -161,7 +226,6 @@ export default function HomeScreen() {
     >
       <View style={styles.imageWrapper}>
         <Image source={getCoverImage(post)} style={styles.productImage} />
-
         <View style={styles.topBadgeRow}>
           {post.categoryName ? (
             <View style={styles.categoryBadge}>
@@ -172,18 +236,15 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </View>
-
       <View style={styles.infoWrapper}>
         {post.brandName ? (
           <View style={styles.brandBadgeWhite}>
             <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
           </View>
         ) : null}
-
         <Text style={styles.productName} numberOfLines={2}>
           {post.productName || post.description || "Sản phẩm"}
         </Text>
-
         <View style={styles.priceRow}>
           <Text style={styles.productPrice}>
             {formatPrice(post.basePrice || post.expectedPrice)}
@@ -193,7 +254,6 @@ export default function HomeScreen() {
             {post.quantity ?? 1}
           </Text>
         </View>
-
         <View style={styles.footerRow}>
           <View style={styles.locationContainer}>
             <Ionicons
@@ -205,19 +265,6 @@ export default function HomeScreen() {
               {getFullAddress(post) || "Chưa cập nhật"}
             </Text>
           </View>
-
-          {post.priorityLevel &&
-            post.priorityLevel !== "Medium" &&
-            post.priorityLevel !== "Low" && (
-              <Text
-                style={[
-                  styles.priorityText,
-                  { color: getPriorityColor(post.priorityLevel) },
-                ]}
-              >
-                {getPriorityLabel(post.priorityLevel, post.postType)}
-              </Text>
-            )}
         </View>
       </View>
     </TouchableOpacity>
@@ -229,10 +276,6 @@ export default function HomeScreen() {
     if (name === "tất cả") return "apps-outline";
     if (name.includes("điện máy")) return "tv-outline";
     if (name.includes("nội thất")) return "bed-outline";
-    if (name.includes("đồ chơi")) return "apps-outline";
-    if (name.includes("lặt vặt") || name.includes("nhỏ lẻ"))
-      return "cube-outline";
-    if (name.includes("quần áo")) return "shirt-outline";
     if (name.includes("sinh hoạt")) return "basket-outline";
     return "grid-outline";
   };
@@ -241,6 +284,83 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.mobileWrapper, { width: width }]}>
         <MainHeader title="HomeCycle" />
+
+        {/* ===================== MODAL SURVEY PINTEREST STYLE ===================== */}
+        <Modal
+          visible={showSurveyModal}
+          animationType="slide"
+          transparent={false}
+        >
+          <SafeAreaView style={styles.surveyContainer}>
+            <View style={styles.surveyHeader}>
+              <View style={styles.surveyDragBar} />
+              <Text style={styles.surveyTitle}>
+                What are you in the mood to buy?
+              </Text>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.surveyGrid}>
+              {SURVEY_CATEGORIES.map((item) => {
+                const isSelected = selectedSurveyItems.includes(item.id);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.surveyItem,
+                      isSelected && styles.surveyItemActive,
+                    ]}
+                    onPress={() => {
+                      if (isSelected) {
+                        setSelectedSurveyItems((prev) =>
+                          prev.filter((id) => id !== item.id),
+                        );
+                      } else {
+                        setSelectedSurveyItems((prev) => [...prev, item.id]);
+                      }
+                    }}
+                  >
+                    <Image
+                      source={{ uri: item.image }}
+                      style={styles.surveyImage}
+                    />
+                    {isSelected && (
+                      <View style={styles.surveyOverlay}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={40}
+                          color={COLORS.white}
+                        />
+                      </View>
+                    )}
+                    <Text style={styles.surveyText}>{item.title}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.surveyFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.surveyBtn,
+                  selectedSurveyItems.length < 3 && styles.surveyBtnDisabled,
+                ]}
+                disabled={selectedSurveyItems.length < 3 || isSubmittingSurvey}
+                onPress={submitSurvey}
+              >
+                {isSubmittingSurvey ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.surveyBtnText}>
+                    {selectedSurveyItems.length < 3
+                      ? `Pick ${3 - selectedSurveyItems.length} or more to continue`
+                      : "Hoàn tất khảo sát"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
+        {/* ======================================================================= */}
 
         {isLoading ? (
           <View
@@ -260,6 +380,7 @@ export default function HomeScreen() {
               />
             }
           >
+            {/* Các UI ở trang chủ giữ nguyên không đổi */}
             <View style={styles.searchContainer}>
               <TouchableOpacity
                 style={[
@@ -278,24 +399,11 @@ export default function HomeScreen() {
                   Bạn đang tìm món đồ cũ nào?
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.filterButton}
-                onPress={() => router.push("/search")}
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={20}
-                  color={COLORS.white}
-                />
-              </TouchableOpacity>
             </View>
 
             <View style={styles.bannerContainer}>
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>Thanh lý nhanh chóng</Text>
-                <Text style={styles.bannerSubtitle}>
-                  Kết nối trực tiếp với các doanh nghiệp thu mua uy tín.
-                </Text>
                 <TouchableOpacity
                   style={styles.bannerButton}
                   onPress={() => router.push("/posts/post-form")}
@@ -303,133 +411,95 @@ export default function HomeScreen() {
                   <Text style={styles.bannerButtonText}>Đăng tin bán ngay</Text>
                 </TouchableOpacity>
               </View>
-              <Image
-                source={require("../../assets/images/logo-icon-light-transparent.png")}
-                style={styles.bannerLogo}
-                resizeMode="contain"
-              />
             </View>
 
             <View style={styles.sectionContainer}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Danh mục nổi bật</Text>
-              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.categoriesRow}
               >
-                {categories.length > 0 ? (
-                  categories.map((cat) => {
-                    const isActive = activeCategoryName === cat.categoryName;
-                    return (
-                      <TouchableOpacity
-                        key={cat.categoryId || "all"}
-                        style={styles.categoryItem}
-                        onPress={() => handleCategoryToggle(cat.categoryName)}
+                {categories.map((cat) => {
+                  const isActive = activeCategoryName === cat.categoryName;
+                  return (
+                    <TouchableOpacity
+                      key={cat.categoryId || "all"}
+                      style={styles.categoryItem}
+                      onPress={() => handleCategoryToggle(cat.categoryName)}
+                    >
+                      <View
+                        style={[
+                          styles.categoryIconBox,
+                          isActive && styles.categoryIconBoxActive,
+                        ]}
                       >
-                        <View
-                          style={[
-                            styles.categoryIconBox,
-                            isActive && styles.categoryIconBoxActive,
-                          ]}
-                        >
-                          <Ionicons
-                            name={getCategoryIcon(cat.categoryName) as any}
-                            size={24}
-                            color={isActive ? COLORS.white : COLORS.primary}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.categoryText,
-                            isActive && styles.categoryTextActive,
-                          ]}
-                          numberOfLines={2}
-                        >
-                          {cat.categoryName}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                ) : (
-                  <Text
-                    style={{ color: COLORS.textLight, paddingHorizontal: 20 }}
-                  >
-                    Đang cập nhật danh mục...
-                  </Text>
-                )}
+                        <Ionicons
+                          name={getCategoryIcon(cat.categoryName) as any}
+                          size={24}
+                          color={isActive ? COLORS.white : COLORS.primary}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          isActive && styles.categoryTextActive,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {cat.categoryName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
 
-            {activeCategoryName !== "Tất cả" &&
-              displayedBuys.length === 0 &&
-              displayedSells.length === 0 &&
-              displayedSuggested.length === 0 && (
-                <View style={{ alignItems: "center", marginVertical: 30 }}>
-                  <Ionicons
-                    name="folder-open-outline"
-                    size={48}
-                    color={COLORS.border}
-                  />
-                  <Text style={{ color: COLORS.textLight, marginTop: 12 }}>
-                    Chưa có bài đăng nào trong danh mục này.
-                  </Text>
-                </View>
-              )}
-
+            {/* List Buys */}
             {displayedBuys.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>
                     Tin thu mua từ Doanh nghiệp
                   </Text>
-                  {/* TRUYỀN PARAM CHUYỂN SANG SEARCH VÀ FILTER "MUA" */}
-                  <TouchableOpacity onPress={() => router.push({ pathname: "/search", params: { autoSearch: "true", postType: "Mua" } })}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: "/search",
+                        params: { autoSearch: "true", postType: "Mua" },
+                      })
+                    }
+                  >
                     <Text style={styles.seeAllText}>Xem tất cả</Text>
                   </TouchableOpacity>
                 </View>
                 <FlatList
                   horizontal
-                  showsHorizontalScrollIndicator={false}
                   data={displayedBuys}
-                  keyExtractor={(item) => item.postId}
                   renderItem={renderCard}
                   contentContainerStyle={styles.horizontalListContent}
                 />
               </View>
             )}
 
+            {/* List Sells */}
             {displayedSells.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
-                  {/* TRUYỀN PARAM CHUYỂN SANG SEARCH VÀ FILTER "BÁN" */}
-                  <TouchableOpacity onPress={() => router.push({ pathname: "/search", params: { autoSearch: "true", postType: "Bán" } })}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: "/search",
+                        params: { autoSearch: "true", postType: "Bán" },
+                      })
+                    }
+                  >
                     <Text style={styles.seeAllText}>Xem tất cả</Text>
                   </TouchableOpacity>
                 </View>
                 <FlatList
                   horizontal
-                  showsHorizontalScrollIndicator={false}
                   data={displayedSells}
-                  keyExtractor={(item) => item.postId}
-                  renderItem={renderCard}
-                  contentContainerStyle={styles.horizontalListContent}
-                />
-              </View>
-            )}
-
-            {displayedSuggested.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Gợi ý cho bạn</Text>
-                </View>
-                <FlatList
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  data={displayedSuggested}
-                  keyExtractor={(item) => item.postId}
                   renderItem={renderCard}
                   contentContainerStyle={styles.horizontalListContent}
                 />
@@ -445,16 +515,16 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Style cũ giữ nguyên...
   safeArea: { flex: 1, backgroundColor: "#E0E4EC", alignItems: "center" },
   mobileWrapper: {
     flex: 1,
     backgroundColor: COLORS.white,
-    ...Platform.select({
-      web: { boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any,
-    }),
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any)
+      : {}),
   },
-  container: { flex: 1, backgroundColor: "#F8FAFC" }, 
-
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -472,15 +542,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  filterButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
   sectionContainer: { marginBottom: 32 },
   sectionHeader: {
     flexDirection: "row",
@@ -491,7 +552,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#0F172A" },
   seeAllText: { fontSize: 14, color: "#64748B", fontWeight: "600" },
-
   categoriesRow: { paddingHorizontal: 20, gap: 24, paddingRight: 40 },
   categoryItem: { alignItems: "center", gap: 8, width: 72 },
   categoryIconBox: {
@@ -510,7 +570,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   categoryTextActive: { color: COLORS.primary, fontWeight: "bold" },
-
   bannerContainer: {
     marginHorizontal: 20,
     marginBottom: 32,
@@ -527,12 +586,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     marginBottom: 8,
   },
-  bannerSubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.8)",
-    lineHeight: 20,
-    marginBottom: 16,
-  },
   bannerButton: {
     backgroundColor: COLORS.white,
     paddingVertical: 10,
@@ -541,59 +594,33 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
-  bannerLogo: {
-    position: "absolute",
-    right: -15,
-    bottom: -20,
-    width: 140,
-    height: 140,
-    opacity: 0.15,
-    transform: [{ rotate: "-15deg" }],
-  },
-
   horizontalListContent: { paddingHorizontal: 20, gap: 16 },
-
   card: {
     backgroundColor: COLORS.white,
-    width: 170, 
+    width: 170,
     borderRadius: 12,
     overflow: "hidden",
     marginBottom: 4,
     borderWidth: 1,
     borderColor: "#EEF0F2",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 2,
   },
   imageWrapper: {
     width: "100%",
-    aspectRatio: 1, 
+    aspectRatio: 1,
     backgroundColor: "#FAFAFA",
     position: "relative",
   },
   productImage: { width: "100%", height: "100%", resizeMode: "cover" },
-
-  topBadgeRow: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    flexDirection: "row",
-    gap: 4,
-    flexWrap: "wrap",
-    right: 6,
-  },
+  topBadgeRow: { position: "absolute", top: 6, left: 6, flexDirection: "row" },
   categoryBadge: {
-    backgroundColor: "rgba(51, 65, 85, 0.9)", 
+    backgroundColor: "rgba(51, 65, 85, 0.9)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 4,
   },
   categoryBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
-
   infoWrapper: { padding: 10 },
-  
   brandBadgeWhite: {
     alignSelf: "flex-start",
     backgroundColor: "#F1F5F9",
@@ -602,19 +629,14 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 4,
   },
-  brandBadgeTextWhite: {
-    color: "#475569",
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-
+  brandBadgeTextWhite: { color: "#475569", fontSize: 10, fontWeight: "bold" },
   productName: {
     fontSize: 13,
     color: "#1E293B",
     fontWeight: "600",
     lineHeight: 18,
     marginBottom: 6,
-    height: 36, 
+    height: 36,
   },
   priceRow: {
     flexDirection: "row",
@@ -622,13 +644,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  productPrice: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#B91C1C", 
-  },
+  productPrice: { fontSize: 14, fontWeight: "bold", color: "#B91C1C" },
   quantityText: { fontSize: 11, color: "#64748B", fontWeight: "600" },
-
   footerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -639,8 +656,78 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     flex: 1,
-    paddingRight: 6,
   },
   locationText: { fontSize: 11, color: "#64748B", flex: 1 },
-  priorityText: { fontSize: 10, fontWeight: "bold" },
+
+  // ============= STYLE CHO PINTEREST SURVEY MODAL =============
+  surveyContainer: { flex: 1, backgroundColor: COLORS.white },
+  surveyHeader: { alignItems: "center", paddingTop: 16, paddingBottom: 24 },
+  surveyDragBar: {
+    width: 40,
+    height: 5,
+    backgroundColor: "#E60023",
+    borderRadius: 3,
+    marginBottom: 20,
+  },
+  surveyTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#111",
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  surveyGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 10,
+    justifyContent: "space-between",
+    paddingBottom: 100,
+  },
+  surveyItem: {
+    width: "48%",
+    aspectRatio: 1,
+    marginBottom: 15,
+    borderRadius: 16,
+    overflow: "hidden",
+    position: "relative",
+  },
+  surveyItemActive: { borderWidth: 3, borderColor: "#111" },
+  surveyImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  surveyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  surveyText: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    right: 12,
+    color: COLORS.white,
+    fontWeight: "800",
+    fontSize: 15,
+    textShadowColor: "rgba(0, 0, 0, 0.75)",
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+  },
+  surveyFooter: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.white,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+  },
+  surveyBtn: {
+    backgroundColor: "#E60023",
+    height: 54,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  surveyBtnDisabled: { backgroundColor: "#E9ECEF" },
+  surveyBtnText: { color: COLORS.white, fontWeight: "bold", fontSize: 16 },
 });

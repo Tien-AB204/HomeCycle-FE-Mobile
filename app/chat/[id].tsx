@@ -426,143 +426,119 @@ export default function ChatDetailScreen() {
           ];
         }
 
-        if (info.agreementData) {
-          rawMessages.push({
-            messageId: `agreement-card-${info.agreementData.agreementId}`,
-            senderId:
-              info.agreementData.sellerId,
-            messageType: "AgreementCard",
-            createdAt:
-              info.agreementData.createdAt,
-            agreementData:
-              info.agreementData,
-          });
-        }
-
         const getMessageTypeOrder = (
-  messageType: unknown,
-) => {
-  const normalizedType = String(
-    messageType ?? "",
-  )
-    .trim()
-    .toLowerCase();
+          messageType: unknown,
+        ) => {
+          const normalizedType = String(
+            messageType ?? "",
+          )
+            .trim()
+            .toLowerCase();
 
-  /*
-   * Khi BE trả cùng createdAt:
-   * Offer ban đầu phải đứng trước CounterOffer.
-   */
-  if (
-    normalizedType === "offer" ||
-    normalizedType === "2"
-  ) {
-    return 0;
-  }
+          if (
+            normalizedType === "offer" ||
+            normalizedType === "2"
+          ) {
+            return 0;
+          }
 
-  if (
-    normalizedType ===
-      "counteroffer" ||
-    normalizedType === "3"
-  ) {
-    return 1;
-  }
+          if (
+            normalizedType ===
+              "counteroffer" ||
+            normalizedType === "3"
+          ) {
+            return 1;
+          }
 
-  if (
-    normalizedType ===
-    "agreement"
-  ) {
-    return 3;
-  }
+          if (
+            normalizedType ===
+            "agreement"
+          ) {
+            return 3;
+          }
 
-  return 2;
-};
+          return 2;
+        };
 
-const sortedMessages = [
-  ...rawMessages,
-].sort(
-  (
-    firstMessage,
-    secondMessage,
-  ) => {
-    const firstCreatedTime =
-      new Date(
-        firstMessage.createdAt || 0,
-      ).getTime();
+        const sortedMessages = [
+          ...rawMessages,
+        ].sort(
+          (
+            firstMessage,
+            secondMessage,
+          ) => {
+            const firstCreatedTime =
+              new Date(
+                firstMessage.createdAt || 0,
+              ).getTime();
 
-    const secondCreatedTime =
-      new Date(
-        secondMessage.createdAt || 0,
-      ).getTime();
+            const secondCreatedTime =
+              new Date(
+                secondMessage.createdAt || 0,
+              ).getTime();
 
-    if (
-      firstCreatedTime !==
-      secondCreatedTime
-    ) {
-      return (
-        firstCreatedTime -
-        secondCreatedTime
-      );
-    }
+            if (
+              firstCreatedTime !==
+              secondCreatedTime
+            ) {
+              return (
+                firstCreatedTime -
+                secondCreatedTime
+              );
+            }
 
-    /*
-     * createdAt bằng nhau:
-     * sắp Offer trước CounterOffer.
-     */
-    const messageTypeDifference =
-      getMessageTypeOrder(
-        firstMessage.messageType,
-      ) -
-      getMessageTypeOrder(
-        secondMessage.messageType,
-      );
+            const messageTypeDifference =
+              getMessageTypeOrder(
+                firstMessage.messageType,
+              ) -
+              getMessageTypeOrder(
+                secondMessage.messageType,
+              );
 
-    if (
-      messageTypeDifference !== 0
-    ) {
-      return messageTypeDifference;
-    }
+            if (
+              messageTypeDifference !== 0
+            ) {
+              return messageTypeDifference;
+            }
 
-    /*
-     * Nếu cùng loại message,
-     * dùng updatedAt làm tie-breaker.
-     */
-    const firstUpdatedTime =
-      new Date(
-        firstMessage.updatedAt ||
-          firstMessage.createdAt ||
-          0,
-      ).getTime();
+            const firstUpdatedTime =
+              new Date(
+                firstMessage.updatedAt ||
+                  firstMessage.createdAt ||
+                  0,
+              ).getTime();
 
-    const secondUpdatedTime =
-      new Date(
-        secondMessage.updatedAt ||
-          secondMessage.createdAt ||
-          0,
-      ).getTime();
+            const secondUpdatedTime =
+              new Date(
+                secondMessage.updatedAt ||
+                  secondMessage.createdAt ||
+                  0,
+              ).getTime();
 
-    if (
-      firstUpdatedTime !==
-      secondUpdatedTime
-    ) {
-      return (
-        firstUpdatedTime -
-        secondUpdatedTime
-      );
-    }
+            if (
+              firstUpdatedTime !==
+              secondUpdatedTime
+            ) {
+              return (
+                firstUpdatedTime -
+                secondUpdatedTime
+              );
+            }
 
-    return String(
-      firstMessage.messageId || "",
-    ).localeCompare(
-      String(
-        secondMessage.messageId ||
-          "",
-      ),
-    );
-  },
-);
+            return String(
+              firstMessage.messageId || "",
+            ).localeCompare(
+              String(
+                secondMessage.messageId ||
+                  "",
+              ),
+            );
+          },
+        );
 
-        const formattedMessages: any[] =
-          [];
+        const formattedMessages: any[] = [];
+        
+        let lastAgreementCardIndex = -1;
 
         sortedMessages.forEach(
           (message, index) => {
@@ -574,58 +550,45 @@ const sortedMessages = [
                 currentUserId,
               ).toLowerCase();
 
-            if (
-              message.messageType ===
-              "AgreementCard"
-            ) {
+            // =========================================================================
+            // LẮNG NGHE SỰ KIỆN HỢP ĐỒNG & RENDER CARD
+            // =========================================================================
+            const isSystemAgreementEvent = 
+              message.messageType === "Agreement" || 
+              message.messageType === 4 ||
+              (message.messageContent && message.messageContent.toLowerCase().includes("đã chỉnh sửa hợp đồng"));
+
+            if (isSystemAgreementEvent && info.agreementData) {
+              
+              // 1. KẾ THỪA SENDER ID VÀ TRẠNG THÁI ĐÃ ĐỌC (isRead)
+              // Thay vì gán sender: "system" như cũ, giờ gán theo người thực sự đã tạo/sửa (isMe).
+              // Như vậy thẻ sẽ nằm bên phải nếu mình sửa, nằm trái nếu đối tác sửa. Kèm theo có cả Tick Đã Đọc.
               formattedMessages.push({
-                id: message.messageId,
+                id: `card-${message.messageId}`,
                 type: "agreement_card",
-                agreementId:
-                  message.agreementData
-                    .agreementId,
-                agreementData:
-                  message.agreementData,
-                sender: isMe
-                  ? "me"
-                  : "them",
-                avatar: isMe
-                  ? info.myAvatar
-                  : info.partnerAvatar,
-                senderName: isMe
-                  ? "Bạn"
-                  : info.partnerName,
-                time: new Date(
-                  message.createdAt,
-                ).toLocaleTimeString([], {
+                agreementId: info.agreementData.agreementId,
+                agreementData: info.agreementData, 
+                sender: isMe ? "me" : "them", // KHẮC PHỤC LỖI NẰM SAI BÊN
+                isRead: message.isRead === true, // KHẮC PHỤC LỖI THIẾU TICK XANH ĐÃ ĐỌC
+                time: new Date(message.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                isRead: true,
+                isLatestAgreement: false, 
               });
+              
+              lastAgreementCardIndex = formattedMessages.length - 1;
 
-              return;
-            }
-
-            if (
-              message.messageType ===
-                "Agreement" ||
-              message.messageType === 4
-            ) {
+              // 2. Chèn Bong bóng (Bubble) thông báo hệ thống màu xám ở DƯỚI Card
+              // Bong bóng này vẫn hiển thị dạng "system_agreed" để hiện khung màu xám căn giữa màn hình
               formattedMessages.push({
                 id: message.messageId,
                 type: "system_agreed",
-                text: normalizeAgreementUiText(
-                  message.messageContent,
-                ),
-                avatar: isMe
-                  ? info.myAvatar
-                  : info.partnerAvatar,
-                accepterName: isMe
-                  ? "Bạn"
-                  : info.partnerName,
+                text: normalizeAgreementUiText(message.messageContent) || message.messageContent,
+                avatar: isMe ? info.myAvatar : info.partnerAvatar,
+                accepterName: isMe ? "Bạn" : info.partnerName,
               });
-
+              
               return;
             }
 
@@ -712,6 +675,10 @@ const sortedMessages = [
             }
           },
         );
+
+        if (lastAgreementCardIndex !== -1) {
+          formattedMessages[lastAgreementCardIndex].isLatestAgreement = true;
+        }
 
         setMessages(formattedMessages);
       } catch (error) {
@@ -816,12 +783,10 @@ const sortedMessages = [
         String(newMsg.senderId).toLowerCase() ===
         String(currentUserId).toLowerCase();
 
-      // Đánh dấu đã đọc ngay lập tức CHỈ KHI TIN NHẮN ĐÓ LÀ DO NGƯỜI KHÁC GỬI (Fix lỗi gọi API read liên tục)
       if (!isMe) {
         messageApi.markAsRead(negotiationId).catch(() => {});
       }
 
-      // Kiểm tra nếu là Offer / Agreement thì load lại toàn bộ để đồng bộ UI Card
       const isSpecialEvent =
         newMsg.messageType === 2 ||
         newMsg.messageType === 3 ||
@@ -830,13 +795,13 @@ const sortedMessages = [
         newMsg.messageType === "Agreement" ||
         newMsg.messageType === 4 ||
         newMsg.messageType === "AgreementCard" ||
-        Number(newMsg.offerPrice) > 0;
+        Number(newMsg.offerPrice) > 0 ||
+        (newMsg.messageContent && newMsg.messageContent.toLowerCase().includes("đã chỉnh sửa hợp đồng"));
 
       if (isSpecialEvent) {
         await fetchBaseInfo();
         await fetchMessagesOnly();
       } else {
-        // Tối ưu hóa: Nếu chỉ là tin nhắn text bình thường, gắn thẳng vào list (0 API Call)
         setMessages((prev) => {
           if (prev.some((m) => m.id === newMsg.messageId)) return prev;
 
@@ -864,12 +829,30 @@ const sortedMessages = [
     };
 
     const handleMessagesRead = () => {
-      // Cập nhật trạng thái 'đã đọc' trực tiếp trên UI (0 API Call)
       if (isMounted) {
         setMessages((prev) =>
           prev.map((m) => (m.sender === "me" ? { ...m, isRead: true } : m)),
         );
       }
+    };
+
+    const handleConversationUpdated = async (payload: any) => {
+      if (!isMounted) return;
+
+      const updatedNegotiationId =
+        payload?.negotiationId ??
+        payload?.NegotiationId;
+
+      if (
+        updatedNegotiationId &&
+        String(updatedNegotiationId).toLowerCase() !==
+          String(negotiationId).toLowerCase()
+      ) {
+        return;
+      }
+
+      await fetchBaseInfo();
+      await fetchMessagesOnly();
     };
 
     const joinRoom = async () => {
@@ -896,6 +879,11 @@ const sortedMessages = [
       handleMessagesRead,
     );
 
+    connection.on(
+      "ConversationUpdated",
+      handleConversationUpdated,
+    );
+
     connection.onreconnected(() => {
       if (!isMounted) {
         return;
@@ -919,6 +907,11 @@ const sortedMessages = [
       connection.off(
         "MessagesRead",
         handleMessagesRead,
+      );
+
+      connection.off(
+        "ConversationUpdated",
+        handleConversationUpdated,
       );
 
       void connection
@@ -947,11 +940,6 @@ const sortedMessages = [
       return null;
     }
 
-    /*
-     * Ưu tiên proposal Pending trùng với
-     * currentOfferPrice/currentOfferQuantity
-     * của negotiation.
-     */
     const matchingPendingOffer =
       offers.find(
         (message) =>
@@ -975,10 +963,6 @@ const sortedMessages = [
       return matchingPendingOffer;
     }
 
-    /*
-     * Nếu response negotiation chưa cập nhật,
-     * vẫn ưu tiên proposal đang Pending.
-     */
     const pendingOffers =
       offers.filter(
         (message) =>
@@ -1281,9 +1265,6 @@ const sortedMessages = [
           clientMessageId,
         },
       );
-
-      // Đã loại bỏ việc gọi lại api fetchMessagesOnly() ở đây.
-      // Khi gửi xong, backend sẽ báo lại qua SignalR và render message lên màn hình bằng cơ chế optimize (0 call api)
     } catch (error: any) {
       const message =
         error?.response?.data?.error
@@ -1519,33 +1500,37 @@ const sortedMessages = [
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={
-                styles.viewAgreementBtnFill
-              }
-              onPress={() => {
-                router.push({
-                  pathname:
-                    "/agreements/preview",
-                  params: {
-                    agreementId: String(
-                      item.agreementId,
-                    ),
-                    negotiationId: String(
-                      negotiationId,
-                    ),
-                  },
-                });
-              }}
-            >
-              <Text
+            {item.isLatestAgreement ? (
+              <TouchableOpacity
                 style={
-                  styles.viewAgreementBtnFillText
+                  styles.viewAgreementBtnFill
                 }
+                onPress={() => {
+                  router.push({
+                    pathname:
+                      "/agreements/preview",
+                    params: {
+                      agreementId: String(
+                        item.agreementId,
+                      ),
+                      negotiationId: String(
+                        negotiationId,
+                      ),
+                    },
+                  });
+                }}
               >
-                Xem chi tiết
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={
+                    styles.viewAgreementBtnFillText
+                  }
+                >
+                  Xem chi tiết
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.outdatedOfferText}>(Hợp đồng đã được cập nhật)</Text>
+            )}
           </View>
         );
       }

@@ -213,7 +213,7 @@ export default function GoogleLoginButton({
       ) : (
         <>
           <Image
-            source={require("../../../assets/images/google-icon.png")}
+            source={require("../../assets/images/google-icon.png")}
             style={styles.googleIcon}
             resizeMode="contain"
           />

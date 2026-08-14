@@ -852,11 +852,11 @@ export default function SearchScreen() {
                 color={COLORS.textLight}
               />
               <Text style={styles.keywordHeaderText}>
-                Kết quả tìm kiếm cho từ khoá '
+                Kết quả tìm kiếm cho từ khoá &apos;
                 <Text style={{ color: COLORS.error, fontWeight: "bold" }}>
                   {query}
                 </Text>
-                '
+                &apos;
               </Text>
             </View>
           </View>
