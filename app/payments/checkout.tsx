@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -111,7 +112,7 @@ export default function CheckoutScreen() {
 
   const openPayOSCheckout = async (checkoutUrl: string) => {
     if (Platform.OS === "web") {
-      const openedWindow = window.open(checkoutUrl, "_self"); // Dùng _self để chuyển hướng luôn, dễ quay lại
+      const openedWindow = window.open(checkoutUrl, "_self");
       if (!openedWindow) {
         throw new Error(
           "Trình duyệt đã chặn trang thanh toán. Vui lòng cho phép mở cửa sổ mới và thử lại.",
@@ -120,11 +121,14 @@ export default function CheckoutScreen() {
       return;
     }
 
-    const canOpen = await Linking.canOpenURL(checkoutUrl);
-    if (!canOpen) {
-      throw new Error("Thiết bị không thể mở đường dẫn thanh toán PayOS.");
+    // [VÁ LỖI 2] Dùng In-app Browser trên Mobile thay vì Linking.openURL
+    const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+
+    // Nếu user bấm dấu "X" để đóng In-app browser giữa chừng (chưa thanh toán xong)
+    if (result.type === "cancel") {
+      setIsProcessing(false);
+      showInfo("Bạn đã đóng trang thanh toán.");
     }
-    await Linking.openURL(checkoutUrl);
   };
 
   const handlePaymentSubmit = async () => {
@@ -142,6 +146,24 @@ export default function CheckoutScreen() {
     try {
       setIsProcessing(true);
 
+      // =====================================================================
+      // [VÁ LỖI 1] JIT CHECK: KIỂM TRA LẠI TRẠNG THÁI HỢP ĐỒNG PHÚT CHÓT
+      // =====================================================================
+      const checkRes = await agreementApi.getAgreementById(agreementId);
+      const latestData = checkRes?.data || checkRes;
+      const latestStatus = String(latestData?.agreementStatus ?? "")
+        .replace(/[\s_-]/g, "")
+        .toLowerCase();
+
+      if (latestStatus !== "awaitingpayment" && latestStatus !== "accepted") {
+        showError(
+          "⚠️ Giao dịch bị gián đoạn: Đối tác vừa cập nhật hoặc hủy hợp đồng. Vui lòng quay lại kiểm tra.",
+        );
+        setIsProcessing(false);
+        return; // CHẶN KHÔNG CHO GỌI THANH TOÁN NỮA
+      }
+      // =====================================================================
+
       if (paymentMethod === "wallet") {
         const response = await paymentApi.checkoutWithWallet(agreementId);
         setIsPaymentCompleted(true);
@@ -151,7 +173,7 @@ export default function CheckoutScreen() {
         return;
       }
 
-      // TỰ ĐỘNG TẠO ĐƯỜNG DẪN TRẢ VỀ DỰA TRÊN MÔI TRƯỜNG (WEB HAY MOBILE)
+      // TỰ ĐỘNG TẠO ĐƯỜNG DẪN TRẢ VỀ DỰA TRÊN MÔI TRƯỜNG
       const returnUrl =
         Platform.OS === "web"
           ? `${window.location.origin}/payments/success?agreementId=${agreementId}`
@@ -161,9 +183,9 @@ export default function CheckoutScreen() {
 
       const cancelUrl =
         Platform.OS === "web"
-          ? `${window.location.origin}/payments/cancel?agreementId=${agreementId}`
-          : Linking.createURL("/payments/cancel", {
-              queryParams: { agreementId },
+          ? `${window.location.origin}/payments/success?agreementId=${agreementId}&cancel=true` // Trỏ chung về trang success để xử lý logic "Hủy"
+          : Linking.createURL("/payments/success", {
+              queryParams: { agreementId, cancel: "true" },
             });
 
       const response = await paymentApi.checkoutWithPayOS(agreementId, {
@@ -177,20 +199,16 @@ export default function CheckoutScreen() {
         throw new Error("Không nhận được link thanh toán từ hệ thống.");
       }
 
-      await openPayOSCheckout(checkoutUrl);
+      showInfo("Đang mở trang thanh toán PayOS...");
 
-      showInfo(
-        getApiSuccessMessage(
-          response,
-          "Đã chuyển sang trang thanh toán PayOS.",
-        ),
-      );
+      // Mở In-app browser
+      await openPayOSCheckout(checkoutUrl);
     } catch (error: unknown) {
       console.error("Lỗi thanh toán:", error);
       showError(getApiErrorMessage(error, "Giao dịch thất bại."));
-    } finally {
-      setIsProcessing(false);
+      setIsProcessing(false); // Trả lại nút nếu lỗi
     }
+    // Không để setIsProcessing(false) ở finally nữa, vì mở Browser xong app vẫn đang đợi.
   };
 
   if (isLoading) {

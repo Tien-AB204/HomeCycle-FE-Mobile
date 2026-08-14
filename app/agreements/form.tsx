@@ -16,7 +16,10 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+// [THÊM MỚI] Import AddressPickerField (Sửa lại đường dẫn nếu file của ông nằm chỗ khác nhé)
+import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 
 type DeliveryMethod = "SELLER_DELIVERY" | "BUYER_PICKUP" | "GHN";
@@ -186,6 +189,21 @@ const EMPTY_PARTY: GhnPartyFormValue = {
   addressDetail: "",
 };
 
+const locationApi = {
+  getProvinces: async () => {
+    const response = await fetch("https://34tinhthanh.com/api/provinces");
+    if (!response.ok) throw new Error(`Province API ${response.status}`);
+    return response.json();
+  },
+  getWards: async (provinceCode: string | number) => {
+    const response = await fetch(
+      `https://34tinhthanh.com/api/wards?province_code=${provinceCode}`,
+    );
+    if (!response.ok) throw new Error(`Ward API ${response.status}`);
+    return response.json();
+  },
+};
+
 const agreementApi = {
   getPreview: async (negotiationId: string) => {
     const response = await apiClient.get(
@@ -219,6 +237,15 @@ const agreementApi = {
     const response = await apiClient.get(
       `/agreements/negotiations/${negotiationId}/ghn-parcel-info`,
     );
+    return response.data;
+  },
+};
+
+const messageApi = {
+  sendMessage: async (negotiationId: string, payload: any) => {
+    const response = await apiClient.post("/Messages", payload, {
+      params: { negotiationId },
+    });
     return response.data;
   },
 };
@@ -804,6 +831,8 @@ function GhnPartyFields({
 // ================= MAIN SCREEN =================
 export default function AgreementFormScreen() {
   const router = useRouter();
+  const { user } = useAuth(); // Lấy thông tin user hiện tại
+
   const params = useLocalSearchParams();
   const negotiationId = Array.isArray(params.negotiationId)
     ? params.negotiationId[0]
@@ -824,6 +853,10 @@ export default function AgreementFormScreen() {
   const [isInspection, setIsInspection] = useState(true);
   const [paymentType, setPaymentType] = useState<"DEPOSIT" | "FULL">("DEPOSIT");
   const [revision, setRevision] = useState(0);
+
+  // [THÊM MỚI] State lưu trữ phương thức vận chuyển mặc định từ Post
+  const [defaultPostDeliveryMethod, setDefaultPostDeliveryMethod] =
+    useState<DeliveryMethod>("SELLER_DELIVERY");
 
   const [summary, setSummary] = useState({
     productName: "Đang tải thông tin...",
@@ -910,7 +943,9 @@ export default function AgreementFormScreen() {
     if (!negotiationId) return;
     try {
       setIsLoadingSummary(true);
-      const negRes = await negotiationApi.getNegotiationById(negotiationId);
+      const negRes = await negotiationApi.getNegotiationById(
+        negotiationId as string,
+      );
       const neg = negRes?.data || negRes;
 
       if (neg?.offerId) {
@@ -928,6 +963,22 @@ export default function AgreementFormScreen() {
             productName;
           productCode =
             postData?.product?.productId || postData?.productId || offer.postId;
+
+          // =========================================================================
+          // [THÊM MỚI] LẤY PHƯƠNG THỨC VẬN CHUYỂN TỪ BÀI POST
+          // =========================================================================
+          let postDelMethod: DeliveryMethod = "SELLER_DELIVERY"; // Mặc định
+          const rawDelMethod =
+            postData?.product?.deliveryMethod ?? postData?.deliveryMethod;
+
+          if (rawDelMethod === 1 || rawDelMethod === "GhnDelivery") {
+            postDelMethod = "GHN";
+          } else if (rawDelMethod === 3 || rawDelMethod === "BuyerPickUp") {
+            postDelMethod = "BUYER_PICKUP";
+          }
+
+          setDefaultPostDeliveryMethod(postDelMethod);
+          // =========================================================================
         }
 
         const nextQuantity = Number(offer.offerQuantity || 1);
@@ -1022,7 +1073,9 @@ export default function AgreementFormScreen() {
 
     try {
       setIsLoadingData(true);
-      const res = await agreementApi.getAgreementById(editAgreementId);
+      const res = await agreementApi.getAgreementById(
+        editAgreementId as string,
+      );
       const data = res?.data || res;
       if (!data) return;
 
@@ -1069,6 +1122,9 @@ export default function AgreementFormScreen() {
 
       const ghnInfo = details.ghnInfo;
       if (ghnInfo) {
+        // [SỬA LỖI] Đánh dấu đã fetch dữ liệu từ BE (để không bị auto-fill đè lên khi chuyển tab GHN)
+        hasFetchedGhnRef.current = true;
+
         const senderValue = hydrateGhnParty(ghnInfo.sender);
         const receiverValue = hydrateGhnParty(ghnInfo.receiver);
         setSender(senderValue);
@@ -1207,11 +1263,13 @@ export default function AgreementFormScreen() {
     if (method === "GHN") {
       setPaymentType("FULL");
 
-      // Auto-fill logic khi chưa gọi API tự động điền lần nào
-      if (!isEditing && !hasFetchedGhnRef.current && negotiationId) {
+      // [SỬA LỖI] Đã xóa điều kiện `!isEditing` để khi Edit cũng auto fill được nếu Hợp đồng này chưa có thông tin GHN
+      if (!hasFetchedGhnRef.current && negotiationId) {
         try {
           setIsLoadingGhnInfo(true);
-          const res = await agreementApi.getGhnParcelInfo(negotiationId);
+          const res = await agreementApi.getGhnParcelInfo(
+            negotiationId as string,
+          );
           const data = res?.data || res;
 
           hasFetchedGhnRef.current = true;
@@ -1220,7 +1278,6 @@ export default function AgreementFormScreen() {
             const parcel = data.lightParcel || data.items?.[0] || {};
             const weight = Number(parcel.weightGram || 0);
 
-            // Khắc phục lỗi BE trả về Hàng nhẹ (2) cho kiện hàng > 30kg
             const autoServiceType =
               weight > 30000 ? 5 : data.serviceTypeId === 5 ? 5 : 2;
             setServiceTypeId(autoServiceType);
@@ -1238,7 +1295,7 @@ export default function AgreementFormScreen() {
 
           setNotice({
             type: "success",
-            message: "Đã tự động điền thông tin kiện hàng dựa trên bài đăng.",
+            message: "Đã tự động điền thông tin kiện hàng dựa trên bài đăng.", // Sửa chính tả
           });
         } catch (error) {
           console.log("Lỗi tải thông tin GHN tự động:", error);
@@ -1294,7 +1351,6 @@ export default function AgreementFormScreen() {
     return null;
   };
 
-  // Tính phí bằng cách lấy số đo kiện hàng làm size chung
   const buildHeavyItem = (): GhnItemPayload => ({
     name: summary.productName || "Sản phẩm",
     code: summary.productCode || "SP01",
@@ -1325,7 +1381,6 @@ export default function AgreementFormScreen() {
       setNotice(null);
       setGhnQuoteStatus("NotCalculated");
 
-      // THEO ẢNH CỦA BẠN: GỬI LÊN GẦN NHƯ TOÀN BỘ GHN INFO (TRỪ QUOTE CŨ) ĐỂ LẤY QUOTE MỚI
       const previewPayload = {
         sender: toPartyPayload(sender),
         receiver: toPartyPayload(receiver),
@@ -1344,8 +1399,8 @@ export default function AgreementFormScreen() {
       };
 
       const previewResponse = await agreementApi.previewShippingFee(
-        negotiationId,
-        previewPayload, // Gửi payload theo format mới
+        negotiationId as string,
+        previewPayload,
       );
 
       const responseData = previewResponse?.data ?? previewResponse;
@@ -1396,12 +1451,34 @@ export default function AgreementFormScreen() {
         type: "success",
         message: "Đã tính và lưu bản xem trước phí giao hàng GHN.",
       });
-    } catch (error) {
+    } catch (error: any) {
       setGhnQuote(null);
       setGhnQuoteStatus("Failed");
+
+      // Bóc tách message thật từ BE trả về
+      const apiMsg = error?.response?.data?.error?.message || error?.response?.data?.message || "";
+      
+      // Cứ lỗi API GHN là chốt cứng câu này theo đúng dặn dò của ông
+      let finalMessage = "GHN đang bảo trì. Không thể xem trước thông tin vận chuyển GHN ở thời điểm hiện tại.";
+
+      if (apiMsg) {
+        // Nếu BE trả về mấy câu vô tri như "Lỗi máy chủ..." thì ĐÈ LUÔN, xài câu chốt cứng phía trên
+        if (apiMsg.toLowerCase().includes("lỗi máy chủ") || apiMsg.toLowerCase().includes("server error")) {
+          finalMessage = "GHN đang bảo trì. Không thể xem trước thông tin vận chuyển GHN ở thời điểm hiện tại.";
+        } 
+        // Ngoại lệ: Nếu là lỗi Validation 400 (do nhập sai kích thước, cân nặng...) thì phải in thẳng lỗi ra cho người ta biết đường sửa
+        else if (error?.response?.status === 400) {
+          finalMessage = apiMsg;
+        } 
+        // Các trường hợp có message tử tế từ BE thì ghép lại: "GHN đang bảo trì. [Message]"
+        else {
+          finalMessage = `GHN đang bảo trì. ${apiMsg}`;
+        }
+      }
+
       setNotice({
         type: "error",
-        message: getErrorMessage(error, "Không thể tính phí giao hàng GHN."),
+        message: finalMessage,
       });
     } finally {
       setIsCalculatingFee(false);
@@ -1457,7 +1534,6 @@ export default function AgreementFormScreen() {
     details.codValue = toNonNegativeInt(codValue);
     details.estimatedShippingFee = ghnQuote!.totalFee;
 
-    // Gửi ghnInfo NHƯNG không bao gồm các trường mà BE tự quản lý
     details.ghnInfo = {
       sender: toPartyPayload(sender),
       receiver: toPartyPayload(receiver),
@@ -1516,6 +1592,31 @@ export default function AgreementFormScreen() {
 
     try {
       setIsProcessing(true);
+
+      if (isEditing && editAgreementId) {
+        try {
+          const checkRes = await agreementApi.getAgreementById(
+            editAgreementId as string,
+          );
+          const latestData = checkRes?.data || checkRes;
+          const latestRevision = Number(
+            latestData?.agreementDetails?.revision ?? latestData?.revision ?? 0,
+          );
+
+          if (latestRevision > revision) {
+            setNotice({
+              type: "error",
+              message:
+                "⚠️ Dữ liệu đã cũ do đối tác vừa cập nhật hợp đồng. Vui lòng tải lại bản mới nhất để tránh ghi đè!",
+            });
+            setIsProcessing(false);
+            return;
+          }
+        } catch (checkErr) {
+          console.log("Lỗi check revision:", checkErr);
+        }
+      }
+
       const agreementDetails = buildAgreementDetails();
       const commonPayload = {
         agreementType: isInspection
@@ -1533,42 +1634,56 @@ export default function AgreementFormScreen() {
         if (!editAgreementId) {
           throw new Error("Không tìm thấy mã hợp đồng cần cập nhật.");
         }
-        await agreementApi.updateAgreement(editAgreementId, commonPayload);
-        setNotice({
-          type: "success",
-          message:
-            "Đã cập nhật hợp đồng. Phía còn lại cần xem và xác nhận lại bản mới.",
-        });
+        await agreementApi.updateAgreement(
+          editAgreementId as string,
+          commonPayload,
+        );
+
+        try {
+          const clientMessageId =
+            "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+              /[xy]/g,
+              (character) => {
+                const random = (Math.random() * 16) | 0;
+                const value = character === "x" ? random : (random & 0x3) | 0x8;
+                return value.toString(16);
+              },
+            );
+          await messageApi.sendMessage(negotiationId as string, {
+            messageContent: `${user?.username || "Đối tác"} đã chỉnh sửa hợp đồng.`,
+            clientMessageId,
+            messageType: 4,
+          });
+        } catch (msgError) {
+          console.log("Lỗi gửi tin nhắn hệ thống:", msgError);
+        }
+
+        setTimeout(() => {
+          router.replace({
+            pathname: "/agreements/preview",
+            params: {
+              agreementId: editAgreementId,
+              negotiationId: negotiationId,
+              successMsg:
+                //"Đã cập nhật hợp đồng. Phía còn lại cần xem và xác nhận lại bản mới.",
+                "Cập nhật hợp đồng thành công. Đang chờ đối tác xem và xác nhận.",
+            },
+          });
+        }, 700);
       } else {
-        if (!negotiationId) {
-          throw new Error("Không tìm thấy phiên thương lượng để tạo hợp đồng.");
-        }
-
-        const previewRes = await agreementApi.getPreview(negotiationId);
-        const latestPreview = previewRes?.data || previewRes;
-        if (latestPreview?.hasAgreement) {
-          throw new Error("Phiên thương lượng này đã có hợp đồng.");
-        }
-        if (latestPreview?.canCreate !== true) {
-          throw new Error(
-            "Chỉ người bán được tạo hợp đồng cho phiên thương lượng này.",
-          );
-        }
-
         await agreementApi.createAgreement({
-          negotiationId,
+          negotiationId: negotiationId as string,
           ...commonPayload,
         });
         setNotice({
           type: "success",
           message: "Đã tạo hợp đồng và xác nhận phía người bán.",
         });
+        setTimeout(() => {
+          if (negotiationId) router.replace(`/chat/${negotiationId}`);
+          else router.back();
+        }, 700);
       }
-
-      setTimeout(() => {
-        if (negotiationId) router.replace(`/chat/${negotiationId}`);
-        else router.back();
-      }, 700);
     } catch (error) {
       setNotice({
         type: "error",
@@ -1645,6 +1760,13 @@ export default function AgreementFormScreen() {
                   setIsInspection(true);
                   setPaymentType("DEPOSIT");
                   setNotice(null);
+
+                  // [THÊM MỚI] Xóa trắng data giao nhận khi quay về "Có kiểm định"
+                  if (!isEditing) {
+                    setPickupAddress("");
+                    setDeliveryAddress("");
+                    setDeliveryMethod("SELLER_DELIVERY");
+                  }
                 }}
               >
                 <Ionicons
@@ -1659,6 +1781,11 @@ export default function AgreementFormScreen() {
                 onPress={() => {
                   setIsInspection(false);
                   setNotice(null);
+
+                  // [THÊM MỚI] Auto-fill phương thức từ Post khi nhấp "Không kiểm định"
+                  if (!isEditing && defaultPostDeliveryMethod) {
+                    handleDeliveryMethodChange(defaultPostDeliveryMethod);
+                  }
                 }}
               >
                 <Ionicons
@@ -1684,16 +1811,16 @@ export default function AgreementFormScreen() {
                 onDateChange={setInspectionDate}
               />
 
-              <View style={styles.inputContainer}>
+              {/* [SỬA LẠI UI] Dùng AddressPickerField thay cho TextInput thường */}
+              <View style={{ marginBottom: 16 }}>
                 <Text style={styles.inputLabel}>Địa điểm kiểm định *</Text>
-                <TextInput
-                  placeholder="Nhập địa điểm..."
-                  placeholderTextColor="#94A3B8"
+                <AddressPickerField
                   value={inspectionAddress}
-                  onChangeText={setInspectionAddress}
-                  style={styles.input}
+                  onChange={(val) => setInspectionAddress(val)}
+                  placeholder="Nhập địa điểm kiểm định..."
                 />
               </View>
+
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Ghi chú thêm</Text>
                 <TextInput
@@ -1799,7 +1926,9 @@ export default function AgreementFormScreen() {
                       size={22}
                       color={COLORS.primary}
                     />
-                    <Text style={styles.ghnTitle}>Thông tin giao hàng GHN</Text>
+                    <Text style={styles.ghnTitle}>
+                      Thông tin giao hàng nhanh (GHN)
+                    </Text>
                   </View>
 
                   {isLoadingGhnInfo ? (
@@ -2034,28 +2163,25 @@ export default function AgreementFormScreen() {
                 </View>
               ) : (
                 <>
-                  <View style={styles.inputContainer}>
+                  {/* [SỬA LẠI UI] Thay TextInput bằng AddressPickerField và update label cho rõ ràng */}
+                  <View style={{ marginBottom: 16 }}>
                     <Text style={styles.inputLabel}>
-                      Địa chỉ lấy hàng (Seller Address) *
+                      Địa chỉ lấy hàng (Người bán) *
                     </Text>
-                    <TextInput
-                      placeholder="Nhập địa chỉ lấy hàng..."
-                      placeholderTextColor="#94A3B8"
+                    <AddressPickerField
                       value={pickupAddress}
-                      onChangeText={setPickupAddress}
-                      style={styles.input}
+                      onChange={(val) => setPickupAddress(val)}
+                      placeholder="Nhập địa chỉ lấy hàng..."
                     />
                   </View>
-                  <View style={styles.inputContainer}>
+                  <View style={{ marginBottom: 16 }}>
                     <Text style={styles.inputLabel}>
-                      Địa chỉ nhận hàng (Buyer Address) *
+                      Địa chỉ nhận hàng (Người mua) *
                     </Text>
-                    <TextInput
-                      placeholder="Nhập địa chỉ nhận hàng..."
-                      placeholderTextColor="#94A3B8"
+                    <AddressPickerField
                       value={deliveryAddress}
-                      onChangeText={setDeliveryAddress}
-                      style={styles.input}
+                      onChange={(val) => setDeliveryAddress(val)}
+                      placeholder="Nhập địa chỉ nhận hàng..."
                     />
                   </View>
                 </>
@@ -2097,6 +2223,7 @@ export default function AgreementFormScreen() {
                           : COLORS.textLight
                     }
                   />
+                  {/* [SỬA LẠI UI] Ghi thêm chữ 20% cạnh Đặt cọc */}
                   <Text
                     style={[
                       styles.radioText,
@@ -2105,7 +2232,7 @@ export default function AgreementFormScreen() {
                         : undefined,
                     ]}
                   >
-                    Đặt cọc
+                    Đặt cọc (20%)
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity

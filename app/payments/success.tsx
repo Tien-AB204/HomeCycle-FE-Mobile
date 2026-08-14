@@ -23,36 +23,55 @@ const agreementApi = {
 export default function PaymentSuccessScreen() {
   const router = useRouter();
 
-  // Hứng toàn bộ query params: Cả cái mình nhét vào (agreementId) và cái PayOS trả về (status, cancel)
+  // PayOS trả về status=PAID và cancel=false
   const { agreementId, status, cancel } = useLocalSearchParams();
-  const [negotiationId, setNegotiationId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  // Xác nhận xem có bị hủy hoặc lỗi trong lúc thanh toán không
-  const isPaid = status === "PAID" && cancel === "false";
+  const [loading, setLoading] = useState(true);
+  const [isPaid, setIsPaid] = useState(false);
+
+  // LOGIC HYBRID:
+  // 1. Kiểm tra URL PayOS: status=PAID và không bị hủy
+  const isPaidUrl = status === "PAID" && cancel !== "true";
 
   useEffect(() => {
-    const fetchNegotiation = async () => {
-      if (!agreementId) return;
+    let isMounted = true;
+
+    const verifyPayment = async () => {
+      if (!agreementId) {
+        setLoading(false);
+        // Nếu không có ID, tin vào URL (thường là trường hợp load lại trang)
+        setIsPaid(isPaidUrl);
+        return;
+      }
+
       try {
         setLoading(true);
         const res = await agreementApi.getAgreementById(agreementId as string);
         const data = res?.data || res;
-        if (data?.negotiationId) {
-          setNegotiationId(data.negotiationId);
-        }
+
+        if (!isMounted) return;
+
+        // KIỂM TRA ĐÚNG ENUM: Confirmed = 2
+        const isConfirmed =
+          data?.agreementStatus === "Confirmed" || data?.agreementStatus === 2;
+
+        // QUYẾT ĐỊNH: Nếu BE đã Confirmed HOẶC PayOS báo PAID -> Thì coi như thanh toán thành công
+        setIsPaid(isConfirmed || isPaidUrl);
       } catch (e) {
-        console.log("Lỗi lấy thông tin agreement:", e);
+        console.log("Lỗi lấy thông tin:", e);
+        // Fallback: Nếu API lỗi, vẫn tin vào URL PayOS
+        if (isMounted) setIsPaid(isPaidUrl);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    // Chỉ gọi API xem thông tin nếu giao dịch thực sự thành công
-    if (isPaid) {
-      fetchNegotiation();
-    }
-  }, [agreementId, isPaid]);
+    verifyPayment();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [agreementId, isPaidUrl]);
 
   const handleGoToOrder = () => {
     if (agreementId) {
@@ -69,70 +88,75 @@ export default function PaymentSuccessScreen() {
       <Header title="Kết quả thanh toán" showBack={false} />
       <View style={styles.container}>
         <View style={styles.card}>
-          <View
-            style={[
-              styles.iconCircle,
-              { backgroundColor: isPaid ? "#D1FAE5" : "#FEE2E2" },
-            ]}
-          >
-            <Ionicons
-              name={isPaid ? "checkmark-circle" : "close-circle"}
-              size={64}
-              color={isPaid ? "#10B981" : COLORS.error}
-            />
-          </View>
-
-          <Text style={styles.title}>
-            {isPaid ? "Thanh toán thành công!" : "Thanh toán thất bại!"}
-          </Text>
-
-          <Text style={styles.subtitle}>
-            {isPaid
-              ? "Giao dịch của bạn đã được ghi nhận. Đơn hàng đã được tạo và chuyển cho đối tác."
-              : "Giao dịch đã bị hủy hoặc xảy ra lỗi. Vui lòng kiểm tra lại."}
-          </Text>
-
           {loading ? (
-            <ActivityIndicator
-              color={COLORS.primary}
-              style={{ marginVertical: 20 }}
-            />
+            <View style={{ alignItems: "center", marginVertical: 30 }}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={{ marginTop: 12, color: COLORS.textLight }}>
+                Đang xác thực giao dịch...
+              </Text>
+            </View>
           ) : (
-            <View style={styles.btnContainer}>
-              {isPaid && (
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={handleGoToOrder}
-                >
-                  <Ionicons
-                    name="receipt-outline"
-                    size={18}
-                    color={COLORS.white}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                style={isPaid ? styles.secondaryBtn : styles.primaryBtn}
-                onPress={handleGoHome}
+            <>
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: isPaid ? "#D1FAE5" : "#FEE2E2" },
+                ]}
               >
                 <Ionicons
-                  name="home-outline"
-                  size={18}
-                  color={isPaid ? COLORS.primary : COLORS.white}
-                  style={{ marginRight: 8 }}
+                  name={isPaid ? "checkmark-circle" : "close-circle"}
+                  size={64}
+                  color={isPaid ? "#10B981" : COLORS.error}
                 />
-                <Text
-                  style={
-                    isPaid ? styles.secondaryBtnText : styles.primaryBtnText
-                  }
+              </View>
+
+              <Text style={styles.title}>
+                {isPaid ? "Thanh toán thành công!" : "Thanh toán thất bại!"}
+              </Text>
+
+              <Text style={styles.subtitle}>
+                {isPaid
+                  ? "Giao dịch đã được ghi nhận."
+                  : "Giao dịch đã bị hủy hoặc xảy ra lỗi."}
+                {!isPaid && isPaidUrl && "\n(Hệ thống đang đồng bộ dữ liệu...)"}
+              </Text>
+
+              <View style={styles.btnContainer}>
+                {isPaid && (
+                  <TouchableOpacity
+                    style={styles.primaryBtn}
+                    onPress={handleGoToOrder}
+                  >
+                    <Ionicons
+                      name="receipt-outline"
+                      size={18}
+                      color={COLORS.white}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={isPaid ? styles.secondaryBtn : styles.primaryBtn}
+                  onPress={handleGoHome}
                 >
-                  Về trang chủ
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Ionicons
+                    name="home-outline"
+                    size={18}
+                    color={isPaid ? COLORS.primary : COLORS.white}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={
+                      isPaid ? styles.secondaryBtnText : styles.primaryBtnText
+                    }
+                  >
+                    Về trang chủ
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
           )}
         </View>
       </View>

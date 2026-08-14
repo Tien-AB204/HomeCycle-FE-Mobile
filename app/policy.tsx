@@ -129,11 +129,11 @@ export default function PolicyScreen() {
             <Text style={styles.bulletDot}>•</Text>
             <Text style={styles.bulletText}>
               <Text style={styles.boldText}>
-                Quá hạn lịch hẹn ("Bùng" hẹn):{" "}
+                Quá hạn lịch hẹn (&quot;Bùng&quot; hẹn):{" "}
               </Text>
               Nếu quá thời gian hẹn 2 tiếng mà không có bên nào tương tác xác
               nhận trên hệ thống, lịch hẹn sẽ tự động chuyển sang trạng thái
-              "Quá hạn" (Expired) và đóng băng giao dịch để chờ xử lý.
+              &quot;Quá hạn&quot; (Expired) và đóng băng giao dịch để chờ xử lý.
             </Text>
           </View>
         </View>
@@ -180,7 +180,7 @@ export default function PolicyScreen() {
             <Text style={styles.bulletText}>
               <Text style={styles.boldText}>Thời gian giải ngân: </Text>
               Tiền sẽ được cộng vào Số dư khả dụng của Người bán sau 3 ngày (72
-              giờ) kể từ khi đơn hàng chuyển sang trạng thái "Thành công", với
+              giờ) kể từ khi đơn hàng chuyển sang trạng thái &quot;Thành công&quot;, với
               điều kiện không có khiếu nại/tranh chấp phát sinh.
             </Text>
           </View>

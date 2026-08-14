@@ -1,6 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import {
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -13,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
+
 import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -24,29 +27,75 @@ export default function LoginScreen() {
   const { returnUrl } = useLocalSearchParams();
   const { login } = useAuth();
 
+  const passwordInputRef =
+    useRef<TextInput | null>(null);
+
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] =
+    useState("");
+
   const [showPassword, setShowPassword] =
     useState(false);
+
   const [isLoading, setIsLoading] =
     useState(false);
+
+  const [emailError, setEmailError] =
+    useState("");
+
+  const [passwordError, setPasswordError] =
+    useState("");
+
+  const [loginError, setLoginError] =
+    useState("");
 
   const handleLogin = async () => {
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
-    if (!cleanEmail || !cleanPassword) {
-      notifyUser(
-        "Vui lòng nhập đầy đủ email và mật khẩu.",
-        "error",
+    let hasValidationError = false;
+
+    setEmailError("");
+    setPasswordError("");
+    setLoginError("");
+
+    if (!cleanEmail) {
+      setEmailError(
+        "Vui lòng nhập địa chỉ email.",
       );
+
+      hasValidationError = true;
+    } else if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        cleanEmail,
+      )
+    ) {
+      setEmailError(
+        "Địa chỉ email không đúng định dạng.",
+      );
+
+      hasValidationError = true;
+    }
+
+    if (!cleanPassword) {
+      setPasswordError(
+        "Vui lòng nhập mật khẩu.",
+      );
+
+      hasValidationError = true;
+    }
+
+    if (hasValidationError) {
       return;
     }
 
     try {
       setIsLoading(true);
 
-      await login(cleanEmail, cleanPassword);
+      await login(
+        cleanEmail,
+        cleanPassword,
+      );
 
       if (returnUrl) {
         router.replace(returnUrl as any);
@@ -54,12 +103,11 @@ export default function LoginScreen() {
         router.replace("/(tabs)");
       }
     } catch (error: unknown) {
-      notifyUser(
+      setLoginError(
         getApiErrorMessage(
           error,
           "Đăng nhập thất bại. Vui lòng kiểm tra lại.",
         ),
-        "error",
       );
     } finally {
       setIsLoading(false);
@@ -96,15 +144,15 @@ export default function LoginScreen() {
 
           <View style={styles.logoContainer}>
             <Image
-              source={require("../../assets/images/logo-favicon.png")}
-              style={styles.logoImage}
+              source={require("../../src/assets/images/logo-dark-transparent.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
             />
-            <Text style={styles.logoText}>
-              HomeCycle
-            </Text>
           </View>
 
-          <View style={styles.headerPlaceholder} />
+          <View
+            style={styles.headerPlaceholder}
+          />
         </View>
 
         <View style={styles.content}>
@@ -117,7 +165,14 @@ export default function LoginScreen() {
               ĐỊA CHỈ EMAIL
             </Text>
 
-            <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputContainer,
+                emailError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
               <Ionicons
                 name="mail-outline"
                 size={20}
@@ -130,17 +185,40 @@ export default function LoginScreen() {
                   styles.input,
                   Platform.OS === "web"
                     ? ({
-                        outlineStyle: "none",
+                        outlineStyle:
+                          "none",
                       } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập email..."
+                placeholderTextColor={
+                  COLORS.textLight
+                }
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  setEmailError("");
+                  setLoginError("");
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() =>
+                  passwordInputRef.current?.focus()
+                }
               />
             </View>
+
+            {emailError ? (
+              <Text
+                accessibilityRole="alert"
+                style={styles.fieldErrorText}
+              >
+                {emailError}
+              </Text>
+            ) : null}
 
             <Text
               style={[
@@ -151,7 +229,14 @@ export default function LoginScreen() {
               MẬT KHẨU
             </Text>
 
-            <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputContainer,
+                passwordError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
               <Ionicons
                 name="lock-closed-outline"
                 size={20}
@@ -160,18 +245,31 @@ export default function LoginScreen() {
               />
 
               <TextInput
+                ref={passwordInputRef}
                 style={[
                   styles.input,
                   Platform.OS === "web"
                     ? ({
-                        outlineStyle: "none",
+                        outlineStyle:
+                          "none",
                       } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập mật khẩu..."
+                placeholderTextColor={
+                  COLORS.textLight
+                }
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  setPasswordError("");
+                  setLoginError("");
+                }}
                 secureTextEntry={!showPassword}
+                returnKeyType="done"
+                onSubmitEditing={() =>
+                  void handleLogin()
+                }
               />
 
               <TouchableOpacity
@@ -179,6 +277,12 @@ export default function LoginScreen() {
                   setShowPassword(
                     (current) => !current,
                   )
+                }
+                accessibilityRole="button"
+                accessibilityLabel={
+                  showPassword
+                    ? "Ẩn mật khẩu"
+                    : "Hiện mật khẩu"
                 }
               >
                 <Ionicons
@@ -193,18 +297,41 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {passwordError ? (
+              <Text
+                accessibilityRole="alert"
+                style={styles.fieldErrorText}
+              >
+                {passwordError}
+              </Text>
+            ) : null}
+
             <TouchableOpacity
               style={styles.forgotPassword}
               onPress={() =>
-                router.push("/forgot-password")
+                router.push(
+                  "/forgot-password",
+                )
               }
             >
               <Text
-                style={styles.forgotPasswordText}
+                style={
+                  styles.forgotPasswordText
+                }
               >
                 Quên mật khẩu?
               </Text>
             </TouchableOpacity>
+
+            {loginError ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                accessibilityRole="alert"
+                style={styles.loginErrorText}
+              >
+                {loginError}
+              </Text>
+            ) : null}
 
             <TouchableOpacity
               style={[
@@ -213,7 +340,9 @@ export default function LoginScreen() {
                   ? styles.disabledButton
                   : undefined,
               ]}
-              onPress={() => void handleLogin()}
+              onPress={() =>
+                void handleLogin()
+              }
               disabled={isLoading}
             >
               {isLoading ? (
@@ -240,14 +369,22 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
+            <View
+              style={styles.dividerContainer}
+            >
+              <View
+                style={styles.dividerLine}
+              />
 
-              <Text style={styles.dividerText}>
+              <Text
+                style={styles.dividerText}
+              >
                 HOẶC TIẾP TỤC VỚI
               </Text>
 
-              <View style={styles.dividerLine} />
+              <View
+                style={styles.dividerLine}
+              />
             </View>
 
             <GoogleLoginButton
@@ -266,7 +403,9 @@ export default function LoginScreen() {
                 router.push("/register")
               }
             >
-              <Text style={styles.footerLink}>
+              <Text
+                style={styles.footerLink}
+              >
                 Đăng ký tài khoản
               </Text>
             </TouchableOpacity>
@@ -301,21 +440,13 @@ const styles = StyleSheet.create({
   },
 
   logoContainer: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "center",
   },
 
-  logoImage: {
-    width: 28,
-    height: 28,
-    resizeMode: "contain",
-  },
-
-  logoText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#172B30",
+  brandLogo: {
+    width: 170,
+    height: 36,
   },
 
   headerPlaceholder: {
@@ -332,11 +463,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
+
     ...Platform.select({
       web: {
         boxShadow:
           "0px 4px 10px rgba(0,0,0,0.05)",
       } as any,
+
       default: {
         shadowColor: "#000",
         shadowOffset: {
@@ -381,6 +514,17 @@ const styles = StyleSheet.create({
     height: 54,
   },
 
+  inputContainerError: {
+    borderColor: COLORS.error,
+  },
+
+  fieldErrorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+
   inputIcon: {
     marginRight: 10,
   },
@@ -402,6 +546,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.primary,
     fontWeight: "600",
+  },
+
+  loginErrorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
+    textAlign: "right",
   },
 
   primaryButton: {

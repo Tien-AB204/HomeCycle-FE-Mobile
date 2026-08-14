@@ -107,7 +107,7 @@ export default function MainHeader({
 
   const renderLeft = isHome ? (
     <Image
-      source={require("../../../assets/images/logo-dark-transparent.png")}
+      source={require("../../assets/images/logo-dark-transparent.png")}
       style={{ width: 140, height: 32, marginLeft: 4 }}
       resizeMode="contain"
     />

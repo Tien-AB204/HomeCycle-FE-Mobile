@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -13,57 +14,139 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
+
 import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
-type RegistrationRole =
-  | "personal"
-  | "business";
+type RegistrationRole = "personal" | "business";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
 
   const [role, setRole] =
     useState<RegistrationRole>("personal");
+
   const [email, setEmail] = useState("");
   const [agreeTerms, setAgreeTerms] =
     useState(false);
+
+  const [emailError, setEmailError] =
+    useState("");
+
+  const [termsError, setTermsError] =
+    useState("");
+
+  const [submitError, setSubmitError] =
+    useState("");
+
   const [isLoading, setIsLoading] =
     useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
-    } else {
-      router.replace("/(auth)/login");
-    }
-  };
-
-  const handleRegister = async () => {
-    const normalizedEmail = email.trim();
-
-    if (!normalizedEmail) {
-      notifyUser(
-        "Vui lòng điền email.",
-        "error",
-      );
       return;
     }
 
-    if (!agreeTerms) {
-      notifyUser(
-        "Vui lòng đồng ý với điều khoản dịch vụ.",
-        "error",
+    router.replace("/(auth)/login");
+  };
+
+  const handleRoleChange = (
+    nextRole: RegistrationRole,
+  ) => {
+    if (isLoading) {
+      return;
+    }
+
+    setRole(nextRole);
+    setSubmitError("");
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    setEmailError("");
+    setSubmitError("");
+  };
+
+  const handleToggleTerms = () => {
+    if (isLoading) {
+      return;
+    }
+
+    setAgreeTerms((currentValue) => {
+      const nextValue = !currentValue;
+
+      if (nextValue) {
+        setTermsError("");
+      }
+
+      return nextValue;
+    });
+
+    setSubmitError("");
+  };
+
+  const validateForm = () => {
+    const normalizedEmail = email.trim();
+
+    let isValid = true;
+
+    setEmailError("");
+    setTermsError("");
+    setSubmitError("");
+
+    if (!normalizedEmail) {
+      setEmailError(
+        "Vui lòng nhập địa chỉ email.",
       );
+
+      isValid = false;
+    } else if (
+      !EMAIL_PATTERN.test(normalizedEmail)
+    ) {
+      setEmailError(
+        "Địa chỉ email không đúng định dạng.",
+      );
+
+      isValid = false;
+    }
+
+    if (!agreeTerms) {
+      setTermsError(
+        "Bạn cần đồng ý với điều khoản dịch vụ và chính sách bảo mật.",
+      );
+
+      isValid = false;
+    }
+
+    return {
+      isValid,
+      normalizedEmail,
+    };
+  };
+
+  const handleRegister = async () => {
+    if (isLoading) {
+      return;
+    }
+
+    const { isValid, normalizedEmail } =
+      validateForm();
+
+    if (!isValid) {
       return;
     }
 
     try {
       setIsLoading(true);
+      setSubmitError("");
 
+      // Giữ nguyên API hiện có.
+      // Không tự thêm endpoint hoặc payload chưa được BE xác nhận.
       await authApi.sendOtp(normalizedEmail);
 
       router.push({
@@ -77,12 +160,11 @@ export default function RegisterScreen() {
     } catch (error: unknown) {
       console.error("Lỗi gửi OTP:", error);
 
-      notifyUser(
+      setSubmitError(
         getApiErrorMessage(
           error,
-          "Không thể gửi OTP. Vui lòng kiểm tra lại email.",
+          "Không thể gửi mã OTP. Vui lòng kiểm tra lại email.",
         ),
-        "error",
       );
     } finally {
       setIsLoading(false);
@@ -110,17 +192,23 @@ export default function RegisterScreen() {
             <TouchableOpacity
               onPress={handleBack}
               style={styles.backButton}
+              disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Quay lại"
             >
               <Ionicons
                 name="arrow-back"
-                size={24}
+                size={26}
                 color={COLORS.text}
               />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>
-              HomeCycle
-            </Text>
+            <Image
+              source={require("../../src/assets/images/logo-dark-transparent.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
+              accessibilityLabel="HomeCycle"
+            />
 
             <View
               style={styles.headerPlaceholder}
@@ -137,6 +225,10 @@ export default function RegisterScreen() {
               an toàn và chuyên nghiệp.
             </Text>
 
+            <Text style={styles.sectionLabel}>
+              LOẠI TÀI KHOẢN
+            </Text>
+
             <View style={styles.roleContainer}>
               <TouchableOpacity
                 style={[
@@ -146,9 +238,14 @@ export default function RegisterScreen() {
                     : undefined,
                 ]}
                 onPress={() =>
-                  setRole("personal")
+                  handleRoleChange("personal")
                 }
                 disabled={isLoading}
+                accessibilityRole="radio"
+                accessibilityState={{
+                  checked: role === "personal",
+                  disabled: isLoading,
+                }}
               >
                 <Ionicons
                   name="person-outline"
@@ -180,9 +277,14 @@ export default function RegisterScreen() {
                     : undefined,
                 ]}
                 onPress={() =>
-                  setRole("business")
+                  handleRoleChange("business")
                 }
                 disabled={isLoading}
+                accessibilityRole="radio"
+                accessibilityState={{
+                  checked: role === "business",
+                  disabled: isLoading,
+                }}
               >
                 <Ionicons
                   name="business-outline"
@@ -208,14 +310,25 @@ export default function RegisterScreen() {
             </View>
 
             <Text style={styles.label}>
-              Email
+              ĐỊA CHỈ EMAIL
             </Text>
 
-            <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputContainer,
+                emailError
+                  ? styles.inputContainerError
+                  : undefined,
+              ]}
+            >
               <Ionicons
                 name="mail-outline"
                 size={20}
-                color={COLORS.textLight}
+                color={
+                  emailError
+                    ? COLORS.error || "#B91C1C"
+                    : COLORS.textLight
+                }
                 style={styles.inputIcon}
               />
 
@@ -235,20 +348,36 @@ export default function RegisterScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 editable={!isLoading}
+                returnKeyType="send"
+                onSubmitEditing={() =>
+                  void handleRegister()
+                }
               />
             </View>
 
+            {emailError ? (
+              <Text
+                style={styles.fieldErrorText}
+                accessibilityRole="alert"
+              >
+                {emailError}
+              </Text>
+            ) : null}
+
             <TouchableOpacity
               style={styles.checkboxRow}
-              onPress={() =>
-                setAgreeTerms(
-                  (current) => !current,
-                )
-              }
+              onPress={handleToggleTerms}
               disabled={isLoading}
+              accessibilityRole="checkbox"
+              accessibilityState={{
+                checked: agreeTerms,
+                disabled: isLoading,
+              }}
             >
               <Ionicons
                 name={
@@ -256,17 +385,17 @@ export default function RegisterScreen() {
                     ? "checkbox"
                     : "square-outline"
                 }
-                size={22}
+                size={23}
                 color={
-                  agreeTerms
-                    ? COLORS.primary
-                    : COLORS.textLight
+                  termsError
+                    ? COLORS.error || "#B91C1C"
+                    : agreeTerms
+                      ? COLORS.primary
+                      : COLORS.textLight
                 }
               />
 
-              <Text
-                style={styles.checkboxLabel}
-              >
+              <Text style={styles.checkboxLabel}>
                 Tôi đồng ý với{" "}
                 <Text style={styles.linkText}>
                   điều khoản dịch vụ
@@ -279,6 +408,15 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
 
+            {termsError ? (
+              <Text
+                style={styles.termsErrorText}
+                accessibilityRole="alert"
+              >
+                {termsError}
+              </Text>
+            ) : null}
+
             <TouchableOpacity
               style={[
                 styles.primaryButton,
@@ -290,21 +428,44 @@ export default function RegisterScreen() {
                 void handleRegister()
               }
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: isLoading,
+                busy: isLoading,
+              }}
             >
               {isLoading ? (
                 <ActivityIndicator
                   color={COLORS.white}
                 />
               ) : (
-                <Text
-                  style={
-                    styles.primaryButtonText
-                  }
-                >
-                  Đăng ký
-                </Text>
+                <>
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    ĐĂNG KÝ
+                  </Text>
+
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color={COLORS.white}
+                  />
+                </>
               )}
             </TouchableOpacity>
+
+            {submitError ? (
+              <Text
+                style={styles.submitErrorText}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                {submitError}
+              </Text>
+            ) : null}
 
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
@@ -316,6 +477,11 @@ export default function RegisterScreen() {
               <View style={styles.dividerLine} />
             </View>
 
+            {/*
+              GoogleLoginButton vẫn đang tự gọi notifyUser.
+              Sẽ sửa riêng component này sau để trả lỗi về
+              đúng màn Login/Register thay vì banner toàn cục.
+            */}
             <GoogleLoginButton
               title="Google"
               disabled={isLoading}
@@ -334,6 +500,7 @@ export default function RegisterScreen() {
                 )
               }
               disabled={isLoading}
+              accessibilityRole="link"
             >
               <Text style={styles.loginText}>
                 Đăng nhập ngay
@@ -357,37 +524,39 @@ const styles = StyleSheet.create({
   },
 
   scrollContainer: {
+    flexGrow: 1,
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingBottom: 32,
   },
 
   header: {
+    minHeight: 82,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 20,
-    marginBottom: 24,
   },
 
   backButton: {
-    padding: 8,
-    marginLeft: -8,
+    width: 42,
+    height: 42,
+    alignItems: "flex-start",
+    justifyContent: "center",
   },
 
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: COLORS.primary,
+  brandLogo: {
+    width: 178,
+    height: 46,
   },
 
   headerPlaceholder: {
-    width: 24,
+    width: 42,
   },
 
   contentCard: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
+
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -398,9 +567,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
+
       android: {
         elevation: 2,
       },
+
       web: {
         boxShadow:
           "0px 2px 8px rgba(0, 0, 0, 0.05)",
@@ -409,8 +580,8 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "800",
     color: COLORS.text,
     marginBottom: 8,
   },
@@ -418,8 +589,15 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: COLORS.textLight,
-    lineHeight: 20,
+    lineHeight: 21,
     marginBottom: 24,
+  },
+
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORS.textLight,
+    marginBottom: 10,
   },
 
   roleContainer: {
@@ -430,15 +608,16 @@ const styles = StyleSheet.create({
 
   roleTab: {
     flex: 1,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    height: 54,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
     backgroundColor: COLORS.white,
+    paddingHorizontal: 8,
   },
 
   roleTabActive: {
@@ -455,26 +634,30 @@ const styles = StyleSheet.create({
 
   roleTabTextActive: {
     color: COLORS.primary,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
 
   label: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: COLORS.text,
     marginBottom: 8,
   },
 
   inputContainer: {
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
     paddingHorizontal: 16,
-    height: 52,
     backgroundColor: "#FAFAFA",
-    marginBottom: 24,
+  },
+
+  inputContainerError: {
+    borderColor: COLORS.error || "#B91C1C",
+    borderWidth: 1.5,
   },
 
   inputIcon: {
@@ -483,36 +666,55 @@ const styles = StyleSheet.create({
 
   input: {
     flex: 1,
+    minHeight: 52,
     fontSize: 15,
     color: COLORS.text,
+  },
+
+  fieldErrorText: {
+    color: COLORS.error || "#B91C1C",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+    marginBottom: 16,
   },
 
   checkboxRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    marginTop: -4,
-    marginBottom: 20,
+    marginTop: 18,
   },
 
   checkboxLabel: {
     flex: 1,
     fontSize: 13,
     color: COLORS.textLight,
-    lineHeight: 18,
+    lineHeight: 19,
   },
 
   linkText: {
     color: COLORS.primary,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+
+  termsErrorText: {
+    color: COLORS.error || "#B91C1C",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
   },
 
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 52,
+    minHeight: 54,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    gap: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    marginTop: 20,
+    paddingHorizontal: 18,
   },
 
   disabledButton: {
@@ -522,13 +724,21 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "800",
+  },
+
+  submitErrorText: {
+    color: COLORS.error || "#B91C1C",
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: 8,
   },
 
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 20,
+    marginVertical: 22,
   },
 
   dividerLine: {
@@ -547,6 +757,8 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center",
+    flexWrap: "wrap",
     marginTop: 24,
   },
 
@@ -557,7 +769,7 @@ const styles = StyleSheet.create({
 
   loginText: {
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: COLORS.primary,
   },
 });

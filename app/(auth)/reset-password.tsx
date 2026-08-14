@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useState } from "react";
 import {
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
+import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -11,46 +14,157 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
+import {
+  useRef,
+  useState,
+} from "react";
+
 import { COLORS } from "../../src/constants/theme";
+
+const getStringParam = (
+  value: string | string[] | undefined,
+) => {
+  return Array.isArray(value)
+    ? value[0] ?? ""
+    : value ?? "";
+};
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+
+  const email = getStringParam(params.email);
 
   const [newPassword, setNewPassword] =
     useState("");
-  const [confirmPassword, setConfirmPassword] =
-    useState("");
-  const [showNewPassword, setShowNewPassword] =
-    useState(false);
+
+  const [
+    confirmPassword,
+    setConfirmPassword,
+  ] = useState("");
+
+  const [
+    showNewPassword,
+    setShowNewPassword,
+  ] = useState(false);
+
   const [
     showConfirmPassword,
     setShowConfirmPassword,
   ] = useState(false);
 
-  const handleReset = () => {
-    if (!newPassword || !confirmPassword) {
-      notifyUser(
-        "Vui lòng điền đầy đủ mật khẩu.",
-        "error",
-      );
-      return;
+  const [
+    newPasswordError,
+    setNewPasswordError,
+  ] = useState("");
+
+  const [
+    confirmPasswordError,
+    setConfirmPasswordError,
+  ] = useState("");
+
+  const [submitError, setSubmitError] =
+    useState("");
+
+  const confirmPasswordRef =
+    useRef<TextInput | null>(null);
+
+  const handleNewPasswordChange = (
+    value: string,
+  ) => {
+    setNewPassword(value);
+
+    if (newPasswordError) {
+      setNewPasswordError("");
     }
 
-    if (newPassword !== confirmPassword) {
-      notifyUser(
+    if (submitError) {
+      setSubmitError("");
+    }
+  };
+
+  const handleConfirmPasswordChange = (
+    value: string,
+  ) => {
+    setConfirmPassword(value);
+
+    if (confirmPasswordError) {
+      setConfirmPasswordError("");
+    }
+
+    if (submitError) {
+      setSubmitError("");
+    }
+  };
+
+  const validateForm = () => {
+    let isValid = true;
+
+    setNewPasswordError("");
+    setConfirmPasswordError("");
+    setSubmitError("");
+
+    if (!newPassword.trim()) {
+      setNewPasswordError(
+        "Vui lòng nhập mật khẩu mới.",
+      );
+
+      isValid = false;
+    } else if (
+      newPassword.trim().length < 6
+    ) {
+      setNewPasswordError(
+        "Mật khẩu phải có ít nhất 6 ký tự.",
+      );
+
+      isValid = false;
+    }
+
+    if (!confirmPassword.trim()) {
+      setConfirmPasswordError(
+        "Vui lòng nhập lại mật khẩu mới.",
+      );
+
+      isValid = false;
+    } else if (
+      newPassword !== confirmPassword
+    ) {
+      setConfirmPasswordError(
         "Mật khẩu xác nhận không khớp.",
-        "error",
       );
+
+      isValid = false;
+    }
+
+    return isValid;
+  };
+
+  const handleReset = async () => {
+    if (!validateForm()) {
       return;
     }
 
-    notifyUser(
-      "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.",
-      "success",
+    /*
+     * TODO(BE):
+     *
+     * Swagger hiện tại ngày 13/08/2026 chưa có
+     * endpoint đặt lại mật khẩu.
+     *
+     * Các endpoint Auth hiện có chỉ gồm:
+     * - POST /api/auth/send-otp
+     * - POST /api/auth/verify-otp
+     * - POST /api/auth/login
+     * - POST /api/auth/personal/register
+     * - POST /api/auth/business/register
+     * - POST /api/auth/google-login
+     * - POST /api/auth/refresh-token
+     *
+     * Tuyệt đối không giả báo thành công hoặc tự
+     * chuyển về màn đăng nhập khi chưa gọi BE.
+     */
+    setSubmitError(
+      "Chức năng đặt lại mật khẩu hiện chưa được máy chủ hỗ trợ. Vui lòng thử lại sau.",
     );
-
-    router.replace("/(auth)/login");
   };
 
   return (
@@ -70,7 +184,7 @@ export default function ResetPasswordScreen() {
           >
             <Ionicons
               name="arrow-back"
-              size={24}
+              size={26}
               color={COLORS.text}
             />
           </TouchableOpacity>
@@ -78,42 +192,65 @@ export default function ResetPasswordScreen() {
 
         <View style={styles.contentCard}>
           <View
-            style={styles.logoCenterContainer}
+            style={
+              styles.logoCenterContainer
+            }
           >
-            <View style={styles.logoBox}>
-              <Ionicons
-                name="sync-circle"
-                size={32}
-                color={COLORS.white}
-              />
-            </View>
-
-            <Text style={styles.logoText}>
-              HomeCycle
-            </Text>
+            {/* Logo thật của HomeCycle. */}
+            <Image
+              source={require("../../src/assets/images/logo-dark-transparent.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
 
             <Text style={styles.title}>
               Đặt lại mật khẩu mới
             </Text>
 
             <Text style={styles.subtitle}>
-              Vui lòng tạo mật khẩu mới có độ
-              bảo mật cao để bảo vệ tài khoản
-              của bạn.
+              Vui lòng tạo mật khẩu mới để
+              bảo vệ tài khoản của bạn.
             </Text>
+
+            {email ? (
+              <Text
+                style={styles.emailText}
+              >
+                {email}
+              </Text>
+            ) : null}
           </View>
 
           <Text style={styles.label}>
             MẬT KHẨU MỚI
           </Text>
 
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              newPasswordError
+                ? styles.inputContainerError
+                : undefined,
+            ]}
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color={
+                newPasswordError
+                  ? COLORS.error
+                  : COLORS.textLight
+              }
+              style={styles.inputIcon}
+            />
+
             <TextInput
               style={[
                 styles.input,
                 Platform.OS === "web"
                   ? ({
-                      outlineStyle: "none",
+                      outlineStyle:
+                        "none",
                     } as any)
                   : undefined,
               ]}
@@ -121,9 +258,24 @@ export default function ResetPasswordScreen() {
               placeholderTextColor={
                 COLORS.textLight
               }
-              secureTextEntry={!showNewPassword}
+              secureTextEntry={
+                !showNewPassword
+              }
               value={newPassword}
-              onChangeText={setNewPassword}
+              onChangeText={
+                handleNewPasswordChange
+              }
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+
+              // Enter ở ô đầu chuyển sang ô xác nhận.
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => {
+                confirmPasswordRef.current?.focus();
+              }}
             />
 
             <TouchableOpacity
@@ -132,6 +284,7 @@ export default function ResetPasswordScreen() {
                   (current) => !current,
                 )
               }
+              style={styles.eyeIcon}
             >
               <Ionicons
                 name={
@@ -145,21 +298,63 @@ export default function ResetPasswordScreen() {
             </TouchableOpacity>
           </View>
 
+          {newPasswordError ? (
+            <View
+              style={
+                styles.fieldErrorRow
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color={COLORS.error}
+              />
+
+              <Text
+                style={
+                  styles.fieldErrorText
+                }
+              >
+                {newPasswordError}
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={styles.label}>
             XÁC NHẬN MẬT KHẨU MỚI
           </Text>
 
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              confirmPasswordError
+                ? styles.inputContainerError
+                : undefined,
+            ]}
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color={
+                confirmPasswordError
+                  ? COLORS.error
+                  : COLORS.textLight
+              }
+              style={styles.inputIcon}
+            />
+
             <TextInput
+              ref={confirmPasswordRef}
               style={[
                 styles.input,
                 Platform.OS === "web"
                   ? ({
-                      outlineStyle: "none",
+                      outlineStyle:
+                        "none",
                     } as any)
                   : undefined,
               ]}
-              placeholder="Xác nhận lại mật khẩu mới..."
+              placeholder="Nhập lại mật khẩu mới..."
               placeholderTextColor={
                 COLORS.textLight
               }
@@ -167,7 +362,23 @@ export default function ResetPasswordScreen() {
                 !showConfirmPassword
               }
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              onChangeText={
+                handleConfirmPasswordChange
+              }
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+
+              /*
+               * Enter ở ô cuối gọi thẳng
+               * handleReset giống nút xác nhận.
+               */
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={() => {
+                void handleReset();
+              }}
             />
 
             <TouchableOpacity
@@ -176,6 +387,7 @@ export default function ResetPasswordScreen() {
                   (current) => !current,
                 )
               }
+              style={styles.eyeIcon}
             >
               <Ionicons
                 name={
@@ -189,34 +401,80 @@ export default function ResetPasswordScreen() {
             </TouchableOpacity>
           </View>
 
-          <View
-            style={styles.requirementsContainer}
-          >
-            <View style={styles.requirementRow}>
-              <View style={styles.dot} />
+          {confirmPasswordError ? (
+            <View
+              style={
+                styles.fieldErrorRow
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color={COLORS.error}
+              />
+
               <Text
-                style={styles.requirementText}
+                style={
+                  styles.fieldErrorText
+                }
               >
-                Tối thiểu 8 ký tự
+                {confirmPasswordError}
               </Text>
             </View>
+          ) : null}
 
-            <View style={styles.requirementRow}>
+          <View
+            style={
+              styles.requirementsContainer
+            }
+          >
+            <View
+              style={styles.requirementRow}
+            >
               <View style={styles.dot} />
+
               <Text
-                style={styles.requirementText}
+                style={
+                  styles.requirementText
+                }
               >
-                Bao gồm chữ hoa, chữ thường và số
+                Tối thiểu 6 ký tự
               </Text>
             </View>
           </View>
 
+          {submitError ? (
+            <View
+              style={
+                styles.submitErrorRow
+              }
+            >
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color={COLORS.error}
+              />
+
+              <Text
+                style={
+                  styles.submitErrorText
+                }
+              >
+                {submitError}
+              </Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={handleReset}
+            onPress={() => {
+              void handleReset();
+            }}
           >
             <Text
-              style={styles.primaryButtonText}
+              style={
+                styles.primaryButtonText
+              }
             >
               XÁC NHẬN ĐỔI MẬT KHẨU
             </Text>
@@ -251,9 +509,10 @@ const styles = StyleSheet.create({
   },
 
   contentCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 24,
     padding: 24,
+    borderRadius: 24,
+    backgroundColor: COLORS.white,
+
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -264,9 +523,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
+
       android: {
         elevation: 2,
       },
+
       web: {
         boxShadow:
           "0px 2px 8px rgba(0, 0, 0, 0.05)",
@@ -276,97 +537,134 @@ const styles = StyleSheet.create({
 
   logoCenterContainer: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 30,
   },
 
-  logoBox: {
-    backgroundColor: COLORS.primary,
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-
-  logoText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: COLORS.primary,
-    marginBottom: 16,
+  logoImage: {
+    width: 230,
+    height: 58,
+    marginBottom: 18,
   },
 
   title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: COLORS.text,
     marginBottom: 8,
+    color: COLORS.text,
+    fontSize: 21,
+    fontWeight: "bold",
+    textAlign: "center",
   },
 
   subtitle: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    textAlign: "center",
-    lineHeight: 20,
     paddingHorizontal: 10,
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+
+  emailText: {
+    marginTop: 8,
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   label: {
+    marginBottom: 8,
+    color: COLORS.textLight,
     fontSize: 12,
     fontWeight: "600",
-    color: COLORS.textLight,
-    marginBottom: 8,
   },
 
   inputContainer: {
+    height: 56,
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 52,
     backgroundColor: "#FAFAFA",
-    marginBottom: 16,
+  },
+
+  inputContainerError: {
+    marginBottom: 0,
+    borderColor: COLORS.error,
+  },
+
+  inputIcon: {
+    marginRight: 10,
   },
 
   input: {
     flex: 1,
-    fontSize: 15,
     color: COLORS.text,
+    fontSize: 15,
+  },
+
+  eyeIcon: {
+    padding: 6,
+  },
+
+  fieldErrorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+    marginTop: 7,
+    marginBottom: 15,
+  },
+
+  fieldErrorText: {
+    flex: 1,
+    color: COLORS.error,
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   requirementsContainer: {
-    marginBottom: 24,
     paddingHorizontal: 4,
+    marginBottom: 20,
   },
 
   requirementRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
   },
 
   dot: {
     width: 5,
     height: 5,
+    marginRight: 8,
     borderRadius: 3,
     backgroundColor: COLORS.textLight,
-    marginRight: 8,
   },
 
   requirementText: {
-    fontSize: 13,
     color: COLORS.textLight,
-    fontWeight: "500",
+    fontSize: 13,
+  },
+
+  submitErrorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginBottom: 12,
+  },
+
+  submitErrorText: {
+    flex: 1,
+    color: COLORS.error,
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   primaryButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 52,
+    height: 56,
     justifyContent: "center",
     alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
   },
 
   primaryButtonText: {
