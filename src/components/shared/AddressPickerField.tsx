@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "../../constants/theme";
+import { capitalizeWordInitials } from "../../utils/textFormat";
 
 interface ProvinceOption {
   label: string;
@@ -425,8 +426,9 @@ const AddressPickerField = forwardRef<
       return;
     }
 
+    const normalizedStreetAddress = capitalizeWordInitials(streetAddress).trim();
     const formattedAddress = [
-      streetAddress.trim(),
+      normalizedStreetAddress,
       wardQuery.trim(),
       provinceQuery.trim(),
     ].join(", ");
@@ -435,8 +437,7 @@ const AddressPickerField = forwardRef<
       provinceCode: selectedProvinceCode,
       provinceName: provinceQuery.trim(),
       wardName: wardQuery.trim(),
-      streetAddress:
-        streetAddress.trim(),
+      streetAddress: normalizedStreetAddress,
       formattedAddress,
     });
 
@@ -741,9 +742,10 @@ const AddressPickerField = forwardRef<
                   COLORS.textLight
                 }
                 onChangeText={(text) => {
-                  setStreetAddress(text);
+                  setStreetAddress(capitalizeWordInitials(text));
                   setFormError("");
                 }}
+                autoCapitalize="words"
                 returnKeyType="done"
                 onSubmitEditing={
                   saveAddress

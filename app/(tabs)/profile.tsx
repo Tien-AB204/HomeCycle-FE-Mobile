@@ -6,7 +6,6 @@ import {
   Image,
   Modal,
   Platform,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -16,64 +15,76 @@ import {
   View,
 } from "react-native";
 
-import {
-  InlineFeedback,
-  useActionFeedback,
-  useConfirmAction,
-} from "../../src/components/shared/ActionFeedback";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
-import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
-type FeedbackTarget =
-  | { type: "page" }
-  | { type: "menu"; route: string }
-  | { type: "modal" }
-  | { type: "logout" }
-  | null;
+const profileApi = {
+  getPostCount: (userId: string) =>
+    apiClient
+      .get(`/posts/get-all/by-user/${userId}`, {
+        params: { PageNumber: 1, PageSize: 1 },
+      })
+      .then((response) => response.data),
+
+  getBusinessOnboardingStatus: () =>
+    apiClient
+      .get("/business-profiles/onboarding-status")
+      .then((response) => response.data),
+
+  getMyWallet: () => apiClient.get("/wallet/me").then((response) => response.data),
+};
 
 type ProfileMenuItem = {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   title: string;
-  route: any; // Hỗ trợ cả string và object
   subtitle?: string;
   subtitleColor?: string;
+  route: any;
 };
 
+type InlineMessage = {
+  type: "error" | "info";
+  text: string;
+} | null;
+
+const unwrap = (value: any) => value?.data ?? value;
+
 const getRobustUrl = (url: string) => {
-  if (url?.includes("googleusercontent.com"))
+  if (url?.includes("googleusercontent.com")) {
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
+  }
   return url;
 };
 
-const formatFullDate = (dateString: string) => {
+const formatFullDate = (dateString?: string) => {
   if (!dateString) return "N/A";
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return "N/A";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  return date.toLocaleDateString("vi-VN");
 };
+
+const formatCurrency = (value: unknown) =>
+  new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
-
   const { user, logout, isLoading } = useAuth();
+
   const [imageError, setImageError] = useState(false);
   const [postCount, setPostCount] = useState(0);
-  const [showActionModal, setShowActionModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
-
   const [bizStatus, setBizStatus] = useState<string | null>(null);
-
-  const { feedback, clearFeedback, showError, showInfo } = useActionFeedback();
-  const { confirm, confirmationModal } = useConfirmAction();
+  const [wallet, setWallet] = useState<any>(null);
+  const [message, setMessage] = useState<InlineMessage>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const currentUserId = user?.userId || user?.id;
 
@@ -83,94 +94,78 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
+
       const fetchData = async () => {
         if (!currentUserId) return;
-        try {
-          const postRes = await apiClient.get(
-            `/posts/get-all/by-user/${currentUserId}`,
-            { params: { PageNumber: 1, PageSize: 1 } },
-          );
-          const total =
-            postRes.data?.data?.totalCount ??
-            postRes.data?.totalItems ??
-            postRes.data?.items?.length ??
-            0;
-          setPostCount(Number(total || 0));
 
-          if (user?.role === "business") {
-            const statusRes = await apiClient.get(
-              "/business-profiles/onboarding-status",
-            );
-            const statusData = statusRes.data?.data || statusRes.data;
-            setBizStatus(statusData?.status);
+        setMessage(null);
+
+        const requests: Promise<any>[] = [
+          profileApi.getPostCount(String(currentUserId)),
+          profileApi.getMyWallet(),
+        ];
+
+        if (user?.role === "business") {
+          requests.push(profileApi.getBusinessOnboardingStatus());
+        }
+
+        const results = await Promise.allSettled(requests);
+        if (!active) return;
+
+        const postResult = results[0];
+        if (postResult.status === "fulfilled") {
+          const postData = unwrap(postResult.value);
+          setPostCount(
+            Number(
+              postData?.totalCount ??
+                postData?.totalItems ??
+                postData?.items?.length ??
+                0,
+            ),
+          );
+        } else {
+          setPostCount(0);
+        }
+
+        const walletResult = results[1];
+        if (walletResult.status === "fulfilled") {
+          setWallet(unwrap(walletResult.value));
+        } else {
+          setWallet(null);
+          setMessage({
+            type: "info",
+            text: "Chưa tải được số dư ví. Bạn vẫn có thể sử dụng các chức năng hồ sơ khác.",
+          });
+        }
+
+        if (user?.role === "business") {
+          const businessResult = results[2];
+          if (businessResult?.status === "fulfilled") {
+            const statusData = unwrap(businessResult.value);
+            setBizStatus(statusData?.status ?? null);
           }
-        } catch (error: unknown) {
-          console.error("[Profile] Lỗi fetch data:", error);
         }
       };
 
       void fetchData();
+
+      return () => {
+        active = false;
+      };
     }, [currentUserId, user?.role]),
   );
 
-  const dismissFeedback = () => {
-    clearFeedback();
-    setFeedbackTarget(null);
-  };
-
-  const handleMenuPress = (route: any) => {
-    dismissFeedback();
-    const routeKey = typeof route === "object" ? route.pathname : route;
-
-    if (routeKey === "ACTION_DEV") {
-      setFeedbackTarget({ type: "menu", route: routeKey });
-      showInfo("Tính năng đang được phát triển.");
-      return;
-    }
-    if (routeKey === "ACTION_BUSINESS_ORDERS") {
-      setShowActionModal(true);
-      return;
-    }
-
-    router.push(route);
-  };
-
-  const handleOpenOrders = () => {
-    dismissFeedback();
-    setShowActionModal(false);
-    router.push("/(tabs)/orders");
-  };
-
-  const handleShowStatisticsInfo = () => {
-    clearFeedback();
-    setFeedbackTarget({ type: "modal" });
-    showInfo(
-      "Vui lòng truy cập phiên bản Web trên máy tính để xem biểu đồ thống kê chi tiết.",
-    );
-  };
-
-  const handleCloseActionModal = () => {
-    if (feedbackTarget?.type === "modal") dismissFeedback();
-    setShowActionModal(false);
-  };
-
   const handleLogout = async () => {
-    const confirmed = await confirm({
-      title: "Đăng xuất",
-      message: "Bạn có chắc muốn đăng xuất khỏi tài khoản hiện tại?",
-      confirmLabel: "Đăng xuất",
-      cancelLabel: "Ở lại",
-      destructive: true,
-    });
-    if (!confirmed) return;
-    dismissFeedback();
     try {
       setIsLoggingOut(true);
+      setMessage(null);
       await logout();
+      setShowLogoutConfirm(false);
       router.replace("/(tabs)");
-    } catch (error: unknown) {
-      setFeedbackTarget({ type: "logout" });
-      showError(getApiErrorMessage(error, "Không thể đăng xuất lúc này."));
+    } catch {
+      setShowLogoutConfirm(false);
+      setMessage({ type: "error", text: "Không thể đăng xuất lúc này. Vui lòng thử lại." });
     } finally {
       setIsLoggingOut(false);
     }
@@ -190,16 +185,10 @@ export default function ProfileScreen() {
         <View style={[styles.mobileWrapper, { width }]}>
           <MainHeader title="Hồ sơ" showBack={false} />
           <View style={styles.unauthContainer}>
-            <Ionicons
-              name="person-circle-outline"
-              size={80}
-              color="#CBD5E1"
-              style={styles.unauthIcon}
-            />
+            <Ionicons name="person-circle-outline" size={80} color="#CBD5E1" />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
             <Text style={styles.unauthDesc}>
-              Đăng nhập để cập nhật hồ sơ, theo dõi ví tiền và sử dụng đầy đủ
-              tiện ích của HomeCycle.
+              Đăng nhập để cập nhật hồ sơ, theo dõi ví và sử dụng đầy đủ tiện ích của HomeCycle.
             </Text>
             <TouchableOpacity
               style={styles.loginBtn}
@@ -218,15 +207,14 @@ export default function ProfileScreen() {
     );
   }
 
-  const joinDateString = formatFullDate(user.createdAt);
   const actualAvatar = user.avatarUrl || user.avatar;
-  const isValidAvatar =
-    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username || "U")}&background=208AEF&color=fff&size=200`;
-  const avatarSource =
-    isValidAvatar && !imageError
-      ? { uri: getRobustUrl(actualAvatar) }
-      : { uri: defaultAvatar };
+  const validAvatar =
+    actualAvatar && actualAvatar !== "string" && actualAvatar !== "null" && !imageError;
+  const avatarUri = validAvatar
+    ? getRobustUrl(actualAvatar)
+    : `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        user.username || "U",
+      )}&background=208AEF&color=fff&size=200`;
 
   const getBusinessProfileMenu = (): ProfileMenuItem => {
     switch (bizStatus) {
@@ -239,7 +227,6 @@ export default function ProfileScreen() {
           route: "/(auth)/business-setup",
         };
       case "PendingApproval":
-        // CHỈNH LẠI: TRỎ THẲNG SANG FILE MỚI, KHÔNG DÙNG PARAMS NỮA
         return {
           icon: "business-outline",
           title: "Hồ sơ Doanh nghiệp",
@@ -248,7 +235,6 @@ export default function ProfileScreen() {
           route: "/profile/business-pending",
         };
       case "Rejected":
-        // Vẫn giữ params cho file setup vì trang đó cần lấy data để User sửa
         return {
           icon: "business-outline",
           title: "Hồ sơ Doanh nghiệp",
@@ -271,13 +257,13 @@ export default function ProfileScreen() {
           title: "Hồ sơ Doanh nghiệp",
           subtitle: "Chờ làm khảo sát",
           subtitleColor: "#F59E0B",
-          route: "/(tabs)/",
+          route: "/profile/business-survey",
         };
       default:
         return {
           icon: "business-outline",
           title: "Hồ sơ Doanh nghiệp",
-          route: "/profile/business-setup",
+          route: "/profile/business-account-info",
         };
     }
   };
@@ -289,7 +275,12 @@ export default function ProfileScreen() {
           {
             icon: "bar-chart-outline",
             title: "Thống kê & Đơn hàng",
-            route: "ACTION_BUSINESS_ORDERS",
+            route: "/(tabs)/orders",
+          },
+          {
+            icon: "receipt-outline",
+            title: "Lịch sử thanh toán",
+            route: "/payments/history",
           },
           {
             icon: "book-outline",
@@ -309,9 +300,9 @@ export default function ProfileScreen() {
             route: "/profile/account-info",
           },
           {
-            icon: "time-outline",
-            title: "Lịch sử giao dịch",
-            route: "ACTION_DEV",
+            icon: "receipt-outline",
+            title: "Lịch sử thanh toán",
+            route: "/payments/history",
           },
           {
             icon: "book-outline",
@@ -325,484 +316,299 @@ export default function ProfileScreen() {
           },
         ];
 
-  const pageFeedback = feedbackTarget?.type === "page" ? feedback : null;
-  const modalFeedback = feedbackTarget?.type === "modal" ? feedback : null;
-  const logoutFeedback = feedbackTarget?.type === "logout" ? feedback : null;
+  const availableBalance = wallet?.availableBalance ?? wallet?.AvailableBalance ?? 0;
+  const holdBalance = wallet?.holdBalance ?? wallet?.HoldBalance ?? 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.mobileWrapper, { width }]}>
         <MainHeader title="Hồ sơ" showBack={false} />
         <ScrollView
-          showsVerticalScrollIndicator={false}
-          style={styles.container}
           contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
           <View style={styles.userInfoSection}>
             <Image
-              source={avatarSource}
+              source={{ uri: avatarUri }}
               style={styles.avatar}
               onError={() => setImageError(true)}
             />
             <Text style={styles.userName}>{user.username}</Text>
             {user.verificationStatus === "Verified" ? (
               <View style={styles.verifiedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={15}
-                  color={COLORS.primary}
-                />
+                <Ionicons name="checkmark-circle" size={15} color={COLORS.primary} />
                 <Text style={styles.verifiedText}>Đã xác thực</Text>
               </View>
             ) : null}
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>Tham gia: {joinDateString}</Text>
-            </View>
+            <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
             <View style={styles.statsBadge}>
-              <Text style={styles.statsTextRating}>
-                Điểm uy tín: {user.reputationScore ?? 0}
-              </Text>
+              <Text style={styles.statsStrong}>Điểm uy tín: {user.reputationScore ?? 0}</Text>
               <Text style={styles.statsDivider}>|</Text>
               <Text style={styles.statsText}>
-                0 {user.role === "business" ? "Giao dịch hoàn tất" : "Đơn hàng"}
+                {user.role === "business" ? "Tài khoản Doanh nghiệp" : "Tài khoản Cá nhân"}
               </Text>
             </View>
           </View>
 
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Ionicons
-                name="wallet-outline"
-                size={24}
-                color={COLORS.primary}
-              />
-              <Text style={styles.statLabel}>Số dư ví</Text>
-              <Text style={styles.statValue}>0 đ</Text>
+          {message ? (
+            <View
+              style={[
+                styles.messageBox,
+                message.type === "error" ? styles.messageError : styles.messageInfo,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.messageText,
+                  message.type === "error" ? styles.messageErrorText : styles.messageInfoText,
+                ]}
+              >
+                {message.text}
+              </Text>
             </View>
+          ) : null}
+
+          <View style={styles.statsGrid}>
             <TouchableOpacity
               style={styles.statCard}
-              activeOpacity={0.7}
+              activeOpacity={0.75}
+              onPress={() => router.push("/wallet")}
+            >
+              <Ionicons name="wallet-outline" size={24} color={COLORS.primary} />
+              <Text style={styles.statLabel}>Số dư ví</Text>
+              <Text style={styles.statValue}>{formatCurrency(availableBalance)}</Text>
+              {Number(holdBalance) > 0 ? (
+                <Text style={styles.holdText}>Đang giữ: {formatCurrency(holdBalance)}</Text>
+              ) : null}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.statCard}
+              activeOpacity={0.75}
               onPress={() => router.push("/(tabs)/posts")}
             >
-              <Ionicons
-                name="newspaper-outline"
-                size={24}
-                color={COLORS.primary}
-              />
+              <Ionicons name="newspaper-outline" size={24} color={COLORS.primary} />
               <Text style={styles.statLabel}>
-                {user.role === "business"
-                  ? "Tin đang thu mua"
-                  : "Tin đang đăng bán"}
+                {user.role === "business" ? "Tin đang thu mua" : "Tin đang đăng bán"}
               </Text>
               <Text style={styles.statValue}>{postCount} bài</Text>
             </TouchableOpacity>
           </View>
 
-          {pageFeedback ? (
-            <InlineFeedback
-              feedback={pageFeedback}
-              onDismiss={dismissFeedback}
-              style={styles.pageFeedback}
-            />
-          ) : null}
-
           <View style={styles.menuContainer}>
-            {menuItems.map((item, index) => {
-              const routeKey =
-                typeof item.route === "object"
-                  ? item.route.pathname
-                  : item.route;
-              const showMenuFeedback =
-                feedbackTarget?.type === "menu" &&
-                feedbackTarget.route === routeKey;
-              return (
-                <View key={routeKey}>
-                  <TouchableOpacity
-                    style={[
-                      styles.menuItem,
-                      index === menuItems.length - 1
-                        ? styles.lastMenuItem
-                        : undefined,
-                    ]}
-                    onPress={() => handleMenuPress(item.route)}
-                  >
-                    <View style={styles.menuIconBox}>
-                      <Ionicons
-                        name={item.icon}
-                        size={22}
-                        color={COLORS.primary}
-                      />
-                    </View>
-                    <Text style={styles.menuText}>{item.title}</Text>
-                    {item.subtitle && (
-                      <Text
-                        style={[
-                          styles.menuSubtitle,
-                          { color: item.subtitleColor || COLORS.textLight },
-                        ]}
-                      >
-                        {item.subtitle}
-                      </Text>
-                    )}
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={COLORS.border}
-                    />
-                  </TouchableOpacity>
-                  {showMenuFeedback ? (
-                    <InlineFeedback
-                      feedback={feedback}
-                      onDismiss={dismissFeedback}
-                      style={styles.menuFeedback}
-                    />
-                  ) : null}
+            {menuItems.map((item, index) => (
+              <TouchableOpacity
+                key={`${item.title}-${index}`}
+                style={[
+                  styles.menuItem,
+                  index === menuItems.length - 1 ? styles.lastMenuItem : undefined,
+                ]}
+                onPress={() => router.push(item.route)}
+              >
+                <View style={styles.menuIconBox}>
+                  <Ionicons name={item.icon} size={22} color={COLORS.primary} />
                 </View>
-              );
-            })}
+                <Text style={styles.menuText}>{item.title}</Text>
+                {item.subtitle ? (
+                  <Text
+                    style={[
+                      styles.menuSubtitle,
+                      { color: item.subtitleColor || COLORS.textLight },
+                    ]}
+                  >
+                    {item.subtitle}
+                  </Text>
+                ) : null}
+                <Ionicons name="chevron-forward" size={20} color={COLORS.border} />
+              </TouchableOpacity>
+            ))}
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.logoutButton,
-              isLoggingOut ? styles.disabledButton : undefined,
-            ]}
-            onPress={() => void handleLogout()}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? (
-              <ActivityIndicator size="small" color={COLORS.error} />
-            ) : (
-              <Ionicons name="log-out-outline" size={22} color={COLORS.error} />
-            )}
-            <Text style={styles.logoutText}>
-              {isLoggingOut ? "Đang đăng xuất..." : "Đăng xuất"}
-            </Text>
+          <TouchableOpacity style={styles.logoutButton} onPress={() => setShowLogoutConfirm(true)}>
+            <Ionicons name="log-out-outline" size={22} color="#991B1B" />
+            <Text style={styles.logoutText}>Đăng xuất</Text>
           </TouchableOpacity>
-
-          {logoutFeedback ? (
-            <InlineFeedback
-              feedback={logoutFeedback}
-              onDismiss={dismissFeedback}
-              style={styles.logoutFeedback}
-            />
-          ) : null}
-          <View style={styles.bottomSpacer} />
         </ScrollView>
+      </View>
 
-        <Modal
-          visible={showActionModal}
-          animationType="slide"
-          transparent
-          onRequestClose={handleCloseActionModal}
-        >
-          <View style={styles.modalOverlay}>
-            <Pressable
-              accessibilityLabel="Đóng bảng chọn chức năng"
-              style={StyleSheet.absoluteFill}
-              onPress={handleCloseActionModal}
-            />
-            <View style={styles.actionModalContent}>
-              <View style={styles.modalDragIndicator} />
-              <Text style={styles.actionModalTitle}>Chọn chức năng</Text>
+      <Modal
+        visible={showLogoutConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !isLoggingOut && setShowLogoutConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>Đăng xuất</Text>
+            <Text style={styles.confirmText}>Bạn có chắc muốn đăng xuất khỏi tài khoản hiện tại?</Text>
+            <View style={styles.confirmActions}>
               <TouchableOpacity
-                style={styles.actionModalBtn}
-                onPress={handleOpenOrders}
+                style={styles.cancelButton}
+                disabled={isLoggingOut}
+                onPress={() => setShowLogoutConfirm(false)}
               >
-                <View style={[styles.actionModalIcon, styles.orderModalIcon]}>
-                  <Ionicons name="receipt-outline" size={24} color="#0EA5E9" />
-                </View>
-                <View style={styles.actionModalTextContainer}>
-                  <Text style={styles.actionModalBtnText}>Xem Đơn hàng</Text>
-                  <Text style={styles.actionModalBtnDesc}>
-                    Quản lý và theo dõi trạng thái giao dịch
-                  </Text>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={20}
-                  color={COLORS.border}
-                />
+                <Text style={styles.cancelButtonText}>Ở lại</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionModalBtn, styles.lastActionModalButton]}
-                onPress={handleShowStatisticsInfo}
+                style={styles.confirmLogoutButton}
+                disabled={isLoggingOut}
+                onPress={() => void handleLogout()}
               >
-                <View
-                  style={[styles.actionModalIcon, styles.statisticsModalIcon]}
-                >
-                  <Ionicons
-                    name="bar-chart-outline"
-                    size={24}
-                    color="#F59E0B"
-                  />
-                </View>
-                <View style={styles.actionModalTextContainer}>
-                  <Text style={styles.actionModalBtnText}>Xem Thống kê</Text>
-                  <Text style={styles.actionModalBtnDesc}>
-                    Báo cáo doanh thu (Chỉ hỗ trợ trên Web)
-                  </Text>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={20}
-                  color={COLORS.border}
-                />
+                {isLoggingOut ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.confirmLogoutText}>Đăng xuất</Text>
+                )}
               </TouchableOpacity>
-              {modalFeedback ? (
-                <InlineFeedback
-                  feedback={modalFeedback}
-                  onDismiss={dismissFeedback}
-                  style={styles.modalFeedback}
-                />
-              ) : null}
             </View>
           </View>
-        </Modal>
-        {confirmationModal}
-      </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F8F9FA",
-  },
-  safeArea: { flex: 1, alignItems: "center", backgroundColor: COLORS.border },
+  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
   mobileWrapper: {
     flex: 1,
-    backgroundColor: COLORS.background,
-    ...(Platform.OS === "web"
-      ? ({ boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any)
-      : {}),
+    alignSelf: "center",
+    backgroundColor: "#F8FAFC",
+    maxWidth: 480,
   },
-  container: { flex: 1, paddingHorizontal: 16 },
-  scrollContent: { paddingBottom: 40 },
+  loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 110 },
   unauthContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    backgroundColor: COLORS.background,
+    padding: 28,
   },
-  unauthIcon: { marginBottom: 16 },
-  unauthTitle: {
-    marginBottom: 12,
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: "bold",
-  },
+  unauthTitle: { color: COLORS.text, fontSize: 20, fontWeight: "900", marginTop: 10 },
   unauthDesc: {
-    marginBottom: 32,
     color: COLORS.textLight,
-    fontSize: 14,
-    lineHeight: 22,
     textAlign: "center",
+    lineHeight: 21,
+    marginTop: 8,
   },
   loginBtn: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 8,
+    minHeight: 50,
+    marginTop: 20,
+    paddingHorizontal: 24,
+    borderRadius: 11,
     backgroundColor: COLORS.primary,
-  },
-  loginBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
-  userInfoSection: { alignItems: "center", marginTop: 16, marginBottom: 20 },
-  avatar: {
-    width: 80,
-    height: 80,
-    marginBottom: 12,
-    borderRadius: 40,
-    backgroundColor: COLORS.border,
-  },
-  userName: {
-    marginBottom: 6,
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  verifiedBadge: {
-    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "#E9F0F0",
+    justifyContent: "center",
   },
-  verifiedText: {
-    marginLeft: 4,
-    color: COLORS.primary,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  metaRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  metaText: { color: COLORS.textLight, fontSize: 13 },
+  loginBtnText: { color: COLORS.white, fontWeight: "900" },
+  userInfoSection: { alignItems: "center", paddingTop: 20, paddingBottom: 18 },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  userName: { color: COLORS.text, fontSize: 20, fontWeight: "900", marginTop: 12 },
+  verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
+  verifiedText: { color: COLORS.primary, fontSize: 12, fontWeight: "800" },
+  metaText: { color: COLORS.textLight, fontSize: 13, marginTop: 6 },
   statsBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    marginTop: 14,
+    minHeight: 38,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 20,
-    backgroundColor: COLORS.white,
-  },
-  statsTextRating: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
-  statsDivider: { marginHorizontal: 10, color: COLORS.border, fontSize: 14 },
-  statsText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-  upgradeBanner: {
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 16,
-    backgroundColor: COLORS.text,
-  },
-  upgradeTextContainer: { flex: 1, marginRight: 10 },
-  upgradeTitle: {
-    marginBottom: 6,
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  upgradeDesc: { marginBottom: 12, color: COLORS.border, fontSize: 11 },
-  upgradeBtn: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    gap: 8,
     backgroundColor: COLORS.white,
   },
-  upgradeBtnText: { color: COLORS.text, fontSize: 12, fontWeight: "700" },
-  upgradeIconBox: {
-    width: 60,
-    height: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-  },
-  statsGrid: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  statsStrong: { color: COLORS.text, fontWeight: "900", fontSize: 12 },
+  statsDivider: { color: COLORS.border },
+  statsText: { color: COLORS.textLight, fontSize: 12 },
+  messageBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 12 },
+  messageText: { fontSize: 12, lineHeight: 17 },
+  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  messageErrorText: { color: "#B91C1C" },
+  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  messageInfoText: { color: "#1D4ED8" },
+  statsGrid: { flexDirection: "row", gap: 14 },
   statCard: {
     flex: 1,
+    minHeight: 132,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
     padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
   },
-  statLabel: { marginTop: 8, color: COLORS.textLight, fontSize: 12 },
-  statValue: {
-    marginTop: 4,
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  pageFeedback: { marginTop: -6, marginBottom: 16 },
+  statLabel: { color: COLORS.textLight, fontSize: 12, marginTop: 14 },
+  statValue: { color: COLORS.text, fontSize: 17, fontWeight: "900", marginTop: 6 },
+  holdText: { color: "#B45309", fontSize: 10, marginTop: 4 },
   menuContainer: {
-    paddingHorizontal: 16,
+    marginTop: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 16,
     backgroundColor: COLORS.white,
-    overflow: "hidden",
+    paddingHorizontal: 18,
   },
   menuItem: {
+    minHeight: 82,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
-  },
-  lastMenuItem: { borderBottomWidth: 0 },
-  menuIconBox: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-  },
-  menuText: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: "500" },
-  menuSubtitle: { fontSize: 12, fontWeight: "600", marginRight: 8 },
-  menuFeedback: { marginTop: 0, marginBottom: 10 },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: "#F2D5D5",
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
-  },
-  logoutText: {
-    marginLeft: 12,
-    color: COLORS.error,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  disabledButton: { opacity: 0.7 },
-  logoutFeedback: { marginTop: 8 },
-  bottomSpacer: { height: 40 },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  actionModalContent: {
-    padding: 24,
-    paddingBottom: 40,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: COLORS.white,
-  },
-  modalDragIndicator: {
-    width: 40,
-    height: 4,
-    alignSelf: "center",
-    marginBottom: 16,
-    borderRadius: 2,
-    backgroundColor: "#E2E8F0",
-  },
-  actionModalTitle: {
-    marginBottom: 20,
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  actionModalBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
-  lastActionModalButton: { borderBottomWidth: 0 },
-  actionModalIcon: {
-    width: 48,
-    height: 48,
+  lastMenuItem: { borderBottomWidth: 0 },
+  menuIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
-    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    marginRight: 12,
   },
-  orderModalIcon: { backgroundColor: "#E0F2FE" },
-  statisticsModalIcon: { backgroundColor: "#FEF3C7" },
-  actionModalTextContainer: { flex: 1 },
-  actionModalBtnText: {
-    marginBottom: 4,
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: "600",
+  menuText: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: "700" },
+  menuSubtitle: { fontSize: 11, fontWeight: "700", marginRight: 8 },
+  logoutButton: {
+    minHeight: 62,
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.white,
   },
-  actionModalBtnDesc: { color: COLORS.textLight, fontSize: 13 },
-  modalFeedback: { marginTop: 10 },
+  logoutText: { color: "#991B1B", fontWeight: "900", fontSize: 15 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "center",
+    padding: 22,
+  },
+  confirmCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 20 },
+  confirmTitle: { color: COLORS.text, fontSize: 19, fontWeight: "900" },
+  confirmText: { color: COLORS.textLight, lineHeight: 20, marginTop: 8, marginBottom: 18 },
+  confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  cancelButton: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButtonText: { color: COLORS.primary, fontWeight: "800" },
+  confirmLogoutButton: {
+    minWidth: 105,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    backgroundColor: "#991B1B",
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmLogoutText: { color: COLORS.white, fontWeight: "900" },
 });

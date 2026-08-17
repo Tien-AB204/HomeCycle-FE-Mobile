@@ -1,8 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useFocusEffect,
-  useRouter,
-} from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -25,182 +23,81 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-
-import {
-  InlineFeedback,
-  useActionFeedback,
-  useConfirmAction,
-} from "../../src/components/shared/ActionFeedback";
-import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 
-type ActiveTab =
-  | "chat"
-  | "received"
-  | "sent";
-
+type ActiveTab = "chat" | "received" | "sent";
 type OfferTab = "received" | "sent";
+type OfferTabChanges = Record<OfferTab, boolean>;
 
-type OfferTabChanges = Record<
-  OfferTab,
-  boolean
->;
+type FeedbackTarget =
+  | { type: "page" }
+  | { type: "offer"; offerId: string }
+  | { type: "counter" }
+  | null;
 
-const OFFER_POLLING_DELAYS: number[] = [
-  // Lần polling đầu tiên sau 10 giây
+type LocalFeedback = {
+  type: "error" | "success" | "info";
+  text: string;
+} | null;
+
+type ConfirmOptions = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+};
+
+type ConfirmState = {
+  options: ConfirmOptions;
+  resolve: (value: boolean) => void;
+} | null;
+
+const OFFER_POLLING_DELAYS = [
   10_000,
-
-  // 5 lần, mỗi lần cách 5 giây
   5_000,
   5_000,
   5_000,
   5_000,
   5_000,
-
-  // 3 lần, mỗi lần cách 7 giây
   7_000,
   7_000,
   7_000,
-
-  // 3 lần, mỗi lần cách 11 giây
   11_000,
   11_000,
   11_000,
-
-  // 3 lần, mỗi lần cách 13 giây
   13_000,
   13_000,
   13_000,
-
-  // 3 lần, mỗi lần cách 17 giây
   17_000,
   17_000,
   17_000,
-
-  // 3 lần, mỗi lần cách 19 giây
   19_000,
   19_000,
   19_000,
 ];
-
-// Sau khi chạy hết lịch trên, tiếp tục polling mỗi 19 giây.
 const MAX_OFFER_POLLING_DELAY = 19_000;
 
-const getOfferItems = (
-  response: any,
-): any[] => {
-  const items =
-    response?.items ??
-    response?.data?.items ??
-    [];
-
-  return Array.isArray(items)
-    ? items
-    : [];
-};
-
-const getPendingOffers = (
-  response: any,
-): any[] => {
-  return getOfferItems(response)
-    .filter((offer: any) => {
-      return (
-        offer.offerStatus === "Pending" ||
-        offer.offerStatus === 0
-      );
-    })
-    .sort((first: any, second: any) => {
-      return (
-        new Date(
-          second.createdAt,
-        ).getTime() -
-        new Date(
-          first.createdAt,
-        ).getTime()
-      );
-    });
-};
-
-/**
- * Snapshot chỉ chứa các trường có ý nghĩa với tab Offer:
- * - Offer mới.
- * - Thay đổi giá.
- * - Thay đổi số lượng.
- * - Thay đổi trạng thái.
- *
- * Không dùng updatedAt để tránh báo chấm đỏ vì metadata
- * không liên quan bị Backend cập nhật.
- */
-const createOfferSnapshot = (
-  offers: any[],
-): string => {
-  return offers
-    .map((offer: any) => {
-      return [
-        String(offer.offerId ?? ""),
-        String(offer.offerPrice ?? ""),
-        String(
-          offer.offerQuantity ?? "",
-        ),
-        String(offer.offerStatus ?? ""),
-      ].join(":");
-    })
-    .sort()
-    .join("|");
-};
-
-type FeedbackTarget =
-  | {
-      type: "page";
-    }
-  | {
-      type: "offer";
-      offerId: string;
-    }
-  | {
-      type: "counter";
-    }
-  | null;
-
 const negotiationApi = {
-  getNegotiations: (params?: {
-    PageNumber?: number;
-    PageSize?: number;
-  }) =>
-    apiClient
-      .get("/negotiations", {
-        params,
-      })
-      .then((response) => response.data),
+  getNegotiations: (params?: { PageNumber?: number; PageSize?: number }) =>
+    apiClient.get("/negotiations", { params }).then((response) => response.data),
 };
 
 const offerApi = {
-  getSentOffers: (params?: {
-    PageNumber?: number;
-    PageSize?: number;
-  }) =>
-    apiClient
-      .get("/offers/sent", {
-        params,
-      })
-      .then((response) => response.data),
+  getSentOffers: (params?: { PageNumber?: number; PageSize?: number }) =>
+    apiClient.get("/offers/sent", { params }).then((response) => response.data),
 
-  getReceivedOffers: (params?: {
-    PageNumber?: number;
-    PageSize?: number;
-  }) =>
+  getReceivedOffers: (params?: { PageNumber?: number; PageSize?: number }) =>
     apiClient
-      .get("/offers/received", {
-        params,
-      })
+      .get("/offers/received", { params })
       .then((response) => response.data),
 
   acceptOffer: (offerId: string) =>
@@ -213,6 +110,11 @@ const offerApi = {
       .post(`/offers/${offerId}/reject`)
       .then((response) => response.data),
 
+  cancelOffer: (offerId: string) =>
+    apiClient
+      .post(`/offers/${offerId}/cancel`)
+      .then((response) => response.data),
+
   counterInitialOffer: (
     offerId: string,
     data: {
@@ -222,17 +124,49 @@ const offerApi = {
     },
   ) =>
     apiClient
-      .patch(
-        `/offers/${offerId}/counter`,
-        data,
-      )
+      .patch(`/offers/${offerId}/counter`, data)
       .then((response) => response.data),
+
+  // PUT /offers/{offerId} cố ý KHÔNG gắn trên Mobile ở thời điểm hiện tại.
 };
 
 const wait = (milliseconds: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+const getOfferItems = (response: any): any[] => {
+  const items = response?.items ?? response?.data?.items ?? [];
+  return Array.isArray(items) ? items : [];
+};
+
+const getPendingOffers = (response: any): any[] =>
+  getOfferItems(response)
+    .filter(
+      (offer: any) =>
+        offer.offerStatus === "Pending" || offer.offerStatus === 0,
+    )
+    .sort(
+      (first: any, second: any) =>
+        new Date(second.createdAt).getTime() -
+        new Date(first.createdAt).getTime(),
+    );
+
+const createOfferSnapshot = (offers: any[]) =>
+  offers
+    .map((offer) =>
+      [
+        String(offer.offerId ?? ""),
+        String(offer.offerPrice ?? ""),
+        String(offer.offerQuantity ?? ""),
+        String(offer.offerStatus ?? ""),
+      ].join(":"),
+    )
+    .sort()
+    .join("|");
+
+const normalizeSearchText = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
 
 const getRobustAvatar = (
   url: string | null | undefined,
@@ -245,16 +179,9 @@ const getRobustAvatar = (
     url.startsWith("http");
 
   if (isValid) {
-    if (
-      url.includes(
-        "googleusercontent.com",
-      )
-    ) {
-      return `https://wsrv.nl/?url=${encodeURIComponent(
-        url,
-      )}`;
+    if (url.includes("googleusercontent.com")) {
+      return `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
     }
-
     return url;
   }
 
@@ -263,785 +190,429 @@ const getRobustAvatar = (
   )}&background=547B7D&color=fff`;
 };
 
-const normalizeSearchText = (
-  value: unknown,
-) => {
-  return String(value || "")
-    .trim()
-    .toLocaleLowerCase("vi-VN");
-};
+function InlineFeedback({
+  feedback,
+  onDismiss,
+  style,
+}: {
+  feedback: LocalFeedback;
+  onDismiss?: () => void;
+  style?: any;
+}) {
+  if (!feedback) return null;
+
+  const palette =
+    feedback.type === "error"
+      ? {
+          backgroundColor: "#FEF2F2",
+          borderColor: "#FECACA",
+          color: "#B91C1C",
+          icon: "alert-circle-outline" as const,
+        }
+      : feedback.type === "success"
+        ? {
+            backgroundColor: "#ECFDF5",
+            borderColor: "#A7F3D0",
+            color: "#047857",
+            icon: "checkmark-circle-outline" as const,
+          }
+        : {
+            backgroundColor: "#EFF6FF",
+            borderColor: "#BFDBFE",
+            color: "#1D4ED8",
+            icon: "information-circle-outline" as const,
+          };
+
+  return (
+    <View
+      style={[
+        styles.localFeedback,
+        {
+          backgroundColor: palette.backgroundColor,
+          borderColor: palette.borderColor,
+        },
+        style,
+      ]}
+    >
+      <Ionicons name={palette.icon} size={18} color={palette.color} />
+      <Text style={[styles.localFeedbackText, { color: palette.color }]}>
+        {feedback.text}
+      </Text>
+      {onDismiss ? (
+        <TouchableOpacity onPress={onDismiss} style={styles.feedbackDismissButton}>
+          <Ionicons name="close" size={17} color={palette.color} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function useLocalConfirm() {
+  const [state, setState] = useState<ConfirmState>(null);
+
+  const confirm = useCallback(
+    (options: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => {
+        setState({ options, resolve });
+      }),
+    [],
+  );
+
+  const finish = (value: boolean) => {
+    state?.resolve(value);
+    setState(null);
+  };
+
+  const confirmationModal = (
+    <Modal
+      visible={Boolean(state)}
+      transparent
+      animationType="fade"
+      onRequestClose={() => finish(false)}
+    >
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmCard}>
+          <Text style={styles.confirmTitle}>{state?.options.title}</Text>
+          <Text style={styles.confirmMessage}>{state?.options.message}</Text>
+          <View style={styles.confirmActions}>
+            <TouchableOpacity
+              style={styles.confirmCancelButton}
+              onPress={() => finish(false)}
+            >
+              <Text style={styles.confirmCancelText}>
+                {state?.options.cancelLabel || "Hủy"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.confirmPrimaryButton,
+                state?.options.destructive
+                  ? styles.confirmDestructiveButton
+                  : undefined,
+              ]}
+              onPress={() => finish(true)}
+            >
+              <Text style={styles.confirmPrimaryText}>
+                {state?.options.confirmLabel || "Xác nhận"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  return { confirm, confirmationModal };
+}
 
 export default function ChatListScreen() {
   const router = useRouter();
-
-  const {
-    width: screenWidth,
-  } = useWindowDimensions();
-
-  const width =
-    Platform.OS === "web" &&
-    screenWidth > 480
-      ? 480
-      : screenWidth;
+  const { width: screenWidth } = useWindowDimensions();
+  const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
   const { user } = useAuth();
-  const { connection } = useChatRealtime();
+  const { connection, joinNegotiation } = useChatRealtime();
+  const currentUserId = user?.userId || user?.id;
 
-  const currentUserId =
-  user?.userId || user?.id;
-
-  /**
-   * Dùng để loại bỏ response cũ khi:
-   * - Người dùng đổi tab.
-   * - Người dùng rời màn hình.
-   * - Có hai request vô tình chạy gần nhau.
-   */
   const fetchRequestIdRef = useRef(0);
+  const activeTabRef = useRef<ActiveTab>("chat");
+  const seenOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
+  const latestOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
 
-  const [activeTab, setActiveTab] =
-    useState<ActiveTab>("chat");
-
-  const activeTabRef =
-    useRef<ActiveTab>("chat");
-
-  const seenOfferSnapshotsRef =
-    useRef<
-      Partial<Record<OfferTab, string>>
-    >({});
-
-  const latestOfferSnapshotsRef =
-    useRef<
-      Partial<Record<OfferTab, string>>
-    >({});
-
-  const [
-    offerTabChanges,
-    setOfferTabChanges,
-  ] = useState<OfferTabChanges>({
+  const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
+  const [offerTabChanges, setOfferTabChanges] = useState<OfferTabChanges>({
     received: false,
     sent: false,
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [offersList, setOffersList] = useState<any[]>([]);
+  const [negotiationsList, setNegotiationsList] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [showCounterModal, setShowCounterModal] = useState(false);
+  const [selectedOffer, setSelectedOffer] = useState<any>(null);
+  const [counterPrice, setCounterPrice] = useState("");
+  const [counterQuantity, setCounterQuantity] = useState("");
+  const [counterMessage, setCounterMessage] = useState("");
+  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
+  const [feedback, setFeedback] = useState<LocalFeedback>(null);
+
+  const { confirm, confirmationModal } = useLocalConfirm();
+
+  const clearFeedback = useCallback(() => setFeedback(null), []);
+  const showError = useCallback(
+    (text: string) => setFeedback({ type: "error", text }),
+    [],
+  );
+  const showSuccess = useCallback(
+    (text: string) => setFeedback({ type: "success", text }),
+    [],
+  );
+
+  const clearCurrentFeedback = useCallback(() => {
+    clearFeedback();
+    setFeedbackTarget(null);
+  }, [clearFeedback]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
-  /**
-   * Khi đổi tài khoản phải bỏ cache trong RAM.
-   * Key AsyncStorage bên dưới đã được tách theo userId.
-   */
   useEffect(() => {
     seenOfferSnapshotsRef.current = {};
-    latestOfferSnapshotsRef.current =
-      {};
-
-    setOfferTabChanges({
-      received: false,
-      sent: false,
-    });
+    latestOfferSnapshotsRef.current = {};
+    setOfferTabChanges({ received: false, sent: false });
   }, [currentUserId]);
 
-  const [
-    searchQuery,
-    setSearchQuery,
-  ] = useState("");
+  const getOfferSenderId = useCallback(
+    (item: any) =>
+      String(
+        item?.senderId ??
+          item?.sender?.userId ??
+          item?.sender?.id ??
+          item?.fromUserId ??
+          "",
+      ),
+    [],
+  );
 
-  const [
-    offersList,
-    setOffersList,
-  ] = useState<any[]>([]);
+  const getOfferReceiverId = useCallback(
+    (item: any) =>
+      String(
+        item?.receiverId ??
+          item?.receiver?.userId ??
+          item?.receiver?.id ??
+          item?.toUserId ??
+          "",
+      ),
+    [],
+  );
 
-  const [
-    negotiationsList,
-    setNegotiationsList,
-  ] = useState<any[]>([]);
+  const updateOfferTabDot = useCallback(
+    (tab: OfferTab, hasChanges: boolean) => {
+      setOfferTabChanges((current) =>
+        current[tab] === hasChanges
+          ? current
+          : { ...current, [tab]: hasChanges },
+      );
+    },
+    [],
+  );
 
-  const [isLoading, setIsLoading] =
-    useState(false);
+  const getSeenSnapshotKey = useCallback(
+    (tab: OfferTab) =>
+      [
+        "homecycle",
+        "offer-seen-snapshot",
+        String(currentUserId),
+        tab,
+      ].join(":"),
+    [currentUserId],
+  );
 
-  const [
-    isProcessingAction,
-    setIsProcessingAction,
-  ] = useState(false);
+  const saveSeenOfferSnapshot = useCallback(
+    async (tab: OfferTab, snapshot: string) => {
+      if (!currentUserId) return;
 
-  const [
-    showCounterModal,
-    setShowCounterModal,
-  ] = useState(false);
+      seenOfferSnapshotsRef.current[tab] = snapshot;
+      await AsyncStorage.setItem(getSeenSnapshotKey(tab), snapshot);
+      updateOfferTabDot(tab, false);
+    },
+    [currentUserId, getSeenSnapshotKey, updateOfferTabDot],
+  );
 
-  const [
-    selectedOffer,
-    setSelectedOffer,
-  ] = useState<any>(null);
+  const checkOfferTabChanges = useCallback(
+    async (tab: OfferTab, response: any) => {
+      if (response?.isSuccess === false) throw response;
 
-  const [
-    counterPrice,
-    setCounterPrice,
-  ] = useState("");
+      const pendingOffers = getPendingOffers(response);
+      const currentSnapshot = createOfferSnapshot(pendingOffers);
+      latestOfferSnapshotsRef.current[tab] = currentSnapshot;
 
-  const [
-    counterQuantity,
-    setCounterQuantity,
-  ] = useState("");
+      let seenSnapshot = seenOfferSnapshotsRef.current[tab];
 
-  const [
-    counterMessage,
-    setCounterMessage,
-  ] = useState("");
+      if (seenSnapshot === undefined) {
+        const storedSnapshot = await AsyncStorage.getItem(getSeenSnapshotKey(tab));
 
-  const [
-    feedbackTarget,
-    setFeedbackTarget,
-  ] = useState<FeedbackTarget>(null);
+        if (storedSnapshot === null) {
+          await saveSeenOfferSnapshot(tab, currentSnapshot);
+          seenSnapshot = currentSnapshot;
+        } else {
+          seenSnapshot = storedSnapshot;
+          seenOfferSnapshotsRef.current[tab] = storedSnapshot;
+        }
+      }
 
-  const {
-    feedback,
-    clearFeedback,
-    showError,
-    showSuccess,
-  } = useActionFeedback();
+      if (activeTabRef.current === tab) {
+        setOffersList(pendingOffers);
+        await saveSeenOfferSnapshot(tab, currentSnapshot);
+        return;
+      }
 
-  const {
-    confirm,
-    confirmationModal,
-  } = useConfirmAction();
+      updateOfferTabDot(tab, currentSnapshot !== seenSnapshot);
+    },
+    [getSeenSnapshotKey, saveSeenOfferSnapshot, updateOfferTabDot],
+  );
 
   const fetchData = useCallback(
     async (options?: { silent?: boolean }) => {
       const silent = options?.silent === true;
-
-      // Mỗi lần gọi có một ID riêng.
-      const requestId =
-        ++fetchRequestIdRef.current;
+      const requestId = ++fetchRequestIdRef.current;
 
       if (!user) {
         setOffersList([]);
         setNegotiationsList([]);
-
-        if (!silent) {
-          setIsLoading(false);
-        }
-
+        if (!silent) setIsLoading(false);
         return;
       }
 
-      // Chỉ lần tải trực tiếp mới hiện loading.
-      // Polling nền không làm giao diện nhấp nháy.
-      if (!silent) {
-        setIsLoading(true);
-      }
+      if (!silent) setIsLoading(true);
 
       try {
         if (activeTab === "chat") {
-          const response =
-            await negotiationApi.getNegotiations({
-              PageSize: 50,
-              PageNumber: 1,
-            });
+          const response = await negotiationApi.getNegotiations({
+            PageSize: 50,
+            PageNumber: 1,
+          });
 
-          // Bỏ response cũ nếu đã có request mới hơn.
-          if (
-            requestId !==
-            fetchRequestIdRef.current
-          ) {
-            return;
-          }
+          if (requestId !== fetchRequestIdRef.current) return;
+          if (response?.isSuccess === false) throw response;
 
-          if (
-            response?.isSuccess === false
-          ) {
-            throw response;
-          }
+          const items = response?.data?.items || response?.items || [];
+          const negotiationItems = Array.isArray(items) ? items : [];
+          setNegotiationsList(negotiationItems);
 
-          const items =
-            response?.data?.items ||
-            response?.items ||
-            [];
-
-          setNegotiationsList(
-            Array.isArray(items)
-              ? items
-              : [],
+          await Promise.allSettled(
+            negotiationItems
+              .map((item: any) => String(item?.negotiationId || ""))
+              .filter(Boolean)
+              .map((negotiationId: string) => joinNegotiation(negotiationId)),
           );
-
           return;
         }
 
         const response =
           activeTab === "received"
-            ? await offerApi.getReceivedOffers({
-                PageSize: 50,
-                PageNumber: 1,
-              })
-            : await offerApi.getSentOffers({
-                PageSize: 50,
-                PageNumber: 1,
-              });
+            ? await offerApi.getReceivedOffers({ PageSize: 50, PageNumber: 1 })
+            : await offerApi.getSentOffers({ PageSize: 50, PageNumber: 1 });
 
-        // Người dùng đã đổi tab hoặc có request mới:
-        // không cho response cũ ghi đè danh sách mới.
-        if (
-          requestId !==
-          fetchRequestIdRef.current
-        ) {
-          return;
-        }
+        if (requestId !== fetchRequestIdRef.current) return;
+        if (response?.isSuccess === false) throw response;
 
-        if (
-          response?.isSuccess === false
-        ) {
-          throw response;
-        }
-
-        const items =
-          response?.items ||
-          response?.data?.items ||
-          [];
-
-        const pendingOffers = (
-          Array.isArray(items)
-            ? items
-            : []
-        )
-          .filter((offer: any) => {
-            return (
-              offer.offerStatus ===
-                "Pending" ||
-              offer.offerStatus === 0
-            );
-          })
-          .sort((first: any, second: any) => {
-            return (
-              new Date(
-                second.createdAt,
-              ).getTime() -
-              new Date(
-                first.createdAt,
-              ).getTime()
-            );
-          });
-
-        setOffersList(pendingOffers);
+        setOffersList(getPendingOffers(response));
       } catch (error: unknown) {
-        // Không xử lý response của request đã lỗi thời.
-        if (
-          requestId !==
-          fetchRequestIdRef.current
-        ) {
-          return;
-        }
+        if (requestId !== fetchRequestIdRef.current) return;
 
-        console.error(
-          `Lỗi lấy dữ liệu (${activeTab}):`,
-          error,
-        );
-
-        /**
-         * Polling nền lỗi thì giữ nguyên dữ liệu cũ.
-         * Không bật thông báo liên tục mỗi 30 giây.
-         *
-         * Lần tải trực tiếp vẫn hiện lỗi inline như cũ.
-         */
         if (!silent) {
-          setFeedbackTarget({
-            type: "page",
-          });
-
+          setFeedbackTarget({ type: "page" });
           showError(
-            getApiErrorMessage(
-              error,
-              "Không thể tải danh sách thương lượng.",
-            ),
+            getApiErrorMessage(error, "Không thể tải danh sách thương lượng."),
           );
         }
       } finally {
-        /**
-         * Chỉ request mới nhất và không phải polling nền
-         * mới được tắt loading.
-         */
-        if (
-          !silent &&
-          requestId ===
-            fetchRequestIdRef.current
-        ) {
+        if (!silent && requestId === fetchRequestIdRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [
-      activeTab,
-      showError,
-      user,
-    ],
+    [activeTab, joinNegotiation, showError, user],
   );
 
-  /**
-   * Danh sách Negotiation không polling.
-   *
-   * Khi BE phát ConversationUpdated, FE gọi lại /negotiations
-   * đúng một lần để lấy dữ liệu đầy đủ của thẻ chat.
-   */
+  const pollOfferTabs = useCallback(async () => {
+    const [receivedResult, sentResult] = await Promise.allSettled([
+      offerApi.getReceivedOffers({ PageNumber: 1, PageSize: 50 }),
+      offerApi.getSentOffers({ PageNumber: 1, PageSize: 50 }),
+    ]);
+
+    if (receivedResult.status === "fulfilled") {
+      await checkOfferTabChanges("received", receivedResult.value);
+    }
+
+    if (sentResult.status === "fulfilled") {
+      await checkOfferTabChanges("sent", sentResult.value);
+    }
+  }, [checkOfferTabChanges]);
+
+  const markOfferTabAsSeen = useCallback(
+    (tab: OfferTab) => {
+      updateOfferTabDot(tab, false);
+      const latestSnapshot = latestOfferSnapshotsRef.current[tab];
+      if (latestSnapshot !== undefined) {
+        void saveSeenOfferSnapshot(tab, latestSnapshot);
+      }
+    },
+    [saveSeenOfferSnapshot, updateOfferTabDot],
+  );
+
   useFocusEffect(
     useCallback(() => {
-      if (!connection) {
-        return;
-      }
+      if (!connection) return;
 
       const handleConversationUpdated = () => {
-        // Chỉ refresh khi người dùng đang xem tab Đoạn chat.
-        if (activeTabRef.current !== "chat") {
-          return;
+        if (activeTabRef.current === "chat") {
+          void fetchData({ silent: true });
         }
-
-        void fetchData({
-          silent: true,
-        });
       };
 
-      connection.on(
-        "ConversationUpdated",
-        handleConversationUpdated,
-      );
+      const handleMessageCreated = (payload: any) => {
+        if (activeTabRef.current !== "chat") return;
 
+        const rawType = payload?.messageType ?? payload?.MessageType;
+        const isAgreementMessage =
+          rawType === 4 ||
+          rawType === 5 ||
+          String(rawType ?? "").trim().toLowerCase() === "agreement";
+
+        if (isAgreementMessage) {
+          void fetchData({ silent: true });
+        }
+      };
+
+      connection.on("ConversationUpdated", handleConversationUpdated);
+      connection.on("MessageCreated", handleMessageCreated);
       return () => {
-        connection.off(
-          "ConversationUpdated",
-          handleConversationUpdated,
-        );
+        connection.off("ConversationUpdated", handleConversationUpdated);
+        connection.off("MessageCreated", handleMessageCreated);
       };
     }, [connection, fetchData]),
   );
 
-  const filteredNegotiations =
-    useMemo(() => {
-      const query =
-        normalizeSearchText(
-          searchQuery,
-        );
-
-      if (!query) {
-        return negotiationsList;
-      }
-
-      return negotiationsList.filter(
-        (item) => {
-          const searchableText = [
-            item.otherPartyName,
-            item.productName,
-            item.postTitle,
-            item.currentOfferPrice,
-            item.currentOfferQuantity,
-          ]
-            .map(normalizeSearchText)
-            .join(" ");
-
-          return searchableText.includes(
-            query,
-          );
-        },
-      );
-    }, [
-      negotiationsList,
-      searchQuery,
-    ]);
-
-  const getOfferSenderId = useCallback(
-  (item: any) =>
-    String(
-      item?.senderId ??
-        item?.sender?.userId ??
-        item?.sender?.id ??
-        item?.fromUserId ??
-        "",
-    ),
-  [],
-);
-
-const getOfferReceiverId = useCallback(
-  (item: any) =>
-    String(
-      item?.receiverId ??
-        item?.receiver?.userId ??
-        item?.receiver?.id ??
-        item?.toUserId ??
-        "",
-    ),
-  [],
-);
-
-const filteredOffers = useMemo(() => {
-  const myUserId = String(
-    currentUserId ?? "",
-  );
-
-  const offersOfCurrentTab =
-    offersList.filter((item) => {
-      const senderId =
-        getOfferSenderId(item);
-
-      const receiverId =
-        getOfferReceiverId(item);
-
-      if (activeTab === "received") {
-        // Yêu cầu mới:
-        // mình phải là người nhận và không phải người gửi.
-        return (
-          receiverId === myUserId &&
-          senderId !== myUserId
-        );
-      }
-
-      if (activeTab === "sent") {
-        // Đã gửi:
-        // mình phải là người gửi.
-        return senderId === myUserId;
-      }
-
-      return false;
-    });
-
-  const query = normalizeSearchText(
-    searchQuery,
-  );
-
-  if (!query) {
-    return offersOfCurrentTab;
-  }
-
-  return offersOfCurrentTab.filter(
-    (item) => {
-      const searchableText = [
-        item.senderName,
-        item.sender?.displayName,
-        item.receiverName,
-        item.receiver?.displayName,
-        item.productName,
-        item.postTitle,
-        item.offerPrice,
-        item.offerQuantity,
-      ]
-        .map(normalizeSearchText)
-        .join(" ");
-
-      return searchableText.includes(
-        query,
-      );
-    },
-  );
-}, [
-  activeTab,
-  currentUserId,
-  getOfferReceiverId,
-  getOfferSenderId,
-  offersList,
-  searchQuery,
-]);
-
-  const clearCurrentFeedback = () => {
-    clearFeedback();
-    setFeedbackTarget(null);
-  };
-
-  const updateOfferTabDot = useCallback(
-  (
-    tab: OfferTab,
-    hasChanges: boolean,
-  ) => {
-    setOfferTabChanges((current) => {
-      if (
-        current[tab] === hasChanges
-      ) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [tab]: hasChanges,
-      };
-    });
-  },
-  [],
-);
-
-const getSeenSnapshotKey = useCallback(
-  (tab: OfferTab) => {
-    return [
-      "homecycle",
-      "offer-seen-snapshot",
-      String(currentUserId),
-      tab,
-    ].join(":");
-  },
-  [currentUserId],
-);
-
-const saveSeenOfferSnapshot =
-  useCallback(
-    async (
-      tab: OfferTab,
-      snapshot: string,
-    ) => {
-      if (!currentUserId) {
-        return;
-      }
-
-      seenOfferSnapshotsRef.current[
-        tab
-      ] = snapshot;
-
-      await AsyncStorage.setItem(
-        getSeenSnapshotKey(tab),
-        snapshot,
-      );
-
-      updateOfferTabDot(tab, false);
-    },
-    [
-      currentUserId,
-      getSeenSnapshotKey,
-      updateOfferTabDot,
-    ],
-  );
-
-const checkOfferTabChanges =
-  useCallback(
-    async (
-      tab: OfferTab,
-      response: any,
-    ) => {
-      if (
-        response?.isSuccess === false
-      ) {
-        throw response;
-      }
-
-      const pendingOffers =
-        getPendingOffers(response);
-
-      const currentSnapshot =
-        createOfferSnapshot(
-          pendingOffers,
-        );
-
-      latestOfferSnapshotsRef.current[
-        tab
-      ] = currentSnapshot;
-
-      let seenSnapshot =
-        seenOfferSnapshotsRef.current[
-          tab
-        ];
-
-      if (seenSnapshot === undefined) {
-        const storedSnapshot =
-          await AsyncStorage.getItem(
-            getSeenSnapshotKey(tab),
-          );
-
-        if (storedSnapshot === null) {
-          /**
-           * Lần đầu chạy tính năng:
-           * lấy dữ liệu hiện tại làm mốc đã xem.
-           * Không đánh dấu toàn bộ Offer cũ là chưa đọc.
-           */
-          await saveSeenOfferSnapshot(
-            tab,
-            currentSnapshot,
-          );
-
-          seenSnapshot =
-            currentSnapshot;
-        } else {
-          seenSnapshot =
-            storedSnapshot;
-
-          seenOfferSnapshotsRef.current[
-            tab
-          ] = storedSnapshot;
-        }
-      }
-
-      const isViewingThisTab =
-        activeTabRef.current === tab;
-
-      if (isViewingThisTab) {
-        // Người dùng đang nhìn thấy dữ liệu mới.
-        setOffersList(pendingOffers);
-
-        await saveSeenOfferSnapshot(
-          tab,
-          currentSnapshot,
-        );
-
-        return;
-      }
-
-      updateOfferTabDot(
-        tab,
-        currentSnapshot !==
-          seenSnapshot,
-      );
-    },
-    [
-      getSeenSnapshotKey,
-      saveSeenOfferSnapshot,
-      updateOfferTabDot,
-    ],
-  );
-
-const pollOfferTabs = useCallback(async () => {
-  const [receivedResult, sentResult] =
-    await Promise.allSettled([
-      offerApi.getReceivedOffers({
-        PageNumber: 1,
-        PageSize: 50,
-      }),
-      offerApi.getSentOffers({
-        PageNumber: 1,
-        PageSize: 50,
-      }),
-    ]);
-
-  if (
-    receivedResult.status === "fulfilled"
-  ) {
-    await checkOfferTabChanges(
-      "received",
-      receivedResult.value,
-    );
-  } else {
-    console.error(
-      "Polling received offers thất bại:",
-      receivedResult.reason,
-    );
-  }
-
-  if (sentResult.status === "fulfilled") {
-    await checkOfferTabChanges(
-      "sent",
-      sentResult.value,
-    );
-  } else {
-    console.error(
-      "Polling sent offers thất bại:",
-      sentResult.reason,
-    );
-  }
-}, [checkOfferTabChanges]);
-
-const markOfferTabAsSeen =
-  useCallback(
-    (tab: OfferTab) => {
-      updateOfferTabDot(tab, false);
-
-      const latestSnapshot =
-        latestOfferSnapshotsRef.current[
-          tab
-        ];
-
-      if (
-        latestSnapshot !== undefined
-      ) {
-        void saveSeenOfferSnapshot(
-          tab,
-          latestSnapshot,
-        );
-      }
-    },
-    [
-      saveSeenOfferSnapshot,
-      updateOfferTabDot,
-    ],
-  );
-
-  /**
-   * Polling chỉ dành cho:
-   * - GET /offers/received
-   * - GET /offers/sent
-   *
-   * Không gọi GET /negotiations ở đây.
-   * Tab Đoạn chat được cập nhật bằng SignalR ConversationUpdated.
-   */
   useFocusEffect(
-  useCallback(() => {
-    if (!user) {
-      return;
-    }
+    useCallback(() => {
+      if (!user) return;
 
-    let isCancelled = false;
-    let pollingTimer:
-      | ReturnType<typeof setTimeout>
-      | null = null;
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let delayIndex = 0;
 
-    let delayIndex = 0;
+      void fetchData();
 
-    /**
-     * Mỗi khi vào màn hình hoặc chuyển tab:
-     * - chat gọi negotiations một lần;
-     * - received gọi received một lần;
-     * - sent gọi sent một lần.
-     */
-    void fetchData();
+      const scheduleNextPoll = () => {
+        if (cancelled) return;
 
-    const scheduleNextPoll = () => {
-      if (isCancelled) {
-        return;
-      }
+        const nextDelay =
+          delayIndex < OFFER_POLLING_DELAYS.length
+            ? OFFER_POLLING_DELAYS[delayIndex]
+            : MAX_OFFER_POLLING_DELAY;
 
-      const nextDelay =
-        delayIndex <
-        OFFER_POLLING_DELAYS.length
-          ? OFFER_POLLING_DELAYS[
-              delayIndex
-            ]
-          : MAX_OFFER_POLLING_DELAY;
-
-      pollingTimer = setTimeout(
-        async () => {
-          if (isCancelled) {
-            return;
-          }
-
-          /**
-           * Dùng chung một nhịp polling cho:
-           * - dữ liệu tab offer đang mở;
-           * - chấm đỏ của tab offer còn lại.
-           *
-           * Không có request riêng cho badge.
-           */
+        timer = setTimeout(async () => {
+          if (cancelled) return;
           await pollOfferTabs();
-
-          if (isCancelled) {
-            return;
-          }
-
+          if (cancelled) return;
           delayIndex += 1;
           scheduleNextPoll();
-        },
-        nextDelay,
-      );
-    };
+        }, nextDelay);
+      };
 
-    // Lần polling đầu tiên sau 10 giây.
-    scheduleNextPoll();
+      scheduleNextPoll();
 
-    return () => {
-      isCancelled = true;
-
-      // Vô hiệu hóa request tải trực tiếp của tab cũ.
-      fetchRequestIdRef.current += 1;
-
-      if (pollingTimer) {
-        clearTimeout(pollingTimer);
-      }
-    };
-  }, [
-    activeTab,
-    fetchData,
-    pollOfferTabs,
-    user,
-  ]),
-);
+      return () => {
+        cancelled = true;
+        fetchRequestIdRef.current += 1;
+        if (timer) clearTimeout(timer);
+      };
+    }, [activeTab, fetchData, pollOfferTabs, user]),
+  );
 
   const handleChangeTab = useCallback(
     (nextTab: ActiveTab) => {
@@ -1052,13 +623,9 @@ const markOfferTabAsSeen =
         return;
       }
 
-      // Hủy hiệu lực response cũ đang chạy.
       fetchRequestIdRef.current += 1;
-
-      // Xóa dữ liệu tab cũ ngay lập tức để "Đã gửi"
-      // không xuất hiện tạm thời trong "Yêu cầu mới" và ngược lại.
+      clearCurrentFeedback();
       setOffersList([]);
-
       activeTabRef.current = nextTab;
       setActiveTab(nextTab);
 
@@ -1066,44 +633,25 @@ const markOfferTabAsSeen =
         void markOfferTabAsSeen(nextTab);
       }
     },
-    [markOfferTabAsSeen],
+    [clearCurrentFeedback, markOfferTabAsSeen],
   );
 
-  const handleAcceptOffer = async (
-    offerId: string,
-  ) => {
+  const handleAcceptOffer = async (offerId: string) => {
     const confirmed = await confirm({
       title: "Chấp nhận thương lượng",
-      message:
-        "Bạn đồng ý mở phiên thương lượng với mức giá này?",
+      message: "Bạn đồng ý mở phiên thương lượng với mức giá này?",
       confirmLabel: "Đồng ý",
       cancelLabel: "Quay lại",
     });
-
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     clearFeedback();
-
-    setFeedbackTarget({
-      type: "offer",
-      offerId,
-    });
+    setFeedbackTarget({ type: "offer", offerId });
 
     try {
       setIsProcessingAction(true);
-
-      const response =
-        await offerApi.acceptOffer(
-          offerId,
-        );
-
-      if (
-        response?.isSuccess === false
-      ) {
-        throw response;
-      }
+      const response = await offerApi.acceptOffer(offerId);
+      if (response?.isSuccess === false) throw response;
 
       showSuccess(
         getApiSuccessMessage(
@@ -1111,321 +659,240 @@ const markOfferTabAsSeen =
           "Đã chấp nhận thương lượng. Phòng chat đã được mở.",
         ),
       );
-
-      /*
-       * Giữ message ngay dưới nút trong một khoảng ngắn
-       * trước khi offer biến khỏi danh sách Pending.
-       */
-      await wait(1200);
-
+      await wait(900);
       clearCurrentFeedback();
-
       await fetchData();
     } catch (error: unknown) {
       showError(
-        getApiErrorMessage(
-          error,
-          "Không thể chấp nhận thương lượng.",
-        ),
+        getApiErrorMessage(error, "Không thể chấp nhận thương lượng."),
       );
     } finally {
       setIsProcessingAction(false);
     }
   };
 
-  const handleRejectOffer = async (
-    offerId: string,
-  ) => {
+  const handleRejectOffer = async (offerId: string) => {
     const confirmed = await confirm({
       title: "Từ chối đề nghị",
-      message:
-        "Bạn có chắc muốn từ chối đề nghị này?",
+      message: "Bạn có chắc muốn từ chối đề nghị này?",
       confirmLabel: "Từ chối",
       cancelLabel: "Quay lại",
       destructive: true,
     });
-
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     clearFeedback();
-
-    setFeedbackTarget({
-      type: "offer",
-      offerId,
-    });
+    setFeedbackTarget({ type: "offer", offerId });
 
     try {
       setIsProcessingAction(true);
+      const response = await offerApi.rejectOffer(offerId);
+      if (response?.isSuccess === false) throw response;
 
-      const response =
-        await offerApi.rejectOffer(
-          offerId,
-        );
-
-      if (
-        response?.isSuccess === false
-      ) {
-        throw response;
-      }
-
-      showSuccess(
-        getApiSuccessMessage(
-          response,
-          "Đã từ chối đề nghị.",
-        ),
-      );
-
-      await wait(1200);
-
+      showSuccess(getApiSuccessMessage(response, "Đã từ chối đề nghị."));
+      await wait(900);
       clearCurrentFeedback();
-
       await fetchData();
     } catch (error: unknown) {
-      showError(
-        getApiErrorMessage(
-          error,
-          "Không thể từ chối đề nghị.",
-        ),
-      );
+      showError(getApiErrorMessage(error, "Không thể từ chối đề nghị."));
     } finally {
       setIsProcessingAction(false);
     }
   };
 
-  const handleOpenCounterModal = (
-    offer: any,
-  ) => {
+  const handleCancelOffer = async (offerId: string) => {
+    const confirmed = await confirm({
+      title: "Hủy đề nghị đã gửi",
+      message:
+        "Đề nghị đang Pending sẽ bị hủy và không thể tiếp tục được đối tác chấp nhận. Bạn có muốn tiếp tục?",
+      confirmLabel: "Hủy đề nghị",
+      cancelLabel: "Giữ lại",
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    clearFeedback();
+    setFeedbackTarget({ type: "offer", offerId });
+
+    try {
+      setIsProcessingAction(true);
+      const response = await offerApi.cancelOffer(offerId);
+      if (response?.isSuccess === false) throw response;
+
+      showSuccess(getApiSuccessMessage(response, "Đã hủy đề nghị."));
+      await wait(900);
+      clearCurrentFeedback();
+      await fetchData();
+    } catch (error: unknown) {
+      showError(getApiErrorMessage(error, "Không thể hủy đề nghị lúc này."));
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleOpenCounterModal = (offer: any) => {
     clearCurrentFeedback();
-
     setSelectedOffer(offer);
-
-    setCounterPrice(
-      offer.offerPrice?.toString() || "",
-    );
-
-    setCounterQuantity(
-      offer.offerQuantity?.toString() ||
-        "1",
-    );
-
-    setCounterMessage(
-      "Chào bạn, tôi muốn đề xuất mức giá mới này.",
-    );
-
+    setCounterPrice(offer.offerPrice?.toString() || "");
+    setCounterQuantity(offer.offerQuantity?.toString() || "1");
+    setCounterMessage("Chào bạn, tôi muốn đề xuất mức giá mới này.");
     setShowCounterModal(true);
   };
 
   const handleCloseCounterModal = () => {
-    if (isProcessingAction) {
-      return;
-    }
-
+    if (isProcessingAction) return;
     clearCurrentFeedback();
     setShowCounterModal(false);
     setSelectedOffer(null);
   };
 
-  const handleSubmitCounter =
-    async () => {
-      if (!selectedOffer) {
-        return;
-      }
+  const handleSubmitCounter = async () => {
+    if (!selectedOffer) return;
 
-      clearFeedback();
+    clearFeedback();
+    setFeedbackTarget({ type: "counter" });
 
-      setFeedbackTarget({
-        type: "counter",
-      });
+    const price = Number(counterPrice.trim());
+    const quantity = Number(counterQuantity.trim());
 
-      const price = Number(
-        counterPrice.trim(),
+    if (
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      showError("Vui lòng nhập giá và số lượng hợp lệ.");
+      return;
+    }
+
+    try {
+      setIsProcessingAction(true);
+      const response = await offerApi.counterInitialOffer(
+        selectedOffer.offerId,
+        {
+          offerPrice: price,
+          offerQuantity: quantity,
+          messageContent: counterMessage.trim() || undefined,
+        },
       );
+      if (response?.isSuccess === false) throw response;
 
-      const quantity = Number(
-        counterQuantity.trim(),
+      showSuccess(
+        getApiSuccessMessage(response, "Đã gửi đề xuất giá mới thành công."),
       );
+      await wait(900);
+      clearCurrentFeedback();
+      setShowCounterModal(false);
+      setSelectedOffer(null);
+      await fetchData();
+    } catch (error: unknown) {
+      showError(getApiErrorMessage(error, "Không thể gửi đề xuất."));
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
 
-      if (
-        !Number.isFinite(price) ||
-        price <= 0 ||
-        !Number.isInteger(quantity) ||
-        quantity <= 0
-      ) {
-        showError(
-          "Vui lòng nhập giá và số lượng hợp lệ.",
-        );
-        return;
+  const filteredNegotiations = useMemo(() => {
+    const query = normalizeSearchText(searchQuery);
+    if (!query) return negotiationsList;
+
+    return negotiationsList.filter((item) =>
+      [
+        item.otherPartyName,
+        item.productName,
+        item.postTitle,
+        item.currentOfferPrice,
+        item.currentOfferQuantity,
+      ]
+        .map(normalizeSearchText)
+        .join(" ")
+        .includes(query),
+    );
+  }, [negotiationsList, searchQuery]);
+
+  const filteredOffers = useMemo(() => {
+    const myUserId = String(currentUserId ?? "");
+
+    const offersOfCurrentTab = offersList.filter((item) => {
+      const senderId = getOfferSenderId(item);
+      const receiverId = getOfferReceiverId(item);
+
+      if (activeTab === "received") {
+        return receiverId === myUserId && senderId !== myUserId;
       }
-
-      try {
-        setIsProcessingAction(true);
-
-        const response =
-          await offerApi.counterInitialOffer(
-            selectedOffer.offerId,
-            {
-              offerPrice: price,
-              offerQuantity: quantity,
-              messageContent:
-                counterMessage.trim() ||
-                undefined,
-            },
-          );
-
-        if (
-          response?.isSuccess === false
-        ) {
-          throw response;
-        }
-
-        showSuccess(
-          getApiSuccessMessage(
-            response,
-            "Đã gửi đề xuất giá mới thành công.",
-          ),
-        );
-
-        await wait(1200);
-
-        clearCurrentFeedback();
-        setShowCounterModal(false);
-        setSelectedOffer(null);
-
-        await fetchData();
-      } catch (error: unknown) {
-        showError(
-          getApiErrorMessage(
-            error,
-            "Không thể gửi đề xuất.",
-          ),
-        );
-      } finally {
-        setIsProcessingAction(false);
+      if (activeTab === "sent") {
+        return senderId === myUserId;
       }
-    };
+      return false;
+    });
 
-  const renderNegotiationItem = ({
-    item,
-  }: {
-    item: any;
-  }) => {
-    const rawTime =
-      item.lastMessageAt ||
-      item.createdAt;
+    const query = normalizeSearchText(searchQuery);
+    if (!query) return offersOfCurrentTab;
 
+    return offersOfCurrentTab.filter((item) =>
+      [
+        item.senderName,
+        item.sender?.displayName,
+        item.receiverName,
+        item.receiver?.displayName,
+        item.productName,
+        item.postTitle,
+        item.offerPrice,
+        item.offerQuantity,
+      ]
+        .map(normalizeSearchText)
+        .join(" ")
+        .includes(query),
+    );
+  }, [
+    activeTab,
+    currentUserId,
+    getOfferReceiverId,
+    getOfferSenderId,
+    offersList,
+    searchQuery,
+  ]);
+
+  const renderNegotiationItem = ({ item }: { item: any }) => {
+    const rawTime = item.lastMessageAt || item.createdAt;
     const timeString = rawTime
-      ? new Date(
-          rawTime,
-        ).toLocaleString("vi-VN", {
+      ? new Date(rawTime).toLocaleString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
           day: "2-digit",
           month: "2-digit",
         })
       : "";
-
-    const partnerName =
-      item.otherPartyName ||
-      "Đối tác";
-
-    const avatarUri =
-      getRobustAvatar(
-        item.otherPartyAvatarUrl,
-        partnerName,
-      );
-
-    const unreadCount = Number(
-      item.unreadCount || 0,
-    );
+    const partnerName = item.otherPartyName || "Đối tác";
+    const avatarUri = getRobustAvatar(item.otherPartyAvatarUrl, partnerName);
+    const unreadCount = Number(item.unreadCount || 0);
 
     return (
       <TouchableOpacity
         style={styles.offerCard}
-        onPress={() => {
-          router.push(
-            `/chat/${item.negotiationId}` as any,
-          );
-        }}
+        onPress={() => router.push(`/chat/${item.negotiationId}` as any)}
       >
-        <View
-          style={
-            styles.negotiationRow
-          }
-        >
-          <Image
-            source={{ uri: avatarUri }}
-            style={
-              styles.negotiationAvatar
-            }
-          />
-
+        <View style={styles.negotiationRow}>
+          <Image source={{ uri: avatarUri }} style={styles.negotiationAvatar} />
           <View style={styles.flex}>
-            <View
-              style={
-                styles.negotiationHeader
-              }
-            >
-              <Text
-                style={styles.offerName}
-                numberOfLines={1}
-              >
+            <View style={styles.negotiationHeader}>
+              <Text style={styles.offerName} numberOfLines={1}>
                 {partnerName}
               </Text>
-
-              <Text
-                style={styles.offerTime}
-              >
-                {timeString}
-              </Text>
+              <Text style={styles.offerTime}>{timeString}</Text>
             </View>
-
-            <View
-              style={
-                styles.negotiationPreviewRow
-              }
-            >
-              <Text
-                style={
-                  styles.negotiationPrice
-                }
-                numberOfLines={1}
-              >
+            <View style={styles.negotiationPreviewRow}>
+              <Text style={styles.negotiationPrice} numberOfLines={1}>
                 Mức giá:{" "}
-                <Text
-                  style={
-                    styles.negotiationPriceValue
-                  }
-                >
-                  {Number(
-                    item.currentOfferPrice ||
-                      0,
-                  ).toLocaleString(
-                    "vi-VN",
-                  )}{" "}
-                  đ
+                <Text style={styles.negotiationPriceValue}>
+                  {Number(item.currentOfferPrice || 0).toLocaleString("vi-VN")} đ
                 </Text>{" "}
-                (x
-                {item.currentOfferQuantity ||
-                  0}
-                )
+                (x{item.currentOfferQuantity || 0})
               </Text>
-
               {unreadCount > 0 ? (
-                <View
-                  style={
-                    styles.unreadBadge
-                  }
-                >
-                  <Text
-                    style={
-                      styles.unreadBadgeText
-                    }
-                  >
-                    {unreadCount > 99
-                      ? "99+"
-                      : unreadCount}
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </Text>
                 </View>
               ) : null}
@@ -1436,36 +903,17 @@ const markOfferTabAsSeen =
     );
   };
 
-  const renderOfferItem = ({
-    item,
-  }: {
-    item: any;
-  }) => {
+  const renderOfferItem = ({ item }: { item: any }) => {
     const isMySentOffer =
-      getOfferSenderId(item) ===
-      String(currentUserId ?? "");
-
+      getOfferSenderId(item) === String(currentUserId ?? "");
     const partnerName =
-      (isMySentOffer
-        ? item.receiverName
-        : item.senderName) ||
-      "Đối tác";
-
-    const partnerAvatarUrl =
-      isMySentOffer
-        ? item.receiverAvatarUrl
-        : item.senderAvatarUrl;
-
-    const avatarUri =
-      getRobustAvatar(
-        partnerAvatarUrl,
-        partnerName,
-      );
-
+      (isMySentOffer ? item.receiverName : item.senderName) || "Đối tác";
+    const partnerAvatarUrl = isMySentOffer
+      ? item.receiverAvatarUrl
+      : item.senderAvatarUrl;
+    const avatarUri = getRobustAvatar(partnerAvatarUrl, partnerName);
     const timeString = item.createdAt
-      ? new Date(
-          item.createdAt,
-        ).toLocaleString("vi-VN", {
+      ? new Date(item.createdAt).toLocaleString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
           day: "2-digit",
@@ -1475,154 +923,95 @@ const markOfferTabAsSeen =
       : "";
 
     const showOfferFeedback =
-      feedbackTarget?.type ===
-        "offer" &&
-      feedbackTarget.offerId ===
-        item.offerId;
+      feedbackTarget?.type === "offer" &&
+      feedbackTarget.offerId === item.offerId;
 
     return (
       <View style={styles.offerCard}>
         <View style={styles.offerHeader}>
-          <Image
-            source={{ uri: avatarUri }}
-            style={styles.offerAvatar}
-          />
-
+          <Image source={{ uri: avatarUri }} style={styles.offerAvatar} />
           <View style={styles.flex}>
             <Text style={styles.offerName}>
               {isMySentOffer
                 ? `Bạn đã gửi cho ${partnerName}`
                 : `${partnerName} đã gửi đề nghị`}
             </Text>
-
-            <Text style={styles.offerTime}>
-              {timeString}
-            </Text>
+            <Text style={styles.offerTime}>{timeString}</Text>
           </View>
         </View>
 
         <View style={styles.offerDetails}>
-          <Text
-            style={styles.offerProduct}
-            numberOfLines={1}
-          >
-            {item.productName ||
-              item.postTitle ||
-              "Sản phẩm"}
+          <Text style={styles.offerProduct} numberOfLines={1}>
+            {item.productName || item.postTitle || "Sản phẩm"}
           </Text>
-
           <Text style={styles.offerPrice}>
-            Giá thương lượng:{" "}
-            {Number(
-              item.offerPrice || 0,
-            ).toLocaleString("vi-VN")}{" "}
-            đ
+            Giá thương lượng: {Number(item.offerPrice || 0).toLocaleString("vi-VN")} đ
           </Text>
-
-          <Text style={styles.offerPrice}>
-            Số lượng:{" "}
-            {item.offerQuantity || 0}
-          </Text>
+          <Text style={styles.offerPrice}>Số lượng: {item.offerQuantity || 0}</Text>
         </View>
 
         {!isMySentOffer ? (
           <View style={styles.actionArea}>
-            <View
-              style={styles.actionRow}
-            >
+            <View style={styles.actionRow}>
               <TouchableOpacity
                 style={styles.rejectBtn}
-                onPress={() => {
-                  void handleRejectOffer(
-                    item.offerId,
-                  );
-                }}
-                disabled={
-                  isProcessingAction
-                }
+                onPress={() => void handleRejectOffer(item.offerId)}
+                disabled={isProcessingAction}
               >
-                <Text
-                  style={
-                    styles.rejectBtnText
-                  }
-                >
-                  Từ chối
-                </Text>
+                <Text style={styles.rejectBtnText}>Từ chối</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.acceptBtn}
-                onPress={() => {
-                  void handleAcceptOffer(
-                    item.offerId,
-                  );
-                }}
-                disabled={
-                  isProcessingAction
-                }
+                onPress={() => void handleAcceptOffer(item.offerId)}
+                disabled={isProcessingAction}
               >
-                <Text
-                  style={
-                    styles.acceptBtnText
-                  }
-                >
-                  Đồng ý
-                </Text>
+                <Text style={styles.acceptBtnText}>Đồng ý</Text>
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity
-              style={
-                styles.counterBtnOutline
-              }
-              onPress={() =>
-                handleOpenCounterModal(
-                  item,
-                )
-              }
-              disabled={
-                isProcessingAction
-              }
+              style={styles.counterBtnOutline}
+              onPress={() => handleOpenCounterModal(item)}
+              disabled={isProcessingAction}
             >
-              <Text
-                style={
-                  styles.counterBtnText
-                }
-              >
-                Đề xuất giá mới
-              </Text>
+              <Text style={styles.counterBtnText}>Đề xuất giá mới</Text>
             </TouchableOpacity>
 
             {showOfferFeedback ? (
               <InlineFeedback
                 feedback={feedback}
-                onDismiss={
-                  clearCurrentFeedback
-                }
-                style={
-                  styles.actionFeedback
-                }
+                onDismiss={clearCurrentFeedback}
+                style={styles.actionFeedback}
               />
             ) : null}
           </View>
         ) : (
           <View style={styles.actionArea}>
-            <TouchableOpacity
-              style={styles.fullActionButton}
-              onPress={() => {
-                router.push(
-                  `/posts/${item.postId}` as any,
-                );
-              }}
-            >
-              <Text
-                style={
-                  styles.rejectBtnText
-                }
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.cancelOfferBtn}
+                onPress={() => void handleCancelOffer(item.offerId)}
+                disabled={isProcessingAction}
               >
-                Xem lại bài đăng
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.cancelOfferBtnText}>Hủy đề nghị</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.viewPostBtn}
+                onPress={() => router.push(`/posts/${item.postId}` as any)}
+                disabled={isProcessingAction}
+              >
+                <Text style={styles.viewPostBtnText}>Xem bài đăng</Text>
+              </TouchableOpacity>
+            </View>
+
+            {showOfferFeedback ? (
+              <InlineFeedback
+                feedback={feedback}
+                onDismiss={clearCurrentFeedback}
+                style={styles.actionFeedback}
+              />
+            ) : null}
           </View>
         )}
       </View>
@@ -1630,33 +1019,16 @@ const markOfferTabAsSeen =
   };
 
   const pageFeedback =
-    feedbackTarget?.type === "page"
-      ? feedback
-      : null;
-
+    feedbackTarget?.type === "page" ? feedback : null;
   const counterFeedback =
-    feedbackTarget?.type === "counter"
-      ? feedback
-      : null;
+    feedbackTarget?.type === "counter" ? feedback : null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View
-        style={[
-          styles.mobileWrapper,
-          {
-            width,
-          },
-        ]}
-      >
-        <MainHeader
-          title="Tin nhắn"
-          showBack={false}
-        />
+      <View style={[styles.mobileWrapper, { width }]}>
+        <MainHeader title="Tin nhắn" showBack={false} />
 
-        <View
-          style={styles.searchContainer}
-        >
+        <View style={styles.searchContainer}>
           <View style={styles.searchBox}>
             <Ionicons
               name="search"
@@ -1664,21 +1036,15 @@ const markOfferTabAsSeen =
               color={COLORS.textLight}
               style={styles.searchIcon}
             />
-
             <TextInput
               style={[
                 styles.searchInput,
                 Platform.OS === "web"
-                  ? ({
-                      outlineStyle:
-                        "none",
-                    } as any)
+                  ? ({ outlineStyle: "none" } as any)
                   : undefined,
               ]}
               placeholder="Tìm kiếm đoạn chat..."
-              placeholderTextColor={
-                COLORS.textLight
-              }
+              placeholderTextColor={COLORS.textLight}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
@@ -1686,139 +1052,59 @@ const markOfferTabAsSeen =
         </View>
 
         <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[
-              styles.tabBtn,
-              activeTab === "chat"
-                ? styles.tabBtnActive
-                : undefined,
-            ]}
-            onPress={() =>
-              handleChangeTab("chat")
-            }
-          >
-            <Text
+          {([
+            { key: "chat", label: "Đoạn chat" },
+            { key: "received", label: "Yêu cầu mới" },
+            { key: "sent", label: "Đã gửi" },
+          ] as const).map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
               style={[
-                styles.tabText,
-                activeTab === "chat"
-                  ? styles.tabTextActive
-                  : undefined,
+                styles.tabBtn,
+                activeTab === tab.key ? styles.tabBtnActive : undefined,
               ]}
+              onPress={() => handleChangeTab(tab.key)}
             >
-              Đoạn chat
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabBtn,
-              activeTab === "received"
-                ? styles.tabBtnActive
-                : undefined,
-            ]}
-            onPress={() =>
-              handleChangeTab(
-                "received",
-              )
-            }
-          >
-            <View style={styles.tabLabelRow}>
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "received"
-                    ? styles.tabTextActive
-                    : undefined,
-                ]}
-              >
-                Yêu cầu mới
-              </Text>
-
-              {offerTabChanges.received ? (
-                <View style={styles.tabUnreadDot} />
-              ) : null}
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabBtn,
-              activeTab === "sent"
-                ? styles.tabBtnActive
-                : undefined,
-            ]}
-            onPress={() =>
-              handleChangeTab("sent")
-            }
-          >
-            <View style={styles.tabLabelRow}>
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "sent"
-                    ? styles.tabTextActive
-                    : undefined,
-                ]}
-              >
-                Đã gửi
-              </Text>
-
-              {offerTabChanges.sent ? (
-                <View style={styles.tabUnreadDot} />
-              ) : null}
-            </View>
-          </TouchableOpacity>
+              <View style={styles.tabLabelRow}>
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === tab.key ? styles.tabTextActive : undefined,
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+                {tab.key !== "chat" && offerTabChanges[tab.key] ? (
+                  <View style={styles.tabUnreadDot} />
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {pageFeedback ? (
           <InlineFeedback
             feedback={pageFeedback}
-            onDismiss={
-              clearCurrentFeedback
-            }
+            onDismiss={clearCurrentFeedback}
             style={styles.pageFeedback}
           />
         ) : null}
 
         <View style={styles.contentArea}>
           {isLoading ? (
-            <View
-              style={styles.loadingContainer}
-            >
-              <ActivityIndicator
-                size="large"
-                color={COLORS.primary}
-              />
-
-              <Text
-                style={styles.loadingText}
-              >
-                Đang tải dữ liệu...
-              </Text>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
             </View>
           ) : activeTab === "chat" ? (
             <FlatList
-              data={
-                filteredNegotiations
-              }
-              keyExtractor={(item) =>
-                item.negotiationId
-              }
-              renderItem={
-                renderNegotiationItem
-              }
-              showsVerticalScrollIndicator={
-                false
-              }
-              contentContainerStyle={
-                styles.listContent
-              }
+              data={filteredNegotiations}
+              keyExtractor={(item) => item.negotiationId}
+              renderItem={renderNegotiationItem}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
               ListEmptyComponent={
-                <Text
-                  style={
-                    styles.emptyListText
-                  }
-                >
+                <Text style={styles.emptyListText}>
                   {searchQuery.trim()
                     ? "Không tìm thấy cuộc trò chuyện phù hợp."
                     : "Chưa có cuộc trò chuyện nào đang diễn ra."}
@@ -1828,24 +1114,12 @@ const markOfferTabAsSeen =
           ) : (
             <FlatList
               data={filteredOffers}
-              keyExtractor={(item) =>
-                item.offerId
-              }
-              renderItem={
-                renderOfferItem
-              }
-              showsVerticalScrollIndicator={
-                false
-              }
-              contentContainerStyle={
-                styles.listContent
-              }
+              keyExtractor={(item) => item.offerId}
+              renderItem={renderOfferItem}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
               ListEmptyComponent={
-                <Text
-                  style={
-                    styles.emptyListText
-                  }
-                >
+                <Text style={styles.emptyListText}>
                   {searchQuery.trim()
                     ? "Không tìm thấy yêu cầu thương lượng phù hợp."
                     : "Bạn chưa có yêu cầu thương lượng nào."}
@@ -1859,207 +1133,102 @@ const markOfferTabAsSeen =
           visible={showCounterModal}
           transparent
           animationType="slide"
-          onRequestClose={
-            handleCloseCounterModal
-          }
+          onRequestClose={handleCloseCounterModal}
         >
           <KeyboardAvoidingView
-            behavior={
-              Platform.OS === "ios"
-                ? "padding"
-                : "height"
-            }
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={styles.modalOverlay}
           >
-            <View
-              style={styles.modalContent}
-            >
-              <View
-                style={styles.modalHeader}
-              >
-                <Text
-                  style={styles.modalTitle}
-                >
-                  Đề xuất giá mới
-                </Text>
-
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Đề xuất giá mới</Text>
                 <TouchableOpacity
-                  onPress={
-                    handleCloseCounterModal
-                  }
-                  disabled={
-                    isProcessingAction
-                  }
-                  style={
-                    styles.modalCloseButton
-                  }
+                  onPress={handleCloseCounterModal}
+                  disabled={isProcessingAction}
+                  style={styles.modalCloseButton}
                 >
-                  <Ionicons
-                    name="close"
-                    size={24}
-                    color={COLORS.text}
-                  />
+                  <Ionicons name="close" size={24} color={COLORS.text} />
                 </TouchableOpacity>
               </View>
 
               <View style={styles.modalBody}>
-                <View
-                  style={styles.inputGroup}
-                >
-                  <Text
-                    style={
-                      styles.inputLabel
-                    }
-                  >
-                    Giá đề xuất (VNĐ){" "}
-                    <Text
-                      style={
-                        styles.requiredMark
-                      }
-                    >
-                      *
-                    </Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Giá đề xuất (VNĐ) <Text style={styles.requiredMark}>*</Text>
                   </Text>
-
                   <TextInput
                     style={[
                       styles.input,
                       Platform.OS === "web"
-                        ? ({
-                            outlineStyle:
-                              "none",
-                          } as any)
+                        ? ({ outlineStyle: "none" } as any)
                         : undefined,
                     ]}
                     keyboardType="numeric"
                     value={counterPrice}
-                    onChangeText={
-                      setCounterPrice
-                    }
-                    editable={
-                      !isProcessingAction
-                    }
+                    onChangeText={setCounterPrice}
+                    editable={!isProcessingAction}
                   />
                 </View>
 
-                <View
-                  style={styles.inputGroup}
-                >
-                  <Text
-                    style={
-                      styles.inputLabel
-                    }
-                  >
-                    Số lượng{" "}
-                    <Text
-                      style={
-                        styles.requiredMark
-                      }
-                    >
-                      *
-                    </Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Số lượng <Text style={styles.requiredMark}>*</Text>
                   </Text>
-
                   <TextInput
                     style={[
                       styles.input,
                       Platform.OS === "web"
-                        ? ({
-                            outlineStyle:
-                              "none",
-                          } as any)
+                        ? ({ outlineStyle: "none" } as any)
                         : undefined,
                     ]}
                     keyboardType="numeric"
                     value={counterQuantity}
-                    onChangeText={
-                      setCounterQuantity
-                    }
-                    editable={
-                      !isProcessingAction
-                    }
+                    onChangeText={setCounterQuantity}
+                    editable={!isProcessingAction}
                   />
                 </View>
 
-                <View
-                  style={styles.inputGroup}
-                >
-                  <Text
-                    style={
-                      styles.inputLabel
-                    }
-                  >
-                    Lời nhắn cho khách hàng
-                  </Text>
-
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Lời nhắn cho khách hàng</Text>
                   <TextInput
                     style={[
                       styles.input,
                       styles.messageInput,
                       Platform.OS === "web"
-                        ? ({
-                            outlineStyle:
-                              "none",
-                          } as any)
+                        ? ({ outlineStyle: "none" } as any)
                         : undefined,
                     ]}
                     multiline
                     value={counterMessage}
-                    onChangeText={
-                      setCounterMessage
-                    }
+                    onChangeText={setCounterMessage}
                     placeholder="Nhập lời nhắn..."
-                    placeholderTextColor={
-                      COLORS.textLight
-                    }
-                    editable={
-                      !isProcessingAction
-                    }
+                    placeholderTextColor={COLORS.textLight}
+                    editable={!isProcessingAction}
                   />
                 </View>
+
+                {counterFeedback ? (
+                  <InlineFeedback
+                    feedback={counterFeedback}
+                    onDismiss={clearCurrentFeedback}
+                    style={styles.counterFeedback}
+                  />
+                ) : null}
 
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
-                    isProcessingAction
-                      ? styles.disabledButton
-                      : undefined,
+                    isProcessingAction ? styles.disabledButton : undefined,
                   ]}
-                  onPress={() => {
-                    void handleSubmitCounter();
-                  }}
-                  disabled={
-                    isProcessingAction
-                  }
+                  onPress={() => void handleSubmitCounter()}
+                  disabled={isProcessingAction}
                 >
                   {isProcessingAction ? (
-                    <ActivityIndicator
-                      color={COLORS.white}
-                    />
+                    <ActivityIndicator color={COLORS.white} />
                   ) : (
-                    <Text
-                      style={
-                        styles.primaryBtnText
-                      }
-                    >
-                      Gửi đề xuất
-                    </Text>
+                    <Text style={styles.primaryBtnText}>Gửi đề xuất</Text>
                   )}
                 </TouchableOpacity>
-
-                {counterFeedback ? (
-                  <InlineFeedback
-                    feedback={
-                      counterFeedback
-                    }
-                    onDismiss={
-                      clearCurrentFeedback
-                    }
-                    style={
-                      styles.counterFeedback
-                    }
-                  />
-                ) : null}
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -2072,34 +1241,24 @@ const markOfferTabAsSeen =
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-
+  flex: { flex: 1 },
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.border,
     alignItems: "center",
   },
-
   mobileWrapper: {
     flex: 1,
     backgroundColor: COLORS.background,
-
     ...(Platform.OS === "web"
-      ? ({
-          boxShadow:
-            "0px 0px 20px rgba(0,0,0,0.1)",
-        } as any)
+      ? ({ boxShadow: "0px 0px 20px rgba(0,0,0,0.1)" } as any)
       : {}),
   },
-
   searchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: COLORS.white,
   },
-
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -2110,18 +1269,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: "#F8FAFC",
   },
-
-  searchIcon: {
-    marginRight: 8,
-  },
-
+  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     height: "100%",
     color: COLORS.text,
     fontSize: 15,
   },
-
   tabContainer: {
     flexDirection: "row",
     marginHorizontal: 16,
@@ -2130,84 +1284,50 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F1F5F9",
   },
-
   tabBtn: {
     flex: 1,
     alignItems: "center",
     paddingVertical: 8,
     borderRadius: 6,
   },
-
   tabBtnActive: {
     backgroundColor: COLORS.white,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
-
-  tabText: {
-    color: COLORS.textLight,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  tabTextActive: {
-    color: COLORS.primary,
-  },
-
+  tabText: { color: COLORS.textLight, fontSize: 13, fontWeight: "600" },
+  tabTextActive: { color: COLORS.primary },
   tabLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
   },
-
   tabUnreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: COLORS.error,
   },
-
-  contentArea: {
-    flex: 1,
-    backgroundColor: COLORS.white,
+  contentArea: { flex: 1, backgroundColor: COLORS.white },
+  pageFeedback: { marginHorizontal: 16, marginBottom: 8 },
+  localFeedback: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 9,
+    padding: 10,
   },
-
-  pageFeedback: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  loadingText: {
-    marginTop: 10,
-    color: COLORS.textLight,
-    fontSize: 13,
-  },
-
-  listContent: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 40,
-  },
-
-  emptyListText: {
-    marginTop: 40,
-    color: COLORS.textLight,
-    textAlign: "center",
-  },
-
+  localFeedbackText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  feedbackDismissButton: { padding: 1 },
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingText: { marginTop: 10, color: COLORS.textLight, fontSize: 13 },
+  listContent: { padding: 16, gap: 12, paddingBottom: 40 },
+  emptyListText: { marginTop: 40, color: COLORS.textLight, textAlign: "center" },
   offerCard: {
     marginBottom: 12,
     padding: 16,
@@ -2216,20 +1336,12 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: COLORS.white,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
-
-  negotiationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
+  negotiationRow: { flexDirection: "row", alignItems: "center" },
   negotiationAvatar: {
     width: 44,
     height: 44,
@@ -2238,30 +1350,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-
   negotiationHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 4,
   },
-
-  negotiationPreviewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  negotiationPrice: {
-    flex: 1,
-    color: COLORS.textLight,
-    fontSize: 13,
-  },
-
-  negotiationPriceValue: {
-    color: COLORS.primary,
-    fontWeight: "bold",
-  },
-
+  negotiationPreviewRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  negotiationPrice: { flex: 1, color: COLORS.textLight, fontSize: 13 },
+  negotiationPriceValue: { color: COLORS.primary, fontWeight: "bold" },
   unreadBadge: {
     minWidth: 20,
     height: 20,
@@ -2271,19 +1367,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: COLORS.error,
   },
-
-  unreadBadgeText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  offerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-
+  unreadBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: "800" },
+  offerHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   offerAvatar: {
     width: 40,
     height: 40,
@@ -2292,48 +1377,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-
-  offerName: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "bold",
-  },
-
-  offerTime: {
-    marginTop: 2,
-    color: COLORS.textLight,
-    fontSize: 12,
-  },
-
+  offerName: { color: COLORS.text, fontSize: 15, fontWeight: "bold" },
+  offerTime: { marginTop: 2, color: COLORS.textLight, fontSize: 12 },
   offerDetails: {
     marginBottom: 16,
     padding: 12,
     borderRadius: 8,
     backgroundColor: "#F8FAFC",
   },
-
-  offerProduct: {
-    marginBottom: 4,
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  offerPrice: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-
-  actionArea: {
-    gap: 8,
-  },
-
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-
+  offerProduct: { marginBottom: 4, color: COLORS.text, fontSize: 15, fontWeight: "600" },
+  offerPrice: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
+  actionArea: { gap: 8 },
+  actionRow: { flexDirection: "row", gap: 12 },
   rejectBtn: {
     flex: 1,
     alignItems: "center",
@@ -2343,13 +1398,7 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     backgroundColor: "#F1F5F9",
   },
-
-  rejectBtnText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
+  rejectBtnText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   acceptBtn: {
     flex: 1,
     alignItems: "center",
@@ -2357,13 +1406,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLORS.primary,
   },
-
-  acceptBtnText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
+  acceptBtnText: { color: COLORS.white, fontSize: 14, fontWeight: "600" },
   counterBtnOutline: {
     alignItems: "center",
     paddingVertical: 10,
@@ -2372,76 +1415,54 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: COLORS.white,
   },
-
-  counterBtnText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-
-  fullActionButton: {
+  counterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
+  cancelOfferBtn: {
+    flex: 1,
     alignItems: "center",
-    paddingVertical: 10,
+    justifyContent: "center",
+    minHeight: 42,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F1F5F9",
+    borderColor: COLORS.error,
+    backgroundColor: "#FEF2F2",
   },
-
-  actionFeedback: {
-    marginTop: 2,
+  cancelOfferBtnText: { color: COLORS.error, fontSize: 13, fontWeight: "700" },
+  viewPostBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8FAFC",
   },
-
+  viewPostBtnText: { color: COLORS.text, fontSize: 13, fontWeight: "700" },
+  actionFeedback: { marginTop: 2 },
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-
   modalContent: {
     padding: 24,
-    paddingBottom:
-      Platform.OS === "ios" ? 40 : 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     backgroundColor: COLORS.white,
   },
-
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 20,
   },
-
-  modalTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-
-  modalCloseButton: {
-    padding: 4,
-  },
-
-  modalBody: {
-    gap: 16,
-  },
-
-  inputGroup: {
-    gap: 8,
-  },
-
-  inputLabel: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  requiredMark: {
-    color: COLORS.error,
-  },
-
+  modalTitle: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
+  modalCloseButton: { padding: 4 },
+  modalBody: { gap: 16 },
+  inputGroup: { gap: 8 },
+  inputLabel: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
+  requiredMark: { color: COLORS.error },
   input: {
     height: 50,
     paddingHorizontal: 16,
@@ -2452,13 +1473,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: "#F8FAFC",
   },
-
-  messageInput: {
-    height: 80,
-    paddingTop: 12,
-    textAlignVertical: "top",
-  },
-
+  messageInput: { height: 80, paddingTop: 12, textAlignVertical: "top" },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -2468,18 +1483,44 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLORS.primary,
   },
-
-  primaryBtnText: {
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: "bold",
+  primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
+  disabledButton: { opacity: 0.7 },
+  counterFeedback: { marginTop: -4 },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
   },
-
-  disabledButton: {
-    opacity: 0.7,
+  confirmCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
   },
-
-  counterFeedback: {
-    marginTop: -4,
+  confirmTitle: { color: COLORS.text, fontSize: 17, fontWeight: "800", marginBottom: 8 },
+  confirmMessage: { color: COLORS.textLight, fontSize: 13, lineHeight: 19 },
+  confirmActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+  confirmCancelButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  confirmCancelText: { color: COLORS.text, fontWeight: "700" },
+  confirmPrimaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmDestructiveButton: { backgroundColor: COLORS.error },
+  confirmPrimaryText: { color: COLORS.white, fontWeight: "800" },
 });

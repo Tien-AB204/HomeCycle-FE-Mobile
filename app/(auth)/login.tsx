@@ -1,8 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,7 +13,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
 import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -26,88 +22,44 @@ export default function LoginScreen() {
   const router = useRouter();
   const { returnUrl } = useLocalSearchParams();
   const { login } = useAuth();
-
-  const passwordInputRef =
-    useRef<TextInput | null>(null);
-
+  const passwordInputRef = useRef<TextInput | null>(null);
   const [email, setEmail] = useState("");
-  const [password, setPassword] =
-    useState("");
-
-  const [showPassword, setShowPassword] =
-    useState(false);
-
-  const [isLoading, setIsLoading] =
-    useState(false);
-
-  const [emailError, setEmailError] =
-    useState("");
-
-  const [passwordError, setPasswordError] =
-    useState("");
-
-  const [loginError, setLoginError] =
-    useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [loginError, setLoginError] = useState("");
 
   const handleLogin = async () => {
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
-
     let hasValidationError = false;
-
     setEmailError("");
     setPasswordError("");
     setLoginError("");
 
     if (!cleanEmail) {
-      setEmailError(
-        "Vui lòng nhập địa chỉ email.",
-      );
-
+      setEmailError("Vui lòng nhập địa chỉ email.");
       hasValidationError = true;
-    } else if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-        cleanEmail,
-      )
-    ) {
-      setEmailError(
-        "Địa chỉ email không đúng định dạng.",
-      );
-
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setEmailError("Địa chỉ email không đúng định dạng.");
       hasValidationError = true;
     }
-
     if (!cleanPassword) {
-      setPasswordError(
-        "Vui lòng nhập mật khẩu.",
-      );
-
+      setPasswordError("Vui lòng nhập mật khẩu.");
       hasValidationError = true;
     }
-
-    if (hasValidationError) {
-      return;
-    }
+    if (hasValidationError) return;
 
     try {
       setIsLoading(true);
-
-      await login(
-        cleanEmail,
-        cleanPassword,
-      );
-
-      if (returnUrl) {
-        router.replace(returnUrl as any);
-      } else {
-        router.replace("/(tabs)");
-      }
+      await login(cleanEmail, cleanPassword);
+      if (returnUrl) router.replace(returnUrl as any);
+      else router.replace("/(tabs)");
     } catch (error: unknown) {
       setLoginError(
-        getApiErrorMessage(
-          error,
-          "Đăng nhập thất bại. Vui lòng kiểm tra lại.",
-        ),
+        getApiErrorMessage(error, "Đăng nhập thất bại. Vui lòng kiểm tra lại."),
       );
     } finally {
       setIsLoading(false);
@@ -117,31 +69,19 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={
-          Platform.OS === "ios"
-            ? "padding"
-            : "height"
-        }
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardContainer}
       >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace("/(tabs)");
-              }
+              if (router.canGoBack()) router.back();
+              else router.replace("/(tabs)");
             }}
             style={styles.backButton}
           >
-            <Ionicons
-              name="arrow-back"
-              size={24}
-              color={COLORS.text}
-            />
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
-
           <View style={styles.logoContainer}>
             <Image
               source={require("../../src/assets/images/logo-dark-transparent.png")}
@@ -149,28 +89,18 @@ export default function LoginScreen() {
               resizeMode="contain"
             />
           </View>
-
-          <View
-            style={styles.headerPlaceholder}
-          />
+          <View style={styles.headerPlaceholder} />
         </View>
 
         <View style={styles.content}>
           <View style={styles.card}>
-            <Text style={styles.title}>
-              Đăng nhập vào tài khoản của bạn
-            </Text>
+            <Text style={styles.title}>Đăng nhập vào tài khoản của bạn</Text>
 
-            <Text style={styles.label}>
-              ĐỊA CHỈ EMAIL
-            </Text>
-
+            <Text style={styles.label}>ĐỊA CHỈ EMAIL</Text>
             <View
               style={[
                 styles.inputContainer,
-                emailError
-                  ? styles.inputContainerError
-                  : undefined,
+                emailError ? styles.inputContainerError : undefined,
               ]}
             >
               <Ionicons
@@ -179,21 +109,15 @@ export default function LoginScreen() {
                 color={COLORS.textLight}
                 style={styles.inputIcon}
               />
-
               <TextInput
                 style={[
                   styles.input,
                   Platform.OS === "web"
-                    ? ({
-                        outlineStyle:
-                          "none",
-                      } as any)
+                    ? ({ outlineStyle: "none" } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập email..."
-                placeholderTextColor={
-                  COLORS.textLight
-                }
+                placeholderTextColor={COLORS.textLight}
                 value={email}
                 onChangeText={(value) => {
                   setEmail(value);
@@ -205,36 +129,20 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 returnKeyType="next"
                 blurOnSubmit={false}
-                onSubmitEditing={() =>
-                  passwordInputRef.current?.focus()
-                }
+                onSubmitEditing={() => passwordInputRef.current?.focus()}
               />
             </View>
-
             {emailError ? (
-              <Text
-                accessibilityRole="alert"
-                style={styles.fieldErrorText}
-              >
+              <Text accessibilityRole="alert" style={styles.fieldErrorText}>
                 {emailError}
               </Text>
             ) : null}
 
-            <Text
-              style={[
-                styles.label,
-                styles.passwordLabel,
-              ]}
-            >
-              MẬT KHẨU
-            </Text>
-
+            <Text style={[styles.label, styles.passwordLabel]}>MẬT KHẨU</Text>
             <View
               style={[
                 styles.inputContainer,
-                passwordError
-                  ? styles.inputContainerError
-                  : undefined,
+                passwordError ? styles.inputContainerError : undefined,
               ]}
             >
               <Ionicons
@@ -243,22 +151,16 @@ export default function LoginScreen() {
                 color={COLORS.textLight}
                 style={styles.inputIcon}
               />
-
               <TextInput
                 ref={passwordInputRef}
                 style={[
                   styles.input,
                   Platform.OS === "web"
-                    ? ({
-                        outlineStyle:
-                          "none",
-                      } as any)
+                    ? ({ outlineStyle: "none" } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập mật khẩu..."
-                placeholderTextColor={
-                  COLORS.textLight
-                }
+                placeholderTextColor={COLORS.textLight}
                 value={password}
                 onChangeText={(value) => {
                   setPassword(value);
@@ -267,61 +169,25 @@ export default function LoginScreen() {
                 }}
                 secureTextEntry={!showPassword}
                 returnKeyType="done"
-                onSubmitEditing={() =>
-                  void handleLogin()
-                }
+                onSubmitEditing={() => void handleLogin()}
               />
-
               <TouchableOpacity
-                onPress={() =>
-                  setShowPassword(
-                    (current) => !current,
-                  )
-                }
+                onPress={() => setShowPassword((current) => !current)}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  showPassword
-                    ? "Ẩn mật khẩu"
-                    : "Hiện mật khẩu"
-                }
+                accessibilityLabel={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               >
                 <Ionicons
-                  name={
-                    showPassword
-                      ? "eye-off-outline"
-                      : "eye-outline"
-                  }
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
                   size={20}
                   color={COLORS.textLight}
                 />
               </TouchableOpacity>
             </View>
-
             {passwordError ? (
-              <Text
-                accessibilityRole="alert"
-                style={styles.fieldErrorText}
-              >
+              <Text accessibilityRole="alert" style={styles.fieldErrorText}>
                 {passwordError}
               </Text>
             ) : null}
-
-            <TouchableOpacity
-              style={styles.forgotPassword}
-              onPress={() =>
-                router.push(
-                  "/forgot-password",
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.forgotPasswordText
-                }
-              >
-                Quên mật khẩu?
-              </Text>
-            </TouchableOpacity>
 
             {loginError ? (
               <Text
@@ -336,29 +202,16 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={[
                 styles.primaryButton,
-                isLoading
-                  ? styles.disabledButton
-                  : undefined,
+                isLoading ? styles.disabledButton : undefined,
               ]}
-              onPress={() =>
-                void handleLogin()
-              }
+              onPress={() => void handleLogin()}
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator
-                  color={COLORS.white}
-                />
+                <ActivityIndicator color={COLORS.white} />
               ) : (
                 <>
-                  <Text
-                    style={
-                      styles.primaryButtonText
-                    }
-                  >
-                    ĐĂNG NHẬP
-                  </Text>
-
+                  <Text style={styles.primaryButtonText}>ĐĂNG NHẬP</Text>
                   <Ionicons
                     name="arrow-forward"
                     size={20}
@@ -369,45 +222,18 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <View
-              style={styles.dividerContainer}
-            >
-              <View
-                style={styles.dividerLine}
-              />
-
-              <Text
-                style={styles.dividerText}
-              >
-                HOẶC TIẾP TỤC VỚI
-              </Text>
-
-              <View
-                style={styles.dividerLine}
-              />
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>HOẶC TIẾP TỤC VỚI</Text>
+              <View style={styles.dividerLine} />
             </View>
-
-            <GoogleLoginButton
-              title="Google"
-              disabled={isLoading}
-            />
+            <GoogleLoginButton title="Google" disabled={isLoading} />
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Bạn chưa có tài khoản?{" "}
-            </Text>
-
-            <TouchableOpacity
-              onPress={() =>
-                router.push("/register")
-              }
-            >
-              <Text
-                style={styles.footerLink}
-              >
-                Đăng ký tài khoản
-              </Text>
+            <Text style={styles.footerText}>Bạn chưa có tài khoản? </Text>
+            <TouchableOpacity onPress={() => router.push("/register")}>
+              <Text style={styles.footerLink}>Đăng ký tài khoản</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -417,15 +243,8 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-
-  keyboardContainer: {
-    flex: 1,
-  },
-
+  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  keyboardContainer: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -434,55 +253,26 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 10,
   },
-
-  backButton: {
-    padding: 4,
-  },
-
-  logoContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  brandLogo: {
-    width: 170,
-    height: 36,
-  },
-
-  headerPlaceholder: {
-    width: 28,
-  },
-
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: "center",
-  },
-
+  backButton: { padding: 4 },
+  logoContainer: { alignItems: "center", justifyContent: "center" },
+  brandLogo: { width: 170, height: 36 },
+  headerPlaceholder: { width: 28 },
+  content: { flex: 1, paddingHorizontal: 20, justifyContent: "center" },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
-
     ...Platform.select({
-      web: {
-        boxShadow:
-          "0px 4px 10px rgba(0,0,0,0.05)",
-      } as any,
-
+      web: { boxShadow: "0px 4px 10px rgba(0,0,0,0.05)" } as any,
       default: {
         shadowColor: "#000",
-        shadowOffset: {
-          width: 0,
-          height: 4,
-        },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
         shadowRadius: 10,
         elevation: 4,
       },
     }),
   },
-
   title: {
     fontSize: 24,
     fontWeight: "bold",
@@ -490,7 +280,6 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     lineHeight: 32,
   },
-
   label: {
     fontSize: 12,
     fontWeight: "bold",
@@ -498,11 +287,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
   },
-
-  passwordLabel: {
-    marginTop: 16,
-  },
-
+  passwordLabel: { marginTop: 16 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -513,49 +298,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 54,
   },
-
-  inputContainerError: {
-    borderColor: COLORS.error,
-  },
-
-  fieldErrorText: {
-    color: COLORS.error,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 6,
-  },
-
-  inputIcon: {
-    marginRight: 10,
-  },
-
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: COLORS.text,
-    height: "100%",
-  },
-
-  forgotPassword: {
-    alignSelf: "flex-end",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-
-  forgotPasswordText: {
-    fontSize: 13,
-    color: COLORS.primary,
-    fontWeight: "600",
-  },
-
+  inputContainerError: { borderColor: COLORS.error },
+  fieldErrorText: { color: COLORS.error, fontSize: 12, lineHeight: 17, marginTop: 6 },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15, color: COLORS.text, height: "100%" },
   loginErrorText: {
     color: COLORS.error,
     fontSize: 12,
     lineHeight: 17,
+    marginTop: 12,
     marginBottom: 10,
     textAlign: "right",
   },
-
   primaryButton: {
     flexDirection: "row",
     backgroundColor: "#2C5A56",
@@ -563,55 +317,20 @@ const styles = StyleSheet.create({
     height: 54,
     justifyContent: "center",
     alignItems: "center",
+    marginTop: 20,
   },
-
-  disabledButton: {
-    opacity: 0.7,
-  },
-
-  primaryButtonText: {
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: "bold",
-  },
-
-  forwardIcon: {
-    marginLeft: 8,
-  },
-
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 24,
-  },
-
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-
+  disabledButton: { opacity: 0.7 },
+  primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
+  forwardIcon: { marginLeft: 8 },
+  dividerContainer: { flexDirection: "row", alignItems: "center", marginVertical: 24 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
   dividerText: {
     fontSize: 11,
     color: COLORS.textLight,
     paddingHorizontal: 12,
     fontWeight: "600",
   },
-
-  footer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 30,
-  },
-
-  footerText: {
-    fontSize: 14,
-    color: COLORS.textLight,
-  },
-
-  footerLink: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#172B30",
-  },
+  footer: { flexDirection: "row", justifyContent: "center", marginTop: 30 },
+  footerText: { fontSize: 14, color: COLORS.textLight },
+  footerLink: { fontSize: 14, fontWeight: "bold", color: "#172B30" },
 });

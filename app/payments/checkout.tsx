@@ -12,10 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  InlineFeedback,
-  useActionFeedback,
-} from "../../src/components/shared/ActionFeedback";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -23,6 +19,11 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+
+type FeedbackState = {
+  type: "error" | "success" | "info";
+  text: string;
+} | null;
 
 const agreementApi = {
   getAgreementById: (agreementId: string) =>
@@ -32,7 +33,6 @@ const agreementApi = {
 };
 
 const paymentApi = {
-  // Đã sửa API: Nhận thêm payload chứa returnUrl và cancelUrl
   checkoutWithPayOS: (
     agreementId: string,
     payload: { returnUrl: string; cancelUrl: string },
@@ -47,6 +47,56 @@ const paymentApi = {
       .then((response) => response.data),
 };
 
+const walletApi = {
+  getMyWallet: () =>
+    apiClient.get("/wallet/me").then((response) => response.data),
+};
+
+const unwrap = (value: any) => value?.data ?? value;
+
+function InlineFeedback({ feedback }: { feedback: FeedbackState }) {
+  if (!feedback) return null;
+
+  const palette =
+    feedback.type === "error"
+      ? {
+          backgroundColor: "#FEF2F2",
+          borderColor: "#FECACA",
+          color: "#B91C1C",
+          icon: "alert-circle-outline" as const,
+        }
+      : feedback.type === "success"
+        ? {
+            backgroundColor: "#ECFDF5",
+            borderColor: "#A7F3D0",
+            color: "#047857",
+            icon: "checkmark-circle-outline" as const,
+          }
+        : {
+            backgroundColor: "#EFF6FF",
+            borderColor: "#BFDBFE",
+            color: "#1D4ED8",
+            icon: "information-circle-outline" as const,
+          };
+
+  return (
+    <View
+      style={[
+        styles.inlineFeedback,
+        {
+          backgroundColor: palette.backgroundColor,
+          borderColor: palette.borderColor,
+        },
+      ]}
+    >
+      <Ionicons name={palette.icon} size={18} color={palette.color} />
+      <Text style={[styles.inlineFeedbackText, { color: palette.color }]}>
+        {feedback.text}
+      </Text>
+    </View>
+  );
+}
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -56,19 +106,34 @@ export default function CheckoutScreen() {
     : params.agreementId;
 
   const [agreement, setAgreement] = useState<any>(null);
+  const [wallet, setWallet] = useState<any>(null);
+  const [walletLoadError, setWalletLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPaymentCompleted, setIsPaymentCompleted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
 
-  const { feedback, clearFeedback, showError, showInfo, showSuccess } =
-    useActionFeedback();
+  const clearFeedback = useCallback(() => setFeedback(null), []);
+  const showError = useCallback(
+    (text: string) => setFeedback({ type: "error", text }),
+    [],
+  );
+  const showInfo = useCallback(
+    (text: string) => setFeedback({ type: "info", text }),
+    [],
+  );
+  const showSuccess = useCallback(
+    (text: string) => setFeedback({ type: "success", text }),
+    [],
+  );
 
-  const fetchAgreementData = useCallback(async () => {
+  const fetchCheckoutData = useCallback(async () => {
     if (!agreementId) {
       setAgreement(null);
+      setWallet(null);
       setIsLoading(false);
       showError("Không tìm thấy mã hợp đồng cần thanh toán.");
       return;
@@ -77,9 +142,25 @@ export default function CheckoutScreen() {
     try {
       setIsLoading(true);
       clearFeedback();
+      setWalletLoadError("");
 
-      const response = await agreementApi.getAgreementById(agreementId);
-      setAgreement(response?.data || response);
+      const [agreementResult, walletResult] = await Promise.allSettled([
+        agreementApi.getAgreementById(agreementId),
+        walletApi.getMyWallet(),
+      ]);
+
+      if (agreementResult.status === "rejected") {
+        throw agreementResult.reason;
+      }
+
+      setAgreement(unwrap(agreementResult.value));
+
+      if (walletResult.status === "fulfilled") {
+        setWallet(unwrap(walletResult.value));
+      } else {
+        setWallet(null);
+        setWalletLoadError("Không tải được số dư ví lúc này.");
+      }
     } catch (error: unknown) {
       console.error("Lỗi lấy thông tin thanh toán:", error);
       setAgreement(null);
@@ -93,21 +174,28 @@ export default function CheckoutScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void fetchAgreementData();
-    }, [fetchAgreementData]),
+      void fetchCheckoutData();
+    }, [fetchCheckoutData]),
   );
 
-  const finalPrice = agreement?.finalPrice || 0;
+  const finalPrice = Number(agreement?.finalPrice || 0);
   const isDeposit = agreement?.paymentType === "Deposit";
-
   const amountToPay = isDeposit ? finalPrice * 0.2 : finalPrice;
   const platformFee = 0;
   const totalPayment = amountToPay + platformFee;
+
+  const availableBalance = Number(
+    wallet?.availableBalance ?? wallet?.AvailableBalance ?? 0,
+  );
+  const hasWalletData = wallet !== null;
+  const walletHasEnoughBalance =
+    hasWalletData && availableBalance >= totalPayment;
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("vi-VN", {
       style: "currency",
       currency: "VND",
+      maximumFractionDigits: 0,
     }).format(value);
 
   const openPayOSCheckout = async (checkoutUrl: string) => {
@@ -121,10 +209,8 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // [VÁ LỖI 2] Dùng In-app Browser trên Mobile thay vì Linking.openURL
     const result = await WebBrowser.openBrowserAsync(checkoutUrl);
 
-    // Nếu user bấm dấu "X" để đóng In-app browser giữa chừng (chưa thanh toán xong)
     if (result.type === "cancel") {
       setIsProcessing(false);
       showInfo("Bạn đã đóng trang thanh toán.");
@@ -137,8 +223,23 @@ export default function CheckoutScreen() {
       return;
     }
 
-    if (isPaymentCompleted) {
-      return;
+    if (isPaymentCompleted) return;
+
+    if (paymentMethod === "wallet") {
+      if (!hasWalletData) {
+        showError(
+          walletLoadError ||
+            "Chưa tải được số dư ví. Vui lòng thử lại hoặc chọn PayOS.",
+        );
+        return;
+      }
+
+      if (!walletHasEnoughBalance) {
+        showError(
+          `Số dư ví khả dụng chỉ còn ${formatCurrency(availableBalance)}, không đủ để thanh toán ${formatCurrency(totalPayment)}.`,
+        );
+        return;
+      }
     }
 
     clearFeedback();
@@ -146,23 +247,19 @@ export default function CheckoutScreen() {
     try {
       setIsProcessing(true);
 
-      // =====================================================================
-      // [VÁ LỖI 1] JIT CHECK: KIỂM TRA LẠI TRẠNG THÁI HỢP ĐỒNG PHÚT CHÓT
-      // =====================================================================
       const checkRes = await agreementApi.getAgreementById(agreementId);
-      const latestData = checkRes?.data || checkRes;
+      const latestData = unwrap(checkRes);
       const latestStatus = String(latestData?.agreementStatus ?? "")
         .replace(/[\s_-]/g, "")
         .toLowerCase();
 
       if (latestStatus !== "awaitingpayment" && latestStatus !== "accepted") {
         showError(
-          "⚠️ Giao dịch bị gián đoạn: Đối tác vừa cập nhật hoặc hủy hợp đồng. Vui lòng quay lại kiểm tra.",
+          "Giao dịch bị gián đoạn: đối tác vừa cập nhật hoặc hủy hợp đồng. Vui lòng quay lại kiểm tra.",
         );
         setIsProcessing(false);
-        return; // CHẶN KHÔNG CHO GỌI THANH TOÁN NỮA
+        return;
       }
-      // =====================================================================
 
       if (paymentMethod === "wallet") {
         const response = await paymentApi.checkoutWithWallet(agreementId);
@@ -170,10 +267,10 @@ export default function CheckoutScreen() {
         showSuccess(
           getApiSuccessMessage(response, "Thanh toán qua ví thành công."),
         );
+        await fetchCheckoutData();
         return;
       }
 
-      // TỰ ĐỘNG TẠO ĐƯỜNG DẪN TRẢ VỀ DỰA TRÊN MÔI TRƯỜNG
       const returnUrl =
         Platform.OS === "web"
           ? `${window.location.origin}/payments/success?agreementId=${agreementId}`
@@ -183,7 +280,7 @@ export default function CheckoutScreen() {
 
       const cancelUrl =
         Platform.OS === "web"
-          ? `${window.location.origin}/payments/success?agreementId=${agreementId}&cancel=true` // Trỏ chung về trang success để xử lý logic "Hủy"
+          ? `${window.location.origin}/payments/success?agreementId=${agreementId}&cancel=true`
           : Linking.createURL("/payments/success", {
               queryParams: { agreementId, cancel: "true" },
             });
@@ -200,15 +297,12 @@ export default function CheckoutScreen() {
       }
 
       showInfo("Đang mở trang thanh toán PayOS...");
-
-      // Mở In-app browser
       await openPayOSCheckout(checkoutUrl);
     } catch (error: unknown) {
       console.error("Lỗi thanh toán:", error);
       showError(getApiErrorMessage(error, "Giao dịch thất bại."));
-      setIsProcessing(false); // Trả lại nút nếu lỗi
+      setIsProcessing(false);
     }
-    // Không để setIsProcessing(false) ở finally nữa, vì mở Browser xong app vẫn đang đợi.
   };
 
   if (isLoading) {
@@ -231,15 +325,11 @@ export default function CheckoutScreen() {
           <Text style={styles.emptyTitle}>
             Chưa tải được thông tin thanh toán
           </Text>
-          <InlineFeedback
-            feedback={feedback}
-            onDismiss={clearFeedback}
-            style={styles.emptyFeedback}
-          />
+          <InlineFeedback feedback={feedback} />
           {agreementId ? (
             <TouchableOpacity
               style={styles.retryBtn}
-              onPress={() => void fetchAgreementData()}
+              onPress={() => void fetchCheckoutData()}
             >
               <Text style={styles.retryBtnText}>Thử lại</Text>
             </TouchableOpacity>
@@ -274,11 +364,7 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        <Text
-          style={[styles.sectionTitle, { marginTop: 24, marginBottom: 12 }]}
-        >
-          Phương thức thanh toán
-        </Text>
+        <Text style={styles.paymentMethodsTitle}>Phương thức thanh toán</Text>
 
         <TouchableOpacity
           style={[
@@ -308,7 +394,18 @@ export default function CheckoutScreen() {
           </View>
           <View style={styles.methodInfo}>
             <Text style={styles.methodTitle}>Ví HomeCycle</Text>
-            <Text style={styles.methodSubtitle}>Số dư: Chưa có dữ liệu</Text>
+            <Text
+              style={[
+                styles.methodSubtitle,
+                hasWalletData && !walletHasEnoughBalance
+                  ? styles.insufficientBalanceText
+                  : undefined,
+              ]}
+            >
+              {hasWalletData
+                ? `Số dư khả dụng: ${formatCurrency(availableBalance)}`
+                : walletLoadError || "Đang cập nhật số dư..."}
+            </Text>
           </View>
           <View
             style={[
@@ -368,11 +465,7 @@ export default function CheckoutScreen() {
       </View>
 
       <View style={styles.bottomBar}>
-        <InlineFeedback
-          feedback={feedback}
-          onDismiss={clearFeedback}
-          style={styles.actionFeedback}
-        />
+        <InlineFeedback feedback={feedback} />
         <TouchableOpacity
           style={[
             styles.submitBtn,
@@ -392,10 +485,7 @@ export default function CheckoutScreen() {
           )}
         </TouchableOpacity>
         {isPaymentCompleted ? (
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-          >
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Text style={styles.backBtnText}>Quay lại</Text>
           </TouchableOpacity>
         ) : null}
@@ -422,13 +512,13 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: "center",
   },
-  emptyFeedback: { marginBottom: 12, maxWidth: 420, width: "100%" },
   retryBtn: {
     alignItems: "center",
     backgroundColor: COLORS.primary,
     borderRadius: 10,
     paddingHorizontal: 22,
     paddingVertical: 12,
+    marginTop: 12,
   },
   retryBtnText: { color: COLORS.white, fontWeight: "700" },
   invoiceCard: {
@@ -448,6 +538,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 16,
+  },
+  paymentMethodsTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginTop: 24,
+    marginBottom: 12,
   },
   row: {
     flexDirection: "row",
@@ -489,6 +586,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   methodSubtitle: { fontSize: 13, color: COLORS.textLight },
+  insufficientBalanceText: { color: "#B45309" },
   radioCircle: {
     width: 24,
     height: 24,
@@ -512,7 +610,17 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
     gap: 10,
   },
-  actionFeedback: { marginBottom: 2 },
+  inlineFeedback: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  inlineFeedbackText: { flex: 1, fontSize: 13, lineHeight: 18 },
   submitBtn: {
     backgroundColor: COLORS.primary,
     height: 54,

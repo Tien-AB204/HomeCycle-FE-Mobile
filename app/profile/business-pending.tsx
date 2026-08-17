@@ -19,6 +19,7 @@ export default function BusinessPendingScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<any>(null);
+  const [loadError, setLoadError] = useState("");
 
   // State quản lý việc ẩn/hiện Modal chi tiết
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -26,12 +27,15 @@ export default function BusinessPendingScreen() {
   useEffect(() => {
     const fetchPendingData = async () => {
       try {
+        setLoadError("");
         const res = await apiClient.get(
           "/business-profiles/registration-detail",
         );
         setData(res.data?.data || res.data);
-      } catch (error) {
-        console.log("Lỗi lấy dữ liệu chờ duyệt", error);
+      } catch {
+        setLoadError(
+          "Không thể tải chi tiết hồ sơ đã nộp. Vui lòng quay lại và thử lại sau.",
+        );
       } finally {
         setIsLoading(false);
       }
@@ -67,7 +71,7 @@ export default function BusinessPendingScreen() {
   const getWarehouseAddress = (serviceAreas: any) => {
     if (!serviceAreas) return "Không có";
 
-    // API có thể trả về Object hoặc Array tùy theo BE, ta cover cả 2 trường hợp
+    // API có thể trả về Object hoặc Array tùy theo BE, cover cả 2 trường hợp.
     let area = serviceAreas;
     if (Array.isArray(serviceAreas) && serviceAreas.length > 0) {
       area = serviceAreas[0];
@@ -79,6 +83,31 @@ export default function BusinessPendingScreen() {
 
     return "Không có";
   };
+
+  const getOptionalText = (
+    value: unknown,
+    fallback = "Không đăng ký",
+  ): string => {
+    if (typeof value !== "string") return fallback;
+    const trimmedValue = value.trim();
+    return trimmedValue || fallback;
+  };
+
+  const formatDate = (value: unknown): string => {
+    if (typeof value !== "string" || !value.trim()) return "Không có";
+
+    const datePart = value.trim().split("T")[0];
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (!match) return value;
+
+    const [, year, month, day] = match;
+    return `${day}/${month}/${year}`;
+  };
+
+  const isEnterprise =
+    data?.businessModel === "Enterprise" ||
+    data?.businessModel === 1 ||
+    data?.businessModel === "1";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -102,6 +131,13 @@ export default function BusinessPendingScreen() {
             Thời gian xử lý từ 24h - 48h làm việc.
           </Text>
         </View>
+
+        {loadError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+            <Text style={styles.errorBannerText}>{loadError}</Text>
+          </View>
+        ) : null}
 
         {/* Nút Xem Chi Tiết thay vì show nguyên cục Data */}
         {data && (
@@ -155,25 +191,34 @@ export default function BusinessPendingScreen() {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Mô hình:</Text>
                   <Text style={styles.detailValue}>
-                    {data.businessModel === "Enterprise"
-                      ? "Doanh nghiệp"
-                      : "Hộ kinh doanh"}
+                    {isEnterprise ? "Doanh nghiệp" : "Hộ kinh doanh"}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Tên đăng ký:</Text>
-                  <Text style={styles.detailValue}>{data.businessName}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.businessName, "Không có")}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Mô tả hoạt động:</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.businessDescription, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Mã số thuế:</Text>
-                  <Text style={styles.detailValue}>{data.taxCode}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.taxCode, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Địa chỉ trụ sở:</Text>
-                  <Text style={styles.detailValue}>{data.businessAddress}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.businessAddress, "Không có")}
+                  </Text>
                 </View>
 
-                {/* ĐỊA CHỈ KHO BÃI THÊM VÀO ĐÂY */}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Địa chỉ kho bãi:</Text>
                   <Text style={styles.detailValue}>
@@ -183,7 +228,9 @@ export default function BusinessPendingScreen() {
 
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Khu vực hoạt động:</Text>
-                  <Text style={styles.detailValue}>{data.operatingScope}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.operatingScope)}
+                  </Text>
                 </View>
               </View>
 
@@ -193,19 +240,27 @@ export default function BusinessPendingScreen() {
                 </Text>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Họ và tên:</Text>
-                  <Text style={styles.detailValue}>{data.fullName}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.fullName, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Số CCCD:</Text>
-                  <Text style={styles.detailValue}>{data.identityNumber}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.identityNumber, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Ngày sinh:</Text>
-                  <Text style={styles.detailValue}>{data.identityDob}</Text>
+                  <Text style={styles.detailValue}>
+                    {formatDate(data.identityDob)}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Địa chỉ (CCCD):</Text>
-                  <Text style={styles.detailValue}>{data.identityAddress}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.identityAddress, "Không có")}
+                  </Text>
                 </View>
               </View>
 
@@ -213,24 +268,30 @@ export default function BusinessPendingScreen() {
                 <Text style={styles.sectionTitle}>Thông tin thanh toán</Text>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Ngân hàng:</Text>
-                  <Text style={styles.detailValue}>{data.bankName}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.bankName, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Số tài khoản:</Text>
-                  <Text style={styles.detailValue}>{data.accountNumber}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.accountNumber, "Không có")}
+                  </Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Chủ tài khoản:</Text>
-                  <Text style={styles.detailValue}>{data.accountName}</Text>
+                  <Text style={styles.detailValue}>
+                    {getOptionalText(data.accountName, "Không có")}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Tài liệu đính kèm</Text>
-                {data.documents &&
-                  data.documents.map((doc: any) => (
+                {Array.isArray(data.documents) && data.documents.length > 0 ? (
+                  data.documents.map((doc: any, index: number) => (
                     <View
-                      key={doc.businessDocumentId}
+                      key={doc.businessDocumentId || `${doc.documentType}-${index}`}
                       style={styles.documentItem}
                     >
                       <Text style={styles.documentLabel}>
@@ -242,7 +303,12 @@ export default function BusinessPendingScreen() {
                         resizeMode="contain"
                       />
                     </View>
-                  ))}
+                  ))
+                ) : (
+                  <Text style={styles.emptyValueText}>
+                    Không có tài liệu đính kèm.
+                  </Text>
+                )}
               </View>
 
               <View style={{ height: 40 }} />
@@ -293,6 +359,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: "#B91C1C",
+    fontSize: 13,
+    lineHeight: 19,
+  },
 
   btnOutline: {
     flexDirection: "row",
@@ -337,6 +420,7 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 12,
   },
   detailLabel: { fontSize: 13, color: COLORS.textLight, flex: 1 },
@@ -346,6 +430,12 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     flex: 2,
     textAlign: "right",
+    lineHeight: 20,
+  },
+  emptyValueText: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    fontStyle: "italic",
   },
 
   documentItem: {

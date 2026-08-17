@@ -30,8 +30,10 @@ const agreementApi = {
     return response.data;
   },
 
-  acceptAgreement: async (agreementId: string) => {
-    const response = await apiClient.patch(`/agreements/${agreementId}/accept`);
+  acceptAgreement: async (agreementId: string, expectedRevision: number) => {
+    const response = await apiClient.patch(`/agreements/${agreementId}/accept`, {
+      expectedRevision,
+    });
     return response.data;
   },
 
@@ -43,6 +45,18 @@ const agreementApi = {
     return response.data;
   },
   */
+};
+
+const profileApi = {
+  getPersonalProfile: async () => {
+    const response = await apiClient.get("/personal-profiles/me");
+    return response.data;
+  },
+
+  getBusinessProfile: async () => {
+    const response = await apiClient.get("/business-profiles");
+    return response.data;
+  },
 };
 
 const unwrapResponse = (response: any) => response?.data || response;
@@ -57,12 +71,27 @@ const normalizeId = (id: unknown) =>
     .trim()
     .toLowerCase();
 
+const hasCompleteBankAccount = (bankAccount: any) => {
+  if (!bankAccount) return false;
+
+  return [
+    bankAccount.bankCode,
+    bankAccount.bankName,
+    bankAccount.accountNumber,
+    bankAccount.accountName,
+  ].every((value) => String(value ?? "").trim().length > 0);
+};
+
 type MessageState = {
   text: string;
   type: "error" | "success" | "warning";
 } | null;
 
 type ChangedFields = Record<string, { old: any; new: any }>;
+
+type BankRequirementState = {
+  profileType: "personal" | "business";
+} | null;
 
 export default function AgreementPreviewScreen() {
   const router = useRouter();
@@ -102,6 +131,8 @@ export default function AgreementPreviewScreen() {
   const [changedFields, setChangedFields] = useState<ChangedFields | null>(
     null,
   );
+  const [bankRequirement, setBankRequirement] =
+    useState<BankRequirementState>(null);
 
   const fetchAgreementDetails = useCallback(
     async (showLoader = true) => {
@@ -157,6 +188,7 @@ export default function AgreementPreviewScreen() {
     setIsRefreshing(true);
     setStatusMessage(null);
     setChangedFields(null);
+    setBankRequirement(null);
     setIsConfirmingEditConflict(false);
     await fetchAgreementDetails(false);
     setIsRefreshing(false);
@@ -166,6 +198,7 @@ export default function AgreementPreviewScreen() {
     setIsProcessing(true);
     setStatusMessage(null);
     setChangedFields(null);
+    setBankRequirement(null);
     setIsConfirmingEditConflict(false);
     await fetchAgreementDetails(false);
     setIsProcessing(false);
@@ -193,9 +226,10 @@ export default function AgreementPreviewScreen() {
     if (!agreementId) return;
 
     try {
-      setIsProcessing(true); 
+      setIsProcessing(true);
       setStatusMessage(null);
-      
+      setBankRequirement(null);
+
       // JIT Check trạng thái mới nhất trước khi cho phép qua trang thanh toán
       const checkRes = await agreementApi.getAgreementById(agreementId);
       const latestData = unwrapResponse(checkRes);
@@ -203,29 +237,51 @@ export default function AgreementPreviewScreen() {
 
       // Kiểm tra theo Enum: Confirmed = 2 (hoặc chuỗi "Confirmed")
       const isConfirmed = latestStatus === "Confirmed" || latestStatus === 2;
-      const isAwaitingPayment = latestStatus === "Awaiting_Payment" || latestStatus === 1;
+      const isAwaitingPayment =
+        latestStatus === "Awaiting_Payment" || latestStatus === 1;
 
       // Nếu đã được xác nhận / thanh toán rồi (Confirmed = 2)
       if (isConfirmed) {
-         setStatusMessage({
-           type: "warning",
-           text: "⚠️ Hợp đồng này đã được xác nhận và thanh toán trước đó rồi.", 
-         });
-         await fetchAgreementDetails(false); 
-         return; 
+        setStatusMessage({
+          type: "warning",
+          text: "⚠️ Hợp đồng này đã được xác nhận và thanh toán trước đó rồi.",
+        });
+        await fetchAgreementDetails(false);
+        return;
       }
 
       // Nếu không phải trạng thái chờ thanh toán (Awaiting_Payment = 1)
       if (!isAwaitingPayment) {
-         setStatusMessage({
-           type: "error",
-           text: "⚠️ Hợp đồng không còn ở trạng thái chờ thanh toán.", 
-         });
-         await fetchAgreementDetails(false); 
-         return; 
+        setStatusMessage({
+          type: "error",
+          text: "⚠️ Hợp đồng không còn ở trạng thái chờ thanh toán.",
+        });
+        await fetchAgreementDetails(false);
+        return;
       }
 
-      // Thỏa mãn điều kiện (đang là Awaiting_Payment = 1), cho phép qua trang lựa chọn thanh toán
+      // FE tạm kiểm tra thông tin ngân hàng trước khi cho qua checkout,
+      // vì BE hiện chưa chặn trường hợp profile chưa có tài khoản ngân hàng.
+      const profileType =
+        normalizeStatus(user?.role) === "business" ? "business" : "personal";
+
+      const profileRes =
+        profileType === "business"
+          ? await profileApi.getBusinessProfile()
+          : await profileApi.getPersonalProfile();
+      const profile = unwrapResponse(profileRes);
+
+      if (!hasCompleteBankAccount(profile?.bankAccount)) {
+        setBankRequirement({ profileType });
+        setStatusMessage({
+          type: "warning",
+          text:
+            "Bạn cần cập nhật đầy đủ thông tin ngân hàng trước khi thanh toán: mã ngân hàng, tên ngân hàng, số tài khoản và tên chủ tài khoản.",
+        });
+        return;
+      }
+
+      // Trạng thái hợp đồng hợp lệ và profile đã đủ thông tin ngân hàng.
       router.push({
         pathname: "/payments/checkout",
         params: { agreementId },
@@ -233,12 +289,27 @@ export default function AgreementPreviewScreen() {
     } catch (error: any) {
       setStatusMessage({
         type: "error",
-        text: getApiErrorMessage(error, "Không thể kết nối đến máy chủ để kiểm tra trạng thái."),
+        text: getApiErrorMessage(
+          error,
+          "Không thể kiểm tra điều kiện thanh toán lúc này.",
+        ),
       });
     } finally {
       setIsProcessing(false);
     }
-  }, [agreementId, router, fetchAgreementDetails]);
+  }, [agreementId, user?.role, router, fetchAgreementDetails]);
+
+  const goToBankProfile = useCallback(() => {
+    if (!bankRequirement) return;
+
+    const target =
+      bankRequirement.profileType === "business"
+        ? "/profile/business-account-info"
+        : "/profile/account-info";
+
+    setBankRequirement(null);
+    router.push(target as any);
+  }, [bankRequirement, router]);
 
   const detectChanges = (oldData: any, newData: any): ChangedFields => {
     const diffs: ChangedFields = {};
@@ -277,6 +348,8 @@ export default function AgreementPreviewScreen() {
     try {
       setIsProcessing(true);
 
+      // Lấy bản mới nhất ngay trước khi accept. Revision của bản này sẽ được
+      // gửi kèm PATCH accept để BE chặn race condition xảy ra sau lần GET này.
       const checkRes = await agreementApi.getAgreementById(agreementId);
       const latestData = unwrapResponse(checkRes);
 
@@ -300,10 +373,26 @@ export default function AgreementPreviewScreen() {
         return;
       }
 
+      const expectedRevision = Number(
+        latestData?.revision ?? latestData?.agreementDetails?.revision,
+      );
+
+      if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+        setStatusMessage({
+          type: "error",
+          text: "Không xác định được phiên bản hiện tại của hợp đồng. Vui lòng làm mới dữ liệu rồi xác nhận lại.",
+        });
+        await fetchAgreementDetails(false);
+        return;
+      }
+
       setStatusMessage(null);
       setChangedFields(null);
 
-      const acceptRes = await agreementApi.acceptAgreement(agreementId);
+      const acceptRes = await agreementApi.acceptAgreement(
+        agreementId,
+        expectedRevision,
+      );
       const refreshed = await fetchAgreementDetails(false);
 
       const nextAgreement =
@@ -333,9 +422,25 @@ export default function AgreementPreviewScreen() {
         });
       }
     } catch (error: any) {
+      const errorCode = String(
+        error?.response?.data?.code ||
+          error?.response?.data?.error?.code ||
+          "",
+      ).toLocaleLowerCase("vi-VN");
+
       setStatusMessage({
-        type: "error",
-        text: getApiErrorMessage(error, "Không thể xác nhận hợp đồng."),
+        type:
+          errorCode.includes("revision") ||
+          errorCode.includes("stale") ||
+          errorCode.includes("conflict")
+            ? "warning"
+            : "error",
+        text:
+          errorCode.includes("revision") ||
+          errorCode.includes("stale") ||
+          errorCode.includes("conflict")
+            ? "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa."
+            : getApiErrorMessage(error, "Không thể xác nhận hợp đồng."),
       });
       await fetchAgreementDetails(false);
     } finally {
@@ -620,11 +725,15 @@ export default function AgreementPreviewScreen() {
             </View>
           </View>
 
-          {Number.isFinite(Number(details.revision)) && (
+          {Number.isFinite(
+            Number(agreementData.revision ?? details.revision),
+          ) && (
             <View style={styles.row}>
               <Text style={styles.label}>Phiên bản:</Text>
               <View style={styles.valueWrapper}>
-                <Text style={styles.value}>{Number(details.revision)}</Text>
+                <Text style={styles.value}>
+                  {Number(agreementData.revision ?? details.revision)}
+                </Text>
               </View>
             </View>
           )}
@@ -834,6 +943,47 @@ export default function AgreementPreviewScreen() {
           </Text>
         )}
 
+        {bankRequirement ? (
+          <View
+            style={[
+              styles.inlineConfirmation,
+              { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" },
+            ]}
+          >
+            <View style={styles.inlineConfirmationHeader}>
+              <Ionicons name="card-outline" size={20} color="#B45309" />
+              <Text
+                style={[styles.inlineConfirmationTitle, { color: "#B45309" }]}
+              >
+                Chưa đủ thông tin ngân hàng
+              </Text>
+            </View>
+            <Text style={styles.inlineConfirmationMessage}>
+              Bạn cần cập nhật đầy đủ thông tin ngân hàng trước khi tiếp tục sang
+              bước thanh toán.
+            </Text>
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => {
+                  setBankRequirement(null);
+                  setStatusMessage(null);
+                }}
+                disabled={isProcessing}
+              >
+                <Text style={styles.secondaryBtnText}>Ở lại</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={goToBankProfile}
+                disabled={isProcessing}
+              >
+                <Text style={styles.primaryBtnText}>Cập nhật thông tin</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {/* [THÊM MỚI] Giao diện hỏi xác nhận khi nhấn Edit mà đối tác vừa sửa xong */}
         {isConfirmingEditConflict ? (
           <View
@@ -925,7 +1075,7 @@ export default function AgreementPreviewScreen() {
           </View>
         )}
 
-        {!isConfirmingEditConflict && isAwaitingPayment && (
+        {!bankRequirement && !isConfirmingEditConflict && isAwaitingPayment && (
           <View style={styles.actionRow}>
             {canPay && (
               <TouchableOpacity
@@ -933,7 +1083,11 @@ export default function AgreementPreviewScreen() {
                 onPress={goToPayment}
                 disabled={isProcessing}
               >
-                <Text style={styles.primaryBtnText}>Đi đến thanh toán</Text>
+                {isProcessing ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Đi đến thanh toán</Text>
+                )}
               </TouchableOpacity>
             )}
 

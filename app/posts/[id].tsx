@@ -21,11 +21,6 @@ import {
   View,
 } from "react-native";
 
-import {
-  InlineFeedback,
-  useActionFeedback,
-  useConfirmAction,
-} from "../../src/components/shared/ActionFeedback";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -34,21 +29,179 @@ import {
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 
-/**
- * NOTE:
- * API được đặt trực tiếp trong file UI theo cấu trúc hiện tại của project.
- * Chỉ giữ axiosClient dùng chung.
- */
+type FeedbackType = "error" | "success" | "warning" | "info";
+type LocalFeedback = {
+  type: FeedbackType;
+  message: string;
+} | null;
+
+type ConfirmOptions = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+};
+
+type ConfirmState = {
+  options: ConfirmOptions;
+  resolve: (value: boolean) => void;
+} | null;
+
+function useLocalFeedback() {
+  const [feedback, setFeedback] = useState<LocalFeedback>(null);
+
+  const clearFeedback = useCallback(() => setFeedback(null), []);
+  const showError = useCallback(
+    (message: string) => setFeedback({ type: "error", message }),
+    [],
+  );
+  const showSuccess = useCallback(
+    (message: string) => setFeedback({ type: "success", message }),
+    [],
+  );
+  const showInfo = useCallback(
+    (message: string) => setFeedback({ type: "info", message }),
+    [],
+  );
+
+  return {
+    feedback,
+    clearFeedback,
+    showError,
+    showSuccess,
+    showInfo,
+  };
+}
+
+function InlineFeedback({
+  feedback,
+  onDismiss,
+  style,
+}: {
+  feedback: LocalFeedback;
+  onDismiss?: () => void;
+  style?: any;
+}) {
+  if (!feedback) return null;
+
+  const palette =
+    feedback.type === "error"
+      ? {
+          backgroundColor: "#FEF2F2",
+          borderColor: "#FECACA",
+          color: "#B91C1C",
+          icon: "alert-circle-outline" as const,
+        }
+      : feedback.type === "success"
+        ? {
+            backgroundColor: "#ECFDF5",
+            borderColor: "#A7F3D0",
+            color: "#047857",
+            icon: "checkmark-circle-outline" as const,
+          }
+        : feedback.type === "warning"
+          ? {
+              backgroundColor: "#FFF7ED",
+              borderColor: "#FED7AA",
+              color: "#B45309",
+              icon: "warning-outline" as const,
+            }
+          : {
+              backgroundColor: "#EFF6FF",
+              borderColor: "#BFDBFE",
+              color: "#1D4ED8",
+              icon: "information-circle-outline" as const,
+            };
+
+  return (
+    <View
+      style={[
+        styles.localFeedback,
+        {
+          backgroundColor: palette.backgroundColor,
+          borderColor: palette.borderColor,
+        },
+        style,
+      ]}
+    >
+      <Ionicons name={palette.icon} size={18} color={palette.color} />
+      <Text style={[styles.localFeedbackText, { color: palette.color }]}>
+        {feedback.message}
+      </Text>
+      {onDismiss ? (
+        <TouchableOpacity onPress={onDismiss} style={styles.feedbackDismissButton}>
+          <Ionicons name="close" size={17} color={palette.color} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function useLocalConfirm() {
+  const [state, setState] = useState<ConfirmState>(null);
+
+  const confirm = useCallback(
+    (options: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => {
+        setState({ options, resolve });
+      }),
+    [],
+  );
+
+  const finish = (value: boolean) => {
+    state?.resolve(value);
+    setState(null);
+  };
+
+  const confirmationModal = (
+    <Modal
+      visible={Boolean(state)}
+      transparent
+      animationType="fade"
+      onRequestClose={() => finish(false)}
+    >
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmCard}>
+          <Text style={styles.confirmTitle}>{state?.options.title}</Text>
+          <Text style={styles.confirmMessage}>{state?.options.message}</Text>
+          <View style={styles.confirmActions}>
+            <TouchableOpacity
+              style={styles.confirmCancelButton}
+              onPress={() => finish(false)}
+            >
+              <Text style={styles.confirmCancelText}>
+                {state?.options.cancelLabel || "Hủy"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.confirmPrimaryButton,
+                state?.options.destructive
+                  ? styles.confirmDestructiveButton
+                  : undefined,
+              ]}
+              onPress={() => finish(true)}
+            >
+              <Text style={styles.confirmPrimaryText}>
+                {state?.options.confirmLabel || "Xác nhận"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  return { confirm, confirmationModal };
+}
+
 const postApi = {
   getPostById: (postId: string) =>
-    apiClient
-      .get(`/posts/get-by-id/${postId}`)
-      .then((response) => response.data),
+    apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
 
   closePost: (postId: string) =>
-    apiClient
-      .patch(`/posts/${postId}/close`)
-      .then((response) => response.data),
+    apiClient.patch(`/posts/${postId}/close`).then((response) => response.data),
 
   reactivatePost: (postId: string) =>
     apiClient
@@ -57,38 +210,23 @@ const postApi = {
 };
 
 /**
- * NOTE:
- * Đã bỏ hoàn toàn API sửa đề nghị, hủy đề nghị và lấy chi tiết đề nghị
- * khỏi trang chi tiết bài đăng.
- *
- * Trang này hiện chỉ:
- * - Tạo đề nghị mới.
- * - Kiểm tra người dùng đã gửi đề nghị Pending hay chưa.
+ * Chi tiết/hủy Offer nằm trong app/offers/[id].tsx.
+ * PUT /offers/{offerId} vẫn cố ý tắt trên Mobile.
  */
 const offerApi = {
   createOffer: (data: {
     postId: string;
     offerPrice: number;
     offerQuantity: number;
-  }) =>
-    apiClient
-      .post("/offers", data)
-      .then((response) => response.data),
+  }) => apiClient.post("/offers", data).then((response) => response.data),
 
-  getSentOffers: (params?: {
-    PageNumber?: number;
-    PageSize?: number;
-  }) =>
-    apiClient
-      .get("/offers/sent", { params })
-      .then((response) => response.data),
+  getSentOffers: (params?: { PageNumber?: number; PageSize?: number }) =>
+    apiClient.get("/offers/sent", { params }).then((response) => response.data),
 };
 
 const cartApi = {
   addToCart: (postId: string, quantity: number) =>
-    apiClient
-      .post(`/cart/${postId}`, { quantity })
-      .then((response) => response.data),
+    apiClient.post(`/cart/${postId}`, { quantity }).then((response) => response.data),
 };
 
 const { width } = Dimensions.get("window");
@@ -103,85 +241,64 @@ export default function PostDetailScreen() {
 
   const [post, setPost] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [existingOfferId, setExistingOfferId] = useState<string | null>(null);
 
-  const [existingOfferId, setExistingOfferId] =
-    useState<string | null>(null);
-
-  const [showOfferModal, setShowOfferModal] =
-    useState(false);
-  const [offerQuantity, setOfferQuantity] =
-    useState("1");
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [offerQuantity, setOfferQuantity] = useState("1");
   const [offerPrice, setOfferPrice] = useState("");
-  const [isSubmittingOffer, setIsSubmittingOffer] =
-    useState(false);
+  const [isSubmittingOffer, setIsSubmittingOffer] = useState(false);
 
-  const [showCartModal, setShowCartModal] =
-    useState(false);
-  const [cartQuantity, setCartQuantity] =
-    useState("1");
-  const [isAddingToCart, setIsAddingToCart] =
-    useState(false);
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [cartQuantity, setCartQuantity] = useState("1");
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [cartAdded, setCartAdded] = useState(false);
 
-  /**
-   * NOTE:
-   * Mọi message thành công/thất bại từ BE đều hiển thị trực tiếp trên UI.
-   * Không dùng Alert.alert, window.alert hoặc window.confirm.
-   */
   const {
     feedback: pageFeedback,
     clearFeedback: clearPageFeedback,
     showError: showPageError,
-    showInfo: showPageInfo,
     showSuccess: showPageSuccess,
-  } = useActionFeedback();
+  } = useLocalFeedback();
 
   const {
     feedback: offerFeedback,
     clearFeedback: clearOfferFeedback,
     showError: showOfferError,
-  } = useActionFeedback();
+  } = useLocalFeedback();
 
   const {
     feedback: cartFeedback,
     clearFeedback: clearCartFeedback,
     showError: showCartError,
     showSuccess: showCartSuccess,
-  } = useActionFeedback();
+  } = useLocalFeedback();
 
-  /**
-   * NOTE:
-   * Đây là modal xác nhận bằng UI của project, thay thế confirm/Alert.
-   */
-  const { confirm, confirmationModal } =
-    useConfirmAction();
+  const { confirm, confirmationModal } = useLocalConfirm();
 
   const fetchPostData = async () => {
     if (!id) return;
 
     try {
       setIsLoading(true);
-
-      const resPost = await postApi.getPostById(
-        id as string,
-      );
+      const resPost = await postApi.getPostById(id as string);
       const postData = resPost?.data || resPost;
-
       setPost(postData);
+
+      const isForeignBusinessBuy =
+        user?.role === "business" &&
+        postData?.postType === "Buy" &&
+        String(postData?.ownerId || "") !== String(currentUserId || "");
 
       if (
         user &&
-        postData?.ownerId !== currentUserId
+        postData?.ownerId !== currentUserId &&
+        !isForeignBusinessBuy
       ) {
-        const resOffers =
-          await offerApi.getSentOffers({
-            PageSize: 50,
-            PageNumber: 1,
-          });
-
-        const items =
-          resOffers?.data?.items || [];
-
+        const resOffers = await offerApi.getSentOffers({
+          PageSize: 50,
+          PageNumber: 1,
+        });
+        const items = resOffers?.data?.items || [];
         const pendingOffer = items.find(
           (offer: any) =>
             offer.postId === id &&
@@ -189,19 +306,13 @@ export default function PostDetailScreen() {
               offer.offerStatus === "Pending" ||
               offer.offerStatus === "pending"),
         );
-
-        setExistingOfferId(
-          pendingOffer?.offerId || null,
-        );
+        setExistingOfferId(pendingOffer?.offerId || null);
       } else {
         setExistingOfferId(null);
       }
     } catch (error) {
       showPageError(
-        getApiErrorMessage(
-          error,
-          "Không thể tải thông tin bài đăng.",
-        ),
+        getApiErrorMessage(error, "Không thể tải thông tin bài đăng."),
       );
     } finally {
       setIsLoading(false);
@@ -214,19 +325,19 @@ export default function PostDetailScreen() {
     }, [id, user]),
   );
 
-  const isMyPost =
+  const isMyPost = Boolean(
     currentUserId &&
-    post?.ownerId &&
-    String(currentUserId) ===
-      String(post.ownerId);
+      post?.ownerId &&
+      String(currentUserId) === String(post.ownerId),
+  );
+
+  const isBusinessViewingForeignBuy =
+    user?.role === "business" && post?.postType === "Buy" && !isMyPost;
 
   const handleClosePost = async () => {
     const targetPostId = post?.postId;
-
     if (!targetPostId) {
-      showPageError(
-        "Không tìm thấy ID bài đăng.",
-      );
+      showPageError("Không tìm thấy ID bài đăng.");
       return;
     }
 
@@ -238,30 +349,17 @@ export default function PostDetailScreen() {
       cancelLabel: "Quay lại",
       destructive: true,
     });
-
     if (!confirmed) return;
 
     try {
       setIsLoading(true);
       clearPageFeedback();
-
-      const response =
-        await postApi.closePost(targetPostId);
-
-      showPageSuccess(
-        getApiSuccessMessage(
-          response,
-          "Đã đóng bài đăng.",
-        ),
-      );
-
+      const response = await postApi.closePost(targetPostId);
+      showPageSuccess(getApiSuccessMessage(response, "Đã đóng bài đăng."));
       await fetchPostData();
     } catch (error) {
       showPageError(
-        getApiErrorMessage(
-          error,
-          "Không thể đóng bài đăng lúc này.",
-        ),
+        getApiErrorMessage(error, "Không thể đóng bài đăng lúc này."),
       );
     } finally {
       setIsLoading(false);
@@ -270,70 +368,54 @@ export default function PostDetailScreen() {
 
   const handleReactivatePost = async () => {
     const targetPostId = post?.postId;
-
     if (!targetPostId) {
-      showPageError(
-        "Không tìm thấy ID bài đăng.",
-      );
+      showPageError("Không tìm thấy ID bài đăng.");
       return;
     }
 
     const confirmed = await confirm({
       title: "Mở lại bài đăng",
-      message:
-        "Bài đăng sẽ tiếp tục hiển thị và nhận tương tác.",
+      message: "Bài đăng sẽ tiếp tục hiển thị và nhận tương tác.",
       confirmLabel: "Mở lại",
       cancelLabel: "Quay lại",
     });
-
     if (!confirmed) return;
 
     try {
       setIsLoading(true);
       clearPageFeedback();
-
-      const response =
-        await postApi.reactivatePost(
-          targetPostId,
-        );
-
-      showPageSuccess(
-        getApiSuccessMessage(
-          response,
-          "Đã mở lại bài đăng.",
-        ),
-      );
-
+      const response = await postApi.reactivatePost(targetPostId);
+      showPageSuccess(getApiSuccessMessage(response, "Đã mở lại bài đăng."));
       await fetchPostData();
     } catch (error) {
       showPageError(
-        getApiErrorMessage(
-          error,
-          "Không thể mở lại bài đăng lúc này.",
-        ),
+        getApiErrorMessage(error, "Không thể mở lại bài đăng lúc này."),
       );
     } finally {
       setIsLoading(false);
     }
   };
 
-  /**
-   * NOTE:
-   * Nếu đã có đề nghị Pending thì không còn mở form sửa đề nghị.
-   * Người dùng được hướng dẫn theo dõi trong Tin nhắn.
-   */
   const handleOpenOffer = () => {
     if (!user) {
-      router.push(
-        `/(auth)/login?returnUrl=/posts/${id}`,
+      router.push(`/(auth)/login?returnUrl=/posts/${id}`);
+      return;
+    }
+
+    // BE cũng chặn Business gửi Offer vào Buy Post của Business khác.
+    if (user.role === "business" && post?.postType === "Buy") {
+      showPageError(
+        "Tài khoản doanh nghiệp không thể tương tác với tin thu mua của doanh nghiệp khác.",
       );
       return;
     }
 
     if (existingOfferId) {
-      showPageInfo(
-        "Bạn đã gửi đề nghị cho bài đăng này. Hãy theo dõi tại mục Tin nhắn.",
-      );
+      clearPageFeedback();
+      router.push({
+        pathname: "/offers/[id]",
+        params: { id: existingOfferId },
+      });
       return;
     }
 
@@ -344,94 +426,60 @@ export default function PostDetailScreen() {
   };
 
   const validateOfferForm = () => {
-    const quantity = parseInt(
-      offerQuantity,
-      10,
-    );
+    const quantity = parseInt(offerQuantity, 10);
     const price = parseInt(offerPrice, 10);
 
-    if (
-      Number.isNaN(quantity) ||
-      quantity <= 0
-    ) {
-      showOfferError(
-        "Số lượng phải là số nguyên lớn hơn 0.",
-      );
+    if (Number.isNaN(quantity) || quantity <= 0) {
+      showOfferError("Số lượng phải là số nguyên lớn hơn 0.");
       return null;
     }
 
-    if (
-      quantity >
-      Number(post?.remainingQuantity || 0)
-    ) {
-      showOfferError(
-        `Số lượng tối đa là ${
-          post?.remainingQuantity || 0
-        }.`,
-      );
+    if (quantity > Number(post?.remainingQuantity || 0)) {
+      showOfferError(`Số lượng tối đa là ${post?.remainingQuantity || 0}.`);
       return null;
     }
 
-    if (
-      Number.isNaN(price) ||
-      price <= 0
-    ) {
-      showOfferError(
-        "Giá thương lượng phải lớn hơn 0.",
-      );
+    if (Number.isNaN(price) || price <= 0) {
+      showOfferError("Giá thương lượng phải lớn hơn 0.");
       return null;
     }
 
-    return {
-      quantity,
-      price,
-    };
+    return { quantity, price };
   };
 
   const handleCreateOffer = async () => {
-    const valid = validateOfferForm();
+    if (user?.role === "business" && post?.postType === "Buy") {
+      showOfferError(
+        "Tài khoản doanh nghiệp không thể gửi đề nghị tới tin thu mua của doanh nghiệp khác.",
+      );
+      return;
+    }
 
+    const valid = validateOfferForm();
     if (!valid) return;
 
     const targetPostId =
-      post?.postId ||
-      (Array.isArray(id) ? id[0] : id);
-
+      post?.postId || (Array.isArray(id) ? id[0] : id);
     if (!targetPostId) {
-      showOfferError(
-        "Không tìm thấy bài đăng cần thương lượng.",
-      );
+      showOfferError("Không tìm thấy bài đăng cần thương lượng.");
       return;
     }
 
     try {
       setIsSubmittingOffer(true);
       clearOfferFeedback();
-
-      const response =
-        await offerApi.createOffer({
-          postId: targetPostId,
-          offerPrice: valid.price,
-          offerQuantity: valid.quantity,
-        });
-
+      const response = await offerApi.createOffer({
+        postId: targetPostId,
+        offerPrice: valid.price,
+        offerQuantity: valid.quantity,
+      });
       setShowOfferModal(false);
-
       showPageSuccess(
-        getApiSuccessMessage(
-          response,
-          "Đã gửi đề nghị thương lượng.",
-        ),
+        getApiSuccessMessage(response, "Đã gửi đề nghị thương lượng."),
       );
-
       await fetchPostData();
     } catch (error) {
-      showOfferError(
-        getApiErrorMessage(
-          error,
-          "Không thể gửi đề nghị.",
-        ),
-      );
+      showOfferError(getApiErrorMessage(error, "Không thể gửi đề nghị."));
     } finally {
       setIsSubmittingOffer(false);
     }
@@ -439,60 +487,43 @@ export default function PostDetailScreen() {
 
   const handleOpenCartModal = () => {
     const targetPostId =
-      post?.postId ||
-      (Array.isArray(id) ? id[0] : id);
+      post?.postId || (Array.isArray(id) ? id[0] : id);
 
     if (!user) {
       router.push({
         pathname: "/(auth)/login",
-        params: {
-          returnUrl: `/posts/${
-            targetPostId || ""
-          }`,
-        },
+        params: { returnUrl: `/posts/${targetPostId || ""}` },
       });
       return;
     }
 
     if (!targetPostId) {
-      showPageError(
-        "Không tìm thấy bài đăng cần thêm vào giỏ hàng.",
-      );
+      showPageError("Không tìm thấy bài đăng cần thêm vào giỏ hàng.");
       return;
     }
 
-    /**
-     * NOTE:
-     * Cả tin bán và tin thu mua đều được thêm vào giỏ hàng.
-     * Chỉ chặn bài đăng do chính người dùng tạo.
-     */
+    // CartService BE chỉ nhận PostType.Sell. Buy Post không bao giờ được add cart.
+    if (post?.postType !== "Sell") {
+      showPageError("Tin thu mua không thể thêm vào giỏ hàng.");
+      return;
+    }
+
     if (
       currentUserId &&
       post?.ownerId &&
-      String(currentUserId) ===
-        String(post.ownerId)
+      String(currentUserId) === String(post.ownerId)
     ) {
-      showPageError(
-        "Bạn không thể thêm bài đăng của chính mình vào giỏ hàng.",
-      );
+      showPageError("Bạn không thể thêm bài đăng của chính mình vào giỏ hàng.");
       return;
     }
 
     if (post?.status !== "Active") {
-      showPageError(
-        "Bài đăng này hiện không còn hoạt động.",
-      );
+      showPageError("Bài đăng này hiện không còn hoạt động.");
       return;
     }
 
-    if (
-      Number(
-        post?.remainingQuantity || 0,
-      ) <= 0
-    ) {
-      showPageError(
-        "Sản phẩm này hiện đã hết số lượng.",
-      );
+    if (Number(post?.remainingQuantity || 0) <= 0) {
+      showPageError("Sản phẩm này hiện đã hết số lượng.");
       return;
     }
 
@@ -504,59 +535,41 @@ export default function PostDetailScreen() {
 
   const handleAddToCart = async () => {
     const targetPostId =
-      post?.postId ||
-      (Array.isArray(id) ? id[0] : id);
-
+      post?.postId || (Array.isArray(id) ? id[0] : id);
     const quantity = Number(cartQuantity);
 
     if (!targetPostId) {
-      showCartError(
-        "Không tìm thấy bài đăng cần thêm.",
-      );
+      showCartError("Không tìm thấy bài đăng cần thêm.");
       return;
     }
 
-    if (
-      !Number.isInteger(quantity) ||
-      quantity <= 0
-    ) {
-      showCartError(
-        "Số lượng phải là số nguyên lớn hơn 0.",
-      );
+    if (post?.postType !== "Sell") {
+      showCartError("Tin thu mua không thể thêm vào giỏ hàng.");
       return;
     }
 
-    if (
-      quantity >
-      Number(post?.remainingQuantity || 0)
-    ) {
-      showCartError(
-        `Số lượng tối đa là ${
-          post?.remainingQuantity || 0
-        }.`,
-      );
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      showCartError("Số lượng phải là số nguyên lớn hơn 0.");
+      return;
+    }
+
+    if (quantity > Number(post?.remainingQuantity || 0)) {
+      showCartError(`Số lượng tối đa là ${post?.remainingQuantity || 0}.`);
       return;
     }
 
     try {
       setIsAddingToCart(true);
       clearCartFeedback();
-
-      const response =
-        await cartApi.addToCart(
-          targetPostId,
-          quantity,
-        );
+      const response = await cartApi.addToCart(targetPostId, quantity);
 
       if (response?.isSuccess === false) {
         throw new Error(
-          response?.error?.message ||
-            "Không thể thêm sản phẩm vào giỏ hàng.",
+          response?.error?.message || "Không thể thêm sản phẩm vào giỏ hàng.",
         );
       }
 
       setCartAdded(true);
-
       showCartSuccess(
         getApiSuccessMessage(
           response,
@@ -565,10 +578,7 @@ export default function PostDetailScreen() {
       );
     } catch (error) {
       showCartError(
-        getApiErrorMessage(
-          error,
-          "Không thể thêm sản phẩm vào giỏ hàng.",
-        ),
+        getApiErrorMessage(error, "Không thể thêm sản phẩm vào giỏ hàng."),
       );
     } finally {
       setIsAddingToCart(false);
@@ -576,88 +586,38 @@ export default function PostDetailScreen() {
   };
 
   const formatPrice = (price: number) =>
-    price
-      ? `${Number(price).toLocaleString(
-          "vi-VN",
-        )} đ`
-      : "0 đ";
+    price ? `${Number(price).toLocaleString("vi-VN")} đ` : "0 đ";
 
-  const formatDate = (
-    dateString: string,
-  ) => {
+  const formatDate = (dateString: string) => {
     if (!dateString) return "N/A";
-
-    const date = new Date(dateString);
-
-    return date.toLocaleDateString(
-      "vi-VN",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      },
-    );
+    return new Date(dateString).toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
-  const translateFuncStatus = (
-    status: string,
-  ) => {
-    if (status === "FullyFunctional") {
-      return "Hoạt động hoàn hảo";
-    }
-
-    if (
-      status === "PartiallyFunctional"
-    ) {
-      return "Hoạt động một phần";
-    }
-
-    if (status === "NonFunctional") {
-      return "Không hoạt động";
-    }
-
+  const translateFuncStatus = (status: string) => {
+    if (status === "FullyFunctional") return "Hoạt động hoàn hảo";
+    if (status === "PartiallyFunctional") return "Hoạt động một phần";
+    if (status === "NonFunctional") return "Không hoạt động";
     return "Không rõ";
   };
 
-  const translateDamage = (
-    level: string,
-  ) => {
-    if (level === "None") {
-      return "Như mới";
-    }
-
-    if (level === "Cosmetic_Damage") {
-      return "Trầy xước ngoại hình";
-    }
-
-    if (level === "Minor_Damage") {
-      return "Hư hỏng nhẹ";
-    }
-
-    if (level === "Moderate_Damage") {
-      return "Hư hỏng vừa";
-    }
-
-    if (level === "Severe_Damage") {
-      return "Hư hỏng nặng";
-    }
-
-    if (level === "Total_Loss") {
-      return "Mất chức năng";
-    }
-
+  const translateDamage = (level: string) => {
+    if (level === "None") return "Như mới";
+    if (level === "Cosmetic_Damage") return "Trầy xước ngoại hình";
+    if (level === "Minor_Damage") return "Hư hỏng nhẹ";
+    if (level === "Moderate_Damage") return "Hư hỏng vừa";
+    if (level === "Severe_Damage") return "Hư hỏng nặng";
+    if (level === "Total_Loss") return "Mất chức năng";
     return "Không rõ";
   };
 
-  const translateSpace = (
-    space: string,
-  ) => {
-    const spaces: Record<
-      string,
-      string
-    > = {
+  const translateSpace = (space: string) => {
+    const spaces: Record<string, string> = {
       Living_room: "Phòng khách",
       Kitchen: "Nhà bếp",
       Bedroom: "Phòng ngủ",
@@ -667,22 +627,14 @@ export default function PostDetailScreen() {
       Garage: "Garage",
       Restroom: "Nhà vệ sinh",
     };
-
-    return (
-      spaces[space] ||
-      space ||
-      "Không rõ"
-    );
+    return spaces[space] || space || "Không rõ";
   };
 
-  const getEavValue = (
-    attribute: any,
-  ) =>
+  const getEavValue = (attribute: any) =>
     attribute.optionValue ||
     attribute.valueText ||
     attribute.valueNumber ||
-    (attribute.valueBoolean !== null &&
-    attribute.valueBoolean !== undefined
+    (attribute.valueBoolean !== null && attribute.valueBoolean !== undefined
       ? attribute.valueBoolean
         ? "Có"
         : "Không"
@@ -690,150 +642,88 @@ export default function PostDetailScreen() {
 
   if (isLoading && !post) {
     return (
-      <SafeAreaView
-        style={styles.loadingContainer}
-      >
-        <ActivityIndicator
-          size="large"
-          color={COLORS.primary}
-        />
-
-        <Text style={styles.loadingText}>
-          Đang tải chi tiết...
-        </Text>
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Đang tải chi tiết...</Text>
       </SafeAreaView>
     );
   }
 
   if (!post) {
     return (
-      <SafeAreaView
-        style={styles.loadingContainer}
-      >
+      <SafeAreaView style={styles.loadingContainer}>
         {pageFeedback ? (
           <InlineFeedback
             feedback={pageFeedback}
-            onDismiss={
-              clearPageFeedback
-            }
+            onDismiss={clearPageFeedback}
             style={styles.emptyFeedback}
           />
         ) : (
-          <Text style={styles.notFoundText}>
-            Không tìm thấy bài đăng!
-          </Text>
+          <Text style={styles.notFoundText}>Không tìm thấy bài đăng!</Text>
         )}
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>Quay lại</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backBtnText}>
-            Quay lại
-          </Text>
+  if (isBusinessViewingForeignBuy) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Ionicons name="business-outline" size={52} color={COLORS.textLight} />
+        <Text style={styles.restrictedTitle}>Tin không khả dụng</Text>
+        <Text style={styles.restrictedText}>
+          Tài khoản doanh nghiệp không thể xem hoặc tương tác với tin thu mua
+          của doanh nghiệp khác.
+        </Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
   const product = post.product || {};
-
-  const address = [
-    post.streetAddress,
-    post.ward,
-    post.city,
-  ]
+  const address = [post.streetAddress, post.ward, post.city]
     .filter(Boolean)
     .join(", ");
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.headerIcon}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={COLORS.text}
-          />
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>
-          Chi tiết tin đăng
-        </Text>
-
-        {/* Giữ tiêu đề căn giữa sau khi xóa nút chia sẻ */}
+        <Text style={styles.headerTitle}>Chi tiết tin đăng</Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        style={styles.scrollView}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
         <View style={styles.imageContainer}>
-          {post.medias &&
-          post.medias.length > 0 ? (
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={
-                false
-              }
-            >
-              {post.medias.map(
-                (image: any) => (
-                  <Image
-                    key={image.mediaId}
-                    source={{
-                      uri:
-                        image.url ||
-                        image.mediaUrl,
-                    }}
-                    style={styles.mainImage}
-                    resizeMode="cover"
-                  />
-                ),
-              )}
+          {post.medias && post.medias.length > 0 ? (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+              {post.medias.map((image: any) => (
+                <Image
+                  key={image.mediaId}
+                  source={{ uri: image.url || image.mediaUrl }}
+                  style={styles.mainImage}
+                  resizeMode="cover"
+                />
+              ))}
             </ScrollView>
           ) : (
-            <View
-              style={[
-                styles.mainImage,
-                styles.imagePlaceholder,
-              ]}
-            >
-              <Ionicons
-                name="image-outline"
-                size={48}
-                color="#94A3B8"
-              />
-
-              <Text
-                style={
-                  styles.imagePlaceholderText
-                }
-              >
-                Không có hình ảnh
-              </Text>
+            <View style={[styles.mainImage, styles.imagePlaceholder]}>
+              <Ionicons name="image-outline" size={48} color="#94A3B8" />
+              <Text style={styles.imagePlaceholderText}>Không có hình ảnh</Text>
             </View>
           )}
 
-          {post.medias &&
-            post.medias.length > 1 && (
-              <View
-                style={styles.imageBadge}
-              >
-                <Text
-                  style={
-                    styles.imageBadgeText
-                  }
-                >
-                  1 / {post.medias.length}
-                </Text>
-              </View>
-            )}
+          {post.medias && post.medias.length > 1 ? (
+            <View style={styles.imageBadge}>
+              <Text style={styles.imageBadgeText}>1 / {post.medias.length}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -842,65 +732,31 @@ export default function PostDetailScreen() {
               post.productName ||
               "Sản phẩm chưa cập nhật tên"}
           </Text>
-
           <View style={styles.priceRow}>
-            <Text style={styles.price}>
-              {formatPrice(post.basePrice)}
-            </Text>
-
+            <Text style={styles.price}>{formatPrice(post.basePrice)}</Text>
             {product.originalPrice ? (
-              <Text
-                style={styles.originalPrice}
-              >
-                {formatPrice(
-                  product.originalPrice,
-                )}
+              <Text style={styles.originalPrice}>
+                {formatPrice(product.originalPrice)}
               </Text>
             ) : null}
           </View>
-
           <View style={styles.tagRow}>
             <View style={styles.tag}>
               <Text style={styles.tagText}>
-                {post.postType === "Sell"
-                  ? "Tin Bán"
-                  : "Tin Mua"}
+                {post.postType === "Sell" ? "Tin Bán" : "Tin Mua"}
               </Text>
             </View>
-
-            {/*
-              NOTE:
-              Không hiển thị trạng thái kỹ thuật như Active/Closed
-              trực tiếp cho người dùng.
-            */}
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Mô tả chung
-          </Text>
-
-          <Text style={styles.description}>
-            {post.description ||
-              "Chưa có mô tả."}
-          </Text>
-
+          <Text style={styles.sectionTitle}>Mô tả chung</Text>
+          <Text style={styles.description}>{post.description || "Chưa có mô tả."}</Text>
           {product.detailDescription ? (
             <>
               <View style={styles.divider} />
-
-              <Text
-                style={styles.sectionTitle}
-              >
-                Mô tả tình trạng chi tiết
-              </Text>
-
-              <Text
-                style={
-                  styles.detailDescription
-                }
-              >
+              <Text style={styles.sectionTitle}>Mô tả tình trạng chi tiết</Text>
+              <Text style={styles.detailDescription}>
                 {product.detailDescription}
               </Text>
             </>
@@ -908,408 +764,126 @@ export default function PostDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Thông số kỹ thuật
-          </Text>
-
+          <Text style={styles.sectionTitle}>Thông số kỹ thuật</Text>
           <View style={styles.specGrid}>
             {product.categoryName ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="grid-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Danh mục
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.categoryName}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="grid-outline"
+                label="Danh mục"
+                value={product.categoryName}
+              />
             ) : null}
-
             {product.productTypeName ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="layers-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Loại sản phẩm
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {
-                      product.productTypeName
-                    }
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="layers-outline"
+                label="Loại sản phẩm"
+                value={product.productTypeName}
+              />
             ) : null}
-
             {product.brandName ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Thương hiệu
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.brandName}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="shield-checkmark-outline"
+                label="Thương hiệu"
+                value={product.brandName}
+              />
             ) : null}
-
             {product.modelNumber ? (
-              <View
-                style={[
-                  styles.specItem,
-                  styles.fullWidthSpec,
-                ]}
-              >
-                <Ionicons
-                  name="barcode-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Mã Model
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.modelNumber}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="barcode-outline"
+                label="Mã Model"
+                value={product.modelNumber}
+                fullWidth
+              />
             ) : null}
-
             {product.functionalityStatus ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="build-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Tình trạng
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {translateFuncStatus(
-                      product.functionalityStatus,
-                    )}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="build-outline"
+                label="Tình trạng"
+                value={translateFuncStatus(product.functionalityStatus)}
+              />
             ) : null}
-
             {product.damageLevel ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="bandage-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Hư hại
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {translateDamage(
-                      product.damageLevel,
-                    )}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="bandage-outline"
+                label="Hư hại"
+                value={translateDamage(product.damageLevel)}
+              />
             ) : null}
-
             {product.usageDuration ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="time-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Thời gian SD
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.usageDuration} năm
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="time-outline"
+                label="Thời gian SD"
+                value={`${product.usageDuration} năm`}
+              />
             ) : null}
-
             {product.spaceUsage ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="home-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Không gian
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {translateSpace(
-                      product.spaceUsage,
-                    )}
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="home-outline"
+                label="Không gian"
+                value={translateSpace(product.spaceUsage)}
+              />
             ) : null}
-
-            {product.length ||
-            product.width ||
-            product.height ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="expand-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Kích thước (DxRxC)
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.length || 0} x{" "}
-                    {product.width || 0} x{" "}
-                    {product.height || 0} cm
-                  </Text>
-                </View>
-              </View>
+            {product.length || product.width || product.height ? (
+              <SpecItem
+                icon="expand-outline"
+                label="Kích thước (DxRxC)"
+                value={`${product.length || 0} x ${product.width || 0} x ${
+                  product.height || 0
+                } cm`}
+              />
             ) : null}
-
             {product.weight ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="barbell-outline"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-
-                <View
-                  style={styles.specContent}
-                >
-                  <Text
-                    style={styles.specLabel}
-                  >
-                    Khối lượng
-                  </Text>
-
-                  <Text
-                    style={styles.specValue}
-                  >
-                    {product.weight} kg
-                  </Text>
-                </View>
-              </View>
+              <SpecItem
+                icon="barbell-outline"
+                label="Khối lượng"
+                value={`${product.weight} kg`}
+              />
             ) : null}
-
-            {product.attributeValues?.map(
-              (
-                attribute: any,
-                index: number,
-              ) => {
-                const unitText =
-                  attribute.unit &&
-                  attribute.unit !== "string"
-                    ? ` ${attribute.unit}`
-                    : "";
-
-                return (
-                  <View
-                    key={
-                      attribute.attributeId ||
-                      index
-                    }
-                    style={[
-                      styles.specItem,
-                      styles.fullWidthSpec,
-                    ]}
-                  >
-                    <Ionicons
-                      name="pricetag-outline"
-                      size={18}
-                      color={
-                        COLORS.textLight
-                      }
-                    />
-
-                    <View
-                      style={
-                        styles.specContent
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.specLabel
-                        }
-                      >
-                        {
-                          attribute.attributeName
-                        }
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.specValue
-                        }
-                      >
-                        {getEavValue(
-                          attribute,
-                        )}
-                        {unitText}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              },
-            )}
+            {product.attributeValues?.map((attribute: any, index: number) => {
+              const unitText =
+                attribute.unit && attribute.unit !== "string"
+                  ? ` ${attribute.unit}`
+                  : "";
+              return (
+                <SpecItem
+                  key={attribute.attributeId || index}
+                  icon="pricetag-outline"
+                  label={attribute.attributeName}
+                  value={`${getEavValue(attribute)}${unitText}`}
+                  fullWidth
+                />
+              );
+            })}
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Thông tin giao dịch
-          </Text>
-
+          <Text style={styles.sectionTitle}>Thông tin giao dịch</Text>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>
-              Số lượng:
-            </Text>
-
+            <Text style={styles.infoLabel}>Số lượng:</Text>
             <Text style={styles.infoValue}>
-              {post.remainingQuantity} /{" "}
-              {post.quantity}
+              {post.remainingQuantity} / {post.quantity}
             </Text>
           </View>
-
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>
-              Vận chuyển:
-            </Text>
-
+            <Text style={styles.infoLabel}>Vận chuyển:</Text>
             <Text style={styles.infoValue}>
-              {post.deliveryMethod ||
-                "Chưa cập nhật"}
+              {post.deliveryMethod || "Chưa cập nhật"}
             </Text>
           </View>
-
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>
-              Địa chỉ:
-            </Text>
-
-            <Text style={styles.infoValue}>
-              {address || "Chưa cập nhật"}
-            </Text>
+            <Text style={styles.infoLabel}>Địa chỉ:</Text>
+            <Text style={styles.infoValue}>{address || "Chưa cập nhật"}</Text>
           </View>
         </View>
 
-        <View
-          style={[
-            styles.section,
-            styles.lastSection,
-          ]}
-        >
+        <View style={[styles.section, styles.lastSection]}>
+          <Text style={styles.dateText}>Ngày đăng: {formatDate(post.createdAt)}</Text>
           <Text style={styles.dateText}>
-            Ngày đăng:{" "}
-            {formatDate(post.createdAt)}
+            Cập nhật lần cuối: {formatDate(post.updatedAt)}
           </Text>
-
           <Text style={styles.dateText}>
-            Cập nhật lần cuối:{" "}
-            {formatDate(post.updatedAt)}
-          </Text>
-
-          <Text style={styles.dateText}>
-            Ngày hết hạn:{" "}
-            {formatDate(post.expiryDate)}
+            Ngày hết hạn: {formatDate(post.expiryDate)}
           </Text>
         </View>
       </ScrollView>
@@ -1333,221 +907,117 @@ export default function PostDetailScreen() {
         </Text>
       ) : null}
 
-      {!isViewOnly &&
-        post.status !== "Deleted" && (
-          <View style={styles.bottomBar}>
-            {isMyPost ? (
-              <>
-                {post.status === "Active" ? (
-                  <TouchableOpacity
-                    style={styles.dangerBtn}
-                    onPress={
-                      handleClosePost
-                    }
-                  >
-                    <Ionicons
-                      name="close-circle-outline"
-                      size={20}
-                      color={COLORS.error}
-                    />
-
-                    <Text
-                      style={
-                        styles.dangerBtnText
-                      }
-                    >
-                      Đóng tin
-                    </Text>
-                  </TouchableOpacity>
-                ) : post.status ===
-                  "Closed" ? (
-                  <TouchableOpacity
-                    style={
-                      styles.reactivateBtn
-                    }
-                    onPress={
-                      handleReactivatePost
-                    }
-                  >
-                    <Ionicons
-                      name="refresh-circle-outline"
-                      size={20}
-                      color={
-                        COLORS.primary
-                      }
-                    />
-
-                    <Text
-                      style={
-                        styles.reactivateBtnText
-                      }
-                    >
-                      Mở lại tin
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-
+      {!isViewOnly && post.status !== "Deleted" ? (
+        <View style={styles.bottomBar}>
+          {isMyPost ? (
+            <>
+              {post.status === "Active" ? (
+                <TouchableOpacity style={styles.dangerBtn} onPress={handleClosePost}>
+                  <Ionicons
+                    name="close-circle-outline"
+                    size={20}
+                    color={COLORS.error}
+                  />
+                  <Text style={styles.dangerBtnText}>Đóng tin</Text>
+                </TouchableOpacity>
+              ) : post.status === "Closed" ? (
                 <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={() =>
-                    router.push({
-                      pathname:
-                        "/posts/post-form",
-                      params: {
-                        editId: post.postId,
-                        postType:
-                          post.postType,
-                      },
-                    })
-                  }
+                  style={styles.reactivateBtn}
+                  onPress={handleReactivatePost}
                 >
                   <Ionicons
-                    name="pencil"
+                    name="refresh-circle-outline"
                     size={20}
-                    color={COLORS.white}
+                    color={COLORS.primary}
                   />
-
-                  <Text
-                    style={
-                      styles.primaryBtnText
-                    }
-                  >
-                    Sửa tin đăng
-                  </Text>
+                  <Text style={styles.reactivateBtnText}>Mở lại tin</Text>
                 </TouchableOpacity>
-              </>
-            ) : post.status ===
-              "Active" ? (
-              <View
-                style={
-                  styles.customerActions
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() =>
+                  router.push({
+                    pathname: "/posts/post-form",
+                    params: { editId: post.postId, postType: post.postType },
+                  })
                 }
               >
+                <Ionicons name="pencil" size={20} color={COLORS.white} />
+                <Text style={styles.primaryBtnText}>Sửa tin đăng</Text>
+              </TouchableOpacity>
+            </>
+          ) : post.status === "Active" ? (
+            <View style={styles.customerActions}>
+              {post.postType === "Sell" ? (
                 <TouchableOpacity
                   style={[
                     styles.cartBtn,
-                    isAddingToCart &&
-                      styles.disabledButton,
+                    isAddingToCart ? styles.disabledButton : undefined,
                   ]}
-                  onPress={
-                    handleOpenCartModal
-                  }
+                  onPress={handleOpenCartModal}
                   disabled={isAddingToCart}
                 >
                   {isAddingToCart ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={COLORS.primary}
-                    />
+                    <ActivityIndicator size="small" color={COLORS.primary} />
                   ) : (
-                    <Ionicons
-                      name="cart-outline"
-                      size={20}
-                      color={COLORS.primary}
-                    />
+                    <Ionicons name="cart-outline" size={20} color={COLORS.primary} />
                   )}
-
-                  <Text
-                    style={
-                      styles.cartBtnText
-                    }
-                  >
-                    {isAddingToCart
-                      ? "Đang thêm..."
-                      : "Thêm giỏ hàng"}
+                  <Text style={styles.cartBtnText}>
+                    {isAddingToCart ? "Đang thêm..." : "Thêm giỏ hàng"}
                   </Text>
                 </TouchableOpacity>
+              ) : null}
 
-                <TouchableOpacity
-                  style={[
-                    styles.negotiateBtn,
-                    existingOfferId &&
-                      styles.sentOfferBtn,
-                  ]}
-                  onPress={handleOpenOffer}
-                >
-                  <Ionicons
-                    name={
-                      existingOfferId
-                        ? "checkmark-circle"
-                        : "chatbubbles"
-                    }
-                    size={20}
-                    color={COLORS.white}
-                  />
-
-                  <Text
-                    style={
-                      styles.negotiateBtnText
-                    }
-                  >
-                    {existingOfferId
-                      ? "Đã gửi đề nghị"
-                      : "Thương lượng"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View
-                style={
-                  styles.closedPostContainer
-                }
+              <TouchableOpacity
+                style={[
+                  styles.negotiateBtn,
+                  existingOfferId ? styles.sentOfferBtn : undefined,
+                ]}
+                onPress={handleOpenOffer}
               >
-                <Text
-                  style={
-                    styles.closedPostText
+                <Ionicons
+                  name={
+                    existingOfferId
+                      ? "document-text-outline"
+                      : "chatbubbles"
                   }
-                >
-                  Tin đăng này hiện đã đóng
+                  size={20}
+                  color={COLORS.white}
+                />
+                <Text style={styles.negotiateBtnText}>
+                  {existingOfferId ? "Xem đề nghị đã gửi" : "Thương lượng"}
                 </Text>
-              </View>
-            )}
-          </View>
-        )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.closedPostContainer}>
+              <Text style={styles.closedPostText}>Tin đăng này hiện đã đóng</Text>
+            </View>
+          )}
+        </View>
+      ) : null}
 
-      {/*
-        NOTE:
-        Modal giỏ hàng giữ message ngay trong modal.
-        Sau khi thêm thành công, người dùng chọn:
-        - Tiếp tục xem
-        - Xem giỏ hàng
-        Không dùng window.confirm.
-      */}
       <Modal
         visible={showCartModal}
         transparent
         animationType="slide"
         onRequestClose={() => {
-          if (!isAddingToCart) {
-            setShowCartModal(false);
-          }
+          if (!isAddingToCart) setShowCartModal(false);
         }}
       >
         <KeyboardAvoidingView
-          behavior={
-            Platform.OS === "ios"
-              ? "padding"
-              : "height"
-          }
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Thêm vào giỏ hàng
-              </Text>
-
+              <Text style={styles.modalTitle}>Thêm vào giỏ hàng</Text>
               <TouchableOpacity
-                onPress={() =>
-                  setShowCartModal(false)
-                }
+                onPress={() => setShowCartModal(false)}
                 disabled={isAddingToCart}
               >
-                <Ionicons
-                  name="close"
-                  size={24}
-                  color={COLORS.text}
-                />
+                <Ionicons name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
             </View>
 
@@ -1555,195 +1025,87 @@ export default function PostDetailScreen() {
               {cartFeedback ? (
                 <InlineFeedback
                   feedback={cartFeedback}
-                  onDismiss={
-                    clearCartFeedback
-                  }
+                  onDismiss={clearCartFeedback}
                 />
               ) : null}
 
               <View>
-                <Text
-                  style={
-                    styles.cartModalProductName
-                  }
-                  numberOfLines={2}
-                >
-                  {product.productName ||
-                    post.productName ||
-                    "Sản phẩm"}
+                <Text style={styles.cartModalProductName} numberOfLines={2}>
+                  {product.productName || post.productName || "Sản phẩm"}
                 </Text>
-
-                <Text
-                  style={
-                    styles.cartModalPrice
-                  }
-                >
-                  {formatPrice(
-                    post.basePrice,
-                  )}{" "}
-                  / sản phẩm
+                <Text style={styles.cartModalPrice}>
+                  {formatPrice(post.basePrice)} / sản phẩm
                 </Text>
               </View>
 
-              <View
-                style={styles.inputGroup}
-              >
-                <Text
-                  style={styles.inputLabel}
-                >
-                  Số lượng (Tối đa:{" "}
-                  {post.remainingQuantity}){" "}
-                  <Text
-                    style={{
-                      color: COLORS.error,
-                    }}
-                  >
-                    *
-                  </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Số lượng (Tối đa: {post.remainingQuantity}){" "}
+                  <Text style={{ color: COLORS.error }}>*</Text>
                 </Text>
-
                 <TextInput
                   style={[
                     styles.input,
-                    Platform.OS === "web" &&
-                      ({
-                        outlineStyle:
-                          "none",
-                      } as any),
+                    Platform.OS === "web"
+                      ? ({ outlineStyle: "none" } as any)
+                      : undefined,
                   ]}
                   keyboardType="number-pad"
                   value={cartQuantity}
                   onChangeText={(value) => {
-                    setCartQuantity(
-                      value.replace(
-                        /[^0-9]/g,
-                        "",
-                      ),
-                    );
+                    setCartQuantity(value.replace(/[^0-9]/g, ""));
                     setCartAdded(false);
                     clearCartFeedback();
                   }}
                   placeholder="Nhập số lượng..."
-                  editable={
-                    !isAddingToCart
-                  }
+                  editable={!isAddingToCart}
                   selectTextOnFocus
                 />
               </View>
 
-              <View
-                style={
-                  styles.cartModalTotalRow
-                }
-              >
-                <Text
-                  style={
-                    styles.cartModalTotalLabel
-                  }
-                >
-                  Tạm tính
-                </Text>
-
-                <Text
-                  style={
-                    styles.cartModalTotalValue
-                  }
-                >
+              <View style={styles.cartModalTotalRow}>
+                <Text style={styles.cartModalTotalLabel}>Tạm tính</Text>
+                <Text style={styles.cartModalTotalValue}>
                   {formatPrice(
-                    Number(
-                      post.basePrice || 0,
-                    ) *
-                      Number(
-                        cartQuantity || 0,
-                      ),
+                    Number(post.basePrice || 0) * Number(cartQuantity || 0),
                   )}
                 </Text>
               </View>
 
               {cartAdded ? (
-                <View
-                  style={
-                    styles.cartSuccessActions
-                  }
-                >
+                <View style={styles.cartSuccessActions}>
                   <TouchableOpacity
                     style={styles.cartBtn}
-                    onPress={() =>
-                      setShowCartModal(
-                        false,
-                      )
-                    }
+                    onPress={() => setShowCartModal(false)}
                   >
-                    <Text
-                      style={
-                        styles.cartBtnText
-                      }
-                    >
-                      Tiếp tục xem
-                    </Text>
+                    <Text style={styles.cartBtnText}>Tiếp tục xem</Text>
                   </TouchableOpacity>
-
                   <TouchableOpacity
-                    style={
-                      styles.primaryBtn
-                    }
+                    style={styles.primaryBtn}
                     onPress={() => {
-                      setShowCartModal(
-                        false,
-                      );
-                      router.push(
-                        "/(tabs)/cart",
-                      );
+                      setShowCartModal(false);
+                      router.push("/(tabs)/cart");
                     }}
                   >
-                    <Text
-                      style={
-                        styles.primaryBtnText
-                      }
-                    >
-                      Xem giỏ hàng
-                    </Text>
+                    <Text style={styles.primaryBtnText}>Xem giỏ hàng</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                /**
-                 * NOTE:
-                 * modalSubmitBtn làm nút cao hơn, ngắn hơn và căn giữa.
-                 * Không còn nút mỏng kéo dài hết modal.
-                 */
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
                     styles.modalSubmitBtn,
-                    isAddingToCart &&
-                      styles.disabledButton,
+                    isAddingToCart ? styles.disabledButton : undefined,
                   ]}
-                  onPress={() =>
-                    void handleAddToCart()
-                  }
+                  onPress={() => void handleAddToCart()}
                   disabled={isAddingToCart}
                 >
                   {isAddingToCart ? (
-                    <ActivityIndicator
-                      color={COLORS.white}
-                    />
+                    <ActivityIndicator color={COLORS.white} />
                   ) : (
                     <>
-                      <Ionicons
-                        name="cart-outline"
-                        size={20}
-                        color={
-                          COLORS.white
-                        }
-                      />
-
-                      <Text
-                        style={
-                          styles.primaryBtnText
-                        }
-                      >
-                        Thêm vào giỏ hàng
-                      </Text>
+                      <Ionicons name="cart-outline" size={20} color={COLORS.white} />
+                      <Text style={styles.primaryBtnText}>Thêm vào giỏ hàng</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -1753,48 +1115,26 @@ export default function PostDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/*
-        NOTE:
-        Modal này chỉ tạo đề nghị mới.
-        Đã loại bỏ toàn bộ chức năng sửa và hủy đề nghị.
-      */}
       <Modal
         visible={showOfferModal}
         transparent
         animationType="slide"
         onRequestClose={() => {
-          if (!isSubmittingOffer) {
-            setShowOfferModal(false);
-          }
+          if (!isSubmittingOffer) setShowOfferModal(false);
         }}
       >
         <KeyboardAvoidingView
-          behavior={
-            Platform.OS === "ios"
-              ? "padding"
-              : "height"
-          }
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Thương lượng giá
-              </Text>
-
+              <Text style={styles.modalTitle}>Thương lượng giá</Text>
               <TouchableOpacity
-                onPress={() =>
-                  setShowOfferModal(false)
-                }
-                disabled={
-                  isSubmittingOffer
-                }
+                onPress={() => setShowOfferModal(false)}
+                disabled={isSubmittingOffer}
               >
-                <Ionicons
-                  name="close"
-                  size={24}
-                  color={COLORS.text}
-                />
+                <Ionicons name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
             </View>
 
@@ -1802,163 +1142,87 @@ export default function PostDetailScreen() {
               {offerFeedback ? (
                 <InlineFeedback
                   feedback={offerFeedback}
-                  onDismiss={
-                    clearOfferFeedback
-                  }
+                  onDismiss={clearOfferFeedback}
                 />
               ) : null}
 
-              <View
-                style={styles.inputGroup}
-              >
-                <Text
-                  style={styles.inputLabel}
-                >
-                  Số lượng (Tối đa:{" "}
-                  {post.remainingQuantity}){" "}
-                  <Text
-                    style={{
-                      color: COLORS.error,
-                    }}
-                  >
-                    *
-                  </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Số lượng (Tối đa: {post.remainingQuantity}){" "}
+                  <Text style={{ color: COLORS.error }}>*</Text>
                 </Text>
-
                 <TextInput
                   style={[
                     styles.input,
-                    Platform.OS === "web" &&
-                      ({
-                        outlineStyle:
-                          "none",
-                      } as any),
+                    Platform.OS === "web"
+                      ? ({ outlineStyle: "none" } as any)
+                      : undefined,
                   ]}
                   keyboardType="number-pad"
                   value={offerQuantity}
                   onChangeText={(value) => {
-                    setOfferQuantity(
-                      value.replace(
-                        /[^0-9]/g,
-                        "",
-                      ),
-                    );
+                    setOfferQuantity(value.replace(/[^0-9]/g, ""));
                     clearOfferFeedback();
                   }}
                   placeholder="Nhập số lượng..."
-                  editable={
-                    !isSubmittingOffer
-                  }
+                  editable={!isSubmittingOffer}
                 />
               </View>
 
-              <View
-                style={styles.inputGroup}
-              >
-                <Text
-                  style={styles.inputLabel}
-                >
-                  Giá mong muốn của người bán
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  {post.postType === "Buy"
+                    ? "Giá dự kiến của người mua"
+                    : "Giá mong muốn của người bán"}
                 </Text>
-
-                <View
-                  style={
-                    styles.readOnlyInput
-                  }
-                >
-                  <Text
-                    style={
-                      styles.readOnlyText
-                    }
-                  >
-                    {formatPrice(
-                      post.basePrice,
-                    )}
-                  </Text>
+                <View style={styles.readOnlyInput}>
+                  <Text style={styles.readOnlyText}>{formatPrice(post.basePrice)}</Text>
                 </View>
               </View>
 
-              <View
-                style={styles.inputGroup}
-              >
-                <Text
-                  style={styles.inputLabel}
-                >
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
                   Giá thương lượng (VNĐ){" "}
-                  <Text
-                    style={{
-                      color: COLORS.error,
-                    }}
-                  >
-                    *
-                  </Text>
+                  <Text style={{ color: COLORS.error }}>*</Text>
                 </Text>
-
                 <TextInput
                   style={[
                     styles.input,
-                    Platform.OS === "web" &&
-                      ({
-                        outlineStyle:
-                          "none",
-                      } as any),
+                    Platform.OS === "web"
+                      ? ({ outlineStyle: "none" } as any)
+                      : undefined,
                   ]}
                   keyboardType="number-pad"
                   value={offerPrice}
                   onChangeText={(value) => {
-                    setOfferPrice(
-                      value.replace(
-                        /[^0-9]/g,
-                        "",
-                      ),
-                    );
+                    setOfferPrice(value.replace(/[^0-9]/g, ""));
                     clearOfferFeedback();
                   }}
                   placeholder="Ví dụ: 1500000"
-                  editable={
-                    !isSubmittingOffer
-                  }
+                  editable={!isSubmittingOffer}
                 />
               </View>
 
-              <View
-                style={styles.offerActions}
-              >
+              <View style={styles.offerActions}>
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
                     styles.modalSubmitBtn,
-                    isSubmittingOffer &&
-                      styles.disabledButton,
+                    isSubmittingOffer ? styles.disabledButton : undefined,
                   ]}
-                  onPress={() =>
-                    void handleCreateOffer()
-                  }
-                  disabled={
-                    isSubmittingOffer
-                  }
+                  onPress={() => void handleCreateOffer()}
+                  disabled={isSubmittingOffer}
                 >
                   {isSubmittingOffer ? (
-                    <ActivityIndicator
-                      color={COLORS.white}
-                    />
+                    <ActivityIndicator color={COLORS.white} />
                   ) : (
                     <>
                       <Ionicons
                         name="paper-plane-outline"
                         size={20}
-                        color={
-                          COLORS.white
-                        }
+                        color={COLORS.white}
                       />
-
-                      <Text
-                        style={
-                          styles.primaryBtnText
-                        }
-                      >
-                        Gửi đề nghị
-                      </Text>
+                      <Text style={styles.primaryBtnText}>Gửi đề nghị</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -1968,25 +1232,93 @@ export default function PostDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/*
-        NOTE:
-        Modal xác nhận đóng/mở lại bài đăng bằng UI riêng.
-      */}
       {confirmationModal}
     </SafeAreaView>
   );
 }
 
+function SpecItem({
+  icon,
+  label,
+  value,
+  fullWidth = false,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  value: string;
+  fullWidth?: boolean;
+}) {
+  return (
+    <View style={[styles.specItem, fullWidth ? styles.fullWidthSpec : undefined]}>
+      <Ionicons name={icon} size={18} color={COLORS.textLight} />
+      <View style={styles.specContent}>
+        <Text style={styles.specLabel}>{label}</Text>
+        <Text style={styles.specValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: COLORS.white },
+  scrollView: { backgroundColor: "#F1F5F9" },
+  localFeedback: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+  },
+  localFeedbackText: {
     flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  feedbackDismissButton: { padding: 1 },
+  confirmOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 420,
+    padding: 18,
+    borderRadius: 14,
     backgroundColor: COLORS.white,
   },
-
-  scrollView: {
-    backgroundColor: "#F1F5F9",
+  confirmTitle: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
+  confirmMessage: {
+    marginTop: 8,
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
   },
-
+  confirmActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+  confirmCancelButton: {
+    flex: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  confirmCancelText: { color: COLORS.text, fontWeight: "700" },
+  confirmPrimaryButton: {
+    flex: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+  },
+  confirmDestructiveButton: { backgroundColor: COLORS.error },
+  confirmPrimaryText: { color: COLORS.white, fontWeight: "800" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1994,23 +1326,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     paddingHorizontal: 20,
   },
-
-  loadingText: {
-    marginTop: 12,
-    color: COLORS.textLight,
+  loadingText: { marginTop: 12, color: COLORS.textLight },
+  notFoundText: { color: COLORS.error, fontSize: 16, textAlign: "center" },
+  restrictedTitle: {
+    marginTop: 14,
+    color: COLORS.text,
+    fontSize: 19,
+    fontWeight: "800",
   },
-
-  notFoundText: {
-    color: COLORS.error,
-    fontSize: 16,
+  restrictedText: {
+    marginTop: 8,
+    maxWidth: 360,
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 20,
     textAlign: "center",
   },
-
-  emptyFeedback: {
-    width: "100%",
-    maxWidth: 420,
-  },
-
+  emptyFeedback: { width: "100%", maxWidth: 420 },
   backBtn: {
     marginTop: 20,
     paddingHorizontal: 20,
@@ -2018,12 +1350,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderRadius: 8,
   },
-
-  backBtnText: {
-    color: COLORS.white,
-    fontWeight: "600",
-  },
-
+  backBtnText: { color: COLORS.white, fontWeight: "600" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -2033,43 +1360,17 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     backgroundColor: COLORS.white,
   },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: COLORS.text,
-  },
-
-  headerIcon: {
-    padding: 8,
-  },
-
-  headerSpacer: {
-    width: 40,
-    height: 40,
-  },
-
-  imageContainer: {
-    position: "relative",
-    backgroundColor: COLORS.white,
-  },
-
-  mainImage: {
-    width,
-    height: 300,
-  },
-
+  headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
+  headerIcon: { padding: 8 },
+  headerSpacer: { width: 40, height: 40 },
+  imageContainer: { position: "relative", backgroundColor: COLORS.white },
+  mainImage: { width, height: 300 },
   imagePlaceholder: {
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#E2E8F0",
   },
-
-  imagePlaceholderText: {
-    color: "#94A3B8",
-    marginTop: 8,
-  },
-
+  imagePlaceholderText: { color: "#94A3B8", marginTop: 8 },
   imageBadge: {
     position: "absolute",
     bottom: 16,
@@ -2079,23 +1380,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 16,
   },
-
-  imageBadgeText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-
+  imageBadgeText: { color: COLORS.white, fontSize: 12, fontWeight: "bold" },
   section: {
     backgroundColor: COLORS.white,
     padding: 16,
     marginBottom: 8,
   },
-
-  lastSection: {
-    marginBottom: 30,
-  },
-
+  lastSection: { marginBottom: 30 },
   productName: {
     fontSize: 18,
     fontWeight: "bold",
@@ -2103,57 +1394,33 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     marginBottom: 8,
   },
-
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     marginBottom: 12,
   },
-
-  price: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: COLORS.error,
-  },
-
+  price: { fontSize: 22, fontWeight: "bold", color: COLORS.error },
   originalPrice: {
     fontSize: 14,
     color: COLORS.textLight,
     textDecorationLine: "line-through",
   },
-
-  tagRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-
+  tagRow: { flexDirection: "row", gap: 8 },
   tag: {
     backgroundColor: "#F1F5F9",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-
-  tagText: {
-    fontSize: 12,
-    color: "#475569",
-    fontWeight: "600",
-  },
-
+  tagText: { fontSize: 12, color: "#475569", fontWeight: "600" },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 12,
   },
-
-  specGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginHorizontal: -8,
-  },
-
+  specGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -8 },
   specItem: {
     width: "50%",
     flexDirection: "row",
@@ -2161,70 +1428,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 8,
   },
-
-  fullWidthSpec: {
-    width: "100%",
-  },
-
-  specContent: {
-    flex: 1,
-  },
-
-  specLabel: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginBottom: 2,
-  },
-
-  specValue: {
-    fontSize: 14,
-    color: COLORS.text,
-    fontWeight: "500",
-  },
-
-  infoRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
-
-  infoLabel: {
-    width: 100,
-    fontSize: 14,
-    color: COLORS.textLight,
-  },
-
-  infoValue: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text,
-    fontWeight: "500",
-  },
-
-  description: {
-    fontSize: 14,
-    color: COLORS.text,
-    lineHeight: 22,
-  },
-
+  fullWidthSpec: { width: "100%" },
+  specContent: { flex: 1 },
+  specLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 2 },
+  specValue: { fontSize: 14, color: COLORS.text, fontWeight: "500" },
+  infoRow: { flexDirection: "row", marginBottom: 8 },
+  infoLabel: { width: 100, fontSize: 14, color: COLORS.textLight },
+  infoValue: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: "500" },
+  description: { fontSize: 14, color: COLORS.text, lineHeight: 22 },
   detailDescription: {
     fontSize: 14,
     color: "#475569",
     lineHeight: 22,
     fontStyle: "italic",
   },
-
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 16,
-  },
-
-  dateText: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    marginBottom: 4,
-  },
-
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 16 },
+  dateText: { fontSize: 11, color: COLORS.textLight, marginBottom: 4 },
   bottomBar: {
     flexDirection: "row",
     padding: 12,
@@ -2233,7 +1452,6 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
     gap: 12,
   },
-
   actionMessage: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -2244,29 +1462,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: "right",
   },
-
-  actionMessageError: {
-    color: COLORS.error,
-  },
-
-  actionMessageSuccess: {
-    color: "#15803D",
-  },
-
-  actionMessageWarning: {
-    color: "#B45309",
-  },
-
-  actionMessageInfo: {
-    color: COLORS.primary,
-  },
-
-  customerActions: {
-    flex: 1,
-    flexDirection: "row",
-    gap: 12,
-  },
-
+  actionMessageError: { color: COLORS.error },
+  actionMessageSuccess: { color: "#15803D" },
+  actionMessageWarning: { color: "#B45309" },
+  actionMessageInfo: { color: COLORS.primary },
+  customerActions: { flex: 1, flexDirection: "row", gap: 12 },
   closedPostContainer: {
     flex: 1,
     paddingVertical: 14,
@@ -2274,12 +1474,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F1F5F9",
     borderRadius: 8,
   },
-
-  closedPostText: {
-    color: COLORS.textLight,
-    fontWeight: "bold",
-  },
-
+  closedPostText: { color: COLORS.textLight, fontWeight: "bold" },
   dangerBtn: {
     flex: 1,
     flexDirection: "row",
@@ -2292,13 +1487,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.error,
     backgroundColor: "#FEF2F2",
   },
-
-  dangerBtnText: {
-    color: COLORS.error,
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
+  dangerBtnText: { color: COLORS.error, fontWeight: "bold", fontSize: 15 },
   reactivateBtn: {
     flex: 1,
     flexDirection: "row",
@@ -2311,13 +1500,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: "#EFF6FF",
   },
-
-  reactivateBtnText: {
-    color: COLORS.primary,
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
+  reactivateBtnText: { color: COLORS.primary, fontWeight: "bold", fontSize: 15 },
   primaryBtn: {
     flex: 2,
     flexDirection: "row",
@@ -2328,13 +1511,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLORS.primary,
   },
-
-  primaryBtnText: {
-    color: COLORS.white,
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
+  primaryBtnText: { color: COLORS.white, fontWeight: "bold", fontSize: 15 },
   cartBtn: {
     flex: 1,
     flexDirection: "row",
@@ -2347,17 +1524,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: COLORS.white,
   },
-
-  cartBtnText: {
-    color: COLORS.primary,
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-
-  disabledButton: {
-    opacity: 0.65,
-  },
-
+  cartBtnText: { color: COLORS.primary, fontWeight: "bold", fontSize: 14 },
+  disabledButton: { opacity: 0.65 },
   negotiateBtn: {
     flex: 1,
     flexDirection: "row",
@@ -2368,60 +1536,33 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLORS.primary,
   },
-
   negotiateBtnText: {
     color: COLORS.white,
     fontWeight: "bold",
     fontSize: 14,
+    textAlign: "center",
   },
-
-  sentOfferBtn: {
-    backgroundColor: "#475569",
-  },
-
+  sentOfferBtn: { backgroundColor: "#475569" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
-
   modalContent: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    paddingBottom:
-      Platform.OS === "ios" ? 40 : 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
   },
-
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
   },
-
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: COLORS.text,
-  },
-
-  modalBody: {
-    gap: 16,
-  },
-
-  /**
-   * NOTE:
-   * Style mới cho nút chính trong modal:
-   * - Cao tối thiểu 52px.
-   * - Rộng 72% modal.
-   * - Không vượt quá 320px.
-   * - Không nhỏ hơn 230px.
-   * - Căn giữa.
-   *
-   * Nhờ đó nút không còn quá mỏng và kéo dài sát hai bên.
-   */
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
+  modalBody: { gap: 16 },
   modalSubmitBtn: {
     alignSelf: "center",
     flex: 0,
@@ -2433,21 +1574,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
   },
-
   cartModalProductName: {
     color: COLORS.text,
     fontSize: 16,
     fontWeight: "700",
     lineHeight: 22,
   },
-
   cartModalPrice: {
     marginTop: 5,
     color: COLORS.error,
     fontSize: 14,
     fontWeight: "700",
   },
-
   cartModalTotalRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2456,33 +1594,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
-
-  cartModalTotalLabel: {
-    color: COLORS.textLight,
-    fontSize: 14,
-  },
-
-  cartModalTotalValue: {
-    color: COLORS.error,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  cartSuccessActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-
-  inputGroup: {
-    gap: 8,
-  },
-
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: COLORS.text,
-  },
-
+  cartModalTotalLabel: { color: COLORS.textLight, fontSize: 14 },
+  cartModalTotalValue: { color: COLORS.error, fontSize: 18, fontWeight: "800" },
+  cartSuccessActions: { flexDirection: "row", gap: 12 },
+  inputGroup: { gap: 8 },
+  inputLabel: { fontSize: 13, fontWeight: "600", color: COLORS.text },
   input: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -2493,7 +1609,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     color: COLORS.text,
   },
-
   readOnlyInput: {
     borderWidth: 1,
     borderColor: "transparent",
@@ -2503,14 +1618,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#F1F5F9",
   },
-
-  readOnlyText: {
-    fontSize: 15,
-    color: COLORS.textLight,
-    fontWeight: "bold",
-  },
-
-  offerActions: {
-    marginTop: 16,
-  },
+  readOnlyText: { fontSize: 15, color: COLORS.textLight, fontWeight: "bold" },
+  offerActions: { marginTop: 16 },
 });

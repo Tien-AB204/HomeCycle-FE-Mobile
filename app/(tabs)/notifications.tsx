@@ -13,14 +13,12 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import {
-  InlineFeedback,
-  useActionFeedback,
-} from "../../src/components/shared/ActionFeedback";
+
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 type NotificationItem = {
   id: string;
@@ -31,7 +29,11 @@ type NotificationItem = {
   createdAt: string;
 };
 
-// Chuẩn bị sẵn API call cho Notifications (BE cập nhật endpoint thì sửa lại path ở đây)
+type InlineMessage = {
+  type: "error" | "success" | "info";
+  text: string;
+} | null;
+
 const notificationApi = {
   getNotifications: (params?: any) =>
     apiClient.get("/notifications", { params }).then((res) => res.data),
@@ -43,15 +45,14 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
-
   const { user } = useAuth();
   const currentUserId = user?.userId || user?.id;
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const { feedback, clearFeedback, showInfo, showError } = useActionFeedback();
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [message, setMessage] = useState<InlineMessage>(null);
 
   const fetchNotifications = useCallback(
     async (isRefresh = false) => {
@@ -64,26 +65,28 @@ export default function NotificationsScreen() {
 
       try {
         if (!isRefresh) setIsLoading(true);
+        setMessage(null);
 
-        // Gọi API thực tế (nếu endpoint chưa có, nó sẽ văng xuống catch và hiện lỗi / empty state mượt mà)
-        const res = await notificationApi.getNotifications({
+        const response = await notificationApi.getNotifications({
           PageSize: 50,
           PageNumber: 1,
         });
-        const items = res?.items || res?.data?.items || res?.data || [];
-        setNotifications(items);
-      } catch (error: any) {
-        console.error("Lỗi tải thông báo:", error);
-        // Tạm thời ẩn lỗi nếu BE chưa có endpoint này để UI hiện Empty State cho đẹp
-        // Nếu muốn báo lỗi thì mở comment dòng dưới:
-        // showError(error?.response?.status === 500 ? "Lỗi server. Vui lòng thử lại sau." : "Không thể tải thông báo lúc này.");
+        const items =
+          response?.items || response?.data?.items || response?.data || [];
+
+        setNotifications(Array.isArray(items) ? items : []);
+      } catch (error: unknown) {
         setNotifications([]);
+        setMessage({
+          type: "error",
+          text: getApiErrorMessage(error, "Không thể tải thông báo lúc này."),
+        });
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
       }
     },
-    [currentUserId, showError],
+    [currentUserId],
   );
 
   useFocusEffect(
@@ -93,35 +96,51 @@ export default function NotificationsScreen() {
   );
 
   const onRefresh = () => {
-    clearFeedback();
     setIsRefreshing(true);
     void fetchNotifications(true);
   };
 
   const handleMarkAllAsRead = async () => {
-    clearFeedback();
+    if (isMarkingAll || notifications.length === 0) return;
+
     try {
-      showInfo("Đang cập nhật trạng thái...");
+      setIsMarkingAll(true);
+      setMessage({ type: "info", text: "Đang cập nhật trạng thái thông báo..." });
       await notificationApi.markAllAsRead();
-      void fetchNotifications(true);
-    } catch (error) {
-      showInfo("Tính năng Đánh dấu đã đọc đang được hoàn thiện.");
+      setNotifications((current) =>
+        current.map((item) => ({ ...item, isRead: true })),
+      );
+      setMessage({ type: "success", text: "Đã đánh dấu tất cả là đã đọc." });
+    } catch (error: unknown) {
+      setMessage({
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể đánh dấu tất cả thông báo là đã đọc.",
+        ),
+      });
+    } finally {
+      setIsMarkingAll(false);
     }
   };
 
   const formatTimeAgo = (dateString: string) => {
     if (!dateString) return "";
     const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (Number.isNaN(date.getTime())) return "";
 
+    const diffInSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (diffInSeconds < 60) return "Vừa xong";
+
     const diffInMinutes = Math.floor(diffInSeconds / 60);
     if (diffInMinutes < 60) return `${diffInMinutes} phút trước`;
+
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `${diffInHours} giờ trước`;
+
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 30) return `${diffInDays} ngày trước`;
+
     return date.toLocaleDateString("vi-VN");
   };
 
@@ -131,25 +150,25 @@ export default function NotificationsScreen() {
         return {
           name: "warning-outline" as const,
           color: "#D97706",
-          bg: "#FEF3C7",
+          background: "#FEF3C7",
         };
       case "success":
         return {
           name: "checkmark-circle-outline" as const,
           color: "#059669",
-          bg: "#D1FAE5",
+          background: "#D1FAE5",
         };
       case "offer":
         return {
           name: "pricetag-outline" as const,
           color: "#0284C7",
-          bg: "#E0F2FE",
+          background: "#E0F2FE",
         };
       default:
         return {
           name: "notifications-outline" as const,
           color: COLORS.primary,
-          bg: "#EFF6FF",
+          background: "#EFF6FF",
         };
     }
   };
@@ -157,9 +176,7 @@ export default function NotificationsScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <View
-          style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}
-        >
+        <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
           <MainHeader title="Thông báo" />
           <View style={styles.unauthContainer}>
             <Ionicons
@@ -178,7 +195,7 @@ export default function NotificationsScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/(auth)/login",
-                  params: { returnUrl: "/notifications" },
+                  params: { returnUrl: "/(tabs)/notifications" },
                 })
               }
             >
@@ -192,25 +209,57 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View
-        style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}
-      >
+      <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
         <MainHeader title="Thông báo" />
 
-        {/* Thanh công cụ phụ */}
         <View style={styles.subHeader}>
           <Text style={styles.subHeaderTitle}>Gần đây</Text>
-          <TouchableOpacity onPress={handleMarkAllAsRead}>
-            <Text style={styles.markAllReadText}>Đánh dấu đã đọc</Text>
+          <TouchableOpacity
+            onPress={() => void handleMarkAllAsRead()}
+            disabled={isMarkingAll || notifications.length === 0}
+          >
+            {isMarkingAll ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Text
+                style={[
+                  styles.markAllReadText,
+                  notifications.length === 0 ? styles.disabledText : undefined,
+                ]}
+              >
+                Đánh dấu đã đọc
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
 
-        {feedback ? (
-          <InlineFeedback
-            feedback={feedback}
-            onDismiss={clearFeedback}
-            style={{ marginHorizontal: 16, marginTop: 8 }}
-          />
+        {message ? (
+          <View
+            style={[
+              styles.messageBox,
+              message.type === "error"
+                ? styles.messageError
+                : message.type === "success"
+                  ? styles.messageSuccess
+                  : styles.messageInfo,
+            ]}
+          >
+            <Text
+              style={[
+                styles.messageText,
+                message.type === "error"
+                  ? styles.messageErrorText
+                  : message.type === "success"
+                    ? styles.messageSuccessText
+                    : styles.messageInfoText,
+              ]}
+            >
+              {message.text}
+            </Text>
+            <TouchableOpacity onPress={() => setMessage(null)} hitSlop={8}>
+              <Ionicons name="close" size={18} color={COLORS.textLight} />
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         {isLoading ? (
@@ -227,52 +276,46 @@ export default function NotificationsScreen() {
                 refreshing={isRefreshing}
                 onRefresh={onRefresh}
                 colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
               />
             }
           >
             {notifications.length > 0 ? (
               notifications.map((item) => {
-                const iconConf = getIconForType(item.type);
+                const icon = getIconForType(item.type);
                 return (
-                  <TouchableOpacity
+                  <View
                     key={item.id}
                     style={[
                       styles.notificationCard,
-                      !item.isRead && styles.notificationCardUnread,
+                      !item.isRead ? styles.notificationCardUnread : undefined,
                     ]}
-                    activeOpacity={0.7}
                   >
                     <View
                       style={[
                         styles.iconContainer,
-                        { backgroundColor: iconConf.bg },
+                        { backgroundColor: icon.background },
                       ]}
                     >
-                      <Ionicons
-                        name={iconConf.name}
-                        size={24}
-                        color={iconConf.color}
-                      />
+                      <Ionicons name={icon.name} size={24} color={icon.color} />
                     </View>
                     <View style={styles.contentContainer}>
                       <Text
                         style={[
                           styles.title,
-                          !item.isRead && styles.titleUnread,
+                          !item.isRead ? styles.titleUnread : undefined,
                         ]}
                         numberOfLines={1}
                       >
                         {item.title}
                       </Text>
-                      <Text style={styles.message} numberOfLines={2}>
+                      <Text style={styles.notificationMessage} numberOfLines={2}>
                         {item.message}
                       </Text>
-                      <Text style={styles.timeAgo}>
-                        {formatTimeAgo(item.createdAt)}
-                      </Text>
+                      <Text style={styles.timeAgo}>{formatTimeAgo(item.createdAt)}</Text>
                     </View>
-                    {!item.isRead && <View style={styles.unreadDot} />}
-                  </TouchableOpacity>
+                    {!item.isRead ? <View style={styles.unreadDot} /> : null}
+                  </View>
                 );
               })
             ) : (
@@ -281,16 +324,15 @@ export default function NotificationsScreen() {
                   name="notifications-off-outline"
                   size={64}
                   color="#CBD5E1"
-                  style={{ marginBottom: 16 }}
+                  style={styles.emptyIcon}
                 />
                 <Text style={styles.emptyTitle}>Chưa có thông báo nào</Text>
                 <Text style={styles.emptyDesc}>
-                  Khi có cập nhật mới về giao dịch của bạn, thông báo sẽ xuất
-                  hiện tại đây.
+                  Khi có cập nhật mới về giao dịch của bạn, thông báo sẽ xuất hiện
+                  tại đây.
                 </Text>
               </View>
             )}
-            <View style={{ height: 40 }} />
           </ScrollView>
         )}
       </View>
@@ -308,7 +350,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: COLORS.border,
   },
-
   unauthContainer: {
     flex: 1,
     justifyContent: "center",
@@ -337,7 +378,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   loginBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
-
   subHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -349,13 +389,28 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   subHeaderTitle: { fontSize: 15, fontWeight: "bold", color: COLORS.text },
-  markAllReadText: { fontSize: 14, fontWeight: "600", color: "#64748B" },
-
+  markAllReadText: { fontSize: 14, fontWeight: "600", color: COLORS.primary },
+  disabledText: { color: COLORS.textLight },
+  messageBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  messageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  messageText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  messageErrorText: { color: "#B91C1C" },
+  messageSuccessText: { color: "#047857" },
+  messageInfoText: { color: "#1D4ED8" },
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { marginTop: 10, color: COLORS.textLight, fontSize: 13 },
-
-  listContainer: { paddingBottom: 20 },
-
+  listContainer: { paddingBottom: 40 },
   notificationCard: {
     flexDirection: "row",
     padding: 16,
@@ -364,9 +419,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F1F5F9",
     alignItems: "flex-start",
   },
-  notificationCardUnread: {
-    backgroundColor: "#F8FAFC",
-  },
+  notificationCardUnread: { backgroundColor: "#F8FAFC" },
   iconContainer: {
     width: 48,
     height: 48,
@@ -375,30 +428,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 16,
   },
-  contentContainer: {
-    flex: 1,
-    marginRight: 8,
-  },
+  contentContainer: { flex: 1, marginRight: 8 },
   title: {
     fontSize: 15,
     fontWeight: "600",
     color: COLORS.text,
     marginBottom: 4,
   },
-  titleUnread: {
-    fontWeight: "bold",
-    color: "#0F172A",
-  },
-  message: {
+  titleUnread: { fontWeight: "bold", color: "#0F172A" },
+  notificationMessage: {
     fontSize: 14,
     color: COLORS.textLight,
     lineHeight: 20,
     marginBottom: 8,
   },
-  timeAgo: {
-    fontSize: 12,
-    color: "#94A3B8",
-  },
+  timeAgo: { fontSize: 12, color: "#94A3B8" },
   unreadDot: {
     width: 10,
     height: 10,
@@ -406,13 +450,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error,
     marginTop: 6,
   },
-
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 80,
     paddingHorizontal: 32,
   },
+  emptyIcon: { marginBottom: 16 },
   emptyTitle: {
     fontSize: 16,
     fontWeight: "bold",

@@ -172,6 +172,7 @@ export default function ChatDetailScreen() {
     useState<any>(null);
 
   const negotiationInfoRef = useRef<any>(null);
+  const isScreenFocusedRef = useRef(false);
 
   const [messages, setMessages] = useState<any[]>([]);
 
@@ -737,6 +738,16 @@ export default function ChatDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      isScreenFocusedRef.current = true;
+
+      return () => {
+        isScreenFocusedRef.current = false;
+      };
+    }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
       if (isAuthLoading) {
         setIsLoading(true);
         return;
@@ -783,7 +794,7 @@ export default function ChatDetailScreen() {
         String(newMsg.senderId).toLowerCase() ===
         String(currentUserId).toLowerCase();
 
-      if (!isMe) {
+      if (!isMe && isScreenFocusedRef.current) {
         messageApi.markAsRead(negotiationId).catch(() => {});
       }
 

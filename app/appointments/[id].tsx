@@ -10,137 +10,227 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  InlineFeedback,
-  useActionFeedback,
-} from "../../src/components/shared/ActionFeedback";
+
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 const appointmentApi = {
   getAppointmentDetail: (appointmentId: string) =>
-    apiClient.get(`/appointments/${appointmentId}`).then((res) => res.data),
+    apiClient
+      .get(`/appointments/${appointmentId}`)
+      .then((response) => response.data),
+
+  checkIn: (appointmentId: string) =>
+    apiClient
+      .post(`/appointments/${appointmentId}/check-in`)
+      .then((response) => response.data),
+};
+
+type InlineMessage = {
+  type: "error" | "success" | "info";
+  text: string;
+} | null;
+
+const unwrap = (value: any) => value?.data ?? value;
+
+const formatDateTime = (dateString?: string | null) => {
+  if (!dateString) return "Chưa có";
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "Chưa có";
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
+const translateStatus = (status: number | string) => {
+  switch (String(status)) {
+    case "0":
+      return "Chờ xác nhận";
+    case "1":
+      return "Đã xác nhận";
+    case "2":
+      return "Đã hoàn thành";
+    case "3":
+      return "Đã hủy";
+    case "4":
+      return "Bỏ lỡ";
+    default:
+      return "Chờ xác nhận";
+  }
+};
+
+const translateAppointmentType = (type: number | string) =>
+  String(type) === "1" ? "Lịch thu gom" : "Lịch kiểm định";
+
+const translateDeliveryMethod = (value: unknown) => {
+  switch (String(value || "").toLowerCase()) {
+    case "ghndelivery":
+    case "1":
+      return "Giao hàng GHN";
+    case "sellerdelivers":
+    case "2":
+      return "Bên bán tự giao";
+    case "buyerpickup":
+    case "3":
+      return "Bên mua tự lấy";
+    default:
+      return "Chưa cập nhật";
+  }
 };
 
 export default function AppointmentDetailScreen() {
   const router = useRouter();
-  const { id: appointmentId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const appointmentId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
 
-  const { feedback, clearFeedback, showInfo, showError } = useActionFeedback();
-
-  const fetchDetail = useCallback(async () => {
-    if (!appointmentId) return;
-    try {
-      setIsLoading(true);
-      const res = await appointmentApi.getAppointmentDetail(
-        appointmentId as string,
-      );
-      setData(res?.data || res);
-    } catch (error: any) {
-      console.error("Lỗi tải chi tiết lịch hẹn:", error);
-      const status = error?.response?.status;
-      if (status === 500) {
-        showError("Lỗi server. Vui lòng thử lại sau.");
-      } else {
-        showError("Không thể tải thông tin lịch hẹn lúc này.");
+  const fetchDetail = useCallback(
+    async (showLoading = true) => {
+      if (!appointmentId) {
+        setLoadError("Không tìm thấy mã lịch hẹn.");
+        setIsLoading(false);
+        return;
       }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [appointmentId, showError]);
+
+      try {
+        if (showLoading) setIsLoading(true);
+        setLoadError(null);
+        const response = await appointmentApi.getAppointmentDetail(appointmentId);
+        setData(unwrap(response));
+      } catch (error) {
+        setData(null);
+        setLoadError(
+          getApiErrorMessage(error, "Không thể tải thông tin lịch hẹn lúc này."),
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [appointmentId],
+  );
 
   useFocusEffect(
     useCallback(() => {
+      setActionMessage(null);
       void fetchDetail();
     }, [fetchDetail]),
   );
 
-  const formatDateTime = (dateString: string) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return "N/A";
-    return date.toLocaleString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  const handleCheckIn = async () => {
+    if (!appointmentId || isCheckingIn) return;
 
-  const translateStatus = (status: number | string) => {
-    const s = String(status);
-    switch (s) {
-      case "0":
-        return "Chờ xác nhận";
-      case "1":
-        return "Đã xác nhận";
-      case "2":
-        return "Đã hoàn thành";
-      case "3":
-        return "Đã hủy";
-      case "4":
-        return "Bỏ lỡ";
-      default:
-        return "Chờ xác nhận";
+    try {
+      setIsCheckingIn(true);
+      setActionMessage(null);
+      const response = await appointmentApi.checkIn(appointmentId);
+      const result = unwrap(response);
+
+      await fetchDetail(false);
+
+      const completed = Number(result?.appointmentStatus) === 2;
+      setActionMessage({
+        type: "success",
+        text: completed
+          ? "Check-in thành công. Cả hai bên đã check-in nên lịch hẹn đã hoàn thành."
+          : "Check-in thành công. Đang chờ bên còn lại check-in.",
+      });
+    } catch (error: any) {
+      const code = String(
+        error?.response?.data?.code ||
+          error?.response?.data?.error?.code ||
+          "",
+      );
+
+      const fallback =
+        code === "Appointment.Cancelled"
+          ? "Lịch hẹn đã bị hủy, không thể check-in."
+          : code === "Appointment.AlreadyCompleted"
+            ? "Lịch hẹn đã hoàn tất."
+            : code === "Auth.Forbidden"
+              ? "Bạn không có quyền check-in lịch hẹn này."
+              : "Không thể check-in lịch hẹn lúc này.";
+
+      setActionMessage({
+        type: "error",
+        text: getApiErrorMessage(error, fallback),
+      });
+    } finally {
+      setIsCheckingIn(false);
     }
-  };
-
-  const translateAppointmentType = (type: number | string) => {
-    return String(type) === "1" ? "Lịch kiểm định" : "Lịch thu gom";
-  };
-
-  const handleAction = (actionName: string) => {
-    clearFeedback();
-    showInfo(`Tính năng "${actionName}" đang được phát triển.`);
   };
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Header title="Chi tiết Lịch hẹn" showBack={true} />
-        <View style={styles.loadingContainer}>
+        <Header title="Chi tiết Lịch hẹn" showBack />
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Đang tải lịch hẹn...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!data || !data.appointment) {
+  if (!data?.appointment) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Header title="Chi tiết Lịch hẹn" showBack={true} />
-        <View style={styles.loadingContainer}>
-          <Text style={{ color: COLORS.error, fontSize: 16 }}>
-            Không tìm thấy thông tin lịch hẹn!
+        <Header title="Chi tiết Lịch hẹn" showBack />
+        <View style={styles.centered}>
+          <Ionicons
+            name="calendar-outline"
+            size={48}
+            color={COLORS.textLight}
+          />
+          <Text style={styles.loadErrorText}>
+            {loadError || "Không tìm thấy thông tin lịch hẹn."}
           </Text>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-          >
-            <Text style={{ color: COLORS.white }}>Quay lại</Text>
-          </TouchableOpacity>
+          <View style={styles.errorActions}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.secondaryButtonText}>Quay lại</Text>
+            </TouchableOpacity>
+            {appointmentId ? (
+              <TouchableOpacity
+                style={styles.primarySmallButton}
+                onPress={() => void fetchDetail()}
+              >
+                <Text style={styles.primarySmallButtonText}>Thử lại</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
       </SafeAreaView>
     );
   }
 
   const appt = data.appointment;
-  const detail = data.collectionAppointment || data.inspectionAppointment || {};
+  const isCollection =
+    String(appt.appointmentType) === "1" || Boolean(data.collectionAppointment);
+  const detail = isCollection
+    ? data.collectionAppointment || {}
+    : data.inspectionAppointment || {};
+  const statusCode = Number(appt.appointmentStatus ?? 0);
+  const isCancelled = statusCode === 3 || Boolean(appt.cancelledAt);
+  const isCompleted = statusCode === 2 || Boolean(appt.completedAt);
+  const isMissed = statusCode === 4;
+  const progressStep =
+    isCompleted || isCancelled || isMissed ? 2 : statusCode >= 1 ? 1 : 0;
 
-  // --- LOGIC PROGRESS BAR LỊCH HẸN ---
-  // Enum: Pending=0, Confirmed=1, Completed=2, Cancelled=3, Missed=4
-  const currentStatusCode = Number(appt.appointmentStatus ?? 0);
-  const isCancelled = currentStatusCode === 3;
-  const isMissed = currentStatusCode === 4;
-  const isFailed = isCancelled || isMissed;
-
-  // Bước tiến trình: 0 -> 1 -> 2 (Bước 2 gom chung Completed, Cancelled, Missed)
-  const progressStep = currentStatusCode >= 2 ? 2 : currentStatusCode;
+  const buyerCheckAt = appt.buyerCheckAt || appt.buyerCheckedAt || null;
+  const sellerCheckAt = appt.sellerCheckAt || appt.sellerCheckedAt || null;
 
   const stepLabels = [
     "Chờ xác nhận",
@@ -148,43 +238,37 @@ export default function AppointmentDetailScreen() {
     isCancelled ? "Đã hủy" : isMissed ? "Bỏ lỡ" : "Hoàn thành",
   ];
 
+  const checkInDisabled =
+    isCheckingIn || isCancelled || isCompleted || isMissed;
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <Header title="Chi tiết Lịch hẹn" showBack={true} />
+      <Header title="Chi tiết Lịch hẹn" showBack />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* 1. HEADER LOẠI LỊCH HẸN & TRẠNG THÁI NỔI BẬT */}
         <View style={styles.headerStatusCard}>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusTitle}>
-              {translateAppointmentType(appt.appointmentType)}
-            </Text>
-          </View>
-
-          {/* Khối Trạng thái tách riêng nổi bật */}
+          <Text style={styles.statusTitle}>
+            {translateAppointmentType(appt.appointmentType)}
+          </Text>
           <View style={styles.statusHighlightBox}>
-            <Text style={styles.statusHighlightLabel}>
-              Trạng thái lịch hẹn:
-            </Text>
+            <Text style={styles.statusHighlightLabel}>Trạng thái lịch hẹn</Text>
             <Text style={styles.statusHighlightValue}>
               {translateStatus(appt.appointmentStatus)}
             </Text>
           </View>
         </View>
 
-        {/* 2. CARD TIẾN TRÌNH LỊCH HẸN (PROGRESS BAR) */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Tiến trình lịch hẹn</Text>
           <View style={styles.progressContainer}>
             {stepLabels.map((label, index) => {
               const isPassed = index < progressStep;
               const isCurrent = index === progressStep;
-
               return (
-                <View key={index} style={styles.progressStep}>
+                <View key={label} style={styles.progressStep}>
                   <View
                     style={[
                       styles.circle,
@@ -193,7 +277,9 @@ export default function AppointmentDetailScreen() {
                         : isCurrent
                           ? styles.circleActive
                           : styles.circlePending,
-                      isFailed && index === 2 && styles.circleCancelled,
+                      (isCancelled || isMissed) && index === 2
+                        ? styles.circleFailed
+                        : undefined,
                     ]}
                   >
                     {isPassed ? (
@@ -206,7 +292,7 @@ export default function AppointmentDetailScreen() {
                       <Text
                         style={[
                           styles.circleText,
-                          isCurrent && styles.circleTextActive,
+                          isCurrent ? styles.circleTextActive : undefined,
                         ]}
                       >
                         {index + 1}
@@ -216,7 +302,7 @@ export default function AppointmentDetailScreen() {
                   <Text
                     style={[
                       styles.progressLabel,
-                      isCurrent && styles.progressLabelActive,
+                      isCurrent ? styles.progressLabelActive : undefined,
                     ]}
                   >
                     {label}
@@ -227,268 +313,340 @@ export default function AppointmentDetailScreen() {
           </View>
         </View>
 
-        {feedback ? (
-          <InlineFeedback
-            feedback={feedback}
-            onDismiss={clearFeedback}
-            style={{ marginBottom: 16 }}
-          />
-        ) : null}
-
-        {/* 3. THỜI GIAN & ĐỊA ĐIỂM */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Thời gian & Địa điểm</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Thời gian hẹn:</Text>
-            <Text
-              style={[
-                styles.infoValue,
-                { fontWeight: "bold", color: COLORS.primary },
-              ]}
-            >
-              {formatDateTime(detail.collectionDate || detail.inspectionDate)}
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Địa chỉ lấy hàng:</Text>
-            <Text style={styles.infoValue}>
-              {detail.pickupAddress ||
-                detail.inspectionAddress ||
-                "Chưa cập nhật"}
-            </Text>
-          </View>
-          {detail.deliveryAddress && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Địa chỉ giao nhận:</Text>
-              <Text style={styles.infoValue}>{detail.deliveryAddress}</Text>
-            </View>
-          )}
-          {detail.deliveryMethod && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Phương thức vận chuyển:</Text>
-              <Text style={styles.infoValue}>{detail.deliveryMethod}</Text>
-            </View>
+          <Text style={styles.sectionTitle}>
+            {isCollection ? "Lịch trình & Giao nhận" : "Thời gian & Địa điểm"}
+          </Text>
+
+          {isCollection ? (
+            <>
+              <InfoRow
+                label="Thời gian thu gom"
+                value={formatDateTime(detail.collectionDate)}
+              />
+              <InfoRow
+                label="Điểm lấy"
+                value={detail.pickupAddress || "Chưa cập nhật"}
+              />
+              <InfoRow
+                label="Điểm giao"
+                value={detail.deliveryAddress || "Chưa cập nhật"}
+              />
+              <InfoRow
+                label="Phương thức giao nhận"
+                value={translateDeliveryMethod(detail.deliveryMethod)}
+              />
+            </>
+          ) : (
+            <>
+              <InfoRow
+                label="Thời gian kiểm định"
+                value={formatDateTime(detail.inspectionDate)}
+              />
+              <InfoRow
+                label="Địa điểm kiểm định"
+                value={detail.inspectionAddress || "Chưa cập nhật"}
+              />
+            </>
           )}
         </View>
 
-        {/* 4. TRẠNG THÁI CHECK-IN */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Trạng thái Check-in</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Người mua đã Check-in:</Text>
-            <Text
-              style={[
-                styles.infoValue,
-                { color: appt.buyerCheckedIn ? "#10B981" : COLORS.error },
-              ]}
-            >
-              {appt.buyerCheckedIn ? "Đã check-in" : "Chưa check-in"}
-            </Text>
+          <View style={styles.checkRow}>
+            <Ionicons
+              name={buyerCheckAt ? "checkmark-circle" : "ellipse-outline"}
+              size={20}
+              color={buyerCheckAt ? "#10B981" : COLORS.textLight}
+            />
+            <View style={styles.flex}>
+              <Text style={styles.checkLabel}>Người mua</Text>
+              <Text style={styles.checkTime}>
+                {buyerCheckAt
+                  ? `Đã check-in ${formatDateTime(buyerCheckAt)}`
+                  : "Chưa check-in"}
+              </Text>
+            </View>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Người bán đã Check-in:</Text>
-            <Text
-              style={[
-                styles.infoValue,
-                { color: appt.sellerCheckedIn ? "#10B981" : COLORS.error },
-              ]}
-            >
-              {appt.sellerCheckedIn ? "Đã check-in" : "Chưa check-in"}
-            </Text>
+
+          <View style={styles.checkRow}>
+            <Ionicons
+              name={sellerCheckAt ? "checkmark-circle" : "ellipse-outline"}
+              size={20}
+              color={sellerCheckAt ? "#10B981" : COLORS.textLight}
+            />
+            <View style={styles.flex}>
+              <Text style={styles.checkLabel}>Người bán</Text>
+              <Text style={styles.checkTime}>
+                {sellerCheckAt
+                  ? `Đã check-in ${formatDateTime(sellerCheckAt)}`
+                  : "Chưa check-in"}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* 5. THÔNG TIN HỆ THỐNG */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thông tin hệ thống</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Ngày tạo lịch:</Text>
-            <Text style={styles.infoValue}>
-              {formatDateTime(appt.createdAt)}
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Cập nhật lần cuối:</Text>
-            <Text style={styles.infoValue}>
-              {formatDateTime(appt.updatedAt)}
-            </Text>
-          </View>
+          <InfoRow
+            label="Ngày tạo lịch"
+            value={formatDateTime(appt.createdAt)}
+          />
+          <InfoRow
+            label="Cập nhật lần cuối"
+            value={formatDateTime(appt.updatedAt)}
+          />
         </View>
       </ScrollView>
 
-      {/* FOOTER CHECK-IN BUTTON */}
       <View style={styles.bottomBar}>
+        {actionMessage ? (
+          <View
+            style={[
+              styles.actionMessage,
+              actionMessage.type === "error"
+                ? styles.actionError
+                : actionMessage.type === "success"
+                  ? styles.actionSuccess
+                  : styles.actionInfo,
+            ]}
+          >
+            <Text
+              style={[
+                styles.actionMessageText,
+                actionMessage.type === "error"
+                  ? styles.actionErrorText
+                  : actionMessage.type === "success"
+                    ? styles.actionSuccessText
+                    : styles.actionInfoText,
+              ]}
+            >
+              {actionMessage.text}
+            </Text>
+          </View>
+        ) : null}
+
         <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => handleAction("Check-in lịch hẹn")}
+          style={[
+            styles.primaryButton,
+            checkInDisabled ? styles.disabledButton : undefined,
+          ]}
+          onPress={() => void handleCheckIn()}
+          disabled={checkInDisabled}
         >
-          <Text style={styles.primaryBtnText}>Check-in tại điểm hẹn</Text>
+          {isCheckingIn ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons
+                name={
+                  isCompleted ? "checkmark-circle-outline" : "location-outline"
+                }
+                size={19}
+                color={COLORS.white}
+              />
+              <Text style={styles.primaryButtonText}>
+                {isCompleted
+                  ? "Lịch hẹn đã hoàn thành"
+                  : isCancelled
+                    ? "Lịch hẹn đã bị hủy"
+                    : isMissed
+                      ? "Lịch hẹn đã bị bỏ lỡ"
+                      : "Check-in tại điểm hẹn"}
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-
+  flex: { flex: 1 },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  loadingText: { marginTop: 10, color: COLORS.textLight },
+  loadErrorText: {
+    marginTop: 12,
+    color: COLORS.error,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  errorActions: { flexDirection: "row", gap: 10, marginTop: 16 },
+  secondaryButton: {
+    minHeight: 44,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+  },
+  secondaryButtonText: { color: COLORS.primary, fontWeight: "800" },
+  primarySmallButton: {
+    minHeight: 44,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+  },
+  primarySmallButtonText: { color: COLORS.white, fontWeight: "800" },
+  scrollContent: { padding: 16, paddingBottom: 160 },
   headerStatusCard: {
     backgroundColor: COLORS.primary,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingTop: 18,
     paddingHorizontal: 16,
-    paddingBottom: 0,
-    marginBottom: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
     overflow: "hidden",
+    marginBottom: 16,
   },
-  statusRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
+  statusTitle: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: "900",
+    marginBottom: 16,
   },
-  statusTitle: { fontSize: 20, fontWeight: "bold", color: COLORS.white },
-
   statusHighlightBox: {
-    backgroundColor: "#FEF3C7",
     marginHorizontal: -16,
+    backgroundColor: "#FEF3C7",
+    borderTopWidth: 1,
+    borderTopColor: "#FDE68A",
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#FDE68A",
+    justifyContent: "space-between",
   },
   statusHighlightLabel: {
-    fontSize: 13,
-    fontWeight: "bold",
     color: "#92400E",
+    fontSize: 13,
+    fontWeight: "700",
   },
   statusHighlightValue: {
-    fontSize: 13,
-    fontWeight: "bold",
     color: "#B45309",
+    fontSize: 13,
+    fontWeight: "900",
   },
-
-  // Progress Bar Styles
+  card: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "900",
+    paddingBottom: 9,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 8,
-    marginTop: 8,
   },
-  progressStep: {
-    alignItems: "center",
-    flex: 1,
-  },
+  progressStep: { flex: 1, alignItems: "center" },
   circle: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
+    justifyContent: "center",
     borderWidth: 1.5,
+    marginBottom: 6,
   },
-  circleCompleted: {
-    backgroundColor: "#10B981",
-    borderColor: "#10B981",
-  },
+  circleCompleted: { backgroundColor: "#10B981", borderColor: "#10B981" },
   circleActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  circlePending: {
-    backgroundColor: "#F1F5F9",
-    borderColor: "#CBD5E1",
-  },
-  circleCancelled: {
-    backgroundColor: "#EF4444",
-    borderColor: "#EF4444",
-  },
-  circleText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: COLORS.textLight,
-  },
-  circleTextActive: {
-    color: COLORS.white,
-  },
+  circlePending: { backgroundColor: "#F1F5F9", borderColor: "#CBD5E1" },
+  circleFailed: { backgroundColor: "#EF4444", borderColor: "#EF4444" },
+  circleText: { color: COLORS.textLight, fontSize: 12, fontWeight: "800" },
+  circleTextActive: { color: COLORS.white },
   progressLabel: {
-    fontSize: 11,
     color: COLORS.textLight,
+    fontSize: 11,
     textAlign: "center",
   },
-  progressLabelActive: {
-    color: COLORS.primary,
-    fontWeight: "bold",
-  },
-
-  card: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: COLORS.text,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-    paddingBottom: 8,
-  },
-
+  progressLabelActive: { color: COLORS.primary, fontWeight: "800" },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: 14,
     marginBottom: 10,
   },
-  infoLabel: { fontSize: 13, color: COLORS.textLight, flex: 1 },
+  infoLabel: { flex: 1, color: COLORS.textLight, fontSize: 13 },
   infoValue: {
-    fontSize: 13,
+    flex: 1.5,
     color: COLORS.text,
-    fontWeight: "500",
-    flex: 2,
+    fontSize: 13,
+    fontWeight: "700",
     textAlign: "right",
   },
-
-  backBtn: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 9,
   },
+  checkLabel: { color: COLORS.text, fontSize: 13, fontWeight: "800" },
+  checkTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
   bottomBar: {
-    padding: 16,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+    padding: 14,
   },
-  primaryBtn: {
-    height: 48,
-    borderRadius: 10,
+  actionMessage: {
+    borderWidth: 1,
+    borderRadius: 9,
+    padding: 10,
+    marginBottom: 10,
+  },
+  actionMessageText: { fontSize: 12, lineHeight: 17 },
+  actionError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  actionErrorText: { color: "#B91C1C" },
+  actionSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+  actionSuccessText: { color: "#047857" },
+  actionInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  actionInfoText: { color: "#1D4ED8" },
+  primaryButton: {
+    minHeight: 52,
+    borderRadius: 11,
     backgroundColor: COLORS.primary,
-    justifyContent: "center",
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
-  primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
+  primaryButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  disabledButton: { opacity: 0.55 },
 });

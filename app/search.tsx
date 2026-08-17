@@ -15,7 +15,9 @@ import {
   View,
 } from "react-native";
 import { COLORS } from "../src/constants/theme";
+import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../src/utils/apiFeedback";
 
 const locationApi = {
   getProvinces: async () => {
@@ -25,14 +27,12 @@ const locationApi = {
         throw new Error(`Không thể tải Tỉnh/Thành (${response.status})`);
       }
       return response.json();
-    } catch (error) {
-      console.error("Lỗi tải danh sách Tỉnh/Thành:", error);
+    } catch {
       return [];
     }
   },
 };
 
-// ================= DICTIONARIES =================
 const FILTER_CONDITIONS = [
   "Hoạt động hoàn hảo",
   "Hoạt động một phần",
@@ -87,18 +87,18 @@ type ViewState = "BUILDER" | "HISTORY" | "RESULTS";
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const inputRef = useRef<TextInput>(null);
+  const isBusiness = user?.role === "business";
+  const visiblePostTypes = isBusiness ? ["Bán"] : POST_TYPES;
 
-  // VIEW STATES
   const [viewState, setViewState] = useState<ViewState>("BUILDER");
   const [isGridView, setIsGridView] = useState(true);
-
-  // SEARCH STATES
   const [query, setQuery] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("Relevance");
+  const [searchError, setSearchError] = useState("");
 
-  // CATEGORY & FILTERS
   const [postType, setPostType] = useState("");
   const [filterCategories, setFilterCategories] = useState<any[]>([]);
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
@@ -119,7 +119,6 @@ export default function SearchScreen() {
   const [postedWithinDays, setPostedWithinDays] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(true);
 
-  // ================= API ĐỊA CHỈ (AUTOCOMPLETE) =================
   const [city, setCity] = useState("");
   const [cityCode, setCityCode] = useState<string | null>(null);
   const [provincesList, setProvincesList] = useState<
@@ -127,10 +126,23 @@ export default function SearchScreen() {
   >([]);
   const [showCityDropdown, setShowCityDropdown] = useState(false);
 
+  const [originalResults, setOriginalResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isBusiness && postType === "Mua") {
+      setPostType("");
+    }
+  }, [isBusiness, postType]);
+
   useEffect(() => {
     locationApi.getProvinces().then((data) => {
       setProvincesList(
-        data.map((p: any) => ({ label: p.name, value: p.province_code })),
+        data.map((province: any) => ({
+          label: province.name,
+          value: province.province_code,
+        })),
       );
     });
   }, []);
@@ -143,16 +155,12 @@ export default function SearchScreen() {
         });
         const cats = response.data?.data?.items || response.data?.items || [];
         setFilterCategories(cats);
-      } catch (error) {
-        console.error("Lỗi tải danh mục cho bộ lọc:", error);
+      } catch {
+        setFilterCategories([]);
       }
     };
-    fetchCategories();
+    void fetchCategories();
   }, []);
-
-  const [originalResults, setOriginalResults] = useState<any[]>([]);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleInputFocus = () => setViewState("HISTORY");
 
@@ -174,19 +182,19 @@ export default function SearchScreen() {
   const getRelevanceScore = (post: any, searchKeyword: string) => {
     if (!searchKeyword) return 0;
     const q = searchKeyword.toLowerCase();
-    const pName = (post.productName || "").toLowerCase();
-    const pType = (post.productTypeName || "").toLowerCase();
-    const pCat = (post.categoryName || "").toLowerCase();
-    const pDesc = (post.description || "").toLowerCase();
-    const pBrand = (post.brandName || "").toLowerCase();
-    const pAddress =
+    const productName = (post.productName || "").toLowerCase();
+    const productTypeName = (post.productTypeName || "").toLowerCase();
+    const categoryName = (post.categoryName || "").toLowerCase();
+    const description = (post.description || "").toLowerCase();
+    const brandName = (post.brandName || "").toLowerCase();
+    const address =
       `${post.streetAddress || ""} ${post.ward || ""} ${post.city || ""}`.toLowerCase();
 
-    if (pName.includes(q)) return 5;
-    if (pType.includes(q)) return 4;
-    if (pCat.includes(q)) return 3;
-    if (pDesc.includes(q) || pBrand.includes(q)) return 2;
-    if (pAddress.includes(q)) return 1;
+    if (productName.includes(q)) return 5;
+    if (productTypeName.includes(q)) return 4;
+    if (categoryName.includes(q)) return 3;
+    if (description.includes(q) || brandName.includes(q)) return 2;
+    if (address.includes(q)) return 1;
     return 0;
   };
 
@@ -194,7 +202,7 @@ export default function SearchScreen() {
     const uniqueData = Array.from(
       new Map(data.map((item) => [item.postId, item])).values(),
     );
-    let sorted = [...uniqueData];
+    const sorted = [...uniqueData];
 
     if (sortType === "PriceAsc") {
       sorted.sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
@@ -207,17 +215,20 @@ export default function SearchScreen() {
         return dateB - dateA;
       });
     } else if (sortType === "Relevance") {
-      const q = query.trim();
-      if (q)
+      const keyword = query.trim();
+      if (keyword) {
         sorted.sort(
-          (a, b) => getRelevanceScore(b, q) - getRelevanceScore(a, q),
+          (a, b) =>
+            getRelevanceScore(b, keyword) - getRelevanceScore(a, keyword),
         );
+      }
     }
     setSearchResults(sorted);
   };
 
   const executeSearch = async () => {
     Keyboard.dismiss();
+    setSearchError("");
 
     if (query.trim() !== "" && !history.includes(query)) {
       setHistory([query, ...history]);
@@ -259,19 +270,26 @@ export default function SearchScreen() {
       const payload: any = {
         pageNumber: 1,
         pageSize: 100,
-        onlyAvailable: onlyAvailable,
+        onlyAvailable,
         attributeFilters: [],
       };
 
       if (query.trim()) payload.keyword = query.trim();
-      if (postType) payload.postType = postType === "Bán" ? "Sell" : "Buy";
-      if (selectedCat) payload.categoryId = selectedCat;
 
-      if (selectedCondition)
+      // Business chỉ được discovery Sell Post của Personal.
+      // Buy Post là nhu cầu thu mua của Business khác nên không cho B2B nhìn/tương tác.
+      if (isBusiness) {
+        payload.postType = "Sell";
+      } else if (postType) {
+        payload.postType = postType === "Bán" ? "Sell" : "Buy";
+      }
+
+      if (selectedCat) payload.categoryId = selectedCat;
+      if (selectedCondition) {
         payload.functionalityStatus = CONDITION_MAP[selectedCondition];
+      }
       if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
       if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
-
       if (actualMinPrice !== null) payload.minPrice = actualMinPrice;
       if (actualMaxPrice !== null) payload.maxPrice = actualMaxPrice;
       if (actualMinUsage !== null) payload.minUsageDuration = actualMinUsage;
@@ -288,14 +306,20 @@ export default function SearchScreen() {
         [];
 
       const activeData = fetchedData.filter(
-        (post: any) => post.status === "Active",
+        (post: any) =>
+          post.status === "Active" &&
+          (!isBusiness || post.postType === "Sell"),
       );
 
       setOriginalResults(activeData);
       applyLocalSort(activeData, sortBy);
-    } catch (error: any) {
-      console.error("❌ Lỗi khi tìm kiếm:", error);
-      alert("Không thể kết nối đến máy chủ. Vui lòng thử lại!");
+    } catch (error) {
+      setSearchError(
+        getApiErrorMessage(
+          error,
+          "Không thể kết nối đến máy chủ. Vui lòng thử lại.",
+        ),
+      );
       setOriginalResults([]);
       setSearchResults([]);
     } finally {
@@ -333,26 +357,25 @@ export default function SearchScreen() {
     setOnlyAvailable(true);
     setPostType("");
     setSortBy("Relevance");
+    setSearchError("");
   };
 
   const formatPrice = (price: number) => {
     if (!price && price !== 0) return "Liên hệ";
-    return price.toLocaleString("vi-VN") + " đ";
+    return `${price.toLocaleString("vi-VN")} đ`;
   };
 
   const getCoverImage = (post: any) => {
-    if (post.medias && post.medias.length > 0)
+    if (post.medias && post.medias.length > 0) {
       return { uri: post.medias[0].url || post.medias[0].mediaUrl };
+    }
     return {
       uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image",
     };
   };
 
-  const getFullAddress = (post: any) => {
-    return [post.streetAddress, post.ward, post.city]
-      .filter(Boolean)
-      .join(", ");
-  };
+  const getFullAddress = (post: any) =>
+    [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
 
   const getPriorityLabel = (level: string) => {
     switch (level) {
@@ -392,7 +415,7 @@ export default function SearchScreen() {
         <Text style={styles.filterSectionTitle}>1. Thông tin cơ bản</Text>
         <Text style={styles.subLabel}>Loại bài đăng</Text>
         <View style={styles.chipContainer}>
-          {POST_TYPES.map((type) => {
+          {visiblePostTypes.map((type) => {
             const isActive = postType === type;
             return (
               <TouchableOpacity
@@ -408,18 +431,23 @@ export default function SearchScreen() {
                 >
                   {type}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
         </View>
+        {isBusiness ? (
+          <Text style={styles.businessRuleHint}>
+            Tài khoản doanh nghiệp chỉ xem tin bán từ tài khoản cá nhân.
+          </Text>
+        ) : null}
 
         <Text style={styles.subLabel}>Danh mục sản phẩm</Text>
         <View style={styles.chipContainer}>
@@ -439,14 +467,14 @@ export default function SearchScreen() {
                 >
                   {cat.categoryName}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -506,7 +534,7 @@ export default function SearchScreen() {
               numberOfLines={1}
             >
               {minDamage !== null
-                ? DAMAGE_LEVELS.find((d) => d.value === minDamage)?.label
+                ? DAMAGE_LEVELS.find((damage) => damage.value === minDamage)?.label
                 : "Mức độ 1"}
             </Text>
             <Ionicons
@@ -530,7 +558,7 @@ export default function SearchScreen() {
               numberOfLines={1}
             >
               {maxDamage !== null
-                ? DAMAGE_LEVELS.find((d) => d.value === maxDamage)?.label
+                ? DAMAGE_LEVELS.find((damage) => damage.value === maxDamage)?.label
                 : "Mức độ 2"}
             </Text>
             <Ionicons
@@ -544,13 +572,13 @@ export default function SearchScreen() {
 
         <Text style={styles.subLabel}>Trạng thái hoạt động</Text>
         <View style={styles.chipContainer}>
-          {FILTER_CONDITIONS.map((cond) => {
-            const isActive = selectedCondition === cond;
+          {FILTER_CONDITIONS.map((condition) => {
+            const isActive = selectedCondition === condition;
             return (
               <TouchableOpacity
-                key={cond}
+                key={condition}
                 style={[styles.chip, isActive ? styles.chipActive : undefined]}
-                onPress={() => setSelectedCondition(isActive ? "" : cond)}
+                onPress={() => setSelectedCondition(isActive ? "" : condition)}
               >
                 <Text
                   style={[
@@ -558,23 +586,22 @@ export default function SearchScreen() {
                     isActive ? styles.chipTextActive : undefined,
                   ]}
                 >
-                  {cond}
+                  {condition}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
         </View>
 
         <Text style={styles.filterSectionTitle}>3. Vận chuyển & Vị trí</Text>
-
         <View style={{ zIndex: 10 }}>
           <View
             style={[
@@ -592,8 +619,8 @@ export default function SearchScreen() {
               placeholder="Nhập hoặc Chọn Tỉnh/Thành phố..."
               placeholderTextColor="#94A3B8"
               value={city}
-              onChangeText={(t) => {
-                setCity(t);
+              onChangeText={(value) => {
+                setCity(value);
                 setShowCityDropdown(true);
                 setCityCode(null);
               }}
@@ -624,19 +651,19 @@ export default function SearchScreen() {
             )}
           </View>
 
-          {showCityDropdown && (
+          {showCityDropdown ? (
             <View style={styles.dropdownList}>
               <ScrollView
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
                 style={{ maxHeight: 200 }}
               >
-                {provincesList.filter((p) =>
-                  p.label.toLowerCase().includes(city.toLowerCase()),
+                {provincesList.filter((province) =>
+                  province.label.toLowerCase().includes(city.toLowerCase()),
                 ).length > 0 ? (
                   provincesList
-                    .filter((p) =>
-                      p.label.toLowerCase().includes(city.toLowerCase()),
+                    .filter((province) =>
+                      province.label.toLowerCase().includes(city.toLowerCase()),
                     )
                     .map((item) => (
                       <TouchableOpacity
@@ -648,16 +675,14 @@ export default function SearchScreen() {
                           setShowCityDropdown(false);
                         }}
                       >
-                        <Text style={styles.dropdownItemText}>
-                          {item.label}
-                        </Text>
-                        {city === item.label && (
+                        <Text style={styles.dropdownItemText}>{item.label}</Text>
+                        {city === item.label ? (
                           <Ionicons
                             name="checkmark"
                             size={20}
                             color={COLORS.primary}
                           />
-                        )}
+                        ) : null}
                       </TouchableOpacity>
                     ))
                 ) : (
@@ -667,7 +692,7 @@ export default function SearchScreen() {
                 )}
               </ScrollView>
             </View>
-          )}
+          ) : null}
         </View>
 
         <Text style={styles.subLabel}>Phương thức giao hàng</Text>
@@ -688,21 +713,20 @@ export default function SearchScreen() {
                 >
                   {method}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
         </View>
 
         <Text style={styles.filterSectionTitle}>4. Tùy chọn khác</Text>
-
         <Text style={styles.subLabel}>Không gian sử dụng</Text>
         <View style={styles.chipContainer}>
           {FILTER_SPACES.map((space) => {
@@ -721,14 +745,14 @@ export default function SearchScreen() {
                 >
                   {space}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -752,14 +776,14 @@ export default function SearchScreen() {
                 >
                   {level}
                 </Text>
-                {isActive && (
+                {isActive ? (
                   <Ionicons
                     name="close"
                     size={14}
                     color={COLORS.primary}
                     style={styles.chipCloseIcon}
                   />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -772,10 +796,7 @@ export default function SearchScreen() {
         <TouchableOpacity style={styles.resetBtn} onPress={resetFilters}>
           <Text style={styles.resetText}>Thiết lập lại</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.applyBtn}
-          onPress={() => executeSearch()}
-        >
+        <TouchableOpacity style={styles.applyBtn} onPress={() => void executeSearch()}>
           <Text style={styles.applyText}>Áp dụng tìm kiếm</Text>
         </TouchableOpacity>
       </View>
@@ -794,7 +815,7 @@ export default function SearchScreen() {
           <Ionicons name="time-outline" size={20} color={COLORS.textLight} />
           <Text style={styles.historyText}>{item}</Text>
           <TouchableOpacity
-            onPress={() => setHistory(history.filter((h) => h !== item))}
+            onPress={() => setHistory(history.filter((value) => value !== item))}
             style={{ padding: 4 }}
           >
             <Ionicons name="close" size={20} color={COLORS.textLight} />
@@ -814,16 +835,7 @@ export default function SearchScreen() {
             style={styles.filterTriggerBtn}
           >
             <Ionicons name="filter" size={16} color={COLORS.primary} />
-            <Text
-              style={{
-                fontSize: 13,
-                color: COLORS.primary,
-                fontWeight: "600",
-                marginLeft: 4,
-              }}
-            >
-              Bộ lọc
-            </Text>
+            <Text style={styles.filterTriggerText}>Bộ lọc</Text>
           </TouchableOpacity>
           <View style={styles.sortDivider} />
           <TouchableOpacity
@@ -843,7 +855,14 @@ export default function SearchScreen() {
         style={styles.resultsContainer}
         showsVerticalScrollIndicator={false}
       >
-        {query.trim().length > 0 && !isLoading && (
+        {searchError ? (
+          <View style={styles.inlineErrorBox}>
+            <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+            <Text style={styles.inlineErrorText}>{searchError}</Text>
+          </View>
+        ) : null}
+
+        {query.trim().length > 0 && !isLoading ? (
           <View style={styles.categorySection}>
             <View style={styles.keywordHeader}>
               <Ionicons
@@ -860,15 +879,13 @@ export default function SearchScreen() {
               </Text>
             </View>
           </View>
-        )}
+        ) : null}
 
-        {!isLoading && searchResults.length > 0 && (
+        {!isLoading && searchResults.length > 0 ? (
           <View style={styles.shopeeSortBar}>
             <Text style={styles.sortLabel}>Sắp xếp theo</Text>
             <TouchableOpacity
-              style={
-                sortBy === "Relevance" ? styles.sortBtnActive : styles.sortBtn
-              }
+              style={sortBy === "Relevance" ? styles.sortBtnActive : styles.sortBtn}
               onPress={() => handleSort("Relevance")}
             >
               <Text
@@ -882,9 +899,7 @@ export default function SearchScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={
-                sortBy === "Newest" ? styles.sortBtnActive : styles.sortBtn
-              }
+              style={sortBy === "Newest" ? styles.sortBtnActive : styles.sortBtn}
               onPress={() => handleSort("Newest")}
             >
               <Text
@@ -919,20 +934,20 @@ export default function SearchScreen() {
                     ? "↓"
                     : ""}
               </Text>
-              {!sortBy.startsWith("Price") && (
+              {!sortBy.startsWith("Price") ? (
                 <Ionicons
                   name="chevron-down"
                   size={14}
                   color={COLORS.text}
                   style={{ marginLeft: 4 }}
                 />
-              )}
+              ) : null}
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
 
         {isLoading ? (
-          <View style={{ marginTop: 40, alignItems: "center" }}>
+          <View style={styles.loadingResults}>
             <Text style={{ color: COLORS.textLight }}>Đang tìm kiếm...</Text>
           </View>
         ) : searchResults.length === 0 ? (
@@ -963,27 +978,33 @@ export default function SearchScreen() {
                       : styles.listImageWrapper
                   }
                 >
-                  <Image
-                    source={getCoverImage(post)}
-                    style={styles.productImage}
-                  />
-
+                  <Image source={getCoverImage(post)} style={styles.productImage} />
                   <View style={styles.topBadgeRow}>
                     {post.categoryName ? (
                       <View style={styles.categoryBadge}>
-                        <Text style={styles.categoryText}>
-                          {post.categoryName}
-                        </Text>
+                        <Text style={styles.categoryText}>{post.categoryName}</Text>
                       </View>
                     ) : null}
+                    <View
+                      style={[
+                        styles.postTypeBadge,
+                        post.postType === "Buy"
+                          ? styles.buyPostBadge
+                          : styles.sellPostBadge,
+                      ]}
+                    >
+                      <Text style={styles.postTypeBadgeText}>
+                        {post.postType === "Buy" ? "Tin mua" : "Tin bán"}
+                      </Text>
+                    </View>
                   </View>
                 </View>
+
                 <View
                   style={
                     isGridView ? styles.gridInfoWrapper : styles.listInfoWrapper
                   }
                 >
-                  {/* ĐƯA BRAND XUỐNG KHU VỰC TRẮNG NÀY ĐÂY */}
                   {post.brandName ? (
                     <View style={styles.brandBadgeWhite}>
                       <Text style={styles.brandBadgeTextWhite}>
@@ -1019,17 +1040,17 @@ export default function SearchScreen() {
                     </View>
 
                     {post.priorityLevel &&
-                      post.priorityLevel !== "Medium" &&
-                      post.priorityLevel !== "Low" && (
-                        <Text
-                          style={[
-                            styles.priorityText,
-                            { color: getPriorityColor(post.priorityLevel) },
-                          ]}
-                        >
-                          {getPriorityLabel(post.priorityLevel)}
-                        </Text>
-                      )}
+                    post.priorityLevel !== "Medium" &&
+                    post.priorityLevel !== "Low" ? (
+                      <Text
+                        style={[
+                          styles.priorityText,
+                          { color: getPriorityColor(post.priorityLevel) },
+                        ]}
+                      >
+                        {getPriorityLabel(post.priorityLevel)}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
               </TouchableOpacity>
@@ -1074,23 +1095,17 @@ export default function SearchScreen() {
             value={query}
             onChangeText={setQuery}
             onFocus={handleInputFocus}
-            onSubmitEditing={() => {
-              setViewState("BUILDER");
-            }}
+            onSubmitEditing={() => setViewState("BUILDER")}
             returnKeyType="done"
           />
-          {query.length > 0 && (
+          {query.length > 0 ? (
             <TouchableOpacity
               onPress={() => setQuery("")}
               style={{ paddingHorizontal: 12 }}
             >
-              <Ionicons
-                name="close-circle"
-                size={18}
-                color={COLORS.textLight}
-              />
+              <Ionicons name="close-circle" size={18} color={COLORS.textLight} />
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -1098,8 +1113,8 @@ export default function SearchScreen() {
       {viewState === "BUILDER" && renderFilterBuilder()}
       {viewState === "RESULTS" && renderResultsView()}
 
-      {showDamagePicker !== null && (
-        <Modal visible={true} transparent animationType="fade">
+      {showDamagePicker !== null ? (
+        <Modal visible transparent animationType="fade">
           <TouchableOpacity
             style={styles.modalOverlay}
             activeOpacity={1}
@@ -1116,9 +1131,7 @@ export default function SearchScreen() {
                   setShowDamagePicker(null);
                 }}
               >
-                <Text
-                  style={[styles.actionModalBtnText, { color: COLORS.error }]}
-                >
+                <Text style={[styles.actionModalBtnText, { color: COLORS.error }]}>
                   Bỏ chọn
                 </Text>
               </TouchableOpacity>
@@ -1134,20 +1147,19 @@ export default function SearchScreen() {
                 >
                   <Text style={styles.actionModalBtnText}>{item.label}</Text>
                   {((showDamagePicker === "min" && minDamage === item.value) ||
-                    (showDamagePicker === "max" &&
-                      maxDamage === item.value)) && (
+                    (showDamagePicker === "max" && maxDamage === item.value)) ? (
                     <Ionicons
                       name="checkmark"
                       size={20}
                       color={COLORS.primary}
                     />
-                  )}
+                  ) : null}
                 </TouchableOpacity>
               ))}
             </View>
           </TouchableOpacity>
         </Modal>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1183,7 +1195,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
   },
-
   bodyContainer: {
     flex: 1,
     paddingHorizontal: 20,
@@ -1204,7 +1215,6 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F0F0F0",
   },
   historyText: { flex: 1, fontSize: 14, color: COLORS.text, marginLeft: 12 },
-
   filterSectionTitle: {
     fontSize: 15,
     fontWeight: "800",
@@ -1218,6 +1228,12 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     marginTop: 12,
     marginBottom: 8,
+  },
+  businessRuleHint: {
+    marginTop: 8,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
   },
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
@@ -1234,7 +1250,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: COLORS.textLight, fontWeight: "500" },
   chipTextActive: { color: COLORS.primary, fontWeight: "700" },
   chipCloseIcon: { marginLeft: 4 },
-
   inputRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   numberInput: {
     flex: 1,
@@ -1248,7 +1263,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   divider: { width: 12, height: 2, backgroundColor: COLORS.border },
-
   autocompleteContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1293,7 +1307,6 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     fontSize: 13,
   },
-
   input: {
     flex: 1,
     fontSize: 14,
@@ -1301,10 +1314,7 @@ const styles = StyleSheet.create({
     height: "100%",
     minWidth: 0,
   },
-  inputText: { flex: 1, fontSize: 14, color: COLORS.text },
-  placeholderText: { flex: 1, fontSize: 14, color: "#94A3B8" },
   clearIcon: { padding: 4, marginRight: -4 },
-
   dropdownInput: {
     flex: 1,
     height: 44,
@@ -1319,7 +1329,6 @@ const styles = StyleSheet.create({
   },
   dropdownText: { fontSize: 13, color: COLORS.text, flex: 1 },
   dropdownPlaceholder: { fontSize: 13, color: COLORS.textLight, flex: 1 },
-
   footerAction: {
     position: "absolute",
     bottom: 0,
@@ -1352,7 +1361,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   applyText: { fontSize: 15, fontWeight: "bold", color: COLORS.white },
-
   resultsContainer: { flex: 1, backgroundColor: "#F8F9FA" },
   sortBar: {
     flexDirection: "row",
@@ -1378,13 +1386,31 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
   },
+  filterTriggerText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
   sortDivider: {
     width: 1,
     height: 20,
     backgroundColor: COLORS.border,
     marginHorizontal: 12,
   },
-
+  inlineErrorBox: {
+    margin: 16,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    backgroundColor: "#FEF2F2",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  inlineErrorText: { flex: 1, color: "#B91C1C", fontSize: 12, lineHeight: 18 },
   categorySection: {
     backgroundColor: COLORS.white,
     padding: 16,
@@ -1394,7 +1420,6 @@ const styles = StyleSheet.create({
   },
   keywordHeader: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   keywordHeaderText: { fontSize: 14, color: COLORS.text, marginLeft: 6 },
-
   shopeeSortBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1429,7 +1454,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderRadius: 4,
   },
-
+  loadingResults: { marginTop: 40, alignItems: "center" },
   emptyState: {
     flex: 1,
     justifyContent: "center",
@@ -1437,7 +1462,6 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   emptyText: { marginTop: 12, color: COLORS.textLight, fontSize: 14 },
-
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1480,7 +1504,6 @@ const styles = StyleSheet.create({
   },
   listInfoWrapper: { flex: 1, marginLeft: 12, justifyContent: "space-between" },
   productImage: { width: "100%", height: "100%" },
-
   topBadgeRow: {
     position: "absolute",
     top: 6,
@@ -1497,8 +1520,14 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   categoryText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
-
-  // STYLE CHO BRAND DƯỚI NỀN TRẮNG
+  postTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  sellPostBadge: { backgroundColor: "rgba(15, 118, 110, 0.92)" },
+  buyPostBadge: { backgroundColor: "rgba(180, 83, 9, 0.92)" },
+  postTypeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
   brandBadgeWhite: {
     alignSelf: "flex-start",
     backgroundColor: "#F1F5F9",
@@ -1512,7 +1541,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
   },
-
   priceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1526,7 +1554,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   priorityText: { fontSize: 10, fontWeight: "bold" },
-
   productName: {
     fontSize: 13,
     color: COLORS.text,
@@ -1543,7 +1570,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   locationText: { fontSize: 11, color: COLORS.textLight, flex: 1 },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

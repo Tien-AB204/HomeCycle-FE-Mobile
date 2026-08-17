@@ -19,7 +19,6 @@ import {
   View,
 } from "react-native";
 
-import { notifyUser } from "../../src/components/shared/ActionFeedback";
 import AddressPickerField, {
   AddressPickerFieldHandle,
   AddressSelection,
@@ -41,6 +40,13 @@ interface Bank {
   logo: string;
 }
 
+const OPERATING_SCOPE_OPTIONS = [
+  "Toàn quốc",
+  "Khu vực miền Nam",
+  "Khu vực miền Bắc",
+  "Khu vực miền Trung",
+] as const;
+
 const readValidationError = (errors: unknown, fieldName: string): string => {
   if (!errors || typeof errors !== "object") return "";
   const entries = Object.entries(errors as Record<string, unknown>);
@@ -60,6 +66,29 @@ const readValidationError = (errors: unknown, fieldName: string): string => {
       .join(" ");
   return typeof value === "string" ? value.trim() : "";
 };
+
+const readMessageError = (message: string, keywords: string[]): string => {
+  if (!message.trim()) return "";
+
+  return message
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const normalizedPart = part.toLocaleLowerCase("vi-VN");
+      return keywords.some((keyword) =>
+        normalizedPart.includes(keyword.toLocaleLowerCase("vi-VN")),
+      );
+    })
+    .join(" ");
+};
+
+const normalizeName = (value: string) =>
+  value
+    .normalize("NFC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleUpperCase("vi-VN");
 
 const appendFileToForm = async (
   formData: FormData,
@@ -114,21 +143,38 @@ export default function BusinessSetupScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingOldData, setIsFetchingOldData] = useState(false);
 
-  // Lý do từ chối
+  // Lý do từ chối và lỗi tải trang.
   const [rejectReasonMsg, setRejectReasonMsg] = useState("");
+  const [loadError, setLoadError] = useState("");
 
-  const [identityNumberError, setIdentityNumberError] = useState("");
-  const [identityDobError, setIdentityDobError] = useState("");
-  const [serviceAreaError, setServiceAreaError] = useState("");
+  // Toàn bộ validation phải hiển thị inline tại field tương ứng.
+  const [modelError, setModelError] = useState("");
+  const [businessNameError, setBusinessNameError] = useState("");
+  const [taxCodeError, setTaxCodeError] = useState("");
   const [businessAddressError, setBusinessAddressError] = useState("");
+  const [serviceAreaError, setServiceAreaError] = useState("");
+  const [fullNameError, setFullNameError] = useState("");
+  const [identityNumberError, setIdentityNumberError] = useState("");
+  const [identityNameError, setIdentityNameError] = useState("");
+  const [identityDobError, setIdentityDobError] = useState("");
+  const [identityAddressError, setIdentityAddressError] = useState("");
+  const [businessLicenseError, setBusinessLicenseError] = useState("");
+  const [frontImageError, setFrontImageError] = useState("");
+  const [backImageError, setBackImageError] = useState("");
+  const [authorizationLetterError, setAuthorizationLetterError] = useState("");
+  const [bankError, setBankError] = useState("");
+  const [bankLoadError, setBankLoadError] = useState("");
+  const [accountNumberError, setAccountNumberError] = useState("");
+  const [accountNameError, setAccountNameError] = useState("");
+
+  // Chỉ dùng cho lỗi hệ thống/API không thể gắn vào một field cụ thể.
   const [submitError, setSubmitError] = useState("");
 
   const [fullName, setFullName] = useState("");
   const [businessName, setBusinessName] = useState("");
+  const [businessDescription, setBusinessDescription] = useState("");
   const [taxCode, setTaxCode] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
-  const [businessAddressSelection, setBusinessAddressSelection] =
-    useState<AddressSelection | null>(null);
 
   // Lưu riêng City và Ward để:
   // 1. Gửi đúng hai field bắt buộc của BE.
@@ -140,7 +186,8 @@ export default function BusinessSetupScreen() {
   const [identityName, setIdentityName] = useState("");
   const [identityDob, setIdentityDob] = useState("");
   const [identityAddress, setIdentityAddress] = useState("");
-  const [operatingScope, setOperatingScope] = useState("Toàn quốc");
+  const [operatingScope, setOperatingScope] = useState("");
+  const [showOperatingScopeModal, setShowOperatingScopeModal] = useState(false);
 
   const [warehouseAddress, setWarehouseAddress] = useState("");
   const [warehouseAddressSelection, setWarehouseAddressSelection] =
@@ -168,12 +215,13 @@ export default function BusinessSetupScreen() {
   const [isBankLoading, setIsBankLoading] = useState(false);
   const [searchBankQuery, setSearchBankQuery] = useState("");
 
-  // FETCH DATA CŨ NẾU LÀ REJECTED
+  // API business registration nằm trực tiếp trong file đang sử dụng nó.
   useEffect(() => {
     const fetchOldData = async () => {
       if (isRejected === "true") {
         try {
           setIsFetchingOldData(true);
+          setLoadError("");
           const res = await apiClient.get(
             "/business-profiles/registration-detail",
           );
@@ -184,9 +232,15 @@ export default function BusinessSetupScreen() {
               data.rejectReason ||
                 "Hồ sơ cần được bổ sung thêm thông tin. Vui lòng kiểm tra lại.",
             );
-            setModel(
-              data.businessModel === "Enterprise" ? "enterprise" : "household",
-            );
+
+            const isEnterpriseModel =
+              data.businessModel === "Enterprise" ||
+              data.businessModel === 1 ||
+              data.businessModel === "1";
+
+            setModel(isEnterpriseModel ? "enterprise" : "household");
+            setBusinessName(data.businessName || "");
+            setBusinessDescription(data.businessDescription || "");
             setBusinessAddress(data.businessAddress || "");
             setBusinessCity(data.city || "");
             setBusinessWard(data.ward || "");
@@ -196,13 +250,34 @@ export default function BusinessSetupScreen() {
             setIdentityName(data.identityName || "");
             setIdentityDob(data.identityDob || "");
             setIdentityAddress(data.identityAddress || "");
-            setOperatingScope(data.operatingScope || "Toàn quốc");
-            setBusinessAddress(data.businessAddress || "");
+            setOperatingScope(data.operatingScope || "");
 
             setBankCode(data.bankCode || "");
             setBankName(data.bankName || "");
             setAccountNumber(data.accountNumber || "");
             setAccountName(data.accountName || "");
+
+            const rawServiceArea = Array.isArray(data.serviceAreas)
+              ? data.serviceAreas[0]
+              : data.serviceAreas || data.serviceArea;
+
+            if (isEnterpriseModel && rawServiceArea) {
+              const city = rawServiceArea.city || "";
+              const ward = rawServiceArea.ward || "";
+              const street = rawServiceArea.street || "";
+              const formattedAddress = [street, ward, city]
+                .filter(Boolean)
+                .join(", ");
+
+              setWarehouseAddress(formattedAddress);
+              setWarehouseAddressSelection({
+                provinceCode: "",
+                provinceName: city,
+                wardName: ward,
+                streetAddress: street,
+                formattedAddress,
+              });
+            }
 
             if (data.documents) {
               data.documents.forEach((doc: any) => {
@@ -214,8 +289,13 @@ export default function BusinessSetupScreen() {
               });
             }
           }
-        } catch (error) {
-          console.log("Lỗi fetch old data", error);
+        } catch (error: unknown) {
+          setLoadError(
+            getApiErrorMessage(
+              error,
+              "Không thể tải lại hồ sơ đã gửi. Vui lòng thử lại.",
+            ),
+          );
         } finally {
           setIsFetchingOldData(false);
         }
@@ -224,10 +304,12 @@ export default function BusinessSetupScreen() {
     fetchOldData();
   }, [isRejected]);
 
+  // API danh sách ngân hàng được sử dụng trực tiếp tại form này.
   useEffect(() => {
     const fetchBanks = async () => {
       try {
         setIsBankLoading(true);
+        setBankLoadError("");
         const response = await fetch("https://api.vietqr.io/v2/banks");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const json = await response.json();
@@ -236,14 +318,32 @@ export default function BusinessSetupScreen() {
           setFilteredBanks(json.data);
           return;
         }
-      } catch (error: unknown) {
-        console.error("Lỗi tải danh sách ngân hàng:", error);
+        throw new Error("Invalid bank response");
+      } catch {
+        setBankLoadError(
+          "Không thể tải danh sách ngân hàng. Vui lòng thử lại sau.",
+        );
       } finally {
         setIsBankLoading(false);
       }
     };
     fetchBanks();
   }, []);
+
+  useEffect(() => {
+    if (!bankCode || banks.length === 0) return;
+
+    const matchedBank = banks.find(
+      (bank) =>
+        String(bank.bin) === String(bankCode) || bank.code === bankCode,
+    );
+
+    if (!matchedBank) return;
+
+    setBankDisplayCode(matchedBank.code);
+    setBankLogo(matchedBank.logo);
+    if (!bankName) setBankName(matchedBank.shortName);
+  }, [bankCode, bankName, banks]);
 
   const handleSearchBank = (text: string) => {
     setSearchBankQuery(text);
@@ -264,15 +364,28 @@ export default function BusinessSetupScreen() {
     setBankName(bank.shortName);
     setBankDisplayCode(bank.code);
     setBankLogo(bank.logo);
+    setBankError("");
+    setBankLoadError("");
     setShowBankModal(false);
     setSearchBankQuery("");
     setFilteredBanks(banks);
+  };
+
+  const setUploadError = (
+    type: "license" | "front" | "back" | "authorization",
+    message: string,
+  ) => {
+    if (type === "license") setBusinessLicenseError(message);
+    if (type === "front") setFrontImageError(message);
+    if (type === "back") setBackImageError(message);
+    if (type === "authorization") setAuthorizationLetterError(message);
   };
 
   const pickImage = async (
     type: "license" | "front" | "back" | "authorization",
   ) => {
     try {
+      setUploadError(type, "");
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -281,143 +394,213 @@ export default function BusinessSetupScreen() {
       });
       if (result.canceled) return;
       const selectedUri = result.assets?.[0]?.uri;
-      if (!selectedUri) return setSubmitError("Không thể đọc ảnh vừa chọn.");
+      if (!selectedUri) {
+        setUploadError(type, "Không thể đọc hình ảnh vừa chọn.");
+        return;
+      }
 
       if (type === "license") setBusinessLicense(selectedUri);
       if (type === "front") setFrontImage(selectedUri);
       if (type === "back") setBackImage(selectedUri);
       if (type === "authorization") setAuthorizationLetter(selectedUri);
-    } catch (error: unknown) {
-      setSubmitError("Không thể chọn hình ảnh.");
+    } catch {
+      setUploadError(type, "Không thể chọn hình ảnh. Vui lòng thử lại.");
     }
   };
 
   const handleNextToForm = () => {
-    if (!model) return notifyUser("Vui lòng chọn mô hình kinh doanh.", "error");
+    if (!model) {
+      setModelError("Vui lòng chọn một mô hình kinh doanh.");
+      return;
+    }
+    setModelError("");
     setStep(2);
   };
 
   const handleRepresentativeNameChange = (value: string) => {
     setFullName(value);
     setIdentityName(value);
-    if (!isAccountNameManuallyEdited) setAccountName(value);
+    setFullNameError("");
+    setIdentityNameError("");
+    if (!isAccountNameManuallyEdited) {
+      setAccountName(value);
+      setAccountNameError("");
+    }
   };
 
   const handleSubmit = async () => {
-    setIdentityNumberError("");
-    setIdentityDobError("");
-    setServiceAreaError("");
-    setBusinessAddressError("");
     setSubmitError("");
 
-    if (
-      !fullName.trim() ||
-      !businessName.trim() ||
-      !taxCode.trim() ||
-      !identityNumber.trim() ||
-      !identityName.trim() ||
-      !identityAddress.trim()
-    ) {
-      return setSubmitError("Vui lòng điền đầy đủ các thông tin bắt buộc.");
+    if (!model) {
+      setModelError("Vui lòng chọn một mô hình kinh doanh.");
+      setStep(1);
+      return;
     }
-    if (!/^\d{12}$/.test(identityNumber.trim()))
-      return setIdentityNumberError("Số CCCD phải gồm đúng 12 chữ số.");
-    if (!identityDob) return setIdentityDobError("Vui lòng chọn ngày sinh.");
-    if (
-      !businessAddress.trim() ||
-      !businessCity.trim() ||
-      !businessWard.trim()
-    ) {
-      return setBusinessAddressError(
-        "Vui lòng chọn đầy đủ tỉnh/thành, phường/xã và địa chỉ trụ sở.",
-      );
+
+    let nextFullNameError = fullName.trim()
+      ? ""
+      : "Vui lòng nhập họ và tên người đại diện / chủ hộ.";
+    const nextBusinessNameError = businessName.trim()
+      ? ""
+      : model === "household"
+        ? "Vui lòng nhập tên hộ kinh doanh."
+        : "Vui lòng nhập tên doanh nghiệp.";
+    const nextTaxCodeError = taxCode.trim()
+      ? ""
+      : "Vui lòng nhập mã số thuế.";
+    const nextBusinessAddressError =
+      businessAddress.trim() && businessCity.trim() && businessWard.trim()
+        ? ""
+        : "Vui lòng chọn đầy đủ địa chỉ trụ sở / cơ sở kinh doanh.";
+    const nextServiceAreaError =
+      model === "enterprise" && !warehouseAddressSelection
+        ? "Doanh nghiệp bắt buộc phải đăng ký địa chỉ kho bãi / khu vực hoạt động."
+        : "";
+
+    let nextIdentityNumberError = "";
+    if (!identityNumber.trim()) {
+      nextIdentityNumberError = "Vui lòng nhập số CCCD.";
+    } else if (!/^\d{12}$/.test(identityNumber.trim())) {
+      nextIdentityNumberError = "Số CCCD phải gồm đúng 12 chữ số.";
     }
-    if (fullName.trim().toLowerCase() !== identityName.trim().toLowerCase())
-      return setSubmitError(
-        "Họ và tên người đại diện phải giống họ tên trên CCCD.",
-      );
-    if (!businessLicense || !frontImage || !backImage)
-      return setSubmitError(
-        "Vui lòng tải lên giấy chứng nhận đăng ký kinh doanh và hai mặt CCCD.",
-      );
+
+    let nextIdentityNameError = identityName.trim()
+      ? ""
+      : "Vui lòng nhập họ tên trên CCCD.";
+    const nextIdentityDobError = identityDob
+      ? ""
+      : "Vui lòng chọn ngày sinh.";
+    const nextIdentityAddressError = identityAddress.trim()
+      ? ""
+      : "Vui lòng chọn địa chỉ thường trú trên CCCD.";
+
+    if (
+      fullName.trim() &&
+      identityName.trim() &&
+      normalizeName(fullName) !== normalizeName(identityName)
+    ) {
+      const mismatchMessage =
+        "Họ và tên người đại diện phải trùng khớp với họ tên trên CCCD.";
+      nextFullNameError = mismatchMessage;
+      nextIdentityNameError = mismatchMessage;
+    }
+
+    const nextBusinessLicenseError = businessLicense
+      ? ""
+      : "Vui lòng tải lên giấy chứng nhận đăng ký kinh doanh.";
+    const nextFrontImageError = frontImage
+      ? ""
+      : "Vui lòng tải lên mặt trước CCCD/CMND.";
+    const nextBackImageError = backImage
+      ? ""
+      : "Vui lòng tải lên mặt sau CCCD/CMND.";
+
+    const nextBankError = bankCode && bankName
+      ? ""
+      : "Vui lòng chọn ngân hàng thụ hưởng.";
+    const nextAccountNumberError = accountNumber.trim()
+      ? ""
+      : "Vui lòng nhập số tài khoản ngân hàng.";
+    const nextAccountNameError = accountName.trim()
+      ? ""
+      : "Vui lòng nhập tên chủ tài khoản.";
+
+    setBusinessNameError(nextBusinessNameError);
+    setTaxCodeError(nextTaxCodeError);
+    setBusinessAddressError(nextBusinessAddressError);
+    setServiceAreaError(nextServiceAreaError);
+    setFullNameError(nextFullNameError);
+    setIdentityNumberError(nextIdentityNumberError);
+    setIdentityNameError(nextIdentityNameError);
+    setIdentityDobError(nextIdentityDobError);
+    setIdentityAddressError(nextIdentityAddressError);
+    setBusinessLicenseError(nextBusinessLicenseError);
+    setFrontImageError(nextFrontImageError);
+    setBackImageError(nextBackImageError);
+    setBankError(nextBankError);
+    setAccountNumberError(nextAccountNumberError);
+    setAccountNameError(nextAccountNameError);
+
+    const hasFieldError = Boolean(
+      nextBusinessNameError ||
+        nextTaxCodeError ||
+        nextBusinessAddressError ||
+        nextServiceAreaError ||
+        nextFullNameError ||
+        nextIdentityNumberError ||
+        nextIdentityNameError ||
+        nextIdentityDobError ||
+        nextIdentityAddressError ||
+        nextBusinessLicenseError ||
+        nextFrontImageError ||
+        nextBackImageError ||
+        nextBankError ||
+        nextAccountNumberError ||
+        nextAccountNameError,
+    );
+
+    if (hasFieldError) return;
 
     try {
       setIsLoading(true);
       const formData = new FormData();
       formData.append("FullName", fullName.trim());
       formData.append("BusinessName", businessName.trim());
-      formData.append(
-        "BusinessDescription",
-        model === "household" ? "Hộ kinh doanh" : "Doanh nghiệp",
-      );
+
+      if (businessDescription.trim()) {
+        formData.append("BusinessDescription", businessDescription.trim());
+      }
+
       formData.append("TaxCode", taxCode.trim());
       formData.append("IdentityNumber", identityNumber.trim());
       formData.append("IdentityName", identityName.trim());
       formData.append("IdentityDob", identityDob);
       formData.append("IdentityAddress", identityAddress.trim());
+
       // Địa chỉ trụ sở/cơ sở kinh doanh.
-      formData.append(
-        "BusinessAddress",
-        businessAddress.trim(),
-      );
+      formData.append("BusinessAddress", businessAddress.trim());
 
       // City và Ward vẫn là field bắt buộc của BE.
       // Giá trị lấy từ AddressPickerField hoặc hồ sơ cũ.
       formData.append("City", businessCity.trim());
       formData.append("Ward", businessWard.trim());
 
-      formData.append(
-        "OperatingScope",
-        operatingScope.trim(),
-      );
+      // OperatingScope là optional: chỉ gửi khi người dùng chủ động chọn.
+      if (operatingScope.trim()) {
+        formData.append("OperatingScope", operatingScope.trim());
+      }
 
       formData.append(
         "BusinessModel",
         model === "household" ? "0" : "1",
       );
 
-      /*
-      * ServiceArea hiện có thể bỏ qua.
-      *
-      * Hộ kinh doanh:
-      * - Tuyệt đối không gửi ServiceArea.
-      *
-      * Doanh nghiệp:
-      * - Chỉ gửi khi người dùng thật sự chọn địa chỉ kho bãi.
-      * - Không tự lấy địa chỉ trụ sở làm địa chỉ kho.
-      */
-      if (
-        model === "enterprise" &&
-        warehouseAddressSelection
-      ) {
+      // ServiceArea chỉ gửi cho Enterprise và là bắt buộc với Enterprise.
+      if (model === "enterprise" && warehouseAddressSelection) {
         formData.append(
           "ServiceArea.City",
           warehouseAddressSelection.provinceName,
         );
-
         formData.append(
           "ServiceArea.Street",
           warehouseAddressSelection.streetAddress,
         );
-
         formData.append(
           "ServiceArea.Ward",
           warehouseAddressSelection.wardName,
         );
       }
 
-      if (bankCode) formData.append("BankCode", bankCode);
-      if (bankName) formData.append("BankName", bankName);
-      if (accountNumber.trim())
-        formData.append("AccountNumber", accountNumber.trim());
-      if (accountName.trim())
-        formData.append("AccountName", accountName.trim());
+      formData.append("BankCode", bankCode);
+      formData.append("BankName", bankName);
+      formData.append("AccountNumber", accountNumber.trim());
+      formData.append("AccountName", accountName.trim());
 
       formData.append("Documents[0].DocumentType", "0");
       await appendFileToForm(
         formData,
         "Documents[0].DocumentUrl",
-        frontImage,
+        frontImage!,
         "cccd_front.jpg",
       );
 
@@ -425,7 +608,7 @@ export default function BusinessSetupScreen() {
       await appendFileToForm(
         formData,
         "Documents[1].DocumentUrl",
-        backImage,
+        backImage!,
         "cccd_back.jpg",
       );
 
@@ -433,7 +616,7 @@ export default function BusinessSetupScreen() {
       await appendFileToForm(
         formData,
         "Documents[2].DocumentUrl",
-        businessLicense,
+        businessLicense!,
         "business_registration.jpg",
       );
 
@@ -448,9 +631,12 @@ export default function BusinessSetupScreen() {
       }
 
       const token = await AsyncStorage.getItem("accessToken");
-      if (!token || token === "null")
-        return setSubmitError("Phiên đăng nhập hết hạn.");
+      if (!token || token === "null") {
+        setSubmitError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        return;
+      }
 
+      // API submit business profile nằm trực tiếp trong file sử dụng nó.
       await apiClient.post("/business-profiles/submit", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -461,63 +647,156 @@ export default function BusinessSetupScreen() {
 
       if (reloadUser) await reloadUser();
 
-      setStep(3); // Hiện Success
+      setStep(3);
     } catch (error: unknown) {
-      console.error("Lỗi nộp hồ sơ doanh nghiệp:", error);
       const responseData = (error as any)?.response?.data;
       const responseErrors = responseData?.errors;
       const responseMessage =
         typeof responseData?.message === "string" ? responseData.message : "";
 
-      const nextIdentityNumberError =
+      const nextBusinessNameServerError =
+        readValidationError(responseErrors, "BusinessName") ||
+        readMessageError(responseMessage, ["business name"]);
+      const nextTaxCodeServerError =
+        readValidationError(responseErrors, "TaxCode") ||
+        readMessageError(responseMessage, ["tax code"]);
+      const nextFullNameServerError =
+        readValidationError(responseErrors, "FullName") ||
+        readMessageError(responseMessage, [
+          "representative full name",
+          "fullname",
+        ]);
+      const nextIdentityNumberServerError =
         readValidationError(responseErrors, "IdentityNumber") ||
-        (/identity number/i.test(responseMessage) ? responseMessage : "");
-      const nextIdentityDobError = readValidationError(
-        responseErrors,
-        "IdentityDob",
-      );
-      const nextServiceAreaError = readValidationError(
-        responseErrors,
-        "ServiceArea",
-      );
+        readMessageError(responseMessage, [
+          "identity number",
+          "identity card number",
+        ]);
+      const nextIdentityNameServerError =
+        readValidationError(responseErrors, "IdentityName") ||
+        readMessageError(responseMessage, [
+          "identityname",
+          "full name on identity card",
+        ]);
+      const nextIdentityDobServerError =
+        readValidationError(responseErrors, "IdentityDob") ||
+        readMessageError(responseMessage, ["date of birth"]);
+      const nextIdentityAddressServerError =
+        readValidationError(responseErrors, "IdentityAddress") ||
+        readMessageError(responseMessage, ["address on identity card"]);
+
       const nextCityError = readValidationError(responseErrors, "City");
       const nextWardError = readValidationError(responseErrors, "Ward");
-      const nextBusinessAddressError = readValidationError(
-        responseErrors,
-        "BusinessAddress",
-      );
-
-      const nextAddressError = [
-        nextBusinessAddressError,
+      const nextBusinessAddressServerError = [
+        readValidationError(responseErrors, "BusinessAddress"),
         nextCityError,
         nextWardError,
+        readMessageError(responseMessage, [
+          "business address",
+          "ward is required",
+          "city is required",
+        ]),
       ]
         .filter(Boolean)
         .join(" ");
 
-      setIdentityNumberError(nextIdentityNumberError);
-      setIdentityDobError(nextIdentityDobError);
-      // City/Ward/BusinessAddress thuộc địa chỉ trụ sở.
-      setBusinessAddressError(nextAddressError);
+      const nextServiceAreaServerError =
+        readValidationError(responseErrors, "ServiceArea") ||
+        readMessageError(responseMessage, [
+          "warehouse",
+          "service area",
+          "servicearea",
+        ]);
 
-      // ServiceArea chỉ thuộc phần kho bãi của doanh nghiệp.
+      const nextBankServerError = [
+        readValidationError(responseErrors, "BankCode"),
+        readValidationError(responseErrors, "BankName"),
+        readMessageError(responseMessage, ["bank code", "bank name"]),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const nextAccountNumberServerError =
+        readValidationError(responseErrors, "AccountNumber") ||
+        readMessageError(responseMessage, ["bank account number"]);
+      const nextAccountNameServerError =
+        readValidationError(responseErrors, "AccountName") ||
+        readMessageError(responseMessage, ["bank account holder"]);
+
+      const documentsServerError =
+        readValidationError(responseErrors, "Documents") ||
+        readMessageError(responseMessage, ["document", "tài liệu", "cccd"]);
+
+      let nextFrontServerError = "";
+      let nextBackServerError = "";
+      let nextBusinessLicenseServerError = "";
+      if (documentsServerError) {
+        const normalizedDocumentsError = documentsServerError.toLowerCase();
+        if (
+          normalizedDocumentsError.includes("loại 0") ||
+          normalizedDocumentsError.includes("front") ||
+          normalizedDocumentsError.includes("mặt trước")
+        ) {
+          nextFrontServerError = documentsServerError;
+        }
+        if (
+          normalizedDocumentsError.includes("loại 1") ||
+          normalizedDocumentsError.includes("back") ||
+          normalizedDocumentsError.includes("mặt sau")
+        ) {
+          nextBackServerError = documentsServerError;
+        }
+        if (
+          normalizedDocumentsError.includes("loại 2") ||
+          normalizedDocumentsError.includes("business") ||
+          normalizedDocumentsError.includes("đkkd") ||
+          normalizedDocumentsError.includes("giấy")
+        ) {
+          nextBusinessLicenseServerError = documentsServerError;
+        }
+        if (
+          !nextFrontServerError &&
+          !nextBackServerError &&
+          !nextBusinessLicenseServerError
+        ) {
+          nextBusinessLicenseServerError = documentsServerError;
+        }
+      }
+
+      setBusinessNameError(nextBusinessNameServerError);
+      setTaxCodeError(nextTaxCodeServerError);
+      setFullNameError(nextFullNameServerError);
+      setIdentityNumberError(nextIdentityNumberServerError);
+      setIdentityNameError(nextIdentityNameServerError);
+      setIdentityDobError(nextIdentityDobServerError);
+      setIdentityAddressError(nextIdentityAddressServerError);
+      setBusinessAddressError(nextBusinessAddressServerError);
       setServiceAreaError(
-        model === "enterprise"
-          ? nextServiceAreaError
-          : "",
+        model === "enterprise" ? nextServiceAreaServerError : "",
+      );
+      setBankError(nextBankServerError);
+      setAccountNumberError(nextAccountNumberServerError);
+      setAccountNameError(nextAccountNameServerError);
+      setFrontImageError(nextFrontServerError);
+      setBackImageError(nextBackServerError);
+      setBusinessLicenseError(nextBusinessLicenseServerError);
+
+      const hasMappedServerError = Boolean(
+        nextBusinessNameServerError ||
+          nextTaxCodeServerError ||
+          nextFullNameServerError ||
+          nextIdentityNumberServerError ||
+          nextIdentityNameServerError ||
+          nextIdentityDobServerError ||
+          nextIdentityAddressServerError ||
+          nextBusinessAddressServerError ||
+          nextServiceAreaServerError ||
+          nextBankServerError ||
+          nextAccountNumberServerError ||
+          nextAccountNameServerError ||
+          documentsServerError,
       );
 
-      const relevantServiceAreaError =
-        model === "enterprise"
-          ? nextServiceAreaError
-          : "";
-
-      if (
-        !nextIdentityNumberError &&
-        !nextIdentityDobError &&
-        !nextAddressError &&
-        !relevantServiceAreaError
-      ) {
+      if (!hasMappedServerError) {
         setSubmitError(
           getApiErrorMessage(error, "Không thể gửi hồ sơ doanh nghiệp."),
         );
@@ -544,14 +823,16 @@ export default function BusinessSetupScreen() {
     text,
     uri,
     onPress,
+    hasError = false,
   }: {
     icon: any;
     text: string;
     uri?: string | null;
     onPress: () => void;
+    hasError?: boolean;
   }) => (
     <TouchableOpacity
-      style={styles.uploadBox}
+      style={[styles.uploadBox, hasError ? styles.inputError : undefined]}
       onPress={onPress}
       disabled={isLoading}
     >
@@ -566,10 +847,17 @@ export default function BusinessSetupScreen() {
           <Ionicons
             name={icon}
             size={24}
-            color={COLORS.primary}
+            color={hasError ? "#B91C1C" : COLORS.primary}
             style={styles.uploadIcon}
           />
-          <Text style={styles.uploadBoxText}>{text}</Text>
+          <Text
+            style={[
+              styles.uploadBoxText,
+              hasError ? styles.errorTextColor : undefined,
+            ]}
+          >
+            {text}
+          </Text>
         </>
       )}
     </TouchableOpacity>
@@ -637,6 +925,13 @@ export default function BusinessSetupScreen() {
             </View>
           ) : null}
 
+          {loadError && step === 2 ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+              <Text style={styles.errorBannerText}>{loadError}</Text>
+            </View>
+          ) : null}
+
           {rejectReasonMsg && step === 2 && (
             <View style={styles.warningBanner}>
               <Ionicons name="warning" size={20} color="#B45309" />
@@ -664,8 +959,13 @@ export default function BusinessSetupScreen() {
                   style={[
                     styles.card,
                     model === "household" ? styles.cardActive : undefined,
+                    modelError && !model ? styles.inputError : undefined,
                   ]}
-                  onPress={() => setModel("household")}
+                  onPress={() => {
+                    setModel("household");
+                    setModelError("");
+                    setServiceAreaError("");
+                  }}
                 >
                   <View style={styles.cardIconBox}>
                     <Ionicons
@@ -697,8 +997,12 @@ export default function BusinessSetupScreen() {
                   style={[
                     styles.card,
                     model === "enterprise" ? styles.cardActive : undefined,
+                    modelError && !model ? styles.inputError : undefined,
                   ]}
-                  onPress={() => setModel("enterprise")}
+                  onPress={() => {
+                    setModel("enterprise");
+                    setModelError("");
+                  }}
                 >
                   <View style={styles.cardIconBox}>
                     <Ionicons
@@ -727,6 +1031,10 @@ export default function BusinessSetupScreen() {
                 </TouchableOpacity>
               </View>
 
+              {modelError ? (
+                <Text style={styles.modelErrorText}>{modelError}</Text>
+              ) : null}
+
               <View style={styles.dividerTop}>
                 <TouchableOpacity
                   style={[
@@ -734,7 +1042,6 @@ export default function BusinessSetupScreen() {
                     !model ? styles.inactiveButton : undefined,
                   ]}
                   onPress={handleNextToForm}
-                  disabled={!model}
                 >
                   <Text style={styles.primaryButtonText}>TIẾP TỤC</Text>
                   <Ionicons
@@ -754,43 +1061,71 @@ export default function BusinessSetupScreen() {
 
               <Text style={styles.label}>
                 {model === "household"
-                  ? "Tên hộ kinh doanh"
-                  : "Tên doanh nghiệp đầy đủ"}
+                  ? "Tên hộ kinh doanh *"
+                  : "Tên doanh nghiệp đầy đủ *"}
               </Text>
               <TextInput
-                style={[styles.input, webInputStyle]}
+                style={[
+                  styles.input,
+                  webInputStyle,
+                  businessNameError ? styles.inputError : undefined,
+                ]}
                 placeholder="Nhập tên đăng ký kinh doanh"
                 placeholderTextColor={COLORS.textLight}
                 value={businessName}
-                onChangeText={setBusinessName}
+                onChangeText={(value) => {
+                  setBusinessName(value);
+                  setBusinessNameError("");
+                }}
                 editable={!isLoading}
               />
+              {businessNameError ? (
+                <Text style={styles.fieldErrorText}>{businessNameError}</Text>
+              ) : null}
 
-              <Text style={styles.label}>Mã số thuế</Text>
+              <Text style={styles.label}>Mô tả hoạt động kinh doanh (Tùy chọn)</Text>
               <TextInput
-                style={[styles.input, webInputStyle]}
+                style={[styles.input, styles.textArea, webInputStyle]}
+                placeholder="Nhập mô tả về hoạt động, lĩnh vực hoặc dịch vụ kinh doanh..."
+                placeholderTextColor={COLORS.textLight}
+                value={businessDescription}
+                onChangeText={setBusinessDescription}
+                editable={!isLoading}
+                multiline
+                maxLength={1000}
+              />
+
+              <Text style={styles.label}>Mã số thuế *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  webInputStyle,
+                  taxCodeError ? styles.inputError : undefined,
+                ]}
                 placeholder="Nhập 10 hoặc 13 số"
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="numeric"
                 value={taxCode}
-                onChangeText={setTaxCode}
+                onChangeText={(value) => {
+                  setTaxCode(value);
+                  setTaxCodeError("");
+                }}
                 editable={!isLoading}
               />
+              {taxCodeError ? (
+                <Text style={styles.fieldErrorText}>{taxCodeError}</Text>
+              ) : null}
 
               <Text style={styles.label}>
-                Địa chỉ trụ sở chính / Cơ sở kinh doanh
+                Địa chỉ trụ sở chính / Cơ sở kinh doanh *
               </Text>
               <AddressPickerField
                 ref={businessAddressPickerRef}
                 value={businessAddress}
                 onChange={(nextAddress, selection) => {
                   setBusinessAddress(nextAddress);
-                  setBusinessAddressSelection(selection);
-
-                  // City và Ward được lấy từ lựa chọn thật của người dùng.
                   setBusinessCity(selection.provinceName);
                   setBusinessWard(selection.wardName);
-
                   setBusinessAddressError("");
                 }}
                 placeholder="Chọn địa chỉ trụ sở / cơ sở kinh doanh"
@@ -803,9 +1138,29 @@ export default function BusinessSetupScreen() {
                 </Text>
               ) : null}
 
+              <Text style={styles.label}>Phạm vi hoạt động (Tùy chọn)</Text>
+              <TouchableOpacity
+                style={styles.bankSelector}
+                onPress={() => setShowOperatingScopeModal(true)}
+                disabled={isLoading}
+              >
+                <Text
+                  style={
+                    operatingScope ? styles.inputBankText : styles.placeholderText
+                  }
+                >
+                  {operatingScope || "Không chọn / không gửi"}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={20}
+                  color={COLORS.textLight}
+                />
+              </TouchableOpacity>
+
               {model === "enterprise" ? (
                 <>
-                  <Text style={styles.label}>Địa chỉ kho bãi (Tùy chọn)</Text>
+                  <Text style={styles.label}>Địa chỉ kho bãi / khu vực hoạt động *</Text>
                   <AddressPickerField
                     ref={warehouseAddressPickerRef}
                     value={warehouseAddress}
@@ -828,9 +1183,13 @@ export default function BusinessSetupScreen() {
 
               <SectionHeader title="THÔNG TIN NGƯỜI ĐẠI DIỆN / CHỦ HỘ" />
 
-              <Text style={styles.label}>Họ và tên</Text>
+              <Text style={styles.label}>Họ và tên *</Text>
               <TextInput
-                style={[styles.input, webInputStyle]}
+                style={[
+                  styles.input,
+                  webInputStyle,
+                  fullNameError ? styles.inputError : undefined,
+                ]}
                 placeholder="NHẬP ĐẦY ĐỦ HỌ VÀ TÊN"
                 placeholderTextColor={COLORS.textLight}
                 autoCapitalize="characters"
@@ -839,16 +1198,20 @@ export default function BusinessSetupScreen() {
                 editable={!isLoading}
                 returnKeyType="next"
               />
-              <Text style={styles.helperText}>
-                *Phải trùng khớp hoàn toàn với CCCD và tài khoản ngân hàng
-              </Text>
+              {fullNameError ? (
+                <Text style={styles.fieldErrorText}>{fullNameError}</Text>
+              ) : (
+                <Text style={styles.helperText}>
+                  *Phải trùng khớp hoàn toàn với CCCD và tài khoản ngân hàng
+                </Text>
+              )}
 
-              <Text style={styles.label}>Số CCCD</Text>
+              <Text style={styles.label}>Số CCCD *</Text>
               <TextInput
                 style={[
                   styles.input,
                   webInputStyle,
-                  identityNumberError ? styles.inputError : null,
+                  identityNumberError ? styles.inputError : undefined,
                 ]}
                 placeholder="Nhập 12 chữ số CCCD"
                 placeholderTextColor={COLORS.textLight}
@@ -859,7 +1222,7 @@ export default function BusinessSetupScreen() {
                 onChangeText={(value) => {
                   const numericValue = value.replace(/\D/g, "").slice(0, 12);
                   setIdentityNumber(numericValue);
-                  if (identityNumberError) setIdentityNumberError("");
+                  setIdentityNumberError("");
                 }}
                 editable={!isLoading}
                 returnKeyType="next"
@@ -868,9 +1231,13 @@ export default function BusinessSetupScreen() {
                 <Text style={styles.fieldErrorText}>{identityNumberError}</Text>
               ) : null}
 
-              <Text style={styles.label}>Họ tên trên CCCD</Text>
+              <Text style={styles.label}>Họ tên trên CCCD *</Text>
               <TextInput
-                style={[styles.input, webInputStyle]}
+                style={[
+                  styles.input,
+                  webInputStyle,
+                  identityNameError ? styles.inputError : undefined,
+                ]}
                 placeholder="Nhập họ tên như trên CCCD"
                 placeholderTextColor={COLORS.textLight}
                 autoCapitalize="characters"
@@ -881,8 +1248,11 @@ export default function BusinessSetupScreen() {
                 blurOnSubmit={false}
                 onSubmitEditing={() => identityDobPickerRef.current?.open()}
               />
+              {identityNameError ? (
+                <Text style={styles.fieldErrorText}>{identityNameError}</Text>
+              ) : null}
 
-              <Text style={styles.label}>Ngày sinh</Text>
+              <Text style={styles.label}>Ngày sinh *</Text>
               <CalendarDateField
                 ref={identityDobPickerRef}
                 value={identityDob}
@@ -897,35 +1267,49 @@ export default function BusinessSetupScreen() {
                 defaultViewDate="2000-01-01"
                 maximumDate={new Date()}
                 disabled={isLoading}
+                hasError={Boolean(identityDobError)}
               />
               {identityDobError ? (
                 <Text style={styles.fieldErrorText}>{identityDobError}</Text>
               ) : null}
 
-              <Text style={styles.label}>Địa chỉ thường trú (Trên CCCD)</Text>
+              <Text style={styles.label}>Địa chỉ thường trú (Trên CCCD) *</Text>
               <AddressPickerField
                 ref={identityAddressPickerRef}
                 value={identityAddress}
-                onChange={(nextAddress) => setIdentityAddress(nextAddress)}
+                onChange={(nextAddress) => {
+                  setIdentityAddress(nextAddress);
+                  setIdentityAddressError("");
+                }}
                 placeholder="Chọn địa chỉ thường trú"
                 disabled={isLoading}
+                hasError={Boolean(identityAddressError)}
               />
+              {identityAddressError ? (
+                <Text style={styles.fieldErrorText}>{identityAddressError}</Text>
+              ) : null}
 
               <SectionHeader title="HỒ SƠ PHÁP LÝ" />
 
               <Text style={styles.label}>
                 {model === "household"
-                  ? "Giấy chứng nhận đăng ký hộ kinh doanh"
-                  : "Giấy chứng nhận đăng ký doanh nghiệp"}
+                  ? "Giấy chứng nhận đăng ký hộ kinh doanh *"
+                  : "Giấy chứng nhận đăng ký doanh nghiệp *"}
               </Text>
               <UploadBox
                 icon="cloud-upload-outline"
                 text="Tải lên file giấy phép kinh doanh"
                 uri={businessLicense}
                 onPress={() => pickImage("license")}
+                hasError={Boolean(businessLicenseError)}
               />
+              {businessLicenseError ? (
+                <Text style={styles.fieldErrorText}>
+                  {businessLicenseError}
+                </Text>
+              ) : null}
 
-              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau)</Text>
+              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau) *</Text>
               <View style={styles.row}>
                 <View style={styles.leftUploadColumn}>
                   <UploadBox
@@ -933,7 +1317,13 @@ export default function BusinessSetupScreen() {
                     text="Mặt trước"
                     uri={frontImage}
                     onPress={() => pickImage("front")}
+                    hasError={Boolean(frontImageError)}
                   />
+                  {frontImageError ? (
+                    <Text style={styles.uploadFieldErrorText}>
+                      {frontImageError}
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={styles.rightUploadColumn}>
                   <UploadBox
@@ -941,7 +1331,13 @@ export default function BusinessSetupScreen() {
                     text="Mặt sau"
                     uri={backImage}
                     onPress={() => pickImage("back")}
+                    hasError={Boolean(backImageError)}
                   />
+                  {backImageError ? (
+                    <Text style={styles.uploadFieldErrorText}>
+                      {backImageError}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
 
@@ -955,16 +1351,25 @@ export default function BusinessSetupScreen() {
                     text="Tải lên ảnh giấy ủy quyền"
                     uri={authorizationLetter}
                     onPress={() => pickImage("authorization")}
+                    hasError={Boolean(authorizationLetterError)}
                   />
+                  {authorizationLetterError ? (
+                    <Text style={styles.fieldErrorText}>
+                      {authorizationLetterError}
+                    </Text>
+                  ) : null}
                 </>
               ) : null}
 
               <SectionHeader title="THÔNG TIN THANH TOÁN" />
 
               <View style={styles.paymentBox}>
-                <Text style={styles.label}>Ngân hàng thụ hưởng</Text>
+                <Text style={styles.label}>Ngân hàng thụ hưởng *</Text>
                 <TouchableOpacity
-                  style={styles.bankSelector}
+                  style={[
+                    styles.bankSelector,
+                    bankError ? styles.inputError : undefined,
+                  ]}
                   onPress={() => setShowBankModal(true)}
                   disabled={isLoading}
                 >
@@ -978,7 +1383,8 @@ export default function BusinessSetupScreen() {
                         />
                       ) : null}
                       <Text style={styles.inputBankText}>
-                        {bankName} ({bankDisplayCode})
+                        {bankName}
+                        {bankDisplayCode ? ` (${bankDisplayCode})` : ""}
                       </Text>
                     </View>
                   ) : (
@@ -989,29 +1395,47 @@ export default function BusinessSetupScreen() {
                   <Ionicons
                     name="chevron-down"
                     size={20}
-                    color={COLORS.textLight}
+                    color={bankError ? "#B91C1C" : COLORS.textLight}
                   />
                 </TouchableOpacity>
+                {bankError ? (
+                  <Text style={styles.fieldErrorText}>{bankError}</Text>
+                ) : bankLoadError ? (
+                  <Text style={styles.fieldErrorText}>{bankLoadError}</Text>
+                ) : null}
 
-                <Text style={styles.label}>Số tài khoản</Text>
+                <Text style={styles.label}>Số tài khoản *</Text>
                 <TextInput
-                  style={[styles.inputPayment, webInputStyle]}
+                  style={[
+                    styles.inputPayment,
+                    webInputStyle,
+                    accountNumberError ? styles.inputError : undefined,
+                  ]}
                   placeholder="Nhập số tài khoản ngân hàng"
                   placeholderTextColor={COLORS.textLight}
                   keyboardType="numeric"
                   value={accountNumber}
-                  onChangeText={setAccountNumber}
+                  onChangeText={(value) => {
+                    setAccountNumber(value);
+                    setAccountNumberError("");
+                  }}
                   editable={!isLoading}
                 />
+                {accountNumberError ? (
+                  <Text style={styles.paymentFieldErrorText}>
+                    {accountNumberError}
+                  </Text>
+                ) : null}
 
                 <Text style={styles.label}>
-                  Tên chủ tài khoản (Nên giống với tên doanh nghiệp/đại diện)
+                  Tên chủ tài khoản * (Nên giống với tên doanh nghiệp/đại diện)
                 </Text>
                 <TextInput
                   style={[
                     styles.inputPayment,
                     webInputStyle,
-                    { marginBottom: 0 },
+                    accountNameError ? styles.inputError : undefined,
+                    { marginBottom: accountNameError ? 12 : 0 },
                   ]}
                   placeholder="VD: NGUYEN VAN A"
                   placeholderTextColor={COLORS.textLight}
@@ -1020,6 +1444,7 @@ export default function BusinessSetupScreen() {
                   onChangeText={(value) => {
                     setIsAccountNameManuallyEdited(true);
                     setAccountName(value);
+                    setAccountNameError("");
                   }}
                   selectTextOnFocus={
                     !isAccountNameManuallyEdited && Boolean(accountName)
@@ -1030,6 +1455,11 @@ export default function BusinessSetupScreen() {
                     if (!isLoading) void handleSubmit();
                   }}
                 />
+                {accountNameError ? (
+                  <Text style={styles.paymentFieldErrorText}>
+                    {accountNameError}
+                  </Text>
+                ) : null}
               </View>
 
               {submitError ? (
@@ -1067,7 +1497,6 @@ export default function BusinessSetupScreen() {
             </View>
           ) : null}
 
-          {/* CHỈ CÒN HIỆN SUCCESS Ở ĐÂY */}
           {step === 3 && (
             <View style={styles.successWrapper}>
               <View style={styles.iconCircle}>
@@ -1096,6 +1525,62 @@ export default function BusinessSetupScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={showOperatingScopeModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowOperatingScopeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.scopeModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Chọn phạm vi hoạt động</Text>
+              <TouchableOpacity
+                onPress={() => setShowOperatingScopeModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            {["", ...OPERATING_SCOPE_OPTIONS].map((scope) => {
+              const label = scope || "Không chọn / không gửi";
+              const isSelected = operatingScope === scope;
+
+              return (
+                <TouchableOpacity
+                  key={scope || "none"}
+                  style={[
+                    styles.scopeOption,
+                    isSelected ? styles.scopeOptionSelected : undefined,
+                  ]}
+                  onPress={() => {
+                    setOperatingScope(scope);
+                    setShowOperatingScopeModal(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.scopeOptionText,
+                      isSelected ? styles.scopeOptionTextSelected : undefined,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                  {isSelected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color={COLORS.primary}
+                    />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showBankModal}
@@ -1230,6 +1715,14 @@ const styles = StyleSheet.create({
   },
   cardsContainer: { flexDirection: "row", gap: 12, marginBottom: 24 },
   inputError: { borderColor: "#B91C1C" },
+  errorTextColor: { color: "#B91C1C" },
+  modelErrorText: {
+    color: "#B91C1C",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -12,
+    marginBottom: 16,
+  },
   card: {
     flex: 1,
     borderWidth: 1,
@@ -1313,6 +1806,20 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: -10,
     marginBottom: 14,
+  },
+  uploadFieldErrorText: {
+    color: "#B91C1C",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: -10,
+    marginBottom: 4,
+  },
+  paymentFieldErrorText: {
+    color: "#B91C1C",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -6,
+    marginBottom: 12,
   },
   submitErrorText: {
     color: "#B91C1C",
@@ -1516,6 +2023,23 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingRight: 20,
   },
+  errorBanner: {
+    flexDirection: "row",
+    backgroundColor: "#FEF2F2",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+    alignItems: "flex-start",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#B91C1C",
+    lineHeight: 18,
+  },
 
   modalOverlay: {
     flex: 1,
@@ -1529,6 +2053,13 @@ const styles = StyleSheet.create({
     padding: 20,
     height: "80%",
   },
+  scopeModalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1537,6 +2068,33 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
   modalCloseButton: { padding: 4 },
+  scopeOption: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  scopeOptionSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: "#F0F9FF",
+  },
+  scopeOptionText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+    marginRight: 12,
+  },
+  scopeOptionTextSelected: {
+    color: COLORS.primary,
+    fontWeight: "700",
+  },
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",

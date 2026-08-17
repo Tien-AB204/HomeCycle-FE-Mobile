@@ -24,6 +24,7 @@ import {
 
 import { COLORS } from "../../src/constants/theme";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { capitalizeWordInitials } from "../../src/utils/textFormat";
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -37,101 +38,53 @@ export default function ProfileSetupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  /*
-   * Giữ nguyên dữ liệu nhận từ bước trước.
-   * Màn hình này không tự gọi API đăng ký.
-   */
   const email = getStringParam(params.email);
+  const password = getStringParam(params.password);
+  const registrationToken = getStringParam(params.registrationToken);
 
-  const password = getStringParam(
-    params.password,
-  );
+  const usernameInputRef = useRef<TextInput | null>(null);
+  const phoneInputRef = useRef<TextInput | null>(null);
 
-  const registrationToken = getStringParam(
-    params.registrationToken,
-  );
-
-  const usernameInputRef =
-    useRef<TextInput | null>(null);
-
-  const phoneInputRef =
-    useRef<TextInput | null>(null);
-
-  const [fullName, setFullName] =
-    useState("");
-
-  const [username, setUsername] =
-    useState("");
-
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
-
-  const [avatarUri, setAvatarUri] =
-    useState<string | null>(null);
-
-  const [isPickingImage, setIsPickingImage] =
-    useState(false);
-
-  const [avatarError, setAvatarError] =
-    useState("");
-
-  const [fullNameError, setFullNameError] =
-    useState("");
-
-  const [usernameError, setUsernameError] =
-    useState("");
-
-  const [phoneError, setPhoneError] =
-    useState("");
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [isPickingImage, setIsPickingImage] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
+  const [fullNameError, setFullNameError] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
 
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-
     router.replace("/(auth)/register");
   };
 
   const pickAvatar = async () => {
-    if (isPickingImage) {
-      return;
-    }
+    if (isPickingImage) return;
 
     try {
       setIsPickingImage(true);
       setAvatarError("");
 
-      const result =
-        await ImagePicker.launchImageLibraryAsync(
-          {
-            mediaTypes: ["images"],
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.5,
-          },
-        );
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
 
-      if (
-        !result.canceled &&
-        result.assets[0]?.uri
-      ) {
-        setAvatarUri(
-          result.assets[0].uri,
-        );
-
+      if (!result.canceled && result.assets[0]?.uri) {
+        setAvatarUri(result.assets[0].uri);
         setAvatarError("");
       }
     } catch (error: unknown) {
-      console.error(
-        "Lỗi chọn ảnh đại diện:",
-        error,
-      );
-
+      console.error("Lỗi chọn ảnh đại diện:", error);
       setAvatarError(
-        getApiErrorMessage(
-          error,
-          "Không thể mở thư viện ảnh.",
-        ),
+        getApiErrorMessage(error, "Không thể mở thư viện ảnh."),
       );
     } finally {
       setIsPickingImage(false);
@@ -139,48 +92,27 @@ export default function ProfileSetupScreen() {
   };
 
   const validateForm = () => {
-    const normalizedFullName =
-      fullName.trim();
-
-    const normalizedUsername =
-      username.trim();
-
-    const normalizedPhone =
-      phone.trim();
-
+    const normalizedFullName = fullName.trim();
+    const normalizedUsername = username.trim();
+    const normalizedPhone = phone.trim();
     let isValid = true;
 
     setFullNameError("");
     setUsernameError("");
     setPhoneError("");
 
-    /*
-     * Chỉ kiểm tra các trường bắt buộc giống
-     * logic cũ. Không tự thêm quy tắc định dạng
-     * số điện thoại hoặc username vì chưa có
-     * yêu cầu xác nhận từ BE.
-     */
     if (!normalizedFullName) {
-      setFullNameError(
-        "Vui lòng nhập họ và tên.",
-      );
-
+      setFullNameError("Vui lòng nhập họ và tên.");
       isValid = false;
     }
 
     if (!normalizedUsername) {
-      setUsernameError(
-        "Vui lòng nhập username.",
-      );
-
+      setUsernameError("Vui lòng nhập username.");
       isValid = false;
     }
 
     if (!normalizedPhone) {
-      setPhoneError(
-        "Vui lòng nhập số điện thoại.",
-      );
-
+      setPhoneError("Vui lòng nhập số điện thoại.");
       isValid = false;
     }
 
@@ -200,18 +132,10 @@ export default function ProfileSetupScreen() {
       normalizedPhone,
     } = validateForm();
 
-    if (!isValid) {
-      return;
-    }
+    if (!isValid) return;
 
-    /*
-     * Giữ nguyên route và toàn bộ params mà
-     * verification-setup.tsx đang sử dụng.
-     */
     router.push({
-      pathname:
-        "/(auth)/verification-setup",
-
+      pathname: "/(auth)/verification-setup",
       params: {
         email,
         registrationToken,
@@ -227,17 +151,11 @@ export default function ProfileSetupScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={
-          Platform.OS === "ios"
-            ? "padding"
-            : "height"
-        }
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardContainer}
       >
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContainer
-          }
+          contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -248,11 +166,7 @@ export default function ProfileSetupScreen() {
               accessibilityRole="button"
               accessibilityLabel="Quay lại"
             >
-              <Ionicons
-                name="arrow-back"
-                size={26}
-                color={COLORS.text}
-              />
+              <Ionicons name="arrow-back" size={26} color={COLORS.text} />
             </TouchableOpacity>
 
             <Image
@@ -262,50 +176,31 @@ export default function ProfileSetupScreen() {
               accessibilityLabel="HomeCycle"
             />
 
-            <View
-              style={styles.headerPlaceholder}
-            />
+            <View style={styles.headerPlaceholder} />
           </View>
 
           <View style={styles.contentCard}>
             <View style={styles.headerCenter}>
               <View style={styles.headerIconBox}>
-                <Ionicons
-                  name="person-outline"
-                  size={30}
-                  color={COLORS.white}
-                />
+                <Ionicons name="person-outline" size={30} color={COLORS.white} />
               </View>
-
-              <Text style={styles.title}>
-                Thiết lập hồ sơ cá nhân
-              </Text>
-
+              <Text style={styles.title}>Thiết lập hồ sơ cá nhân</Text>
               <Text style={styles.subtitle}>
-                Bước 1/2: Điền thông tin cơ
-                bản để hoàn thiện tài khoản.
+                Bước 1/2: Điền thông tin cơ bản để hoàn thiện tài khoản.
               </Text>
             </View>
 
-            <View
-              style={styles.avatarContainer}
-            >
+            <View style={styles.avatarContainer}>
               <TouchableOpacity
                 style={[
                   styles.avatarBox,
-                  avatarError
-                    ? styles.avatarBoxError
-                    : undefined,
+                  avatarError ? styles.avatarBoxError : undefined,
                 ]}
-                onPress={() =>
-                  void pickAvatar()
-                }
+                onPress={() => void pickAvatar()}
                 disabled={isPickingImage}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  avatarUri
-                    ? "Thay ảnh đại diện"
-                    : "Chọn ảnh đại diện"
+                  avatarUri ? "Thay ảnh đại diện" : "Chọn ảnh đại diện"
                 }
                 accessibilityState={{
                   disabled: isPickingImage,
@@ -313,86 +208,54 @@ export default function ProfileSetupScreen() {
                 }}
               >
                 {isPickingImage ? (
-                  <ActivityIndicator
-                    color={COLORS.primary}
-                  />
+                  <ActivityIndicator color={COLORS.primary} />
                 ) : avatarUri ? (
                   <Image
-                    source={{
-                      uri: avatarUri,
-                    }}
+                    source={{ uri: avatarUri }}
                     style={styles.avatarImage}
                     resizeMode="cover"
                   />
                 ) : (
-                  <Ionicons
-                    name="person-outline"
-                    size={40}
-                    color="#B0B8C1"
-                  />
+                  <Ionicons name="person-outline" size={40} color="#B0B8C1" />
                 )}
 
                 <View style={styles.cameraBadge}>
-                  <Ionicons
-                    name="camera"
-                    size={14}
-                    color={COLORS.white}
-                  />
+                  <Ionicons name="camera" size={14} color={COLORS.white} />
                 </View>
               </TouchableOpacity>
 
-              <Text style={styles.avatarHint}>
-                Ảnh đại diện không bắt buộc
-              </Text>
-
+              <Text style={styles.avatarHint}>Ảnh đại diện không bắt buộc</Text>
               {avatarError ? (
-                <Text
-                  style={styles.avatarErrorText}
-                  accessibilityRole="alert"
-                >
+                <Text style={styles.avatarErrorText} accessibilityRole="alert">
                   {avatarError}
                 </Text>
               ) : null}
             </View>
 
             <View style={styles.sectionHeader}>
-              <View
-                style={styles.verticalBar}
-              />
-
-              <Text style={styles.sectionTitle}>
-                THÔNG TIN CÁ NHÂN
-              </Text>
+              <View style={styles.verticalBar} />
+              <Text style={styles.sectionTitle}>THÔNG TIN CÁ NHÂN</Text>
             </View>
 
-            <Text style={styles.fieldLabel}>
-              Họ và tên *
-            </Text>
-
+            <Text style={styles.fieldLabel}>Họ và tên *</Text>
             <View
               style={[
                 styles.inputContainer,
-                fullNameError
-                  ? styles.inputContainerError
-                  : undefined,
+                fullNameError ? styles.inputContainerError : undefined,
               ]}
             >
               <TextInput
                 style={[
                   styles.input,
                   Platform.OS === "web"
-                    ? ({
-                        outlineStyle: "none",
-                      } as any)
+                    ? ({ outlineStyle: "none" } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập họ và tên..."
-                placeholderTextColor={
-                  COLORS.textLight
-                }
+                placeholderTextColor={COLORS.textLight}
                 value={fullName}
                 onChangeText={(value) => {
-                  setFullName(value);
+                  setFullName(capitalizeWordInitials(value));
                   setFullNameError("");
                 }}
                 autoCapitalize="words"
@@ -401,31 +264,21 @@ export default function ProfileSetupScreen() {
                 textContentType="name"
                 returnKeyType="next"
                 blurOnSubmit={false}
-                onSubmitEditing={() =>
-                  usernameInputRef.current?.focus()
-                }
+                onSubmitEditing={() => usernameInputRef.current?.focus()}
               />
             </View>
 
             {fullNameError ? (
-              <Text
-                style={styles.fieldErrorText}
-                accessibilityRole="alert"
-              >
+              <Text style={styles.fieldErrorText} accessibilityRole="alert">
                 {fullNameError}
               </Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>
-              Username *
-            </Text>
-
+            <Text style={styles.fieldLabel}>Username *</Text>
             <View
               style={[
                 styles.inputContainer,
-                usernameError
-                  ? styles.inputContainerError
-                  : undefined,
+                usernameError ? styles.inputContainerError : undefined,
               ]}
             >
               <TextInput
@@ -433,15 +286,11 @@ export default function ProfileSetupScreen() {
                 style={[
                   styles.input,
                   Platform.OS === "web"
-                    ? ({
-                        outlineStyle: "none",
-                      } as any)
+                    ? ({ outlineStyle: "none" } as any)
                     : undefined,
                 ]}
                 placeholder="username_cua_ban"
-                placeholderTextColor={
-                  COLORS.textLight
-                }
+                placeholderTextColor={COLORS.textLight}
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={username}
@@ -451,31 +300,21 @@ export default function ProfileSetupScreen() {
                 }}
                 returnKeyType="next"
                 blurOnSubmit={false}
-                onSubmitEditing={() =>
-                  phoneInputRef.current?.focus()
-                }
+                onSubmitEditing={() => phoneInputRef.current?.focus()}
               />
             </View>
 
             {usernameError ? (
-              <Text
-                style={styles.fieldErrorText}
-                accessibilityRole="alert"
-              >
+              <Text style={styles.fieldErrorText} accessibilityRole="alert">
                 {usernameError}
               </Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>
-              Số điện thoại *
-            </Text>
-
+            <Text style={styles.fieldLabel}>Số điện thoại *</Text>
             <View
               style={[
                 styles.inputContainer,
-                phoneError
-                  ? styles.inputContainerError
-                  : undefined,
+                phoneError ? styles.inputContainerError : undefined,
               ]}
             >
               <TextInput
@@ -483,15 +322,11 @@ export default function ProfileSetupScreen() {
                 style={[
                   styles.input,
                   Platform.OS === "web"
-                    ? ({
-                        outlineStyle: "none",
-                      } as any)
+                    ? ({ outlineStyle: "none" } as any)
                     : undefined,
                 ]}
                 placeholder="Nhập số điện thoại..."
-                placeholderTextColor={
-                  COLORS.textLight
-                }
+                placeholderTextColor={COLORS.textLight}
                 keyboardType="phone-pad"
                 inputMode="tel"
                 autoComplete="tel"
@@ -507,30 +342,19 @@ export default function ProfileSetupScreen() {
             </View>
 
             {phoneError ? (
-              <Text
-                style={styles.fieldErrorText}
-                accessibilityRole="alert"
-              >
+              <Text style={styles.fieldErrorText} accessibilityRole="alert">
                 {phoneError}
               </Text>
             ) : null}
 
-            <View
-              style={
-                styles.privacyNoteContainer
-              }
-            >
+            <View style={styles.privacyNoteContainer}>
               <Ionicons
                 name="lock-closed-outline"
                 size={14}
                 color={COLORS.textLight}
               />
-
-              <Text
-                style={styles.privacyNoteText}
-              >
-                Số điện thoại của bạn sẽ được
-                bảo mật.
+              <Text style={styles.privacyNoteText}>
+                Số điện thoại của bạn sẽ được bảo mật.
               </Text>
             </View>
 
@@ -539,17 +363,8 @@ export default function ProfileSetupScreen() {
               onPress={handleNext}
               accessibilityRole="button"
             >
-              <Text
-                style={styles.primaryButtonText}
-              >
-                TIẾP TỤC
-              </Text>
-
-              <Ionicons
-                name="arrow-forward"
-                size={20}
-                color={COLORS.white}
-              />
+              <Text style={styles.primaryButtonText}>TIẾP TỤC</Text>
+              <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -563,72 +378,56 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-
   keyboardContainer: {
     flex: 1,
   },
-
   scrollContainer: {
     flexGrow: 1,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-
   topHeader: {
     minHeight: 82,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-
   backButton: {
     width: 42,
     height: 42,
     alignItems: "flex-start",
     justifyContent: "center",
   },
-
   brandLogo: {
     width: 178,
     height: 46,
   },
-
   headerPlaceholder: {
     width: 42,
   },
-
   contentCard: {
     backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 24,
-
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: {
-          width: 0,
-          height: 2,
-        },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
-
       android: {
         elevation: 2,
       },
-
       web: {
-        boxShadow:
-          "0px 2px 8px rgba(0, 0, 0, 0.05)",
+        boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.05)",
       } as any,
     }),
   },
-
   headerCenter: {
     alignItems: "center",
     marginBottom: 28,
   },
-
   headerIconBox: {
     width: 60,
     height: 60,
@@ -638,7 +437,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     marginBottom: 14,
   },
-
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -646,7 +444,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
-
   subtitle: {
     fontSize: 14,
     color: COLORS.textLight,
@@ -654,12 +451,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 10,
   },
-
   avatarContainer: {
     alignItems: "center",
     marginBottom: 28,
   },
-
   avatarBox: {
     width: 88,
     height: 88,
@@ -672,17 +467,14 @@ const styles = StyleSheet.create({
     position: "relative",
     backgroundColor: "#FAFAFA",
   },
-
   avatarBoxError: {
     borderColor: COLORS.error,
   },
-
   avatarImage: {
     width: "100%",
     height: "100%",
     borderRadius: 24,
   },
-
   cameraBadge: {
     position: "absolute",
     bottom: -8,
@@ -696,13 +488,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.white,
   },
-
   avatarHint: {
     fontSize: 12,
     color: COLORS.textLight,
     marginTop: 14,
   },
-
   avatarErrorText: {
     color: COLORS.error,
     fontSize: 12,
@@ -710,13 +500,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
   },
-
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 18,
   },
-
   verticalBar: {
     width: 4,
     height: 18,
@@ -724,21 +512,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
     borderRadius: 2,
   },
-
   sectionTitle: {
     fontSize: 14,
     fontWeight: "800",
     color: COLORS.primary,
     letterSpacing: 0.5,
   },
-
   fieldLabel: {
     fontSize: 13,
     fontWeight: "700",
     color: COLORS.text,
     marginBottom: 8,
   },
-
   inputContainer: {
     minHeight: 52,
     flexDirection: "row",
@@ -749,19 +534,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: COLORS.white,
   },
-
   inputContainerError: {
     borderColor: COLORS.error,
     borderWidth: 1.5,
   },
-
   input: {
     flex: 1,
     minHeight: 50,
     fontSize: 14,
     color: COLORS.text,
   },
-
   fieldErrorText: {
     color: COLORS.error,
     fontSize: 12,
@@ -769,7 +551,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 14,
   },
-
   privacyNoteContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -777,14 +558,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 28,
   },
-
   privacyNoteText: {
     flex: 1,
     fontSize: 12,
     color: COLORS.textLight,
     lineHeight: 18,
   },
-
   primaryButton: {
     minHeight: 54,
     flexDirection: "row",
@@ -795,7 +574,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 18,
   },
-
   primaryButtonText: {
     color: COLORS.white,
     fontSize: 15,
