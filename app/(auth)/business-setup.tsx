@@ -26,6 +26,8 @@ import AddressPickerField, {
 import CalendarDateField, {
   CalendarDateFieldHandle,
 } from "../../src/components/shared/CalendarDateField";
+import FullNameField from "../../src/components/shared/FullNameField";
+import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -42,9 +44,9 @@ interface Bank {
 
 const OPERATING_SCOPE_OPTIONS = [
   "Toàn quốc",
-  "Khu vực miền Nam",
   "Khu vực miền Bắc",
   "Khu vực miền Trung",
+  "Khu vực miền Nam",
 ] as const;
 
 const readValidationError = (errors: unknown, fieldName: string): string => {
@@ -247,7 +249,9 @@ export default function BusinessSetupScreen() {
             setFullName(data.fullName || "");
             setTaxCode(data.taxCode || "");
             setIdentityNumber(data.identityNumber || "");
-            setIdentityName(data.identityName || "");
+            setIdentityName(
+              (data.identityName || "").toLocaleUpperCase("vi-VN"),
+            );
             setIdentityDob(data.identityDob || "");
             setIdentityAddress(data.identityAddress || "");
             setOperatingScope(data.operatingScope || "");
@@ -255,7 +259,9 @@ export default function BusinessSetupScreen() {
             setBankCode(data.bankCode || "");
             setBankName(data.bankName || "");
             setAccountNumber(data.accountNumber || "");
-            setAccountName(data.accountName || "");
+            setAccountName(
+              (data.accountName || "").toLocaleUpperCase("vi-VN"),
+            );
 
             const rawServiceArea = Array.isArray(data.serviceAreas)
               ? data.serviceAreas[0]
@@ -417,13 +423,41 @@ export default function BusinessSetupScreen() {
     setStep(2);
   };
 
-  const handleRepresentativeNameChange = (value: string) => {
+  const toTitleCaseForAutoFill = (value: string) =>
+    value
+      .normalize("NFC")
+      .toLocaleLowerCase("vi-VN")
+      .replace(
+        /(^|\s)(\S)/gu,
+        (_match, prefix: string, char: string) =>
+          `${prefix}${char.toLocaleUpperCase("vi-VN")}`,
+      );
+
+  // FullNameField tự xử lý auto-uppercase/override.
+  // File này chỉ giữ business logic đồng bộ các field liên quan.
+  const handleFullNameChange = (value: string) => {
     setFullName(value);
-    setIdentityName(value);
+    setIdentityName(value.toLocaleUpperCase("vi-VN"));
     setFullNameError("");
     setIdentityNameError("");
+
     if (!isAccountNameManuallyEdited) {
-      setAccountName(value);
+      setAccountName(value.toLocaleUpperCase("vi-VN"));
+      setAccountNameError("");
+    }
+  };
+
+  const handleIdentityNameChange = (value: string) => {
+    const upperValue = value.toLocaleUpperCase("vi-VN");
+    const autoFullName = toTitleCaseForAutoFill(upperValue);
+
+    setIdentityName(upperValue);
+    setFullName(autoFullName);
+    setFullNameError("");
+    setIdentityNameError("");
+
+    if (!isAccountNameManuallyEdited) {
+      setAccountName(upperValue);
       setAccountNameError("");
     }
   };
@@ -1183,28 +1217,17 @@ export default function BusinessSetupScreen() {
 
               <SectionHeader title="THÔNG TIN NGƯỜI ĐẠI DIỆN / CHỦ HỘ" />
 
-              <Text style={styles.label}>Họ và tên *</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  webInputStyle,
-                  fullNameError ? styles.inputError : undefined,
-                ]}
-                placeholder="NHẬP ĐẦY ĐỦ HỌ VÀ TÊN"
-                placeholderTextColor={COLORS.textLight}
-                autoCapitalize="characters"
+              <FullNameField
+                label="Họ và tên *"
                 value={fullName}
-                onChangeText={handleRepresentativeNameChange}
+                onChangeText={handleFullNameChange}
+                mode="words"
+                error={fullNameError}
+                helperText="*Phải trùng khớp hoàn toàn với CCCD và tài khoản ngân hàng"
+                placeholder="NHẬP ĐẦY ĐỦ HỌ VÀ TÊN"
                 editable={!isLoading}
                 returnKeyType="next"
               />
-              {fullNameError ? (
-                <Text style={styles.fieldErrorText}>{fullNameError}</Text>
-              ) : (
-                <Text style={styles.helperText}>
-                  *Phải trùng khớp hoàn toàn với CCCD và tài khoản ngân hàng
-                </Text>
-              )}
 
               <Text style={styles.label}>Số CCCD *</Text>
               <TextInput
@@ -1231,26 +1254,18 @@ export default function BusinessSetupScreen() {
                 <Text style={styles.fieldErrorText}>{identityNumberError}</Text>
               ) : null}
 
-              <Text style={styles.label}>Họ tên trên CCCD *</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  webInputStyle,
-                  identityNameError ? styles.inputError : undefined,
-                ]}
-                placeholder="Nhập họ tên như trên CCCD"
-                placeholderTextColor={COLORS.textLight}
-                autoCapitalize="characters"
+              <IdentityNameField
+                label="Họ tên trên CCCD"
+                required
                 value={identityName}
-                onChangeText={handleRepresentativeNameChange}
+                onChangeText={handleIdentityNameChange}
+                error={identityNameError}
+                placeholder="Nhập họ tên như trên CCCD"
                 editable={!isLoading}
                 returnKeyType="next"
                 blurOnSubmit={false}
                 onSubmitEditing={() => identityDobPickerRef.current?.open()}
               />
-              {identityNameError ? (
-                <Text style={styles.fieldErrorText}>{identityNameError}</Text>
-              ) : null}
 
               <Text style={styles.label}>Ngày sinh *</Text>
               <CalendarDateField
@@ -1427,25 +1442,17 @@ export default function BusinessSetupScreen() {
                   </Text>
                 ) : null}
 
-                <Text style={styles.label}>
-                  Tên chủ tài khoản * (Nên giống với tên doanh nghiệp/đại diện)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.inputPayment,
-                    webInputStyle,
-                    accountNameError ? styles.inputError : undefined,
-                    { marginBottom: accountNameError ? 12 : 0 },
-                  ]}
-                  placeholder="VD: NGUYEN VAN A"
-                  placeholderTextColor={COLORS.textLight}
-                  autoCapitalize="characters"
+                <FullNameField
+                  label="Tên chủ tài khoản * (Nên giống với tên doanh nghiệp/đại diện)"
                   value={accountName}
                   onChangeText={(value) => {
                     setIsAccountNameManuallyEdited(true);
                     setAccountName(value);
                     setAccountNameError("");
                   }}
+                  mode="uppercase"
+                  error={accountNameError}
+                  placeholder="VD: NGUYEN VAN A"
                   selectTextOnFocus={
                     !isAccountNameManuallyEdited && Boolean(accountName)
                   }
@@ -1454,12 +1461,8 @@ export default function BusinessSetupScreen() {
                   onSubmitEditing={() => {
                     if (!isLoading) void handleSubmit();
                   }}
+                  containerStyle={{ marginBottom: 0 }}
                 />
-                {accountNameError ? (
-                  <Text style={styles.paymentFieldErrorText}>
-                    {accountNameError}
-                  </Text>
-                ) : null}
               </View>
 
               {submitError ? (
@@ -1544,7 +1547,7 @@ export default function BusinessSetupScreen() {
               </TouchableOpacity>
             </View>
 
-            {["", ...OPERATING_SCOPE_OPTIONS].map((scope) => {
+            {[...OPERATING_SCOPE_OPTIONS, ""].map((scope) => {
               const label = scope || "Không chọn / không gửi";
               const isSelected = operatingScope === scope;
 
