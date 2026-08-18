@@ -1,5 +1,6 @@
 import * as signalR from "@microsoft/signalr";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { jwtDecode } from "jwt-decode";
 import React, {
   createContext,
   ReactNode,
@@ -9,10 +10,17 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { refreshAccessToken } from "../services/apis/axiosClient";
 import { useAuth } from "./AuthContext";
 
 const CHAT_HUB_URL =
   "https://homecycle-backend.onrender.com/hubs/chat";
+
+const TOKEN_REFRESH_SAFETY_WINDOW_MS = 30_000;
+
+type JwtPayload = {
+  exp?: number;
+};
 
 type ChatRealtimeContextValue = {
   connection: signalR.HubConnection | null;
@@ -22,6 +30,50 @@ type ChatRealtimeContextValue = {
 
 const ChatRealtimeContext =
   createContext<ChatRealtimeContextValue | undefined>(undefined);
+
+const shouldRefreshAccessToken = (token: string) => {
+  try {
+    const decoded = jwtDecode<JwtPayload>(token);
+
+    if (!decoded.exp) {
+      return false;
+    }
+
+    return (
+      decoded.exp * 1000 <=
+      Date.now() + TOKEN_REFRESH_SAFETY_WINDOW_MS
+    );
+  } catch {
+    return false;
+  }
+};
+
+const getSignalRAccessToken = async () => {
+  const storedAccessToken =
+    await AsyncStorage.getItem("accessToken");
+
+  if (!storedAccessToken) {
+    return "";
+  }
+
+  if (!shouldRefreshAccessToken(storedAccessToken)) {
+    return storedAccessToken;
+  }
+
+  return refreshAccessToken();
+};
+
+const isUnauthorizedSignalRError = (error: unknown) => {
+  const statusCode =
+    typeof error === "object" && error !== null
+      ? (error as { statusCode?: number }).statusCode
+      : undefined;
+
+  return (
+    statusCode === 401 ||
+    String(error).includes("401")
+  );
+};
 
 export function ChatRealtimeProvider({
   children,
@@ -50,8 +102,7 @@ export function ChatRealtimeProvider({
 
     const hubConnection = new signalR.HubConnectionBuilder()
       .withUrl(CHAT_HUB_URL, {
-        accessTokenFactory: async () =>
-          (await AsyncStorage.getItem("accessToken")) || "",
+        accessTokenFactory: getSignalRAccessToken,
       })
       .withAutomaticReconnect()
       .build();
@@ -75,7 +126,23 @@ export function ChatRealtimeProvider({
 
     const startConnection = async () => {
       try {
-        await hubConnection.start();
+        const preparedAccessToken =
+          await getSignalRAccessToken();
+
+        if (!preparedAccessToken || cancelled) {
+          return;
+        }
+
+        try {
+          await hubConnection.start();
+        } catch (error) {
+          if (!isUnauthorizedSignalRError(error)) {
+            throw error;
+          }
+
+          await refreshAccessToken();
+          await hubConnection.start();
+        }
 
         if (cancelled) {
           await hubConnection.stop();
