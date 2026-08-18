@@ -12,6 +12,7 @@ const apiClient = axios.create({
 
 let isRefreshing = false;
 let failedQueue: any[] = [];
+let refreshPromise: Promise<string> | null = null;
 
 const processQueue = (
   error: any,
@@ -26,6 +27,68 @@ const processQueue = (
   });
 
   failedQueue = [];
+};
+
+export const refreshAccessToken = async () => {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    const refreshToken =
+      await AsyncStorage.getItem("refreshToken");
+
+    if (!refreshToken) {
+      throw new Error(
+        "No refresh token available",
+      );
+    }
+
+    const response = await axios.post(
+      `${API_BASE_URL}/auth/refresh-token`,
+      {
+        refreshToken,
+      },
+    );
+
+    const responseData =
+      response.data?.data || response.data;
+
+    const newAccessToken =
+      responseData?.accessToken;
+
+    const newRefreshToken =
+      responseData?.refreshToken;
+
+    if (!newAccessToken) {
+      throw new Error(
+        "Refresh response does not contain access token",
+      );
+    }
+
+    await AsyncStorage.setItem(
+      "accessToken",
+      newAccessToken,
+    );
+
+    if (newRefreshToken) {
+      await AsyncStorage.setItem(
+        "refreshToken",
+        newRefreshToken,
+      );
+    }
+
+    apiClient.defaults.headers.common.Authorization =
+      `Bearer ${newAccessToken}`;
+
+    return newAccessToken;
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
 };
 
 apiClient.interceptors.request.use(
@@ -115,50 +178,8 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken =
-          await AsyncStorage.getItem("refreshToken");
-
-        if (!refreshToken) {
-          throw new Error(
-            "No refresh token available",
-          );
-        }
-
-        const response = await axios.post(
-          `${API_BASE_URL}/auth/refresh-token`,
-          {
-            refreshToken,
-          },
-        );
-
         const newAccessToken =
-          response.data.accessToken ||
-          response.data.data?.accessToken;
-
-        const newRefreshToken =
-          response.data.refreshToken ||
-          response.data.data?.refreshToken;
-
-        if (!newAccessToken) {
-          throw new Error(
-            "Refresh response does not contain access token",
-          );
-        }
-
-        await AsyncStorage.setItem(
-          "accessToken",
-          newAccessToken,
-        );
-
-        if (newRefreshToken) {
-          await AsyncStorage.setItem(
-            "refreshToken",
-            newRefreshToken,
-          );
-        }
-
-        apiClient.defaults.headers.common.Authorization =
-          `Bearer ${newAccessToken}`;
+          await refreshAccessToken();
 
         processQueue(null, newAccessToken);
 
