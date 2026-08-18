@@ -36,6 +36,7 @@ export default function GoogleLoginButton({
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [googleIconFailed, setGoogleIconFailed] = useState(false);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId:
@@ -155,12 +156,16 @@ export default function GoogleLoginButton({
         ) : (
           <>
             <View style={styles.googleIconContainer}>
-              <Text style={styles.googleFallbackLetter}>G</Text>
-              <Image
-                source={require("../../assets/images/google-icon.png")}
-                style={styles.googleIcon}
-                resizeMode="contain"
-              />
+              {googleIconFailed ? (
+                <Text style={styles.googleFallbackLetter}>G</Text>
+              ) : (
+                <Image
+                  source={require("../../assets/images/google-icon.png")}
+                  style={styles.googleIcon}
+                  resizeMode="contain"
+                  onError={() => setGoogleIconFailed(true)}
+                />
+              )}
             </View>
 
             <Text style={styles.googleButtonText}>{title}</Text>
@@ -201,17 +206,14 @@ const styles = StyleSheet.create({
     height: 22,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
   googleFallbackLetter: {
-    position: "absolute",
     color: "#4285F4",
     fontSize: 18,
     lineHeight: 22,
     fontWeight: "800",
   },
   googleIcon: {
-    position: "absolute",
     width: 22,
     height: 22,
   },
