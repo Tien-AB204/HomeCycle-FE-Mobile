@@ -213,18 +213,23 @@ export default function OTPScreen() {
         return;
       }
 
-      if (flow === "forgot_password") {
-        router.push({
-          pathname:
-            "/(auth)/reset-password",
-          params: {
-            email,
-            otp: normalizedOtp,
-          },
-        });
-
-        return;
-      }
+      // TODO: Future password reset flow.
+      // Hiện tại project chưa có route /(auth)/reset-password
+      // và chưa có API reset password tương ứng.
+      // Giữ lại block này để dùng khi tính năng quên mật khẩu được triển khai.
+      //
+      // if (flow === "forgot_password") {
+      //   router.push({
+      //     pathname:
+      //       "/(auth)/reset-password",
+      //     params: {
+      //       email,
+      //       otp: normalizedOtp,
+      //     },
+      //   });
+      //
+      //   return;
+      // }
 
       setOtpError(
         "Luồng xác thực không hợp lệ. Vui lòng quay lại và thử lại.",
