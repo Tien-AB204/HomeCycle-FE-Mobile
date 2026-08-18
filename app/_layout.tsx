@@ -1,11 +1,18 @@
 import { Stack } from "expo-router";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Platform, StyleSheet, View } from "react-native";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 
-export default function RootLayout() {
+function RootNavigator() {
+  const insets = useSafeAreaInsets();
+  const topInset = Platform.OS === "android" ? insets.top : 0;
+
   return (
-    <SafeAreaProvider>
+    <View style={[styles.root, { paddingTop: topInset }]}>
       <AuthProvider>
         <ChatRealtimeProvider>
           <Stack
@@ -19,6 +26,21 @@ export default function RootLayout() {
           </Stack>
         </ChatRealtimeProvider>
       </AuthProvider>
+    </View>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <RootNavigator />
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+});
