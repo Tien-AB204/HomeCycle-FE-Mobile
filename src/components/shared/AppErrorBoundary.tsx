@@ -18,6 +18,11 @@ type State = {
   hasError: boolean;
 };
 
+type GlobalErrorHandler = (
+  error: Error,
+  isFatal?: boolean,
+) => void;
+
 export default class AppErrorBoundary extends React.Component<
   Props,
   State
@@ -26,10 +31,53 @@ export default class AppErrorBoundary extends React.Component<
     hasError: false,
   };
 
+  private previousGlobalHandler: GlobalErrorHandler | null = null;
+
   static getDerivedStateFromError(): State {
     return {
       hasError: true,
     };
+  }
+
+  componentDidMount() {
+    const errorUtils = (globalThis as any)?.ErrorUtils;
+    if (
+      !errorUtils?.getGlobalHandler ||
+      !errorUtils?.setGlobalHandler
+    ) {
+      return;
+    }
+
+    this.previousGlobalHandler =
+      errorUtils.getGlobalHandler();
+
+    errorUtils.setGlobalHandler(
+      (error: Error, isFatal?: boolean) => {
+        if (__DEV__) {
+          this.previousGlobalHandler?.(
+            error,
+            isFatal,
+          );
+          return;
+        }
+
+        this.setState({
+          hasError: true,
+        });
+      },
+    );
+  }
+
+  componentWillUnmount() {
+    const errorUtils = (globalThis as any)?.ErrorUtils;
+    if (
+      errorUtils?.setGlobalHandler &&
+      this.previousGlobalHandler
+    ) {
+      errorUtils.setGlobalHandler(
+        this.previousGlobalHandler,
+      );
+    }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
