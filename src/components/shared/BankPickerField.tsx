@@ -102,6 +102,15 @@ export default function BankPickerField({
     });
   }, [bankBin, bankName, banks]);
 
+  useEffect(() => {
+    if (!selectedBank) return;
+
+    const selectedBin = String(selectedBank.bin);
+    if (String(bankBin) === selectedBin) return;
+
+    onChange(selectedBank);
+  }, [bankBin, onChange, selectedBank]);
+
   const filteredBanks = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
     if (!keyword) return banks;
