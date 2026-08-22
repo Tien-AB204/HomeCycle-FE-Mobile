@@ -56,16 +56,19 @@ export const getSafeErrorMessage = (
     return NETWORK_ERROR_MESSAGE;
   }
 
-  const responseMessage = readSafeApiMessage(response?.data);
-  if (responseMessage) {
-    return responseMessage;
-  }
-
   if (
     fallback &&
     [400, 401, 403, 404, 409, 422].includes(status)
   ) {
     return fallback;
+  }
+
+  const responseMessage = readSafeApiMessage(response?.data);
+  if (
+    responseMessage &&
+    [400, 409, 422].includes(status)
+  ) {
+    return responseMessage;
   }
 
   return NETWORK_ERROR_MESSAGE;
