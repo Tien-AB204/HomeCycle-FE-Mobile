@@ -11,6 +11,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import AppDialogHost from "../src/components/shared/AppDialogHost";
 import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
 import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
@@ -79,7 +80,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppErrorBoundary>
-        <RootNavigator />
+        <AppDialogHost>
+          <RootNavigator />
+        </AppDialogHost>
       </AppErrorBoundary>
     </SafeAreaProvider>
   );
