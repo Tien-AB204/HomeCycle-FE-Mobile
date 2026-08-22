@@ -1,5 +1,11 @@
 import { Stack } from "expo-router";
-import { Platform, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Keyboard,
+  Platform,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -12,10 +18,35 @@ import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 
 function RootNavigator() {
   const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] =
+    useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const showSubscription = Keyboard.addListener(
+      "keyboardDidShow",
+      () => setIsKeyboardVisible(true),
+    );
+    const hideSubscription = Keyboard.addListener(
+      "keyboardDidHide",
+      () => setIsKeyboardVisible(false),
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   const topInset =
     Platform.OS === "android" ? insets.top : 0;
   const bottomInset =
-    Platform.OS === "android" ? insets.bottom : 0;
+    Platform.OS === "android" && !isKeyboardVisible
+      ? insets.bottom
+      : 0;
 
   return (
     <View
