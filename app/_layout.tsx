@@ -4,15 +4,29 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+
+import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
+import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 
 function RootNavigator() {
   const insets = useSafeAreaInsets();
-  const topInset = Platform.OS === "android" ? insets.top : 0;
+  const topInset =
+    Platform.OS === "android" ? insets.top : 0;
+  const bottomInset =
+    Platform.OS === "android" ? insets.bottom : 0;
 
   return (
-    <View style={[styles.root, { paddingTop: topInset }]}>
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: topInset,
+          paddingBottom: bottomInset,
+        },
+      ]}
+    >
       <AuthProvider>
         <ChatRealtimeProvider>
           <Stack
@@ -33,7 +47,9 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <RootNavigator />
+      <AppErrorBoundary>
+        <RootNavigator />
+      </AppErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -41,6 +57,6 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.white,
   },
 });
