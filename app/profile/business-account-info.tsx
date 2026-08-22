@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import AddressPickerField, { AddressSelection } from "../../src/components/shared/AddressPickerField";
+import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import { COLORS } from "../../src/constants/theme";
@@ -133,8 +134,8 @@ export default function BusinessAccountInfoScreen() {
     setIdentityAddress(clean(profile?.identityAddress));
     setIdentityAddressSelection(null);
     const bank = profile?.bankAccount || {};
-    setBankCode(toUppercaseText(clean(bank.bankCode)));
-    setBankName(toUppercaseText(clean(bank.bankName)));
+    setBankCode(clean(bank.bankCode));
+    setBankName(clean(bank.bankName));
     setAccountNumber(clean(bank.accountNumber));
     setAccountName(toUppercaseText(clean(bank.accountName)));
   }, []);
@@ -265,8 +266,7 @@ export default function BusinessAccountInfoScreen() {
 
   const saveBank = async () => {
     const nextErrors: FieldErrors = {};
-    if (!clean(bankCode)) nextErrors.bankCode = "Vui lòng nhập mã ngân hàng.";
-    if (!clean(bankName)) nextErrors.bankName = "Vui lòng nhập tên ngân hàng.";
+    if (!clean(bankCode) || !clean(bankName)) nextErrors.bankCode = "Vui lòng chọn ngân hàng thụ hưởng.";
     if (!clean(accountNumber)) nextErrors.accountNumber = "Vui lòng nhập số tài khoản.";
     if (!clean(accountName)) nextErrors.accountName = "Vui lòng nhập tên chủ tài khoản.";
     setErrors((current) => ({ ...current, ...nextErrors }));
@@ -274,7 +274,7 @@ export default function BusinessAccountInfoScreen() {
     try {
       setSavingSection("bank"); setSectionMessage("bank", null);
       await businessProfileApi.updateBankAccount({
-        bankCode: toUppercaseText(clean(bankCode)), bankName: toUppercaseText(clean(bankName)), accountNumber: clean(accountNumber), accountName: toUppercaseText(clean(accountName)),
+        bankCode: clean(bankCode), bankName: toUppercaseText(clean(bankName)), accountNumber: clean(accountNumber), accountName: toUppercaseText(clean(accountName)),
       });
       setSectionMessage("bank", { type: "success", text: "Đã cập nhật thông tin ngân hàng." });
       await fetchPageData();
@@ -359,10 +359,24 @@ export default function BusinessAccountInfoScreen() {
 
           <SectionTitle title="THÔNG TIN NGÂN HÀNG" /><View style={styles.card}>
             <Text style={styles.helperText}>Cần điền đủ thông tin ngân hàng để đi tiếp tới thanh toán.</Text>
-            <Text style={styles.inputLabel}>Mã ngân hàng *</Text><TextInput style={[styles.input, errors.bankCode ? styles.inputError : undefined]} value={bankCode} onChangeText={(value) => { setBankCode(toUppercaseText(value)); clearFieldError("bankCode", "bank"); }} autoCapitalize="characters" autoCorrect={false} placeholder="VD: BIDV, VCB, TCB..." /><FieldError text={errors.bankCode} />
-            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng *</Text><TextInput style={[styles.input, errors.bankName ? styles.inputError : undefined]} value={bankName} onChangeText={(value) => { setBankName(toUppercaseText(value)); clearFieldError("bankName", "bank"); }} autoCapitalize="characters" autoCorrect={false} placeholder="VD: BIDV, VIETCOMBANK..." /><FieldError text={errors.bankName} />
+            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng *</Text>
+            <BankPickerField
+              bankBin={bankCode}
+              bankName={bankName}
+              onChange={(bank) => {
+                setBankCode(String(bank.bin));
+                setBankName(bank.shortName);
+                clearFieldError("bankCode", "bank");
+                clearFieldError("bankName", "bank");
+              }}
+              disabled={savingSection === "bank"}
+              hasError={Boolean(errors.bankCode || errors.bankName)}
+              placeholder="Chọn ngân hàng thụ hưởng"
+              style={{ marginBottom: 12 }}
+            />
+            <FieldError text={errors.bankCode || errors.bankName} />
             <Text style={styles.inputLabel}>Số tài khoản *</Text><TextInput style={[styles.input, errors.accountNumber ? styles.inputError : undefined]} value={accountNumber} onChangeText={(value) => { setAccountNumber(value.replace(/[^0-9]/g, "")); clearFieldError("accountNumber", "bank"); }} keyboardType="number-pad" placeholder="Nhập số tài khoản" /><FieldError text={errors.accountNumber} />
-            <IdentityNameField label="Tên chủ tài khoản" required value={accountName} onChangeText={(value) => { setAccountName(value); clearFieldError("accountName", "bank"); }} error={errors.accountName} containerStyle={styles.identityFieldContainer} inputStyle={styles.identityInput} placeholder="VD: NGUYEN VAN A" /><InlineMessage message={messages.bank || null} /><SaveButton title="Lưu thông tin ngân hàng" loading={savingSection === "bank"} onPress={() => void saveBank()} />
+            <IdentityNameField label="Tên chủ tài khoản" required value={accountName} onChangeText={(value) => { setAccountName(toUppercaseText(value)); clearFieldError("accountName", "bank"); }} error={errors.accountName} containerStyle={styles.identityFieldContainer} inputStyle={styles.identityInput} placeholder="VD: NGUYEN VAN A" /><InlineMessage message={messages.bank || null} /><SaveButton title="Lưu thông tin ngân hàng" loading={savingSection === "bank"} onPress={() => void saveBank()} />
           </View>
 
           <TouchableOpacity style={styles.surveyButton} onPress={() => router.push("/profile/business-survey" as any)}><Ionicons name="document-text-outline" size={20} color={COLORS.primary} /><Text style={styles.surveyButtonText}>Xem lại bản Khảo sát thu mua</Text></TouchableOpacity>
