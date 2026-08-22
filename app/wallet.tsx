@@ -17,6 +17,7 @@ import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
+import { NETWORK_ERROR_MESSAGE } from "../src/utils/errorMessage";
 
 const PAGE_SIZE = 10;
 const REFERENCE_TYPE_WITHDRAWAL = 4;
@@ -73,14 +74,6 @@ const getErrorCode = (error: any) =>
       error?.response?.data?.error?.Code ||
       error?.code ||
       "",
-  );
-
-const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.response?.data?.error?.Message ||
-      fallback,
   );
 
 const formatCurrency = (value: unknown) =>
@@ -167,10 +160,10 @@ export default function WalletScreen() {
 
         setMessage(null);
         await Promise.all([loadWallet(), loadLedger(page)]);
-      } catch (error) {
+      } catch {
         setMessage({
           type: "error",
-          text: getErrorMessage(error, "Không thể tải thông tin ví lúc này."),
+          text: NETWORK_ERROR_MESSAGE,
         });
       } finally {
         setIsLoading(false);
@@ -241,16 +234,19 @@ export default function WalletScreen() {
       await Promise.all([loadWallet(), loadLedger(1)]);
     } catch (error: any) {
       const code = getErrorCode(error);
-      const fallback =
-        code === "Withdrawal.BankAccountNotVerified"
-          ? "Tài khoản ngân hàng chưa được xác thực nên chưa thể rút tiền."
-          : code === "Wallet.InsufficientBalance"
-            ? "Số dư khả dụng không đủ để rút số tiền này."
-            : code === "Withdrawal.InvalidRequest"
-              ? "Số tiền rút chưa hợp lệ."
-              : "Không thể tạo yêu cầu rút tiền lúc này.";
+      const messageByCode: Record<string, string> = {
+        "Withdrawal.BankAccountNotVerified":
+          "Tài khoản ngân hàng chưa được xác thực nên chưa thể rút tiền.",
+        "Wallet.InsufficientBalance":
+          "Số dư khả dụng không đủ để rút số tiền này.",
+        "Withdrawal.InvalidRequest":
+          "Số tiền rút chưa hợp lệ.",
+      };
 
-      setMessage({ type: "error", text: getErrorMessage(error, fallback) });
+      setMessage({
+        type: "error",
+        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
+      });
     } finally {
       setIsWithdrawing(false);
     }
@@ -268,10 +264,10 @@ export default function WalletScreen() {
         text: "Đã đồng bộ trạng thái yêu cầu rút tiền.",
       });
       await Promise.all([loadWallet(), loadLedger(pageNumber)]);
-    } catch (error) {
+    } catch {
       setMessage({
         type: "error",
-        text: getErrorMessage(error, "Không thể đồng bộ trạng thái rút tiền."),
+        text: NETWORK_ERROR_MESSAGE,
       });
     } finally {
       setSyncingWithdrawalId(null);
