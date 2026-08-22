@@ -1,6 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { SERVER_ERROR_MESSAGE } from "../../utils/apiFeedback";
+import {
+  NETWORK_ERROR_MESSAGE,
+  readSafeApiMessage,
+} from "../../utils/errorMessage";
 
 const API_BASE_URL =
   "https://homecycle-backend.onrender.com/api";
@@ -29,6 +32,57 @@ const processQueue = (
   failedQueue = [];
 };
 
+const sanitizeRejectedError = (error: any) => {
+  if (!error) return error;
+
+  const response = error.response;
+  const status = Number(response?.status || 0);
+  const responseData = response?.data;
+  const safeResponseMessage = readSafeApiMessage(responseData);
+
+  const userMessage =
+    !response || status >= 500
+      ? NETWORK_ERROR_MESSAGE
+      : safeResponseMessage || NETWORK_ERROR_MESSAGE;
+
+  error.userMessage = userMessage;
+  error.message = userMessage;
+
+  if (!response) {
+    return error;
+  }
+
+  if (
+    responseData &&
+    typeof responseData === "object" &&
+    !Array.isArray(responseData)
+  ) {
+    const nestedError =
+      responseData.error &&
+      typeof responseData.error === "object" &&
+      !Array.isArray(responseData.error)
+        ? responseData.error
+        : {};
+
+    if (!safeResponseMessage) {
+      response.data = {
+        ...responseData,
+        message: userMessage,
+        error: {
+          ...nestedError,
+          message: userMessage,
+        },
+      };
+    }
+  } else if (!safeResponseMessage) {
+    response.data = {
+      message: userMessage,
+    };
+  }
+
+  return error;
+};
+
 export const refreshAccessToken = async () => {
   if (refreshPromise) {
     return refreshPromise;
@@ -39,9 +93,7 @@ export const refreshAccessToken = async () => {
       await AsyncStorage.getItem("refreshToken");
 
     if (!refreshToken) {
-      throw new Error(
-        "No refresh token available",
-      );
+      throw new Error(NETWORK_ERROR_MESSAGE);
     }
 
     const response = await axios.post(
@@ -61,9 +113,7 @@ export const refreshAccessToken = async () => {
       responseData?.refreshToken;
 
     if (!newAccessToken) {
-      throw new Error(
-        "Refresh response does not contain access token",
-      );
+      throw new Error(NETWORK_ERROR_MESSAGE);
     }
 
     await AsyncStorage.setItem(
@@ -111,45 +161,18 @@ apiClient.interceptors.request.use(
     return config;
   },
   (error) => {
-    return Promise.reject(error);
+    return Promise.reject(
+      sanitizeRejectedError(error),
+    );
   },
 );
 
 apiClient.interceptors.response.use(
   (response) => response,
 
-  async (error) => {
+  async (rawError) => {
+    const error = sanitizeRejectedError(rawError);
     const originalRequest = error.config;
-
-    if (error.response?.status >= 500) {
-      const responseData = error.response.data;
-
-      const normalizedResponseData =
-        responseData &&
-        typeof responseData === "object" &&
-        !Array.isArray(responseData)
-          ? responseData
-          : {};
-
-      const normalizedError =
-        normalizedResponseData?.error &&
-        typeof normalizedResponseData.error === "object" &&
-        !Array.isArray(normalizedResponseData.error)
-          ? normalizedResponseData.error
-          : {};
-
-      error.userMessage = SERVER_ERROR_MESSAGE;
-      error.message = SERVER_ERROR_MESSAGE;
-
-      error.response.data = {
-        ...normalizedResponseData,
-        message: SERVER_ERROR_MESSAGE,
-        error: {
-          ...normalizedError,
-          message: SERVER_ERROR_MESSAGE,
-        },
-      };
-    }
 
     if (
       error.response?.status === 401 &&
@@ -170,7 +193,9 @@ apiClient.interceptors.response.use(
             return apiClient(originalRequest);
           })
           .catch((refreshError) => {
-            return Promise.reject(refreshError);
+            return Promise.reject(
+              sanitizeRejectedError(refreshError),
+            );
           });
       }
 
@@ -190,7 +215,10 @@ apiClient.interceptors.response.use(
 
         return apiClient(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError, null);
+        const safeRefreshError =
+          sanitizeRejectedError(refreshError);
+
+        processQueue(safeRefreshError, null);
         isRefreshing = false;
 
         await AsyncStorage.multiRemove([
@@ -198,7 +226,7 @@ apiClient.interceptors.response.use(
           "refreshToken",
         ]);
 
-        return Promise.reject(refreshError);
+        return Promise.reject(safeRefreshError);
       }
     }
 
