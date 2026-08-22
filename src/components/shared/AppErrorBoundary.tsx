@@ -1,11 +1,12 @@
 import React, { ErrorInfo, ReactNode } from "react";
 import {
-  SafeAreaView,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "../../constants/theme";
 import { NETWORK_ERROR_MESSAGE } from "../../utils/errorMessage";
@@ -22,6 +23,40 @@ type GlobalErrorHandler = (
   error: Error,
   isFatal?: boolean,
 ) => void;
+
+type FallbackProps = {
+  onRetry: () => void;
+};
+
+function RuntimeErrorFallback({ onRetry }: FallbackProps) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      style={[
+        styles.safeArea,
+        {
+          paddingTop:
+            Platform.OS === "web" ? 0 : insets.top,
+          paddingBottom:
+            Platform.OS === "web" ? 0 : insets.bottom,
+        },
+      ]}
+    >
+      <View style={styles.content}>
+        <Text style={styles.title}>Không thể tải nội dung</Text>
+        <Text style={styles.message}>{NETWORK_ERROR_MESSAGE}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={onRetry}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.retryButtonText}>Thử lại</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 export default class AppErrorBoundary extends React.Component<
   Props,
@@ -97,21 +132,7 @@ export default class AppErrorBoundary extends React.Component<
       return this.props.children;
     }
 
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Không thể tải nội dung</Text>
-          <Text style={styles.message}>{NETWORK_ERROR_MESSAGE}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={this.retry}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.retryButtonText}>Thử lại</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
+    return <RuntimeErrorFallback onRetry={this.retry} />;
   }
 }
 
