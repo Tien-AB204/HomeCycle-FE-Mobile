@@ -8,8 +8,11 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
 
-  // Tính toán khoảng đệm an toàn tránh dính phím điều hướng Android
-  const bottomInset = isWeb ? 0 : Math.max(insets.bottom, 12);
+  const tabBottomPadding = isWeb
+    ? 0
+    : Platform.OS === "android"
+      ? 12
+      : Math.max(insets.bottom, 12);
 
   return (
     <Tabs
@@ -21,10 +24,9 @@ export default function TabsLayout() {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          // Chiều cao tự động dãn cách dựa vào nền tảng
-          height: isWeb ? 66 : 64 + bottomInset,
+          height: isWeb ? 66 : 64 + tabBottomPadding,
           paddingTop: 6,
-          paddingBottom: isWeb ? 6 : bottomInset,
+          paddingBottom: isWeb ? 6 : tabBottomPadding,
           ...(isWeb
             ? {
                 maxWidth: 480,
@@ -40,7 +42,6 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* 1. Trang chủ */}
       <Tabs.Screen
         name="index"
         options={{
@@ -55,7 +56,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 2. Lịch hẹn */}
       <Tabs.Screen
         name="appointments"
         options={{
@@ -70,7 +70,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 3. Tin đăng */}
       <Tabs.Screen
         name="posts"
         options={{
@@ -85,7 +84,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 4. Đơn hàng */}
       <Tabs.Screen
         name="orders"
         options={{
@@ -100,7 +98,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 5. Giỏ hàng */}
       <Tabs.Screen
         name="cart"
         options={{
@@ -115,7 +112,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Các màn hình ẩn */}
       <Tabs.Screen name="profile" options={{ href: null }} />
       <Tabs.Screen name="chat" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
