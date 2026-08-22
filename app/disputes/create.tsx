@@ -18,6 +18,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 
 const disputeCategories = [
   { value: 1, label: "Không xuất hiện / bùng hẹn" },
@@ -48,14 +49,6 @@ const getErrorCode = (error: any) =>
       error?.response?.data?.error?.code ||
       error?.code ||
       "",
-  );
-
-const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.message ||
-      fallback,
   );
 
 const isSupportedImage = (asset: ImagePicker.ImagePickerAsset) => {
@@ -250,7 +243,7 @@ export default function CreateDisputeScreen() {
       if (!disputeId) {
         setPageMessage({
           type: "error",
-          text: "Đã gửi yêu cầu nhưng không nhận được mã tranh chấp từ hệ thống.",
+          text: NETWORK_ERROR_MESSAGE,
         });
         return;
       }
@@ -264,7 +257,7 @@ export default function CreateDisputeScreen() {
         if (redirected) return;
       }
 
-      const fallbackByCode: Record<string, string> = {
+      const messageByCode: Record<string, string> = {
         DISPUTE_ALREADY_ACTIVE: "Đơn hàng đã có một tranh chấp đang được xử lý.",
         DISPUTE_WINDOW_EXPIRED: "Đơn hàng đã hết thời hạn tạo khiếu nại.",
         DISPUTE_FORBIDDEN: "Bạn không có quyền khiếu nại đơn hàng này.",
@@ -274,10 +267,7 @@ export default function CreateDisputeScreen() {
 
       setPageMessage({
         type: code === "DISPUTE_WINDOW_EXPIRED" ? "warning" : "error",
-        text: getErrorMessage(
-          error,
-          fallbackByCode[code] || "Không thể gửi khiếu nại lúc này.",
-        ),
+        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
       });
     } finally {
       setIsSubmitting(false);
