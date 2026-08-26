@@ -204,22 +204,22 @@ function InlineFeedback({
   const palette =
     feedback.type === "error"
       ? {
-          backgroundColor: "#FEF2F2",
-          borderColor: "#FECACA",
-          color: "#B91C1C",
+          backgroundColor: "rgba(122, 16, 18, 0.08)",
+          borderColor: "rgba(122, 16, 18, 0.22)",
+          color: "#7A1012",
           icon: "alert-circle-outline" as const,
         }
       : feedback.type === "success"
         ? {
-            backgroundColor: "#ECFDF5",
-            borderColor: "#A7F3D0",
-            color: "#047857",
+            backgroundColor: "rgba(47, 118, 93, 0.10)",
+            borderColor: "rgba(47, 118, 93, 0.24)",
+            color: "#2F765D",
             icon: "checkmark-circle-outline" as const,
           }
         : {
-            backgroundColor: "#EFF6FF",
-            borderColor: "#BFDBFE",
-            color: "#1D4ED8",
+            backgroundColor: "rgba(84, 123, 125, 0.10)",
+            borderColor: "rgba(84, 123, 125, 0.24)",
+            color: "#2B5659",
             icon: "information-circle-outline" as const,
           };
 
@@ -1267,7 +1267,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
   },
   searchIcon: { marginRight: 8 },
   searchInput: {
@@ -1282,7 +1282,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 4,
     borderRadius: 8,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
   },
   tabBtn: {
     flex: 1,
@@ -1348,7 +1348,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
   },
   negotiationHeader: {
     flexDirection: "row",
@@ -1375,7 +1375,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
   },
   offerName: { color: COLORS.text, fontSize: 15, fontWeight: "bold" },
   offerTime: { marginTop: 2, color: COLORS.textLight, fontSize: 12 },
@@ -1383,7 +1383,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 12,
     borderRadius: 8,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
   },
   offerProduct: { marginBottom: 4, color: COLORS.text, fontSize: 15, fontWeight: "600" },
   offerPrice: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
@@ -1395,8 +1395,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F1F5F9",
+    borderColor: "#BAC2C1",
+    backgroundColor: "#F8F9FA",
   },
   rejectBtnText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   acceptBtn: {
@@ -1424,7 +1424,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.error,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   cancelOfferBtnText: { color: COLORS.error, fontSize: 13, fontWeight: "700" },
   viewPostBtn: {
@@ -1435,7 +1435,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
   },
   viewPostBtnText: { color: COLORS.text, fontSize: 13, fontWeight: "700" },
   actionFeedback: { marginTop: 2 },
@@ -1471,7 +1471,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: COLORS.text,
     fontSize: 15,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
   },
   messageInput: { height: 80, paddingTop: 12, textAlignVertical: "top" },
   primaryBtn: {

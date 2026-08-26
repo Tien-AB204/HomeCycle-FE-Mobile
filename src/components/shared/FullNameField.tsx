@@ -364,10 +364,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   inputError: {
-    borderColor: "#B91C1C",
+    borderColor: "#7A1012",
   },
   errorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: 6,

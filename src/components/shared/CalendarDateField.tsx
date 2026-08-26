@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     borderRadius: 8,
     backgroundColor: COLORS.white,
     marginBottom: 16,
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     backgroundColor:
-      "rgba(15, 23, 42, 0.48)",
+      "rgba(23, 40, 48, 0.48)",
   },
 
   modalCard: {
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
       },
       web: {
         boxShadow:
-          "0 12px 30px rgba(15, 23, 42, 0.22)",
+          "0 12px 30px rgba(23, 40, 48, 0.22)",
       } as any,
     }),
   },
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   },
 
   disabledDayText: {
-    color: "#CBD5E1",
+    color: "#547B7D",
   },
 
   closeButton: {
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 12,
     borderRadius: 10,
-    backgroundColor: "#EEF3F4",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
   },
 
   closeButtonText: {

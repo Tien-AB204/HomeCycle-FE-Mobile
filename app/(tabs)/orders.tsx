@@ -205,10 +205,10 @@ export default function OrdersScreen() {
     }).format(value || 0);
 
   const getStatusColor = (statusCode: number) => {
-    if (statusCode === 2) return { background: "#D1FAE5", text: "#10B981" };
-    if (statusCode === 3) return { background: "#FEE2E2", text: "#EF4444" };
-    if (statusCode === 4) return { background: "#FEF3C7", text: "#F59E0B" };
-    return { background: "#DBEAFE", text: "#3B82F6" };
+    if (statusCode === 2) return { background: "rgba(47, 118, 93, 0.10)", text: "#2F765D" };
+    if (statusCode === 3) return { background: "rgba(122, 16, 18, 0.08)", text: "#7A1012" };
+    if (statusCode === 4) return { background: "rgba(154, 100, 24, 0.10)", text: "#9A6418" };
+    return { background: "rgba(84, 123, 125, 0.10)", text: "#2B5659" };
   };
 
   if (!user) {
@@ -217,7 +217,7 @@ export default function OrdersScreen() {
         <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
           <MainHeader title="Quản lý Đơn hàng" />
           <View style={styles.unauthContainer}>
-            <Ionicons name="receipt-outline" size={80} color="#CBD5E1" />
+            <Ionicons name="receipt-outline" size={80} color={COLORS.border} />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
             <Text style={styles.unauthDesc}>
               Vui lòng đăng nhập để xem danh sách đơn hàng, lịch trình giao nhận và
@@ -320,10 +320,10 @@ export default function OrdersScreen() {
 
         {pageError ? (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+            <Ionicons name="alert-circle-outline" size={18} color="#7A1012" />
             <Text style={styles.errorText}>{pageError}</Text>
             <TouchableOpacity onPress={() => setPageError(null)} hitSlop={8}>
-              <Ionicons name="close" size={18} color="#B91C1C" />
+              <Ionicons name="close" size={18} color="#7A1012" />
             </TouchableOpacity>
           </View>
         ) : null}
@@ -377,7 +377,7 @@ export default function OrdersScreen() {
                         <Image source={{ uri: order.imageUrl }} style={styles.productImg} />
                       ) : (
                         <View style={[styles.productImg, styles.imagePlaceholder]}>
-                          <Ionicons name="image-outline" size={25} color="#94A3B8" />
+                          <Ionicons name="image-outline" size={25} color="#547B7D" />
                         </View>
                       )}
                       <View style={styles.productInfo}>
@@ -409,7 +409,7 @@ export default function OrdersScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.border },
-  mobileWrapper: { flex: 1, backgroundColor: "#F1F5F9" },
+  mobileWrapper: { flex: 1, backgroundColor: "#F8F9FA" },
   webWrapper: { width: 480, alignSelf: "center" },
   unauthContainer: {
     flex: 1,
@@ -462,18 +462,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#BAC2C1",
   },
   filterChip: {
     paddingVertical: 6,
     paddingHorizontal: 16,
     borderRadius: 18,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#BAC2C1",
   },
-  filterChipActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
-  filterChipText: { fontSize: 13, color: "#475569", fontWeight: "600" },
+  filterChipActive: { backgroundColor: "#172830", borderColor: "#172830" },
+  filterChipText: { fontSize: 13, color: "#547B7D", fontWeight: "600" },
   filterChipTextActive: { color: COLORS.white },
   errorBox: {
     flexDirection: "row",
@@ -483,11 +483,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
     padding: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 10,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
-  errorText: { flex: 1, color: "#B91C1C", fontSize: 13, lineHeight: 18 },
+  errorText: { flex: 1, color: "#7A1012", fontSize: 13, lineHeight: 18 },
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { marginTop: 10, color: COLORS.textLight, fontSize: 13 },
   scrollContent: { padding: 16, paddingBottom: 40 },
@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
     height: 70,
     marginRight: 12,
     borderRadius: 8,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
   imagePlaceholder: { alignItems: "center", justifyContent: "center" },
   productInfo: { flex: 1 },

@@ -74,9 +74,9 @@ export default function MainHeader({
                 width: 28,
                 height: 28,
                 borderRadius: 14,
-                backgroundColor: "#E2E8F0",
+                backgroundColor: "#F8F9FA",
                 borderWidth: 1,
-                borderColor: "#E2E8F0",
+                borderColor: "#BAC2C1",
               }}
               onError={() => setImageError(true)}
             />

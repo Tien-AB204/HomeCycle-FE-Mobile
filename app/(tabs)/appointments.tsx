@@ -140,10 +140,10 @@ export default function ScheduleScreen() {
 
   const getStatusColor = (status: number | string) => {
     const s = String(status);
-    if (s === "2") return "#10B981";
-    if (s === "3" || s === "4") return "#EF4444";
-    if (s === "1") return "#3B82F6";
-    return "#F59E0B";
+    if (s === "2") return "#2F765D";
+    if (s === "3" || s === "4") return "#7A1012";
+    if (s === "1") return "#2B5659";
+    return "#9A6418";
   };
 
   const fetchAppointments = useCallback(
@@ -285,7 +285,7 @@ export default function ScheduleScreen() {
             <Ionicons
               name="calendar-outline"
               size={80}
-              color="#CBD5E1"
+              color={COLORS.border}
               style={styles.unauthIcon}
             />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
@@ -592,7 +592,7 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.border },
-  mobileWrapper: { flex: 1, backgroundColor: "#F1F5F9" },
+  mobileWrapper: { flex: 1, backgroundColor: "#F8F9FA" },
   webWrapper: { width: 480, alignSelf: "center" },
 
   unauthContainer: {
@@ -648,21 +648,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#BAC2C1",
   },
   filterChip: {
     paddingVertical: 6,
     paddingHorizontal: 16,
     borderRadius: 18,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#BAC2C1",
   },
   filterChipActive: {
-    backgroundColor: "#0F172A",
-    borderColor: "#0F172A",
+    backgroundColor: "#172830",
+    borderColor: "#172830",
   },
-  filterChipText: { fontSize: 13, color: "#475569", fontWeight: "600" },
+  filterChipText: { fontSize: 13, color: "#547B7D", fontWeight: "600" },
   filterChipTextActive: { color: "#FFF" },
 
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -685,13 +685,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     marginBottom: 8,
   },
   agendaMonthText: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#0F172A",
+    color: "#172830",
     letterSpacing: 0.5,
   },
   timelineRow: {
@@ -706,11 +706,11 @@ const styles = StyleSheet.create({
   timelineDayNum: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#0F172A",
+    color: "#172830",
   },
   timelineDayName: {
     fontSize: 12,
-    color: "#64748B",
+    color: "#547B7D",
     marginTop: 2,
     fontWeight: "500",
   },
@@ -723,7 +723,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 1.5,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
   timelineDot: {
     width: 8,
@@ -731,7 +731,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: COLORS.white,
     borderWidth: 2,
-    borderColor: "#CBD5E1",
+    borderColor: "#BAC2C1",
     marginTop: 22,
     zIndex: 1,
   },
@@ -792,12 +792,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   badge: {
-    backgroundColor: "#E0F2FE",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  badgeText: { color: "#0284C7", fontSize: 12, fontWeight: "bold" },
+  badgeText: { color: "#2B5659", fontSize: 12, fontWeight: "bold" },
   status: { fontSize: 13, fontWeight: "bold" },
   productName: {
     fontSize: 16,
@@ -821,7 +821,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    color: "#475569",
+    color: "#547B7D",
     fontSize: 13,
     lineHeight: 19,
   },
@@ -832,15 +832,15 @@ const styles = StyleSheet.create({
     marginTop: 7,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+    borderTopColor: "#BAC2C1",
   },
   metaText: {
     flex: 1,
-    color: "#94A3B8",
+    color: "#547B7D",
     fontSize: 11,
     lineHeight: 16,
   },
-  divider: { height: 1, marginVertical: 12, backgroundColor: "#F1F5F9" },
+  divider: { height: 1, marginVertical: 12, backgroundColor: "#F8F9FA" },
   cardFooter: { flexDirection: "row", marginTop: 4 },
   primaryBtn: {
     flex: 1,

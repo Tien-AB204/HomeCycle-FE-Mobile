@@ -149,26 +149,26 @@ export default function NotificationsScreen() {
       case "warning":
         return {
           name: "warning-outline" as const,
-          color: "#D97706",
-          background: "#FEF3C7",
+          color: "#9A6418",
+          background: "rgba(154, 100, 24, 0.10)",
         };
       case "success":
         return {
           name: "checkmark-circle-outline" as const,
-          color: "#059669",
-          background: "#D1FAE5",
+          color: "#2F765D",
+          background: "rgba(47, 118, 93, 0.10)",
         };
       case "offer":
         return {
           name: "pricetag-outline" as const,
-          color: "#0284C7",
-          background: "#E0F2FE",
+          color: "#2B5659",
+          background: "rgba(84, 123, 125, 0.10)",
         };
       default:
         return {
           name: "notifications-outline" as const,
           color: COLORS.primary,
-          background: "#EFF6FF",
+          background: "rgba(84, 123, 125, 0.10)",
         };
     }
   };
@@ -182,7 +182,7 @@ export default function NotificationsScreen() {
             <Ionicons
               name="notifications-off-outline"
               size={80}
-              color="#CBD5E1"
+              color={COLORS.border}
               style={styles.unauthIcon}
             />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
@@ -323,7 +323,7 @@ export default function NotificationsScreen() {
                 <Ionicons
                   name="notifications-off-outline"
                   size={64}
-                  color="#CBD5E1"
+                  color={COLORS.border}
                   style={styles.emptyIcon}
                 />
                 <Text style={styles.emptyTitle}>Chưa có thông báo nào</Text>
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     backgroundColor: COLORS.white,
   },
   subHeaderTitle: { fontSize: 15, fontWeight: "bold", color: COLORS.text },
@@ -401,13 +401,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
   },
-  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  messageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  messageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
+  messageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
   messageText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  messageErrorText: { color: "#B91C1C" },
-  messageSuccessText: { color: "#047857" },
-  messageInfoText: { color: "#1D4ED8" },
+  messageErrorText: { color: "#7A1012" },
+  messageSuccessText: { color: "#2F765D" },
+  messageInfoText: { color: "#2B5659" },
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { marginTop: 10, color: COLORS.textLight, fontSize: 13 },
   listContainer: { paddingBottom: 40 },
@@ -416,10 +416,10 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     alignItems: "flex-start",
   },
-  notificationCardUnread: { backgroundColor: "#F8FAFC" },
+  notificationCardUnread: { backgroundColor: "#F8F9FA" },
   iconContainer: {
     width: 48,
     height: 48,
@@ -435,14 +435,14 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 4,
   },
-  titleUnread: { fontWeight: "bold", color: "#0F172A" },
+  titleUnread: { fontWeight: "bold", color: "#172830" },
   notificationMessage: {
     fontSize: 14,
     color: COLORS.textLight,
     lineHeight: 20,
     marginBottom: 8,
   },
-  timeAgo: { fontSize: 12, color: "#94A3B8" },
+  timeAgo: { fontSize: 12, color: "#547B7D" },
   unreadDot: {
     width: 10,
     height: 10,

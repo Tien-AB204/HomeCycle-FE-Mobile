@@ -185,7 +185,7 @@ export default function ProfileScreen() {
         <View style={[styles.mobileWrapper, { width }]}>
           <MainHeader title="Hồ sơ" showBack={false} />
           <View style={styles.unauthContainer}>
-            <Ionicons name="person-circle-outline" size={80} color="#CBD5E1" />
+            <Ionicons name="person-circle-outline" size={80} color={COLORS.border} />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
             <Text style={styles.unauthDesc}>
               Đăng nhập để cập nhật hồ sơ, theo dõi ví và sử dụng đầy đủ tiện ích của HomeCycle.
@@ -231,7 +231,7 @@ export default function ProfileScreen() {
           icon: "business-outline",
           title: "Hồ sơ Doanh nghiệp",
           subtitle: "Đang chờ duyệt",
-          subtitleColor: "#F59E0B",
+          subtitleColor: "#9A6418",
           route: "/profile/business-pending",
         };
       case "Rejected":
@@ -256,7 +256,7 @@ export default function ProfileScreen() {
           icon: "business-outline",
           title: "Hồ sơ Doanh nghiệp",
           subtitle: "Chờ làm khảo sát",
-          subtitleColor: "#F59E0B",
+          subtitleColor: "#9A6418",
           route: "/profile/business-survey",
         };
       default:
@@ -425,7 +425,7 @@ export default function ProfileScreen() {
           </View>
 
           <TouchableOpacity style={styles.logoutButton} onPress={() => setShowLogoutConfirm(true)}>
-            <Ionicons name="log-out-outline" size={22} color="#991B1B" />
+            <Ionicons name="log-out-outline" size={22} color="#7A1012" />
             <Text style={styles.logoutText}>Đăng xuất</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -469,11 +469,11 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   mobileWrapper: {
     flex: 1,
     alignSelf: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     maxWidth: 480,
   },
   loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -524,10 +524,10 @@ const styles = StyleSheet.create({
   statsText: { color: COLORS.textLight, fontSize: 12 },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 12 },
   messageText: { fontSize: 12, lineHeight: 17 },
-  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  messageErrorText: { color: "#B91C1C" },
-  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-  messageInfoText: { color: "#1D4ED8" },
+  messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  messageErrorText: { color: "#7A1012" },
+  messageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
+  messageInfoText: { color: "#2B5659" },
   statsGrid: { flexDirection: "row", gap: 14 },
   statCard: {
     flex: 1,
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
   },
   statLabel: { color: COLORS.textLight, fontSize: 12, marginTop: 14 },
   statValue: { color: COLORS.text, fontSize: 17, fontWeight: "900", marginTop: 6 },
-  holdText: { color: "#B45309", fontSize: 10, marginTop: 4 },
+  holdText: { color: "#9A6418", fontSize: 10, marginTop: 4 },
   menuContainer: {
     marginTop: 20,
     borderWidth: 1,
@@ -554,7 +554,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   lastMenuItem: { borderBottomWidth: 0 },
   menuIconBox: {
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     marginRight: 12,
   },
   menuText: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: "700" },
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
     minHeight: 62,
     marginTop: 20,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -580,10 +580,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: COLORS.white,
   },
-  logoutText: { color: "#991B1B", fontWeight: "900", fontSize: 15 },
+  logoutText: { color: "#7A1012", fontWeight: "900", fontSize: 15 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    backgroundColor: "rgba(23, 40, 48, 0.45)",
     justifyContent: "center",
     padding: 22,
   },
@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
     minWidth: 105,
     minHeight: 44,
     paddingHorizontal: 16,
-    backgroundColor: "#991B1B",
+    backgroundColor: "#7A1012",
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",

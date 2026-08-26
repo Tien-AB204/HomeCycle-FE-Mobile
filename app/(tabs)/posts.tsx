@@ -246,13 +246,13 @@ export default function PostsScreen() {
   const translateStatus = (status: string) => {
     switch (status) {
       case "Active":
-        return { text: "Đang hoạt động", color: "#10B981", background: "#D1FAE5" };
+        return { text: "Đang hoạt động", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
       case "Pending":
-        return { text: "Chờ duyệt", color: "#F59E0B", background: "#FEF3C7" };
+        return { text: "Chờ duyệt", color: "#9A6418", background: "rgba(154, 100, 24, 0.10)" };
       case "Closed":
-        return { text: "Đã đóng", color: "#64748B", background: "#E2E8F0" };
+        return { text: "Đã đóng", color: "#547B7D", background: "#F8F9FA" };
       default:
-        return { text: status || "N/A", color: "#475569", background: "#F1F5F9" };
+        return { text: status || "N/A", color: "#547B7D", background: "#F8F9FA" };
     }
   };
 
@@ -262,7 +262,7 @@ export default function PostsScreen() {
         <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
           <MainHeader title="Quản lý tin đăng" />
           <View style={styles.unauthContainer}>
-            <Ionicons name="document-text-outline" size={80} color="#CBD5E1" />
+            <Ionicons name="document-text-outline" size={80} color={COLORS.border} />
             <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
             <Text style={styles.unauthDesc}>
               Hãy đăng nhập để quản lý bài đăng, theo dõi trạng thái giao dịch và
@@ -337,7 +337,7 @@ export default function PostsScreen() {
             </Text>
 
             <View style={styles.addressRow}>
-              <Ionicons name="location-outline" size={12} color="#64748B" />
+              <Ionicons name="location-outline" size={12} color="#547B7D" />
               <Text style={styles.addressText} numberOfLines={1}>
                 {address || "Chưa cập nhật địa chỉ"}
               </Text>
@@ -663,31 +663,31 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  postImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: "#F0F9FF" },
+  postImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: "rgba(84, 123, 125, 0.10)" },
   iconBox: {
     width: 80,
     height: 80,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 8,
-    backgroundColor: "#F0F9FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   cardContent: { flex: 1, justifyContent: "space-between", marginLeft: 12 },
   cardTitle: { marginBottom: 2, color: COLORS.text, fontSize: 15, fontWeight: "bold" },
   cardPrice: { marginBottom: 4, color: COLORS.error, fontSize: 15, fontWeight: "bold" },
   descText: { marginBottom: 4, color: COLORS.textLight, fontSize: 12 },
   addressRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 8 },
-  addressText: { flex: 1, color: "#64748B", fontSize: 11, fontStyle: "italic" },
+  addressText: { flex: 1, color: "#547B7D", fontSize: 11, fontStyle: "italic" },
   tagGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
-  tag: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: "#F1F5F9" },
-  tagText: { color: "#475569", fontSize: 10, fontWeight: "500" },
+  tag: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: "#F8F9FA" },
+  tagText: { color: "#547B7D", fontSize: 10, fontWeight: "500" },
   cardFooter: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+    borderTopColor: "#BAC2C1",
   },
   statsText: { marginBottom: 2, color: COLORS.textLight, fontSize: 12 },
   footerRight: { alignItems: "flex-end" },
@@ -700,9 +700,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 4,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     borderRadius: 4,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
   },
   closeButton: { borderColor: COLORS.error },
   reactivateButton: { borderColor: COLORS.primary },
@@ -710,9 +710,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
     borderRadius: 10,
-    backgroundColor: "#FFFBEB",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
   },
   confirmTitle: { color: COLORS.text, fontSize: 13, fontWeight: "700", lineHeight: 19 },
   confirmActions: { flexDirection: "row", gap: 10, marginTop: 10 },
@@ -746,17 +746,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
   },
-  postMessageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  postMessageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+  postMessageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  postMessageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
   postMessageText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  postMessageErrorText: { color: "#B91C1C" },
-  postMessageSuccessText: { color: "#047857" },
+  postMessageErrorText: { color: "#7A1012" },
+  postMessageSuccessText: { color: "#2F765D" },
   loadMoreBtn: {
     alignItems: "center",
     marginVertical: 10,
     padding: 12,
     borderRadius: 8,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
   loadMoreText: { color: COLORS.text, fontWeight: "bold" },
   loadMoreIndicator: { marginTop: 20 },

@@ -225,7 +225,7 @@ export default function CartScreen() {
             />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
-              <Ionicons name="image-outline" size={28} color="#94A3B8" />
+              <Ionicons name="image-outline" size={28} color="#547B7D" />
             </View>
           )}
 
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     maxWidth: 480,
-    backgroundColor: "#F6F8FA",
+    backgroundColor: "#F8F9FA",
     ...(Platform.OS === "web"
       ? ({ boxShadow: "0px 0px 20px rgba(0,0,0,0.08)" } as any)
       : {}),
@@ -473,19 +473,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     shadowColor: "#000",
     shadowOpacity: 0.04,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
-  unavailableItem: { backgroundColor: "#F8FAFC" },
+  unavailableItem: { backgroundColor: "#F8F9FA" },
   image: {
     width: 82,
     height: 82,
     borderRadius: 10,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
   imagePlaceholder: { alignItems: "center", justifyContent: "center" },
   faded: { opacity: 0.5 },
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 19,
   },
-  unavailableText: { color: "#94A3B8" },
+  unavailableText: { color: "#547B7D" },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -514,15 +514,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     padding: 6,
     borderRadius: 8,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   confirmBox: {
     marginTop: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 10,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   confirmText: { color: COLORS.text, fontSize: 13, fontWeight: "700", lineHeight: 19 },
   confirmActions: { flexDirection: "row", gap: 10, marginTop: 10 },
@@ -555,11 +555,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
   },
-  itemMessageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  itemMessageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+  itemMessageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  itemMessageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
   itemMessageText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  itemMessageErrorText: { color: "#B91C1C" },
-  itemMessageSuccessText: { color: "#047857" },
+  itemMessageErrorText: { color: "#7A1012" },
+  itemMessageSuccessText: { color: "#2F765D" },
   centerState: {
     flex: 1,
     alignItems: "center",
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
     borderRadius: 34,
-    backgroundColor: "#E9F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
   },
   stateTitle: { color: COLORS.text, fontSize: 18, fontWeight: "800", textAlign: "center" },
   stateDescription: {
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopColor: "#BAC2C1",
     backgroundColor: COLORS.white,
   },
   totalBlock: { flex: 1 },
