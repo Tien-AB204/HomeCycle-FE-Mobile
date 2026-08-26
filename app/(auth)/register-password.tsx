@@ -21,6 +21,10 @@ import { useRef, useState } from "react";
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  PASSWORD_MAX_LENGTH,
+  validatePassword as validatePasswordValue,
+} from "../../src/utils/formValidation";
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -79,33 +83,20 @@ export default function RegisterPasswordScreen() {
   };
 
   const validatePassword = () => {
-    const normalizedPassword =
-      password.trim();
-
     setPasswordError("");
     setSubmitError("");
 
-    if (!normalizedPassword) {
-      setPasswordError(
-        "Vui lòng nhập mật khẩu.",
-      );
+    const validationError =
+      validatePasswordValue(password);
 
+    if (validationError) {
+      setPasswordError(validationError);
       return null;
     }
 
-    // Giữ đúng validation hiện tại của FE.
-    // Swagger chưa công bố yêu cầu phức tạp hơn.
-    if (normalizedPassword.length < 6) {
-      setPasswordError(
-        "Mật khẩu phải có ít nhất 6 ký tự.",
-      );
-
-      return null;
-    }
-
-    return normalizedPassword;
+    // Giữ nguyên chính xác password user nhập.
+    return password;
   };
-
   const handleNext = async () => {
     if (
       isLoading ||
@@ -355,10 +346,11 @@ export default function RegisterPasswordScreen() {
                     } as any)
                   : undefined,
               ]}
-              placeholder="Tối thiểu 6 ký tự..."
+              placeholder="Từ 6 đến 50 ký tự..."
               placeholderTextColor={
                 COLORS.textLight
               }
+              maxLength={PASSWORD_MAX_LENGTH}
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={
@@ -607,8 +599,8 @@ const styles = StyleSheet.create({
   },
 
   inputDisabled: {
-    backgroundColor: "#F5F5F5",
-    borderColor: "#E0E0E0",
+    backgroundColor: "#F8F9FA",
+    borderColor: "#BAC2C1",
   },
 
   disabledInputText: {

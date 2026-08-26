@@ -19,10 +19,12 @@ import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  EMAIL_MAX_LENGTH,
+  validateEmail,
+} from "../../src/utils/formValidation";
 
 type RegistrationRole = "personal" | "business";
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -92,26 +94,17 @@ export default function RegisterScreen() {
 
   const validateForm = () => {
     const normalizedEmail = email.trim();
-
     let isValid = true;
 
     setEmailError("");
     setTermsError("");
     setSubmitError("");
 
-    if (!normalizedEmail) {
-      setEmailError(
-        "Vui lòng nhập địa chỉ email.",
-      );
+    const nextEmailError =
+      validateEmail(normalizedEmail);
 
-      isValid = false;
-    } else if (
-      !EMAIL_PATTERN.test(normalizedEmail)
-    ) {
-      setEmailError(
-        "Địa chỉ email không đúng định dạng.",
-      );
-
+    if (nextEmailError) {
+      setEmailError(nextEmailError);
       isValid = false;
     }
 
@@ -119,7 +112,6 @@ export default function RegisterScreen() {
       setTermsError(
         "Bạn cần đồng ý với điều khoản dịch vụ và chính sách bảo mật.",
       );
-
       isValid = false;
     }
 
@@ -128,7 +120,6 @@ export default function RegisterScreen() {
       normalizedEmail,
     };
   };
-
   const handleRegister = async () => {
     if (isLoading) {
       return;
@@ -326,7 +317,7 @@ export default function RegisterScreen() {
                 size={20}
                 color={
                   emailError
-                    ? COLORS.error || "#B91C1C"
+                    ? COLORS.error || "#7A1012"
                     : COLORS.textLight
                 }
                 style={styles.inputIcon}
@@ -350,6 +341,7 @@ export default function RegisterScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 textContentType="emailAddress"
+                maxLength={EMAIL_MAX_LENGTH}
                 value={email}
                 onChangeText={handleEmailChange}
                 editable={!isLoading}
@@ -388,7 +380,7 @@ export default function RegisterScreen() {
                 size={23}
                 color={
                   termsError
-                    ? COLORS.error || "#B91C1C"
+                    ? COLORS.error || "#7A1012"
                     : agreeTerms
                       ? COLORS.primary
                       : COLORS.textLight
@@ -622,7 +614,7 @@ const styles = StyleSheet.create({
 
   roleTabActive: {
     borderColor: COLORS.primary,
-    backgroundColor: "#E6F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     borderWidth: 1.5,
   },
 
@@ -652,11 +644,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8F9FA",
   },
 
   inputContainerError: {
-    borderColor: COLORS.error || "#B91C1C",
+    borderColor: COLORS.error || "#7A1012",
     borderWidth: 1.5,
   },
 
@@ -672,7 +664,7 @@ const styles = StyleSheet.create({
   },
 
   fieldErrorText: {
-    color: COLORS.error || "#B91C1C",
+    color: COLORS.error || "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: 6,
@@ -699,7 +691,7 @@ const styles = StyleSheet.create({
   },
 
   termsErrorText: {
-    color: COLORS.error || "#B91C1C",
+    color: COLORS.error || "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: 6,
@@ -728,7 +720,7 @@ const styles = StyleSheet.create({
   },
 
   submitErrorText: {
-    color: COLORS.error || "#B91C1C",
+    color: COLORS.error || "#7A1012",
     fontSize: 12,
     lineHeight: 18,
     textAlign: "center",

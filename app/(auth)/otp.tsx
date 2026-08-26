@@ -607,7 +607,7 @@ export default function OTPScreen() {
               <Ionicons
                 name="checkmark-circle-outline"
                 size={17}
-                color="#16803C"
+                color="#2F765D"
               />
 
               <Text
@@ -853,7 +853,7 @@ const styles = StyleSheet.create({
 
   successText: {
     flex: 1,
-    color: "#16803C",
+    color: "#2F765D",
     fontSize: 13,
     lineHeight: 18,
   },
@@ -902,7 +902,7 @@ const styles = StyleSheet.create({
   },
 
   resendTextHighlight: {
-    color: "#4F7C7B",
+    color: "#547B7D",
     fontSize: 14,
     fontWeight: "600",
   },

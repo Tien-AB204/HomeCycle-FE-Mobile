@@ -24,6 +24,14 @@ import {
 
 import { COLORS } from "../../src/constants/theme";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  FULL_NAME_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+  normalizeVietnamPhone,
+  validateFullName,
+  validateUsername,
+  validateVietnamPhone,
+} from "../../src/utils/formValidation";
 import { capitalizeWordInitials } from "../../src/utils/textFormat";
 
 const getStringParam = (
@@ -92,38 +100,52 @@ export default function ProfileSetupScreen() {
   };
 
   const validateForm = () => {
-    const normalizedFullName = fullName.trim();
-    const normalizedUsername = username.trim();
-    const normalizedPhone = phone.trim();
-    let isValid = true;
+    const normalizedFullName =
+      capitalizeWordInitials(
+        fullName.trim().replace(/\s+/gu, " "),
+      );
+
+    const normalizedUsername =
+      username.trim();
+
+    const normalizedPhone =
+      normalizeVietnamPhone(phone);
 
     setFullNameError("");
     setUsernameError("");
     setPhoneError("");
 
-    if (!normalizedFullName) {
-      setFullNameError("Vui lòng nhập họ và tên.");
-      isValid = false;
+    const nextFullNameError =
+      validateFullName(fullName);
+
+    const nextUsernameError =
+      validateUsername(username);
+
+    const nextPhoneError =
+      validateVietnamPhone(phone);
+
+    if (nextFullNameError) {
+      setFullNameError(nextFullNameError);
     }
 
-    if (!normalizedUsername) {
-      setUsernameError("Vui lòng nhập username.");
-      isValid = false;
+    if (nextUsernameError) {
+      setUsernameError(nextUsernameError);
     }
 
-    if (!normalizedPhone) {
-      setPhoneError("Vui lòng nhập số điện thoại.");
-      isValid = false;
+    if (nextPhoneError) {
+      setPhoneError(nextPhoneError);
     }
 
     return {
-      isValid,
+      isValid:
+        !nextFullNameError &&
+        !nextUsernameError &&
+        !nextPhoneError,
       normalizedFullName,
       normalizedUsername,
       normalizedPhone,
     };
   };
-
   const handleNext = () => {
     const {
       isValid,
@@ -216,7 +238,7 @@ export default function ProfileSetupScreen() {
                     resizeMode="cover"
                   />
                 ) : (
-                  <Ionicons name="person-outline" size={40} color="#B0B8C1" />
+                  <Ionicons name="person-outline" size={40} color="#547B7D" />
                 )}
 
                 <View style={styles.cameraBadge}>
@@ -253,6 +275,7 @@ export default function ProfileSetupScreen() {
                 ]}
                 placeholder="Nhập họ và tên..."
                 placeholderTextColor={COLORS.textLight}
+                maxLength={FULL_NAME_MAX_LENGTH}
                 value={fullName}
                 onChangeText={(value) => {
                   setFullName(capitalizeWordInitials(value));
@@ -293,6 +316,7 @@ export default function ProfileSetupScreen() {
                 placeholderTextColor={COLORS.textLight}
                 autoCapitalize="none"
                 autoCorrect={false}
+                maxLength={USERNAME_MAX_LENGTH}
                 value={username}
                 onChangeText={(value) => {
                   setUsername(value);
@@ -331,6 +355,7 @@ export default function ProfileSetupScreen() {
                 inputMode="tel"
                 autoComplete="tel"
                 textContentType="telephoneNumber"
+                maxLength={20}
                 value={phone}
                 onChangeText={(value) => {
                   setPhone(value);
@@ -460,12 +485,12 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: 26,
     borderWidth: 2,
-    borderColor: "#E0E4EC",
+    borderColor: "#BAC2C1",
     borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
     position: "relative",
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8F9FA",
   },
   avatarBoxError: {
     borderColor: COLORS.error,
