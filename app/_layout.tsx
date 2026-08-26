@@ -1,18 +1,64 @@
 import { Stack } from "expo-router";
-import { Platform, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Keyboard,
+  Platform,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+
+import AppDialogHost from "../src/components/shared/AppDialogHost";
+import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
+import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 
 function RootNavigator() {
   const insets = useSafeAreaInsets();
-  const topInset = Platform.OS === "android" ? insets.top : 0;
+  const [isKeyboardVisible, setIsKeyboardVisible] =
+    useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const showSubscription = Keyboard.addListener(
+      "keyboardDidShow",
+      () => setIsKeyboardVisible(true),
+    );
+    const hideSubscription = Keyboard.addListener(
+      "keyboardDidHide",
+      () => setIsKeyboardVisible(false),
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  const topInset =
+    Platform.OS === "android" ? insets.top : 0;
+  const bottomInset =
+    Platform.OS === "android" && !isKeyboardVisible
+      ? insets.bottom
+      : 0;
 
   return (
-    <View style={[styles.root, { paddingTop: topInset }]}>
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: topInset,
+          paddingBottom: bottomInset,
+        },
+      ]}
+    >
       <AuthProvider>
         <ChatRealtimeProvider>
           <Stack
@@ -33,7 +79,11 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <RootNavigator />
+      <AppErrorBoundary>
+        <AppDialogHost>
+          <RootNavigator />
+        </AppDialogHost>
+      </AppErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -41,6 +91,6 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.white,
   },
 });
