@@ -105,6 +105,7 @@ export function ChatRealtimeProvider({
         accessTokenFactory: getSignalRAccessToken,
       })
       .withAutomaticReconnect()
+      .configureLogging(signalR.LogLevel.None)
       .build();
 
     connectionRef.current = hubConnection;
