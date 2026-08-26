@@ -18,6 +18,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 
 const disputeCategories = [
   { value: 1, label: "Không xuất hiện / bùng hẹn" },
@@ -48,14 +49,6 @@ const getErrorCode = (error: any) =>
       error?.response?.data?.error?.code ||
       error?.code ||
       "",
-  );
-
-const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.message ||
-      fallback,
   );
 
 const isSupportedImage = (asset: ImagePicker.ImagePickerAsset) => {
@@ -250,7 +243,7 @@ export default function CreateDisputeScreen() {
       if (!disputeId) {
         setPageMessage({
           type: "error",
-          text: "Đã gửi yêu cầu nhưng không nhận được mã tranh chấp từ hệ thống.",
+          text: NETWORK_ERROR_MESSAGE,
         });
         return;
       }
@@ -264,7 +257,7 @@ export default function CreateDisputeScreen() {
         if (redirected) return;
       }
 
-      const fallbackByCode: Record<string, string> = {
+      const messageByCode: Record<string, string> = {
         DISPUTE_ALREADY_ACTIVE: "Đơn hàng đã có một tranh chấp đang được xử lý.",
         DISPUTE_WINDOW_EXPIRED: "Đơn hàng đã hết thời hạn tạo khiếu nại.",
         DISPUTE_FORBIDDEN: "Bạn không có quyền khiếu nại đơn hàng này.",
@@ -274,10 +267,7 @@ export default function CreateDisputeScreen() {
 
       setPageMessage({
         type: code === "DISPUTE_WINDOW_EXPIRED" ? "warning" : "error",
-        text: getErrorMessage(
-          error,
-          fallbackByCode[code] || "Không thể gửi khiếu nại lúc này.",
-        ),
+        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
       });
     } finally {
       setIsSubmitting(false);
@@ -365,7 +355,7 @@ export default function CreateDisputeScreen() {
                 clearMessage();
               }}
               placeholder="Mô tả rõ vấn đề, diễn biến và cam kết đã bị vi phạm..."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#547B7D"
               multiline
               maxLength={2000}
               textAlignVertical="top"
@@ -436,12 +426,12 @@ export default function CreateDisputeScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   scrollContent: { padding: 16, paddingBottom: 36 },
   orderCard: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "rgba(84, 123, 125, 0.24)",
     borderRadius: 12,
     padding: 14,
     marginBottom: 14,
@@ -451,11 +441,11 @@ const styles = StyleSheet.create({
   productName: { fontSize: 13, color: COLORS.text, marginTop: 4 },
   helperText: { fontSize: 12, lineHeight: 18, color: COLORS.textLight },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 14 },
-  errorBox: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  warningBox: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+  errorBox: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  warningBox: { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" },
   messageText: { fontSize: 13, lineHeight: 19 },
-  errorText: { color: "#B91C1C" },
-  warningText: { color: "#B45309" },
+  errorText: { color: "#7A1012" },
+  warningText: { color: "#9A6418" },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
@@ -470,20 +460,20 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  categoryItemSelected: { borderColor: COLORS.primary, backgroundColor: "#EFF6FF" },
+  categoryItemSelected: { borderColor: COLORS.primary, backgroundColor: "rgba(84, 123, 125, 0.10)" },
   radioOuter: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: "#CBD5E1",
+    borderColor: "#BAC2C1",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -518,8 +508,8 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: "rgba(84, 123, 125, 0.24)",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -528,7 +518,7 @@ const styles = StyleSheet.create({
   pickButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "700" },
   imageList: { gap: 10, paddingTop: 12, paddingRight: 4 },
   imageItem: { position: "relative" },
-  imagePreview: { width: 92, height: 92, borderRadius: 10, backgroundColor: "#E2E8F0" },
+  imagePreview: { width: 92, height: 92, borderRadius: 10, backgroundColor: "#F8F9FA" },
   removeImageButton: {
     position: "absolute",
     top: -6,
@@ -536,14 +526,14 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#B91C1C",
+    backgroundColor: "#7A1012",
     alignItems: "center",
     justifyContent: "center",
   },
   submitButton: {
     minHeight: 50,
     borderRadius: 11,
-    backgroundColor: "#D97706",
+    backgroundColor: "#9A6418",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

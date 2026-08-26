@@ -17,6 +17,7 @@ import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
+import { NETWORK_ERROR_MESSAGE } from "../src/utils/errorMessage";
 
 const PAGE_SIZE = 10;
 const REFERENCE_TYPE_WITHDRAWAL = 4;
@@ -73,14 +74,6 @@ const getErrorCode = (error: any) =>
       error?.response?.data?.error?.Code ||
       error?.code ||
       "",
-  );
-
-const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.response?.data?.error?.Message ||
-      fallback,
   );
 
 const formatCurrency = (value: unknown) =>
@@ -167,10 +160,10 @@ export default function WalletScreen() {
 
         setMessage(null);
         await Promise.all([loadWallet(), loadLedger(page)]);
-      } catch (error) {
+      } catch {
         setMessage({
           type: "error",
-          text: getErrorMessage(error, "Không thể tải thông tin ví lúc này."),
+          text: NETWORK_ERROR_MESSAGE,
         });
       } finally {
         setIsLoading(false);
@@ -241,16 +234,19 @@ export default function WalletScreen() {
       await Promise.all([loadWallet(), loadLedger(1)]);
     } catch (error: any) {
       const code = getErrorCode(error);
-      const fallback =
-        code === "Withdrawal.BankAccountNotVerified"
-          ? "Tài khoản ngân hàng chưa được xác thực nên chưa thể rút tiền."
-          : code === "Wallet.InsufficientBalance"
-            ? "Số dư khả dụng không đủ để rút số tiền này."
-            : code === "Withdrawal.InvalidRequest"
-              ? "Số tiền rút chưa hợp lệ."
-              : "Không thể tạo yêu cầu rút tiền lúc này.";
+      const messageByCode: Record<string, string> = {
+        "Withdrawal.BankAccountNotVerified":
+          "Tài khoản ngân hàng chưa được xác thực nên chưa thể rút tiền.",
+        "Wallet.InsufficientBalance":
+          "Số dư khả dụng không đủ để rút số tiền này.",
+        "Withdrawal.InvalidRequest":
+          "Số tiền rút chưa hợp lệ.",
+      };
 
-      setMessage({ type: "error", text: getErrorMessage(error, fallback) });
+      setMessage({
+        type: "error",
+        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
+      });
     } finally {
       setIsWithdrawing(false);
     }
@@ -268,10 +264,10 @@ export default function WalletScreen() {
         text: "Đã đồng bộ trạng thái yêu cầu rút tiền.",
       });
       await Promise.all([loadWallet(), loadLedger(pageNumber)]);
-    } catch (error) {
+    } catch {
       setMessage({
         type: "error",
-        text: getErrorMessage(error, "Không thể đồng bộ trạng thái rút tiền."),
+        text: NETWORK_ERROR_MESSAGE,
       });
     } finally {
       setSyncingWithdrawalId(null);
@@ -358,7 +354,7 @@ export default function WalletScreen() {
 
           {isBusiness ? (
             <View style={styles.businessWarning}>
-              <Ionicons name="warning-outline" size={18} color="#B45309" />
+              <Ionicons name="warning-outline" size={18} color="#9A6418" />
               <Text style={styles.businessWarningText}>
                 Tạm khóa rút tiền cho Business vì backend hiện đang lấy nhầm ví Personal khi tạo withdrawal. Bạn vẫn có thể xem số dư và lịch sử ví.
               </Text>
@@ -457,7 +453,7 @@ export default function WalletScreen() {
                     <Ionicons
                       name={incoming ? "arrow-down" : "arrow-up"}
                       size={18}
-                      color={incoming ? "#047857" : "#B91C1C"}
+                      color={incoming ? "#2F765D" : "#7A1012"}
                     />
                   </View>
 
@@ -533,21 +529,21 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   loadingText: { marginTop: 10, color: COLORS.textLight },
   scrollContent: { padding: 16, paddingBottom: 40 },
   balanceCard: {
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
     borderWidth: 1,
-    borderColor: "#A7F3D0",
+    borderColor: "rgba(47, 118, 93, 0.24)",
     borderRadius: 16,
     padding: 18,
     marginBottom: 14,
   },
   balanceHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  balanceLabel: { color: "#047857", fontSize: 13, fontWeight: "700" },
-  balanceValue: { color: "#065F46", fontSize: 28, fontWeight: "900", marginTop: 5 },
+  balanceLabel: { color: "#2F765D", fontSize: 13, fontWeight: "700" },
+  balanceValue: { color: "#2F765D", fontSize: 28, fontWeight: "900", marginTop: 5 },
   walletIconWrap: {
     width: 54,
     height: 54,
@@ -560,12 +556,12 @@ const styles = StyleSheet.create({
     marginTop: 15,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#A7F3D0",
+    borderTopColor: "rgba(47, 118, 93, 0.24)",
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  holdLabel: { color: "#047857", fontSize: 12 },
-  holdValue: { color: "#065F46", fontSize: 13, fontWeight: "800" },
+  holdLabel: { color: "#2F765D", fontSize: 12 },
+  holdValue: { color: "#2F765D", fontSize: 13, fontWeight: "800" },
   card: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
@@ -583,13 +579,13 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: "flex-start",
     borderWidth: 1,
-    borderColor: "#FDE68A",
-    backgroundColor: "#FFFBEB",
+    borderColor: "rgba(154, 100, 24, 0.24)",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderRadius: 10,
     padding: 11,
     marginBottom: 14,
   },
-  businessWarningText: { flex: 1, color: "#92400E", fontSize: 12, lineHeight: 17 },
+  businessWarningText: { flex: 1, color: "#9A6418", fontSize: 12, lineHeight: 17 },
   inputLabel: { color: COLORS.text, fontSize: 13, fontWeight: "700", marginBottom: 7 },
   amountInput: {
     minHeight: 52,
@@ -629,14 +625,14 @@ const styles = StyleSheet.create({
   syncLatestText: { color: COLORS.primary, fontWeight: "800", fontSize: 12 },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 14 },
   messageText: { fontSize: 12, lineHeight: 18 },
-  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  messageErrorText: { color: "#B91C1C" },
-  messageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-  messageSuccessText: { color: "#047857" },
-  messageWarning: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
-  messageWarningText: { color: "#92400E" },
-  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-  messageInfoText: { color: "#1D4ED8" },
+  messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  messageErrorText: { color: "#7A1012" },
+  messageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
+  messageSuccessText: { color: "#2F765D" },
+  messageWarning: { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" },
+  messageWarningText: { color: "#9A6418" },
+  messageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
+  messageInfoText: { color: "#2B5659" },
   refreshButton: {
     width: 38,
     height: 38,
@@ -654,7 +650,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 13,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   lastLedgerItem: { borderBottomWidth: 0 },
   directionIcon: {
@@ -664,14 +660,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  directionIn: { backgroundColor: "#ECFDF5" },
-  directionOut: { backgroundColor: "#FEF2F2" },
+  directionIn: { backgroundColor: "rgba(47, 118, 93, 0.10)" },
+  directionOut: { backgroundColor: "rgba(122, 16, 18, 0.08)" },
   ledgerContent: { flex: 1 },
   ledgerTopRow: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
   ledgerDescription: { flex: 1, color: COLORS.text, fontSize: 13, fontWeight: "700", lineHeight: 18 },
   ledgerAmount: { fontSize: 13, fontWeight: "900" },
-  amountIn: { color: "#047857" },
-  amountOut: { color: "#B91C1C" },
+  amountIn: { color: "#2F765D" },
+  amountOut: { color: "#7A1012" },
   ledgerMeta: { color: COLORS.textLight, fontSize: 11, marginTop: 5 },
   balanceAfterText: { color: COLORS.textLight, fontSize: 10, marginTop: 3 },
   syncRowButton: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, alignSelf: "flex-start" },

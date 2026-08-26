@@ -157,7 +157,7 @@ export default function DisputeDetailScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.headerCard}>
           <View style={styles.headerIcon}>
-            <Ionicons name="warning-outline" size={24} color="#B45309" />
+            <Ionicons name="warning-outline" size={24} color="#9A6418" />
           </View>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Tranh chấp giao dịch</Text>
@@ -275,7 +275,7 @@ function InfoRow({
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -302,9 +302,9 @@ const styles = StyleSheet.create({
   retryButtonText: { color: COLORS.white, fontWeight: "700" },
   scrollContent: { padding: 16, paddingBottom: 36 },
   headerCard: {
-    backgroundColor: "#FFFBEB",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
     borderRadius: 12,
     padding: 14,
     flexDirection: "row",
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
@@ -324,22 +324,22 @@ const styles = StyleSheet.create({
   headerTitle: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
   disputeIdText: { color: COLORS.textLight, fontSize: 11, marginTop: 3 },
   statusBadge: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 6,
     marginLeft: 8,
   },
-  statusText: { color: "#92400E", fontSize: 11, fontWeight: "800" },
+  statusText: { color: "#9A6418", fontSize: 11, fontWeight: "800" },
   inlineErrorBox: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 10,
     padding: 10,
     marginBottom: 14,
   },
-  inlineErrorText: { color: "#B91C1C", fontSize: 12, lineHeight: 18 },
+  inlineErrorText: { color: "#7A1012", fontSize: 12, lineHeight: 18 },
   card: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: COLORS.text,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     paddingBottom: 8,
     marginBottom: 12,
   },
@@ -379,8 +379,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: "rgba(84, 123, 125, 0.24)",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 13,
     lineHeight: 20,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     borderRadius: 9,
     padding: 11,
     marginBottom: 12,
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
     width: "47%",
     aspectRatio: 1,
     borderRadius: 10,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
   emptyText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18 },
 });
