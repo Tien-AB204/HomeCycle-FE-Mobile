@@ -1,11 +1,16 @@
 export const COLORS = {
-  text: "#172830", // Xanh đen trầm (Sửa lại chuẩn theo mã bạn đưa)
-  primary: "#2B5659", // Xanh rêu đậm
-  border: "#BAC2C1", // Xám bạc
-  textLight: "#547B7D", // Xanh xám nhạt
-  error: "#7A1012", // Đỏ đô
+  // HomeCycle core palette
+  text: "#172830",
+  primary: "#2B5659",
+  border: "#BAC2C1",
+  textLight: "#547B7D",
+  error: "#7A1012",
 
-  // 2 màu nền cơ bản giữ nguyên để UI hiển thị tốt
+  // Semantic colors
+  success: "#2F765D",
+  warning: "#9A6418",
+
+  // Base surfaces
   white: "#FFFFFF",
   background: "#F8F9FA",
 };
