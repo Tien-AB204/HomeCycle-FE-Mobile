@@ -60,22 +60,22 @@ function InlineFeedback({ feedback }: { feedback: FeedbackState }) {
   const palette =
     feedback.type === "error"
       ? {
-          backgroundColor: "#FEF2F2",
-          borderColor: "#FECACA",
-          color: "#B91C1C",
+          backgroundColor: "rgba(122, 16, 18, 0.08)",
+          borderColor: "rgba(122, 16, 18, 0.22)",
+          color: "#7A1012",
           icon: "alert-circle-outline" as const,
         }
       : feedback.type === "success"
         ? {
-            backgroundColor: "#ECFDF5",
-            borderColor: "#A7F3D0",
-            color: "#047857",
+            backgroundColor: "rgba(47, 118, 93, 0.10)",
+            borderColor: "rgba(47, 118, 93, 0.24)",
+            color: "#2F765D",
             icon: "checkmark-circle-outline" as const,
           }
         : {
-            backgroundColor: "#EFF6FF",
-            borderColor: "#BFDBFE",
-            color: "#1D4ED8",
+            backgroundColor: "rgba(84, 123, 125, 0.10)",
+            borderColor: "rgba(84, 123, 125, 0.24)",
+            color: "#2B5659",
             icon: "information-circle-outline" as const,
           };
 
@@ -495,7 +495,7 @@ export default function CheckoutScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   container: { flex: 1, padding: 16 },
   emptyContainer: {
@@ -567,12 +567,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  methodCardActive: { borderColor: COLORS.primary, backgroundColor: "#F0F9FF" },
+  methodCardActive: { borderColor: COLORS.primary, backgroundColor: "rgba(84, 123, 125, 0.10)" },
   methodIconBox: {
     width: 44,
     height: 44,
     borderRadius: 10,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: "#F8F9FA",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   methodSubtitle: { fontSize: 13, color: COLORS.textLight },
-  insufficientBalanceText: { color: "#B45309" },
+  insufficientBalanceText: { color: "#9A6418" },
   radioCircle: {
     width: 24,
     height: 24,

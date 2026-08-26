@@ -357,7 +357,7 @@ export default function AppointmentDetailScreen() {
             <Ionicons
               name={buyerCheckAt ? "checkmark-circle" : "ellipse-outline"}
               size={20}
-              color={buyerCheckAt ? "#10B981" : COLORS.textLight}
+              color={buyerCheckAt ? "#2F765D" : COLORS.textLight}
             />
             <View style={styles.flex}>
               <Text style={styles.checkLabel}>Người mua</Text>
@@ -373,7 +373,7 @@ export default function AppointmentDetailScreen() {
             <Ionicons
               name={sellerCheckAt ? "checkmark-circle" : "ellipse-outline"}
               size={20}
-              color={sellerCheckAt ? "#10B981" : COLORS.textLight}
+              color={sellerCheckAt ? "#2F765D" : COLORS.textLight}
             />
             <View style={styles.flex}>
               <Text style={styles.checkLabel}>Người bán</Text>
@@ -472,7 +472,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   flex: { flex: 1 },
   centered: {
     flex: 1,
@@ -523,9 +523,9 @@ const styles = StyleSheet.create({
   },
   statusHighlightBox: {
     marginHorizontal: -16,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderTopWidth: 1,
-    borderTopColor: "#FDE68A",
+    borderTopColor: "rgba(154, 100, 24, 0.24)",
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: "row",
@@ -533,12 +533,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   statusHighlightLabel: {
-    color: "#92400E",
+    color: "#9A6418",
     fontSize: 13,
     fontWeight: "700",
   },
   statusHighlightValue: {
-    color: "#B45309",
+    color: "#9A6418",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     paddingBottom: 9,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   progressContainer: {
     flexDirection: "row",
@@ -574,13 +574,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     marginBottom: 6,
   },
-  circleCompleted: { backgroundColor: "#10B981", borderColor: "#10B981" },
+  circleCompleted: { backgroundColor: "#2F765D", borderColor: "#2F765D" },
   circleActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  circlePending: { backgroundColor: "#F1F5F9", borderColor: "#CBD5E1" },
-  circleFailed: { backgroundColor: "#EF4444", borderColor: "#EF4444" },
+  circlePending: { backgroundColor: "#F8F9FA", borderColor: "#BAC2C1" },
+  circleFailed: { backgroundColor: "#7A1012", borderColor: "#7A1012" },
   circleText: { color: COLORS.textLight, fontSize: 12, fontWeight: "800" },
   circleTextActive: { color: COLORS.white },
   progressLabel: {
@@ -628,12 +628,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   actionMessageText: { fontSize: 12, lineHeight: 17 },
-  actionError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  actionErrorText: { color: "#B91C1C" },
-  actionSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-  actionSuccessText: { color: "#047857" },
-  actionInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-  actionInfoText: { color: "#1D4ED8" },
+  actionError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  actionErrorText: { color: "#7A1012" },
+  actionSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
+  actionSuccessText: { color: "#2F765D" },
+  actionInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
+  actionInfoText: { color: "#2B5659" },
   primaryButton: {
     minHeight: 52,
     borderRadius: 11,

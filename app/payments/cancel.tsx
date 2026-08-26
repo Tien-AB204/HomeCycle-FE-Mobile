@@ -70,8 +70,8 @@ export default function PaymentCancelScreen() {
       <Header title="Kết quả thanh toán" showBack={false} />
       <View style={styles.container}>
         <View style={styles.card}>
-          <View style={[styles.iconCircle, { backgroundColor: "#FEE2E2" }]}>
-            <Ionicons name="close-circle" size={64} color="#EF4444" />
+          <View style={[styles.iconCircle, { backgroundColor: "rgba(122, 16, 18, 0.08)" }]}>
+            <Ionicons name="close-circle" size={64} color="#7A1012" />
           </View>
           <Text style={styles.title}>Thanh toán đã bị hủy</Text>
           <Text style={styles.subtitle}>

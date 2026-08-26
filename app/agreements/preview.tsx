@@ -947,13 +947,13 @@ export default function AgreementPreviewScreen() {
           <View
             style={[
               styles.inlineConfirmation,
-              { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" },
+              { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" },
             ]}
           >
             <View style={styles.inlineConfirmationHeader}>
-              <Ionicons name="card-outline" size={20} color="#B45309" />
+              <Ionicons name="card-outline" size={20} color="#9A6418" />
               <Text
-                style={[styles.inlineConfirmationTitle, { color: "#B45309" }]}
+                style={[styles.inlineConfirmationTitle, { color: "#9A6418" }]}
               >
                 Chưa đủ thông tin ngân hàng
               </Text>
@@ -989,13 +989,13 @@ export default function AgreementPreviewScreen() {
           <View
             style={[
               styles.inlineConfirmation,
-              { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" },
+              { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" },
             ]}
           >
             <View style={styles.inlineConfirmationHeader}>
-              <Ionicons name="alert-circle" size={20} color="#B45309" />
+              <Ionicons name="alert-circle" size={20} color="#9A6418" />
               <Text
-                style={[styles.inlineConfirmationTitle, { color: "#B45309" }]}
+                style={[styles.inlineConfirmationTitle, { color: "#9A6418" }]}
               >
                 Cảnh báo cập nhật đồng thời
               </Text>
@@ -1019,7 +1019,7 @@ export default function AgreementPreviewScreen() {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  { backgroundColor: "#B45309", borderColor: "#B45309" },
+                  { backgroundColor: "#9A6418", borderColor: "#9A6418" },
                 ]}
                 onPress={executeEdit}
                 disabled={isProcessing}
@@ -1153,14 +1153,14 @@ const styles = StyleSheet.create({
     color: COLORS.error,
   },
   warningText: {
-    color: "#B45309",
-    backgroundColor: "#FEF3C7",
+    color: "#9A6418",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     padding: 12,
     borderRadius: 8,
     overflow: "hidden",
   },
   successText: {
-    color: "#059669",
+    color: "#2F765D",
   },
 
   scrollContent: {
@@ -1210,13 +1210,13 @@ const styles = StyleSheet.create({
   changeNote: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 4,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
   },
   changeNoteText: {
     fontSize: 11,
@@ -1241,7 +1241,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     fontStyle: "italic",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     padding: 12,
     borderRadius: 8,
   },
@@ -1272,9 +1272,9 @@ const styles = StyleSheet.create({
   reloadBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F0F9FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     borderWidth: 1,
-    borderColor: "#BAE6FD",
+    borderColor: "rgba(84, 123, 125, 0.24)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -1291,8 +1291,8 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   inlineConfirmation: {
-    backgroundColor: "#EFF6FF",
-    borderColor: "#BFDBFE",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    borderColor: "rgba(84, 123, 125, 0.24)",
     borderRadius: 10,
     borderWidth: 1,
     padding: 12,

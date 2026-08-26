@@ -81,31 +81,31 @@ const translateStatus = (value: number | string) => {
   const normalized = String(value ?? "").toLowerCase();
 
   if (normalized === "0" || normalized.includes("pending")) {
-    return { label: "Đang chờ", color: "#B45309", background: "#FFFBEB" };
+    return { label: "Đang chờ", color: "#9A6418", background: "rgba(154, 100, 24, 0.10)" };
   }
   if (normalized === "1" || normalized.includes("completed")) {
-    return { label: "Thành công", color: "#047857", background: "#ECFDF5" };
+    return { label: "Thành công", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
   }
   if (normalized === "2" || normalized.includes("failed")) {
-    return { label: "Thất bại", color: "#B91C1C", background: "#FEF2F2" };
+    return { label: "Thất bại", color: "#7A1012", background: "rgba(122, 16, 18, 0.08)" };
   }
   if (normalized === "3" || normalized === "refunded") {
-    return { label: "Đã hoàn tiền", color: "#1D4ED8", background: "#EFF6FF" };
+    return { label: "Đã hoàn tiền", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
   }
   if (normalized === "4" || normalized.includes("partiallyrefunded")) {
-    return { label: "Hoàn tiền một phần", color: "#1D4ED8", background: "#EFF6FF" };
+    return { label: "Hoàn tiền một phần", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
   }
   if (normalized === "5" || normalized.includes("expired")) {
-    return { label: "Hết hạn", color: "#B91C1C", background: "#FEF2F2" };
+    return { label: "Hết hạn", color: "#7A1012", background: "rgba(122, 16, 18, 0.08)" };
   }
   if (normalized === "6" || normalized.includes("cancelled")) {
-    return { label: "Đã hủy", color: "#B91C1C", background: "#FEF2F2" };
+    return { label: "Đã hủy", color: "#7A1012", background: "rgba(122, 16, 18, 0.08)" };
   }
 
   return {
     label: String(value || "Không rõ"),
     color: COLORS.textLight,
-    background: "#F1F5F9",
+    background: "#F8F9FA",
   };
 };
 
@@ -276,7 +276,7 @@ export default function PaymentHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { marginTop: 10, color: COLORS.textLight },
@@ -295,24 +295,24 @@ const styles = StyleSheet.create({
   summaryTitle: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
   summaryText: { color: COLORS.textLight, marginTop: 3, fontSize: 12 },
   errorBox: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 10,
     padding: 12,
     marginBottom: 14,
   },
-  errorText: { color: "#B91C1C", fontSize: 13, lineHeight: 18 },
+  errorText: { color: "#7A1012", fontSize: 13, lineHeight: 18 },
   retryButton: {
     alignSelf: "flex-start",
     marginTop: 9,
     borderWidth: 1,
-    borderColor: "#B91C1C",
+    borderColor: "#7A1012",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
-  retryButtonText: { color: "#B91C1C", fontWeight: "800", fontSize: 12 },
+  retryButtonText: { color: "#7A1012", fontWeight: "800", fontSize: 12 },
   emptyCard: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+    borderTopColor: "#BAC2C1",
   },
   method: { flex: 1, color: COLORS.textLight, fontSize: 12 },
   statusBadge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },

@@ -240,7 +240,7 @@ export default function OfferDetailScreen() {
         {isConfirmingCancel ? (
           <View style={styles.confirmBox}>
             <View style={styles.confirmHeader}>
-              <Ionicons name="warning-outline" size={20} color="#B91C1C" />
+              <Ionicons name="warning-outline" size={20} color="#7A1012" />
               <Text style={styles.confirmTitle}>Hủy đề nghị này?</Text>
             </View>
             <Text style={styles.confirmText}>
@@ -300,7 +300,7 @@ export default function OfferDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   content: { padding: 16, paddingBottom: 40 },
   centered: {
     flex: 1,
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     marginRight: 12,
   },
   headerTextWrapper: { flex: 1 },
@@ -378,22 +378,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  errorMessage: { color: "#B91C1C", backgroundColor: "#FEF2F2" },
-  warningMessage: { color: "#B45309", backgroundColor: "#FFF7ED" },
-  successMessage: { color: "#047857", backgroundColor: "#ECFDF5" },
+  errorMessage: { color: "#7A1012", backgroundColor: "rgba(122, 16, 18, 0.08)" },
+  warningMessage: { color: "#9A6418", backgroundColor: "rgba(154, 100, 24, 0.10)" },
+  successMessage: { color: "#2F765D", backgroundColor: "rgba(47, 118, 93, 0.10)" },
   confirmBox: {
     marginTop: 16,
     padding: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+    borderColor: "rgba(122, 16, 18, 0.22)",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   confirmHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  confirmTitle: { color: "#991B1B", fontSize: 15, fontWeight: "800" },
+  confirmTitle: { color: "#7A1012", fontSize: 15, fontWeight: "800" },
   confirmText: {
     marginTop: 8,
-    color: "#7F1D1D",
+    color: "#7A1012",
     fontSize: 13,
     lineHeight: 19,
   },
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
   },
   readOnlyNoticeText: { flex: 1, color: COLORS.textLight, fontSize: 13 },
   backToPostButton: {

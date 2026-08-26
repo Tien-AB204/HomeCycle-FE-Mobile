@@ -183,14 +183,14 @@ export default function PaymentSuccessScreen() {
                 style={[
                   styles.iconCircle,
                   {
-                    backgroundColor: isPaid ? "#D1FAE5" : "#FEF3C7",
+                    backgroundColor: isPaid ? "rgba(47, 118, 93, 0.10)" : "rgba(154, 100, 24, 0.10)",
                   },
                 ]}
               >
                 <Ionicons
                   name={isPaid ? "checkmark-circle" : "time-outline"}
                   size={64}
-                  color={isPaid ? "#10B981" : "#D97706"}
+                  color={isPaid ? "#2F765D" : "#9A6418"}
                 />
               </View>
 
@@ -312,10 +312,10 @@ const styles = StyleSheet.create({
   },
   inlineWarning: {
     width: "100%",
-    color: "#B45309",
-    backgroundColor: "#FFFBEB",
+    color: "#9A6418",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
     borderRadius: 10,
     padding: 10,
     fontSize: 13,

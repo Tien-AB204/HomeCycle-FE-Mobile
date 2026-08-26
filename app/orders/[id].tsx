@@ -667,7 +667,7 @@ export default function OrderDetailScreen() {
               <Image source={{ uri: thumbnailUrl }} style={styles.productImg} />
             ) : (
               <View style={styles.productImgPlaceholder}>
-                <Ionicons name="image-outline" size={24} color="#94A3B8" />
+                <Ionicons name="image-outline" size={24} color="#547B7D" />
               </View>
             )}
             <View style={styles.productInfo}>
@@ -733,7 +733,7 @@ export default function OrderDetailScreen() {
 
           {trackingError ? (
             <View style={styles.inlineTrackingWarning}>
-              <Ionicons name="warning-outline" size={16} color="#D97706" />
+              <Ionicons name="warning-outline" size={16} color="#9A6418" />
               <Text style={styles.inlineTrackingWarningText}>{trackingError}</Text>
             </View>
           ) : null}
@@ -749,7 +749,7 @@ export default function OrderDetailScreen() {
             <>
               {isStaleData ? (
                 <View style={styles.inlineTrackingWarning}>
-                  <Ionicons name="warning-outline" size={16} color="#D97706" />
+                  <Ionicons name="warning-outline" size={16} color="#9A6418" />
                   <Text style={styles.inlineTrackingWarningText}>
                     Đây là trạng thái GHN được cập nhật gần nhất.
                   </Text>
@@ -796,7 +796,7 @@ export default function OrderDetailScreen() {
                   size={18}
                   color={
                     collectionState.buyerCheckedIn === true
-                      ? "#059669"
+                      ? "#2F765D"
                       : COLORS.textLight
                   }
                 />
@@ -812,7 +812,7 @@ export default function OrderDetailScreen() {
                   size={18}
                   color={
                     collectionState.sellerCheckedIn === true
-                      ? "#059669"
+                      ? "#2F765D"
                       : COLORS.textLight
                   }
                 />
@@ -980,7 +980,7 @@ export default function OrderDetailScreen() {
 
         {hasActiveDispute && latestDisputeId ? (
           <View style={styles.disputeInfoCard}>
-            <Ionicons name="warning-outline" size={20} color="#B45309" />
+            <Ionicons name="warning-outline" size={20} color="#9A6418" />
             <View style={styles.disputeInfoContent}>
               <Text style={styles.disputeInfoTitle}>Đơn hàng đang có tranh chấp</Text>
               <Text style={styles.disputeInfoText}>
@@ -1019,7 +1019,7 @@ export default function OrderDetailScreen() {
               <Ionicons
                 name="document-text-outline"
                 size={18}
-                color="#B45309"
+                color="#9A6418"
               />
               <Text style={styles.outlineBtnWarningText}>Xem Tranh Chấp</Text>
             </TouchableOpacity>
@@ -1037,7 +1037,7 @@ export default function OrderDetailScreen() {
                 } as any)
               }
             >
-              <Ionicons name="warning-outline" size={18} color="#B45309" />
+              <Ionicons name="warning-outline" size={18} color="#9A6418" />
               <Text style={styles.outlineBtnWarningText}>Gửi Khiếu Nại</Text>
             </TouchableOpacity>
           )}
@@ -1077,14 +1077,14 @@ function InfoRow({
 function StatusLine({ icon, text }: { icon: any; text: string }) {
   return (
     <View style={styles.statusLine}>
-      <Ionicons name={icon} size={19} color="#059669" />
+      <Ionicons name={icon} size={19} color="#2F765D" />
       <Text style={styles.statusLineText}>{text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1126,21 +1126,21 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 14,
   },
-  errorMessageBox: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  errorMessageBox: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
   warningMessageBox: {
-    backgroundColor: "#FFFBEB",
-    borderColor: "#FDE68A",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
+    borderColor: "rgba(154, 100, 24, 0.24)",
   },
-  infoMessageBox: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  infoMessageBox: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
   successMessageBox: {
-    backgroundColor: "#ECFDF5",
-    borderColor: "#A7F3D0",
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
+    borderColor: "rgba(47, 118, 93, 0.24)",
   },
   messageText: { fontSize: 13, lineHeight: 18 },
-  errorMessageText: { color: "#B91C1C" },
-  warningMessageText: { color: "#B45309" },
-  infoMessageText: { color: "#1D4ED8" },
-  successMessageText: { color: "#047857" },
+  errorMessageText: { color: "#7A1012" },
+  warningMessageText: { color: "#9A6418" },
+  infoMessageText: { color: "#2B5659" },
+  successMessageText: { color: "#2F765D" },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1158,10 +1158,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     borderWidth: 1.5,
   },
-  circleCompleted: { backgroundColor: "#10B981", borderColor: "#10B981" },
+  circleCompleted: { backgroundColor: "#2F765D", borderColor: "#2F765D" },
   circleActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  circlePending: { backgroundColor: "#F1F5F9", borderColor: "#CBD5E1" },
-  circleCancelled: { backgroundColor: "#EF4444", borderColor: "#EF4444" },
+  circlePending: { backgroundColor: "#F8F9FA", borderColor: "#BAC2C1" },
+  circleCancelled: { backgroundColor: "#7A1012", borderColor: "#7A1012" },
   circleText: {
     fontSize: 12,
     fontWeight: "bold",
@@ -1193,11 +1193,11 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     paddingBottom: 8,
   },
   paymentStatusHighlight: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     paddingHorizontal: 16,
     paddingVertical: 14,
     marginHorizontal: -16,
@@ -1207,19 +1207,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#FDE68A",
+    borderTopColor: "rgba(154, 100, 24, 0.24)",
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
   },
   paymentStatusLabel: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#92400E",
+    color: "#9A6418",
   },
   paymentStatusValue: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#B45309",
+    color: "#9A6418",
   },
   productRow: { flexDirection: "row", alignItems: "center" },
   productImg: { width: 64, height: 64, borderRadius: 8, marginRight: 12 },
@@ -1228,7 +1228,7 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 8,
     marginRight: 12,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1255,7 +1255,7 @@ const styles = StyleSheet.create({
     flex: 2,
     textAlign: "right",
   },
-  paidText: { color: "#10B981" },
+  paidText: { color: "#2F765D" },
   remainingText: { color: COLORS.error },
   primaryValue: { color: COLORS.primary, fontWeight: "bold" },
   trackingLoadingBox: { paddingVertical: 12, alignItems: "center" },
@@ -1265,9 +1265,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   inlineTrackingWarning: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
     borderRadius: 8,
     padding: 10,
     flexDirection: "row",
@@ -1277,19 +1277,19 @@ const styles = StyleSheet.create({
   },
   inlineTrackingWarningText: {
     fontSize: 12,
-    color: "#92400E",
+    color: "#9A6418",
     flex: 1,
     fontWeight: "500",
   },
   syncTimeText: {
     fontSize: 11,
-    color: "#94A3B8",
+    color: "#547B7D",
     fontStyle: "italic",
     textAlign: "right",
     marginTop: 4,
   },
   checkInBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -1315,7 +1315,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  statusLineText: { flex: 1, color: "#047857", fontSize: 13, lineHeight: 18 },
+  statusLineText: { flex: 1, color: "#2F765D", fontSize: 13, lineHeight: 18 },
   actionHint: {
     color: COLORS.textLight,
     fontSize: 13,
@@ -1323,7 +1323,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   actionHintWarning: {
-    color: "#B45309",
+    color: "#9A6418",
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 10,
@@ -1341,8 +1341,8 @@ const styles = StyleSheet.create({
   actionButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "800" },
   inlineConfirmBox: {
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: "rgba(84, 123, 125, 0.24)",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     borderRadius: 10,
     padding: 12,
   },
@@ -1382,26 +1382,26 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "rgba(84, 123, 125, 0.24)",
   },
   chatButtonText: { color: COLORS.primary, fontWeight: "bold", fontSize: 14 },
   disputeInfoCard: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    backgroundColor: "#FFFBEB",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
   },
   disputeInfoContent: { flex: 1 },
-  disputeInfoTitle: { color: "#92400E", fontSize: 13, fontWeight: "800" },
+  disputeInfoTitle: { color: "#9A6418", fontSize: 13, fontWeight: "800" },
   disputeInfoText: {
-    color: "#B45309",
+    color: "#9A6418",
     fontSize: 12,
     lineHeight: 18,
     marginTop: 3,
@@ -1443,15 +1443,15 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#D97706",
+    borderColor: "#9A6418",
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
   },
   outlineBtnWarningText: {
-    color: "#B45309",
+    color: "#9A6418",
     fontSize: 14,
     fontWeight: "bold",
   },
