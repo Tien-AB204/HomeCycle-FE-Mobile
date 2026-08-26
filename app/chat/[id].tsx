@@ -12,6 +12,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -23,10 +24,13 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+
 
 const agreementApi = {
   getPreview: (negotiationId: string) =>
@@ -155,6 +159,17 @@ const normalizeAgreementUiText = (text?: string | null) => {
 
 export default function ChatDetailScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  const [isKeyboardVisible, setIsKeyboardVisible] =
+    useState(false);
+
+  const composerBottomInset =
+    Platform.OS === "android"
+      ? isKeyboardVisible
+        ? 40
+        : 12
+      : Math.max(insets.bottom, 10);
 
   const params = useLocalSearchParams();
 
@@ -207,6 +222,33 @@ export default function ChatDetailScreen() {
     counterQuantityInput,
     setCounterQuantityInput,
   ] = useState("1");
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const showSubscription =
+      Keyboard.addListener(
+        "keyboardDidShow",
+        () => {
+          setIsKeyboardVisible(true);
+        },
+      );
+
+    const hideSubscription =
+      Keyboard.addListener(
+        "keyboardDidHide",
+        () => {
+          setIsKeyboardVisible(false);
+        },
+      );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const fetchBaseInfo = useCallback(async () => {
     if (!negotiationId || !currentUserId) {
@@ -1079,14 +1121,13 @@ export default function ChatDetailScreen() {
 
       await reloadAll();
     } catch (error: any) {
-      const message =
-        error?.response?.data?.error
-          ?.message ||
-        "Không thể chấp nhận đề xuất.";
-
-      Platform.OS === "web"
-        ? window.alert(message)
-        : Alert.alert("Lỗi", message);
+      Alert.alert(
+        "Lỗi",
+        getApiErrorMessage(
+          error,
+          "Không thể chấp nhận đề xuất.",
+        ),
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -1109,14 +1150,13 @@ export default function ChatDetailScreen() {
 
       await reloadAll();
     } catch (error: any) {
-      const message =
-        error?.response?.data?.error
-          ?.message ||
-        "Không thể từ chối đề xuất.";
-
-      Platform.OS === "web"
-        ? window.alert(message)
-        : Alert.alert("Lỗi", message);
+      Alert.alert(
+        "Lỗi",
+        getApiErrorMessage(
+          error,
+          "Không thể từ chối đề xuất.",
+        ),
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -1138,12 +1178,10 @@ export default function ChatDetailScreen() {
       !Number.isFinite(price) ||
       price <= 0
     ) {
-      const message =
-        "Vui lòng nhập mức giá hợp lệ.";
-
-      Platform.OS === "web"
-        ? window.alert(message)
-        : Alert.alert("Lỗi", message);
+      Alert.alert(
+        "Lỗi",
+        "Vui lòng nhập mức giá hợp lệ.",
+      );
 
       return;
     }
@@ -1163,14 +1201,13 @@ export default function ChatDetailScreen() {
 
       await reloadAll();
     } catch (error: any) {
-      const message =
-        error?.response?.data?.error
-          ?.message ||
-        "Không thể gửi đề xuất mới.";
-
-      Platform.OS === "web"
-        ? window.alert(message)
-        : Alert.alert("Lỗi", message);
+      Alert.alert(
+        "Lỗi",
+        getApiErrorMessage(
+          error,
+          "Không thể gửi đề xuất mới.",
+        ),
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -1189,42 +1226,28 @@ export default function ChatDetailScreen() {
           negotiationId,
         );
 
-        if (Platform.OS !== "web") {
-          Alert.alert(
-            "Thành công",
-            "Đã hủy phiên thương lượng.",
-          );
-        }
+        Alert.alert(
+          "Thành công",
+          "Đã hủy phiên thương lượng.",
+        );
 
         await reloadAll();
       } catch (error: any) {
-        const message =
-          error?.response?.data?.error
-            ?.message ||
-          "Không thể hủy giao dịch.";
-
-        Platform.OS === "web"
-          ? window.alert(message)
-          : Alert.alert("Lỗi", message);
+        Alert.alert(
+          "Lỗi",
+          getApiErrorMessage(
+            error,
+            "Không thể hủy giao dịch.",
+          ),
+        );
       } finally {
         setIsProcessing(false);
       }
     };
 
-    const message =
-      "Bạn có chắc chắn muốn hủy phiên thương lượng này không?";
-
-    if (Platform.OS === "web") {
-      if (window.confirm(message)) {
-        void executeCancel();
-      }
-
-      return;
-    }
-
     Alert.alert(
       "Hủy giao dịch",
-      message,
+      "Bạn có chắc chắn muốn hủy phiên thương lượng này không?",
       [
         {
           text: "Không",
@@ -1277,14 +1300,13 @@ export default function ChatDetailScreen() {
         },
       );
     } catch (error: any) {
-      const message =
-        error?.response?.data?.error
-          ?.message ||
-        "Không thể gửi tin nhắn lúc này.";
-
-      Platform.OS === "web"
-        ? window.alert(message)
-        : Alert.alert("Lỗi", message);
+      Alert.alert(
+        "Lỗi",
+        getApiErrorMessage(
+          error,
+          "Không thể gửi tin nhắn lúc này.",
+        ),
+      );
     }
   };
 
@@ -1912,8 +1934,12 @@ export default function ChatDetailScreen() {
         behavior={
           Platform.OS === "ios"
             ? "padding"
-            : "height"
+            : Platform.OS === "android" &&
+                isKeyboardVisible
+              ? "padding"
+              : undefined
         }
+        keyboardVerticalOffset={0}
         style={styles.mobileWrapper}
       >
         {isAuthLoading || isLoading ? (
@@ -2000,6 +2026,12 @@ export default function ChatDetailScreen() {
 
             <FlatList
               data={messages}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={
+                Platform.OS === "ios"
+                  ? "interactive"
+                  : "on-drag"
+              }
               keyExtractor={(item) =>
                 String(item.id)
               }
@@ -2024,9 +2056,12 @@ export default function ChatDetailScreen() {
             />
 
             <View
-              style={
-                styles.inputContainer
-              }
+              style={[
+                styles.inputContainer,
+                {
+                  paddingBottom: composerBottomInset,
+                },
+              ]}
             >
               <TouchableOpacity
                 style={styles.attachBtn}
@@ -2091,9 +2126,15 @@ export default function ChatDetailScreen() {
           }
         >
           <View
-            style={
-              styles.menuSheetContent
-            }
+            style={[
+              styles.menuSheetContent,
+              {
+                paddingBottom:
+                  Platform.OS === "android"
+                    ? Math.max(insets.bottom, 20)
+                    : 40,
+              },
+            ]}
           >
             {negotiationInfo?.negotiationStatus ===
               "Open" && (
@@ -2269,7 +2310,13 @@ export default function ChatDetailScreen() {
           style={styles.modalOverlay}
         >
           <View
-            style={styles.modalContent}
+            style={[
+              styles.modalContent,
+              {
+                paddingBottom:
+                  24 + (Platform.OS === "android" ? insets.bottom : 0),
+              },
+            ]}
           >
             <View
               style={styles.modalHeader}
@@ -2308,7 +2355,7 @@ export default function ChatDetailScreen() {
                         ? Number(currentActiveOffer.price).toLocaleString("vi-VN")
                         : "Ví dụ: 1.500.000"
                     }
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#547B7D"
                     keyboardType="number-pad"
                     value={counterPriceInput}
                     onChangeText={handlePriceChange}
@@ -2331,7 +2378,7 @@ export default function ChatDetailScreen() {
                         ? String(currentActiveOffer.quantity)
                         : "1"
                     }
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#547B7D"
                     keyboardType="number-pad"
                     value={counterQuantityInput}
                     onChangeText={setCounterQuantityInput}
@@ -2435,7 +2482,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
   },
 
   headerName: {
@@ -2454,7 +2501,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     elevation: 2,
   },
 
@@ -2501,7 +2548,7 @@ const styles = StyleSheet.create({
 
   dateSeparator: {
     alignSelf: "center",
-    backgroundColor: "#E9F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     color: COLORS.textLight,
     fontSize: 11,
     fontWeight: "600",
@@ -2516,7 +2563,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "#E9F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
@@ -2581,7 +2628,7 @@ const styles = StyleSheet.create({
   },
 
   bubbleThem: {
-    backgroundColor: "#EAEAEA",
+    backgroundColor: "#F8F9FA",
     borderBottomLeftRadius: 4,
   },
 
@@ -2665,7 +2712,7 @@ const styles = StyleSheet.create({
   },
 
   offerPriceBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     padding: 12,
     borderRadius: 8,
     marginBottom: 12,
@@ -2731,7 +2778,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
-    backgroundColor: "#E9F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
   },
 
   counterBtnText: {
@@ -2774,7 +2821,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopColor: "#BAC2C1",
   },
 
   inlineCreateFormBtn: {
@@ -2811,7 +2858,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -2956,8 +3004,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    paddingBottom:
-      Platform.OS === "ios" ? 40 : 20,
   },
 
   menuItem: {
