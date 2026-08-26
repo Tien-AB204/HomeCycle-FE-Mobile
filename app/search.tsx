@@ -395,13 +395,13 @@ export default function SearchScreen() {
   const getPriorityColor = (level: string) => {
     switch (level) {
       case "High":
-        return "#F97316";
+        return "#9A6418";
       case "Urgent":
-        return "#EF4444";
+        return "#7A1012";
       case "Low":
-        return "#94A3B8";
+        return "#547B7D";
       default:
-        return "#10B981";
+        return "#2F765D";
     }
   };
 
@@ -617,7 +617,7 @@ export default function SearchScreen() {
                   : undefined,
               ]}
               placeholder="Nhập hoặc Chọn Tỉnh/Thành phố..."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#547B7D"
               value={city}
               onChangeText={(value) => {
                 setCity(value);
@@ -635,7 +635,7 @@ export default function SearchScreen() {
                 }}
                 style={styles.clearIcon}
               >
-                <Ionicons name="close-circle" size={20} color="#94A3B8" />
+                <Ionicons name="close-circle" size={20} color="#547B7D" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -645,7 +645,7 @@ export default function SearchScreen() {
                 <Ionicons
                   name={showCityDropdown ? "chevron-up" : "chevron-down"}
                   size={20}
-                  color="#94A3B8"
+                  color="#547B7D"
                 />
               </TouchableOpacity>
             )}
@@ -857,7 +857,7 @@ export default function SearchScreen() {
       >
         {searchError ? (
           <View style={styles.inlineErrorBox}>
-            <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+            <Ionicons name="alert-circle-outline" size={18} color="#7A1012" />
             <Text style={styles.inlineErrorText}>{searchError}</Text>
           </View>
         ) : null}
@@ -1072,7 +1072,7 @@ export default function SearchScreen() {
           style={[
             styles.searchBox,
             viewState === "RESULTS"
-              ? { backgroundColor: "#F5F6F8", borderColor: "transparent" }
+              ? { backgroundColor: "#F8F9FA", borderColor: "transparent" }
               : undefined,
           ]}
         >
@@ -1166,7 +1166,7 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: "#F1F5F9" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1175,7 +1175,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   backBtn: { padding: 4, marginRight: 12 },
   searchBox: {
@@ -1212,7 +1212,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   historyText: { flex: 1, fontSize: 14, color: COLORS.text, marginLeft: 12 },
   filterSectionTitle: {
@@ -1246,7 +1246,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  chipActive: { backgroundColor: "#E9F0F0", borderColor: COLORS.primary },
+  chipActive: { backgroundColor: "rgba(84, 123, 125, 0.08)", borderColor: COLORS.primary },
   chipText: { fontSize: 13, color: COLORS.textLight, fontWeight: "500" },
   chipTextActive: { color: COLORS.primary, fontWeight: "700" },
   chipCloseIcon: { marginLeft: 4 },
@@ -1272,7 +1272,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     height: 46,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     marginBottom: 16,
     overflow: "hidden",
   },
@@ -1298,13 +1298,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   dropdownItemText: { fontSize: 14, color: COLORS.text, flex: 1 },
   noDataText: {
     padding: 12,
     textAlign: "center",
-    color: "#94A3B8",
+    color: "#547B7D",
     fontSize: 13,
   },
   input: {
@@ -1338,7 +1338,7 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
+    borderTopColor: "#BAC2C1",
     gap: 12,
     elevation: 10,
   },
@@ -1366,7 +1366,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     height: 44,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
     backgroundColor: COLORS.white,
     alignItems: "center",
     justifyContent: "space-between",
@@ -1381,7 +1381,7 @@ const styles = StyleSheet.create({
   filterTriggerBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E9F0F0",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -1404,19 +1404,19 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+    borderColor: "rgba(122, 16, 18, 0.22)",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
   },
-  inlineErrorText: { flex: 1, color: "#B91C1C", fontSize: 12, lineHeight: 18 },
+  inlineErrorText: { flex: 1, color: "#7A1012", fontSize: 12, lineHeight: 18 },
   categorySection: {
     backgroundColor: COLORS.white,
     padding: 16,
     marginBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   keywordHeader: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   keywordHeaderText: { fontSize: 14, color: COLORS.text, marginLeft: 6 },
@@ -1427,7 +1427,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   sortLabel: { fontSize: 13, color: COLORS.textLight, marginRight: 12 },
   sortBtn: {
@@ -1475,12 +1475,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#EEF0F2",
+    borderColor: "#BAC2C1",
   },
   gridImageWrapper: {
     width: "100%",
     aspectRatio: 1,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8F9FA",
     position: "relative",
   },
   gridInfoWrapper: { padding: 10 },
@@ -1493,7 +1493,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#EEF0F2",
+    borderColor: "#BAC2C1",
   },
   listImageWrapper: {
     width: 90,
@@ -1514,7 +1514,7 @@ const styles = StyleSheet.create({
     right: 6,
   },
   categoryBadge: {
-    backgroundColor: "rgba(51, 65, 85, 0.9)",
+    backgroundColor: "rgba(23, 40, 48, 0.90)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 4,
@@ -1525,19 +1525,19 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 4,
   },
-  sellPostBadge: { backgroundColor: "rgba(15, 118, 110, 0.92)" },
-  buyPostBadge: { backgroundColor: "rgba(180, 83, 9, 0.92)" },
+  sellPostBadge: { backgroundColor: "rgba(43, 86, 89, 0.92)" },
+  buyPostBadge: { backgroundColor: "rgba(154, 100, 24, 0.92)" },
   postTypeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
   brandBadgeWhite: {
     alignSelf: "flex-start",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginBottom: 4,
   },
   brandBadgeTextWhite: {
-    color: "#475569",
+    color: "#547B7D",
     fontSize: 10,
     fontWeight: "bold",
   },
@@ -1585,7 +1585,7 @@ const styles = StyleSheet.create({
   modalDragIndicator: {
     width: 40,
     height: 4,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
     borderRadius: 2,
     alignSelf: "center",
     marginBottom: 16,
@@ -1603,7 +1603,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   actionModalBtnText: { fontSize: 15, color: COLORS.text, fontWeight: "500" },
 });

@@ -351,7 +351,7 @@ export default function OrderReviewScreen() {
             <Ionicons
               name={star <= rating ? "star" : "star-outline"}
               size={34}
-              color="#F59E0B"
+              color="#9A6418"
             />
           </TouchableOpacity>
         ))}
@@ -647,7 +647,7 @@ export default function OrderReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   flex: { flex: 1 },
   flexButton: { flex: 1 },
   loadingContainer: {
@@ -682,11 +682,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  completedBadge: { backgroundColor: "#D1FAE5" },
-  pendingBadge: { backgroundColor: "#FEF3C7" },
+  completedBadge: { backgroundColor: "rgba(47, 118, 93, 0.10)" },
+  pendingBadge: { backgroundColor: "rgba(154, 100, 24, 0.10)" },
   statusBadgeText: { fontSize: 12, fontWeight: "700" },
-  completedText: { color: "#047857" },
-  pendingText: { color: "#B45309" },
+  completedText: { color: "#2F765D" },
+  pendingText: { color: "#9A6418" },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
   inputError: { borderColor: COLORS.error },
   commentReadOnly: {
     color: COLORS.text,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     borderRadius: 10,
     padding: 12,
     lineHeight: 20,
@@ -834,7 +834,7 @@ const styles = StyleSheet.create({
   editImageNote: {
     color: COLORS.textLight,
     fontSize: 12,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     padding: 10,
     borderRadius: 8,
     marginTop: 12,
@@ -845,13 +845,13 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
   },
-  errorBox: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  successBox: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-  warningBox: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+  errorBox: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  successBox: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
+  warningBox: { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" },
   messageText: { fontSize: 13, lineHeight: 18 },
-  errorText: { color: "#B91C1C" },
-  successText: { color: "#047857" },
-  warningText: { color: "#B45309" },
+  errorText: { color: "#7A1012" },
+  successText: { color: "#2F765D" },
+  warningText: { color: "#9A6418" },
   reviewTime: {
     fontSize: 10,
     color: COLORS.textLight,

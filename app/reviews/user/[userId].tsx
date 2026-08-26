@@ -108,7 +108,7 @@ export default function UserReviewsScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.summaryCard}>
-            <Ionicons name="star" size={24} color="#F59E0B" />
+            <Ionicons name="star" size={24} color="#9A6418" />
             <View style={styles.summaryTextWrap}>
               <Text style={styles.summaryTitle}>Đánh giá từ các giao dịch</Text>
               <Text style={styles.summaryText}>{totalCount} đánh giá đã nhận</Text>
@@ -161,7 +161,7 @@ export default function UserReviewsScreen() {
                         key={star}
                         name={star <= Number(review.rating || 0) ? "star" : "star-outline"}
                         size={17}
-                        color="#F59E0B"
+                        color="#9A6418"
                       />
                     ))}
                   </View>
@@ -234,7 +234,7 @@ export default function UserReviewsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   flex: { flex: 1 },
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { marginTop: 10, color: COLORS.textLight },
@@ -254,24 +254,24 @@ const styles = StyleSheet.create({
   summaryTitle: { color: COLORS.text, fontWeight: "700", fontSize: 15 },
   summaryText: { color: COLORS.textLight, fontSize: 12, marginTop: 3 },
   errorBox: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 10,
     padding: 12,
     marginBottom: 14,
   },
-  errorText: { color: "#B91C1C", fontSize: 13, lineHeight: 18 },
+  errorText: { color: "#7A1012", fontSize: 13, lineHeight: 18 },
   retryButton: {
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#B91C1C",
+    borderColor: "#7A1012",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
     marginTop: 9,
   },
-  retryButtonText: { color: "#B91C1C", fontWeight: "700", fontSize: 12 },
+  retryButtonText: { color: "#7A1012", fontWeight: "700", fontSize: 12 },
   emptyCard: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     alignItems: "center",
     justifyContent: "center",
   },

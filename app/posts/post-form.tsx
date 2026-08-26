@@ -507,7 +507,7 @@ export default function PostFormScreen() {
         <Text style={value ? styles.inputText : styles.placeholderText} numberOfLines={1}>
           {value ? getLabel(value, options) : placeholder}
         </Text>
-        <Ionicons name="chevron-down" size={20} color="#94A3B8" />
+        <Ionicons name="chevron-down" size={20} color="#547B7D" />
       </TouchableOpacity>
     </View>
   );
@@ -566,7 +566,7 @@ export default function PostFormScreen() {
                     : "information-circle-outline"
                 }
                 size={18}
-                color={formMessage.type === "error" ? "#B91C1C" : "#1D4ED8"}
+                color={formMessage.type === "error" ? "#7A1012" : "#2B5659"}
               />
               <Text
                 style={[
@@ -618,7 +618,7 @@ export default function PostFormScreen() {
               <TextInput
                 style={styles.input}
                 placeholder={isBuyPost ? "VD: Cần mua tủ lạnh cũ..." : "Nhập tiêu đề sản phẩm..."}
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#547B7D"
                 value={productName}
                 onChangeText={(value) => {
                   setProductName(value);
@@ -632,7 +632,7 @@ export default function PostFormScreen() {
                 style={styles.input}
                 multiline
                 placeholder={isBuyPost ? "VD: Cần mua gấp số lượng lớn..." : "VD: Cần pass gấp tủ lạnh vì chuyển trọ..."}
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#547B7D"
                 value={description}
                 onChangeText={setDescription}
               />
@@ -665,7 +665,7 @@ export default function PostFormScreen() {
                     <TextInput
                       style={styles.input}
                       placeholder="VD: RT38K5982BS"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor="#547B7D"
                       value={modelNumber}
                       onChangeText={setModelNumber}
                     />
@@ -681,7 +681,7 @@ export default function PostFormScreen() {
                     style={styles.input}
                     multiline
                     placeholder="Mô tả tình trạng, đặc điểm nổi bật của máy..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor="#547B7D"
                     value={detailDescription}
                     onChangeText={setDetailDescription}
                   />
@@ -738,7 +738,7 @@ export default function PostFormScreen() {
                             ? getLabel(attribute.selectedOptionId, optionList)
                             : "Chọn..."}
                         </Text>
-                        <Ionicons name="chevron-down" size={20} color="#94A3B8" />
+                        <Ionicons name="chevron-down" size={20} color="#547B7D" />
                       </TouchableOpacity>
                     ) : null}
                     {isCustomAllowed ? (
@@ -781,7 +781,7 @@ export default function PostFormScreen() {
                           <TextInput
                             style={styles.rawInput}
                             placeholder="Nhập chữ tự do..."
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor="#547B7D"
                             value={attribute.valueText}
                             onChangeText={(text) => updateEavValue(index, "valueText", text)}
                           />
@@ -790,7 +790,7 @@ export default function PostFormScreen() {
                           <TextInput
                             style={styles.rawInput}
                             placeholder="Nhập số..."
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor="#547B7D"
                             keyboardType="numeric"
                             value={attribute.valueNumber}
                             onChangeText={(text) => updateEavValue(index, "valueNumber", text)}
@@ -814,13 +814,13 @@ export default function PostFormScreen() {
                     <Text style={displayDimensions ? styles.inputText : styles.placeholderText} numberOfLines={1}>
                       {displayDimensions || "VD: 120 x 60 x 80 cm"}
                     </Text>
-                    <Ionicons name="chevron-down" size={20} color="#94A3B8" />
+                    <Ionicons name="chevron-down" size={20} color="#547B7D" />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.label}>Cân nặng (kg)</Text>
                   <View style={styles.inputContainer}>
-                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 15" placeholderTextColor="#94A3B8" value={weight} onChangeText={setWeight} />
+                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 15" placeholderTextColor="#547B7D" value={weight} onChangeText={setWeight} />
                   </View>
                 </View>
               </View>
@@ -834,7 +834,7 @@ export default function PostFormScreen() {
               <View style={styles.flex}>
                 <Text style={styles.label}>Thời gian SD (Năm)</Text>
                 <View style={styles.inputContainer}>
-                  <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 2" placeholderTextColor="#94A3B8" value={usageDuration} onChangeText={setUsageDuration} />
+                  <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 2" placeholderTextColor="#547B7D" value={usageDuration} onChangeText={setUsageDuration} />
                 </View>
               </View>
             </View>
@@ -849,21 +849,21 @@ export default function PostFormScreen() {
                   <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputContainer}>
-                  <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#94A3B8" value={basePrice} onChangeText={(value) => { setBasePrice(value); setFormMessage(null); }} />
+                  <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#547B7D" value={basePrice} onChangeText={(value) => { setBasePrice(value); setFormMessage(null); }} />
                 </View>
               </View>
               {!isBuyPost ? (
                 <View style={styles.flex}>
                   <Text style={styles.label}>Giá lúc mua</Text>
                   <View style={styles.inputContainer}>
-                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#94A3B8" value={originalPrice} onChangeText={setOriginalPrice} />
+                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#547B7D" value={originalPrice} onChangeText={setOriginalPrice} />
                   </View>
                 </View>
               ) : null}
             </View>
             <Text style={styles.label}>Số lượng *</Text>
             <View style={styles.inputContainer}>
-              <TextInput style={styles.input} keyboardType="numeric" placeholder="Nhập SL..." placeholderTextColor="#94A3B8" value={quantity} onChangeText={setQuantity} />
+              <TextInput style={styles.input} keyboardType="numeric" placeholder="Nhập SL..." placeholderTextColor="#547B7D" value={quantity} onChangeText={setQuantity} />
             </View>
           </View>
 
@@ -915,7 +915,7 @@ export default function PostFormScreen() {
                       style={styles.input}
                       keyboardType="numeric"
                       placeholder={placeholder as string}
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor="#547B7D"
                       value={value as string}
                       onChangeText={setter as (value: string) => void}
                     />
@@ -960,7 +960,7 @@ export default function PostFormScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: "#F1F5F9" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, color: COLORS.textLight },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.white },
@@ -969,50 +969,50 @@ const styles = StyleSheet.create({
   publishButtonText: { fontSize: 16, fontWeight: "bold", color: COLORS.primary },
   scrollContainer: { padding: 16, paddingBottom: 40 },
   inlineMessage: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 16 },
-  inlineMessageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  inlineMessageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  inlineMessageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  inlineMessageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
   inlineMessageText: { flex: 1, fontSize: 12, lineHeight: 18 },
-  inlineErrorText: { color: "#B91C1C" },
-  inlineInfoText: { color: "#1D4ED8" },
-  fieldError: { color: "#B91C1C", fontSize: 12, lineHeight: 17, marginTop: 4 },
+  inlineErrorText: { color: "#7A1012" },
+  inlineInfoText: { color: "#2B5659" },
+  fieldError: { color: "#7A1012", fontSize: 12, lineHeight: 17, marginTop: 4 },
   cardSection: { backgroundColor: COLORS.white, borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
   sectionTitleContainer: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   sectionTitleBar: { width: 4, height: 16, backgroundColor: COLORS.primary, borderRadius: 2, marginRight: 8 },
-  sectionTitleText: { fontSize: 15, fontWeight: "bold", color: "#334155", textTransform: "uppercase" },
-  addImageBox: { width: 90, height: 90, borderRadius: 12, borderWidth: 1, borderColor: COLORS.primary, borderStyle: "dashed", backgroundColor: "#F0F9FF", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  sectionTitleText: { fontSize: 15, fontWeight: "bold", color: "#172830", textTransform: "uppercase" },
+  addImageBox: { width: 90, height: 90, borderRadius: 12, borderWidth: 1, borderColor: COLORS.primary, borderStyle: "dashed", backgroundColor: "rgba(84, 123, 125, 0.10)", justifyContent: "center", alignItems: "center", marginRight: 12 },
   addImageText: { fontSize: 12, color: COLORS.primary, fontWeight: "600", marginTop: 4 },
   imagePreviewWrapper: { position: "relative", marginRight: 12 },
   imagePreview: { width: 90, height: 90, borderRadius: 12 },
   removeImageBtn: { position: "absolute", top: -6, right: -6, backgroundColor: COLORS.white, borderRadius: 12 },
   label: { fontSize: 13, fontWeight: "600", color: COLORS.text, marginBottom: 8 },
   required: { color: COLORS.error, fontWeight: "normal" },
-  inputContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, minHeight: 46, backgroundColor: "#F8FAFC", marginBottom: 16, overflow: "hidden" },
+  inputContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, minHeight: 46, backgroundColor: "#F8F9FA", marginBottom: 16, overflow: "hidden" },
   shortDescription: { minHeight: 80, alignItems: "flex-start", paddingTop: 12 },
   detailDescription: { minHeight: 100, alignItems: "flex-start", paddingTop: 12 },
   input: { flex: 1, fontSize: 14, color: COLORS.text, minHeight: 44, minWidth: 0, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}) },
   inputText: { flex: 1, fontSize: 14, color: COLORS.text },
-  placeholderText: { flex: 1, fontSize: 14, color: "#94A3B8" },
+  placeholderText: { flex: 1, fontSize: 14, color: "#547B7D" },
   row: { flexDirection: "row", gap: 12 },
   schemaLoader: { padding: 20 },
-  rawBlock: { marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
-  rawLabel: { fontSize: 14, fontWeight: "bold", color: "#334155", marginBottom: 8 },
-  rawInputContainer: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 8, paddingHorizontal: 10, height: 44, backgroundColor: "#F8FAFC", marginBottom: 12 },
-  rawInput: { flex: 1, fontSize: 14, color: "#334155", height: "100%", ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}) },
-  rawDropdownContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#CBD5E1", borderRadius: 8, paddingHorizontal: 10, height: 44, backgroundColor: COLORS.white, marginBottom: 12 },
+  rawBlock: { marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#BAC2C1" },
+  rawLabel: { fontSize: 14, fontWeight: "bold", color: "#172830", marginBottom: 8 },
+  rawInputContainer: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#BAC2C1", borderRadius: 8, paddingHorizontal: 10, height: 44, backgroundColor: "#F8F9FA", marginBottom: 12 },
+  rawInput: { flex: 1, fontSize: 14, color: "#172830", height: "100%", ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}) },
+  rawDropdownContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#BAC2C1", borderRadius: 8, paddingHorizontal: 10, height: 44, backgroundColor: COLORS.white, marginBottom: 12 },
   customAttributeGroup: { gap: 12 },
-  boolBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#F8FAFC" },
+  boolBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: "#BAC2C1", backgroundColor: "#F8F9FA" },
   boolBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   boolBtnActiveRed: { backgroundColor: COLORS.error, borderColor: COLORS.error },
-  boolBtnText: { fontSize: 14, fontWeight: "600", color: "#64748B" },
+  boolBtnText: { fontSize: 14, fontWeight: "600", color: "#547B7D" },
   boolBtnTextActive: { color: COLORS.white },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "70%" },
   dimensionModal: { maxHeight: "90%" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#BAC2C1" },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
-  modalOptionBtn: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F8FAFC" },
+  modalOptionBtn: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F8F9FA" },
   modalOptionText: { fontSize: 16, color: COLORS.text },
-  modalEmptyText: { textAlign: "center", color: "#94A3B8", marginTop: 20 },
+  modalEmptyText: { textAlign: "center", color: "#547B7D", marginTop: 20 },
   primaryButton: { backgroundColor: COLORS.primary, borderRadius: 12, height: 48, justifyContent: "center", alignItems: "center", marginTop: 8, marginBottom: Platform.OS === "ios" ? 16 : 0 },
   primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
 });

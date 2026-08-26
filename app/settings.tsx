@@ -54,21 +54,21 @@ export default function SettingsScreen() {
               <View
                 style={[
                   styles.iconBox,
-                  { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9" },
+                  { backgroundColor: isDarkMode ? "#172830" : COLORS.background },
                 ]}
               >
                 <Ionicons
                   name={isDarkMode ? "moon" : "sunny"}
                   size={20}
-                  color={isDarkMode ? "#FBBF24" : "#F59E0B"}
+                  color={isDarkMode ? "#FBBF24" : "#9A6418"}
                 />
               </View>
               <Text style={styles.settingText}>Giao diện tối (Dark Mode)</Text>
             </View>
             <Switch
-              trackColor={{ false: "#CBD5E1", true: COLORS.primary }}
+              trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor={"#ffffff"}
-              ios_backgroundColor="#CBD5E1"
+              ios_backgroundColor={COLORS.border}
               onValueChange={toggleTheme}
               value={isDarkMode}
             />
@@ -79,15 +79,15 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.iconTextWrap}>
-              <View style={[styles.iconBox, { backgroundColor: "#E0F2FE" }]}>
-                <Ionicons name="notifications" size={20} color="#0EA5E9" />
+              <View style={[styles.iconBox, { backgroundColor: "rgba(84, 123, 125, 0.10)" }]}>
+                <Ionicons name="notifications" size={20} color="#2B5659" />
               </View>
               <Text style={styles.settingText}>Nhận thông báo đẩy (Push)</Text>
             </View>
             <Switch
-              trackColor={{ false: "#CBD5E1", true: COLORS.primary }}
+              trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor={"#ffffff"}
-              ios_backgroundColor="#CBD5E1"
+              ios_backgroundColor={COLORS.border}
               onValueChange={toggleNotifications}
               value={isNotificationsEnabled}
             />
@@ -97,15 +97,15 @@ export default function SettingsScreen() {
 
           <View style={styles.row}>
             <View style={styles.iconTextWrap}>
-              <View style={[styles.iconBox, { backgroundColor: "#FEF3C7" }]}>
-                <Ionicons name="mail" size={20} color="#F59E0B" />
+              <View style={[styles.iconBox, { backgroundColor: "rgba(154, 100, 24, 0.10)" }]}>
+                <Ionicons name="mail" size={20} color="#9A6418" />
               </View>
               <Text style={styles.settingText}>Nhận email tin tức</Text>
             </View>
             <Switch
-              trackColor={{ false: "#CBD5E1", true: COLORS.primary }}
+              trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor={"#ffffff"}
-              ios_backgroundColor="#CBD5E1"
+              ios_backgroundColor={COLORS.border}
               onValueChange={() => {}}
               value={false}
             />
@@ -122,7 +122,7 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   container: { flex: 1, padding: 16 },
   sectionTitle: {
     fontSize: 14,
@@ -163,11 +163,11 @@ const styles = StyleSheet.create({
   settingText: { fontSize: 16, color: COLORS.text, fontWeight: "500" },
   divider: {
     height: 1,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     marginVertical: 12,
     marginLeft: 48,
   },
   footerInfo: { marginTop: 40, alignItems: "center" },
   versionText: { fontSize: 13, color: COLORS.textLight, marginBottom: 4 },
-  companyText: { fontSize: 12, color: "#94A3B8" },
+  companyText: { fontSize: 12, color: "#547B7D" },
 });

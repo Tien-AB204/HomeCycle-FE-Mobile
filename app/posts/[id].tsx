@@ -88,29 +88,29 @@ function InlineFeedback({
   const palette =
     feedback.type === "error"
       ? {
-          backgroundColor: "#FEF2F2",
-          borderColor: "#FECACA",
-          color: "#B91C1C",
+          backgroundColor: "rgba(122, 16, 18, 0.08)",
+          borderColor: "rgba(122, 16, 18, 0.22)",
+          color: "#7A1012",
           icon: "alert-circle-outline" as const,
         }
       : feedback.type === "success"
         ? {
-            backgroundColor: "#ECFDF5",
-            borderColor: "#A7F3D0",
-            color: "#047857",
+            backgroundColor: "rgba(47, 118, 93, 0.10)",
+            borderColor: "rgba(47, 118, 93, 0.24)",
+            color: "#2F765D",
             icon: "checkmark-circle-outline" as const,
           }
         : feedback.type === "warning"
           ? {
-              backgroundColor: "#FFF7ED",
-              borderColor: "#FED7AA",
-              color: "#B45309",
+              backgroundColor: "rgba(154, 100, 24, 0.10)",
+              borderColor: "rgba(154, 100, 24, 0.24)",
+              color: "#9A6418",
               icon: "warning-outline" as const,
             }
           : {
-              backgroundColor: "#EFF6FF",
-              borderColor: "#BFDBFE",
-              color: "#1D4ED8",
+              backgroundColor: "rgba(84, 123, 125, 0.10)",
+              borderColor: "rgba(84, 123, 125, 0.24)",
+              color: "#2B5659",
               icon: "information-circle-outline" as const,
             };
 
@@ -714,7 +714,7 @@ export default function PostDetailScreen() {
             </ScrollView>
           ) : (
             <View style={[styles.mainImage, styles.imagePlaceholder]}>
-              <Ionicons name="image-outline" size={48} color="#94A3B8" />
+              <Ionicons name="image-outline" size={48} color="#547B7D" />
               <Text style={styles.imagePlaceholderText}>Không có hình ảnh</Text>
             </View>
           )}
@@ -1261,7 +1261,7 @@ function SpecItem({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollView: { backgroundColor: "#F1F5F9" },
+  scrollView: { backgroundColor: "#F8F9FA" },
   localFeedback: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1368,9 +1368,9 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
-  imagePlaceholderText: { color: "#94A3B8", marginTop: 8 },
+  imagePlaceholderText: { color: "#547B7D", marginTop: 8 },
   imageBadge: {
     position: "absolute",
     bottom: 16,
@@ -1408,12 +1408,12 @@ const styles = StyleSheet.create({
   },
   tagRow: { flexDirection: "row", gap: 8 },
   tag: {
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  tagText: { fontSize: 12, color: "#475569", fontWeight: "600" },
+  tagText: { fontSize: 12, color: "#547B7D", fontWeight: "600" },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "bold",
@@ -1438,7 +1438,7 @@ const styles = StyleSheet.create({
   description: { fontSize: 14, color: COLORS.text, lineHeight: 22 },
   detailDescription: {
     fontSize: 14,
-    color: "#475569",
+    color: "#547B7D",
     lineHeight: 22,
     fontStyle: "italic",
   },
@@ -1463,15 +1463,15 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   actionMessageError: { color: COLORS.error },
-  actionMessageSuccess: { color: "#15803D" },
-  actionMessageWarning: { color: "#B45309" },
+  actionMessageSuccess: { color: "#2F765D" },
+  actionMessageWarning: { color: "#9A6418" },
   actionMessageInfo: { color: COLORS.primary },
   customerActions: { flex: 1, flexDirection: "row", gap: 12 },
   closedPostContainer: {
     flex: 1,
     paddingVertical: 14,
     alignItems: "center",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
     borderRadius: 8,
   },
   closedPostText: { color: COLORS.textLight, fontWeight: "bold" },
@@ -1485,7 +1485,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.error,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   dangerBtnText: { color: COLORS.error, fontWeight: "bold", fontSize: 15 },
   reactivateBtn: {
@@ -1498,7 +1498,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   reactivateBtnText: { color: COLORS.primary, fontWeight: "bold", fontSize: 15 },
   primaryBtn: {
@@ -1542,7 +1542,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  sentOfferBtn: { backgroundColor: "#475569" },
+  sentOfferBtn: { backgroundColor: "#547B7D" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1606,7 +1606,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 50,
     fontSize: 15,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     color: COLORS.text,
   },
   readOnlyInput: {
@@ -1616,7 +1616,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 50,
     justifyContent: "center",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8F9FA",
   },
   readOnlyText: { fontSize: 15, color: COLORS.textLight, fontWeight: "bold" },
   offerActions: { marginTop: 16 },
