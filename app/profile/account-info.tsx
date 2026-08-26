@@ -20,16 +20,25 @@ import {
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
+  FULL_NAME_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+  normalizeVietnamPhone,
+  validateFullName,
+  validateUsername,
+  validateVietnamPhone,
+} from "../../src/utils/formValidation";
+import {
   capitalizeWordInitials,
   toUppercaseText,
 } from "../../src/utils/textFormat";
 
-const PLACEHOLDER_COLOR = "#94A3B8";
+const PLACEHOLDER_COLOR = "#547B7D";
 
 interface Bank {
   id: number;
@@ -220,25 +229,102 @@ export default function AccountInfoScreen() {
       const originalData = user || {};
       const bank = originalData.bankAccount || {};
 
-      const normalizedFullName = capitalizeWordInitials(fullName).trim();
-      const normalizedAccountName = toUppercaseText(accountName).trim();
+      const normalizedUsername =
+        username.trim();
+
+      const normalizedFullName =
+        capitalizeWordInitials(
+          fullName.trim().replace(/\s+/gu, " "),
+        );
+
+      const normalizedPhone =
+        normalizeVietnamPhone(phoneNumber);
+
+      const normalizedAccountName =
+        toUppercaseText(accountName).trim();
+
+      const originalUsername =
+        sanitize(originalData.username).trim();
+
+      const originalFullName =
+        capitalizeWordInitials(
+          sanitize(
+            originalData.fullName ||
+              originalData.name,
+          ),
+        )
+          .trim()
+          .replace(/\s+/gu, " ");
+
+      const originalPhone =
+        sanitize(
+          originalData.phoneNumber ||
+            originalData.phone,
+        );
+
+      const usernameChanged =
+        normalizedUsername !== originalUsername;
+
+      const fullNameChanged =
+        normalizedFullName !== originalFullName;
+
+      const phoneChanged =
+        normalizedPhone !==
+        normalizeVietnamPhone(originalPhone);
 
       const profileChanged =
-        username !== sanitize(originalData.username) ||
-        normalizedFullName !==
-          capitalizeWordInitials(sanitize(originalData.fullName || originalData.name)).trim() ||
-        phoneNumber !== sanitize(originalData.phoneNumber || originalData.phone);
+        usernameChanged ||
+        fullNameChanged ||
+        phoneChanged;
 
       if (profileChanged) {
+        const usernameValidationError =
+          usernameChanged
+            ? validateUsername(username)
+            : "";
+
+        const fullNameValidationError =
+          fullNameChanged
+            ? validateFullName(fullName)
+            : "";
+
+        const phoneValidationError =
+          phoneChanged
+            ? validateVietnamPhone(phoneNumber)
+            : "";
+
+        const profileValidationError =
+          usernameValidationError ||
+          fullNameValidationError ||
+          phoneValidationError;
+
+        if (profileValidationError) {
+          setSaveMessage({
+            type: "error",
+            text: profileValidationError,
+          });
+          return;
+        }
+
         apiTasks.push(
-          apiClient.patch("/personal-profiles/me/profile", {
-            username,
-            fullName: normalizedFullName,
-            phoneNumber,
-          }),
+          apiClient.patch(
+            "/personal-profiles/me/profile",
+            {
+              username: usernameChanged
+                ? normalizedUsername
+                : originalUsername,
+
+              fullName: fullNameChanged
+                ? normalizedFullName
+                : originalFullName,
+
+              phoneNumber: phoneChanged
+                ? normalizedPhone
+                : originalPhone,
+            },
+          ),
         );
       }
-
       if (newAvatarFile) {
         const formData = new FormData();
         await appendFileToForm(
@@ -417,6 +503,7 @@ export default function AccountInfoScreen() {
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
+              maxLength={USERNAME_MAX_LENGTH}
               value={username}
               onChangeText={(value) => {
                 setUsername(value);
@@ -432,6 +519,7 @@ export default function AccountInfoScreen() {
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
+              maxLength={FULL_NAME_MAX_LENGTH}
               value={fullName}
               onChangeText={(value) => {
                 setFullName(capitalizeWordInitials(value));
@@ -448,6 +536,7 @@ export default function AccountInfoScreen() {
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
+              maxLength={20}
               value={phoneNumber}
               onChangeText={(value) => {
                 setPhoneNumber(value);
@@ -513,19 +602,33 @@ export default function AccountInfoScreen() {
           </View>
 
           <Text style={styles.label}>Số CCCD</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={repCode}
-              onChangeText={(value) => {
-                setRepCode(value.replace(/[^0-9]/g, ""));
-                setSaveMessage(null);
-              }}
-              keyboardType="number-pad"
-              placeholder="Chưa có"
-              placeholderTextColor={PLACEHOLDER_COLOR}
-            />
-          </View>
+          <SensitiveNumberField
+            containerStyle={[
+              styles.inputContainer,
+              { paddingHorizontal: 0 },
+            ]}
+            inputStyle={[
+              styles.input,
+              { paddingHorizontal: 12 },
+            ]}
+            value={repCode}
+            onChangeText={(value) => {
+              setRepCode(
+                value.replace(
+                  /[^0-9]/g,
+                  "",
+                ),
+              );
+              setSaveMessage(null);
+            }}
+            keyboardType="number-pad"
+            maxLength={12}
+            editable={!isSaving}
+            placeholder="Chưa có"
+            placeholderTextColor={
+              PLACEHOLDER_COLOR
+            }
+          />
 
           <IdentityNameField
             label="Họ tên trên CCCD"
@@ -601,19 +704,32 @@ export default function AccountInfoScreen() {
           ) : null}
 
           <Text style={styles.label}>Số tài khoản</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={accountNumber}
-              onChangeText={(value) => {
-                setAccountNumber(value.replace(/[^0-9]/g, ""));
-                setSaveMessage(null);
-              }}
-              keyboardType="number-pad"
-              placeholder="Chưa có"
-              placeholderTextColor={PLACEHOLDER_COLOR}
-            />
-          </View>
+          <SensitiveNumberField
+            containerStyle={[
+              styles.inputContainer,
+              { paddingHorizontal: 0 },
+            ]}
+            inputStyle={[
+              styles.input,
+              { paddingHorizontal: 12 },
+            ]}
+            value={accountNumber}
+            onChangeText={(value) => {
+              setAccountNumber(
+                value.replace(
+                  /[^0-9]/g,
+                  "",
+                ),
+              );
+              setSaveMessage(null);
+            }}
+            keyboardType="number-pad"
+            editable={!isSaving}
+            placeholder="Chưa có"
+            placeholderTextColor={
+              PLACEHOLDER_COLOR
+            }
+          />
 
           <IdentityNameField
             label="Tên chủ tài khoản (Phải khớp với CCCD)"
@@ -779,7 +895,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: "#2C5A56",
+    backgroundColor: "#2B5659",
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -797,17 +913,17 @@ const styles = StyleSheet.create({
   sectionBar: {
     width: 4,
     height: 16,
-    backgroundColor: "#2C5A56",
+    backgroundColor: "#2B5659",
     borderRadius: 2,
     marginRight: 8,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#172B30" },
-  label: { fontSize: 13, fontWeight: "600", color: "#334155", marginBottom: 8 },
+  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#172830" },
+  label: { fontSize: 13, fontWeight: "600", color: "#172830", marginBottom: 8 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     borderRadius: 12,
     paddingHorizontal: 16,
     minHeight: 52,
@@ -831,16 +947,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 15,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     marginBottom: 20,
   },
   cccdRow: { flexDirection: "row", gap: 12, marginBottom: 20 },
   cccdBox: {
     flex: 1,
     height: 90,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
@@ -879,11 +995,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     paddingHorizontal: 8,
   },
-  saveMessageSuccess: { color: "#047857" },
-  saveMessageWarning: { color: "#B45309" },
+  saveMessageSuccess: { color: "#2F765D" },
+  saveMessageWarning: { color: "#9A6418" },
   saveMessageError: { color: COLORS.error },
   primaryButton: {
-    backgroundColor: "#2C5A56",
+    backgroundColor: "#2B5659",
     borderRadius: 12,
     height: 54,
     justifyContent: "center",
@@ -915,7 +1031,7 @@ const styles = StyleSheet.create({
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F6F8",
+    backgroundColor: "#F8F9FA",
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -936,7 +1052,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   bankLogo: {
     width: 40,

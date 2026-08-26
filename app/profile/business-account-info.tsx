@@ -17,11 +17,21 @@ import {
   View,
 } from "react-native";
 import AddressPickerField, { AddressSelection } from "../../src/components/shared/AddressPickerField";
+import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  FULL_NAME_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+  normalizeVietnamPhone,
+  validateFullName,
+  validateUsername,
+  validateVietnamPhone,
+} from "../../src/utils/formValidation";
 import { capitalizeWordInitials, toUppercaseText } from "../../src/utils/textFormat";
 
 const OPERATING_SCOPE_OPTIONS = ["Toàn quốc", "Khu vực miền Bắc", "Khu vực miền Trung", "Khu vực miền Nam"] as const;
@@ -133,8 +143,8 @@ export default function BusinessAccountInfoScreen() {
     setIdentityAddress(clean(profile?.identityAddress));
     setIdentityAddressSelection(null);
     const bank = profile?.bankAccount || {};
-    setBankCode(toUppercaseText(clean(bank.bankCode)));
-    setBankName(toUppercaseText(clean(bank.bankName)));
+    setBankCode(clean(bank.bankCode));
+    setBankName(clean(bank.bankName));
     setAccountNumber(clean(bank.accountNumber));
     setAccountName(toUppercaseText(clean(bank.accountName)));
   }, []);
@@ -165,28 +175,99 @@ export default function BusinessAccountInfoScreen() {
   };
 
   const saveAccount = async () => {
-    const nextErrors: FieldErrors = {};
-    if (!clean(username)) nextErrors.username = "Vui lòng nhập tên tài khoản.";
-    if (!/^0\d{9}$/.test(clean(phoneNumber))) nextErrors.phoneNumber = "Số điện thoại phải gồm 10 số và bắt đầu bằng 0.";
-    setErrors((current) => ({ ...current, ...nextErrors }));
-    if (Object.keys(nextErrors).length) return;
-    const usernameChanged = clean(username) !== clean(data?.username);
-    const phoneChanged = clean(phoneNumber) !== clean(data?.phoneNumber);
+    const normalizedUsername =
+      clean(username);
+
+    const normalizedPhone =
+      normalizeVietnamPhone(phoneNumber);
+
+    const originalUsername =
+      clean(data?.username);
+
+    const originalPhone =
+      clean(data?.phoneNumber);
+
+    const usernameChanged =
+      normalizedUsername !== originalUsername;
+
+    const phoneChanged =
+      normalizedPhone !==
+      normalizeVietnamPhone(originalPhone);
+
     if (!usernameChanged && !phoneChanged) {
-      setSectionMessage("account", { type: "warning", text: "Tên tài khoản và số điện thoại chưa có thay đổi." });
+      setSectionMessage("account", {
+        type: "warning",
+        text: "Tên tài khoản và số điện thoại chưa có thay đổi.",
+      });
       return;
     }
+
+    const nextErrors: FieldErrors = {};
+
+    if (usernameChanged) {
+      const validationError =
+        validateUsername(username);
+
+      if (validationError) {
+        nextErrors.username =
+          validationError;
+      }
+    }
+
+    if (phoneChanged) {
+      const validationError =
+        validateVietnamPhone(phoneNumber);
+
+      if (validationError) {
+        nextErrors.phoneNumber =
+          validationError;
+      }
+    }
+
+    setErrors((current) => ({
+      ...current,
+      username: nextErrors.username,
+      phoneNumber: nextErrors.phoneNumber,
+    }));
+
+    if (Object.keys(nextErrors).length) {
+      return;
+    }
+
     try {
-      setSavingSection("account"); setSectionMessage("account", null);
-      if (usernameChanged) await businessProfileApi.updateUsername(clean(username));
-      if (phoneChanged) await businessProfileApi.updatePhoneNumber(clean(phoneNumber));
-      setSectionMessage("account", { type: "success", text: "Đã cập nhật thông tin tài khoản." });
+      setSavingSection("account");
+      setSectionMessage("account", null);
+
+      if (usernameChanged) {
+        await businessProfileApi.updateUsername(
+          normalizedUsername,
+        );
+      }
+
+      if (phoneChanged) {
+        await businessProfileApi.updatePhoneNumber(
+          normalizedPhone,
+        );
+      }
+
+      setSectionMessage("account", {
+        type: "success",
+        text: "Đã cập nhật thông tin tài khoản.",
+      });
+
       await fetchPageData();
     } catch (error) {
-      setSectionMessage("account", { type: "error", text: getApiErrorMessage(error, "Không thể cập nhật thông tin tài khoản.") });
-    } finally { setSavingSection(null); }
+      setSectionMessage("account", {
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể cập nhật thông tin tài khoản.",
+        ),
+      });
+    } finally {
+      setSavingSection(null);
+    }
   };
-
   const saveAvatar = async () => {
     if (!avatarAsset) { setErrors((current) => ({ ...current, avatar: "Vui lòng chọn ảnh đại diện mới." })); return; }
     try {
@@ -233,7 +314,13 @@ export default function BusinessAccountInfoScreen() {
 
   const saveIdentity = async () => {
     const nextErrors: FieldErrors = {};
-    if (!clean(fullName)) nextErrors.fullName = "Vui lòng nhập họ và tên.";
+    const fullNameValidationError =
+      validateFullName(fullName);
+
+    if (fullNameValidationError) {
+      nextErrors.fullName =
+        fullNameValidationError;
+    }
     if (!/^\d{12}$/.test(clean(identityNumber))) nextErrors.identityNumber = "CCCD phải đúng 12 số.";
     if (!clean(identityName)) nextErrors.identityName = "Vui lòng nhập họ tên trên CCCD.";
     if (normalizeName(fullName) !== normalizeName(identityName)) nextErrors.identityName = "Họ tên thường và họ tên trên CCCD phải khớp nhau.";
@@ -265,8 +352,7 @@ export default function BusinessAccountInfoScreen() {
 
   const saveBank = async () => {
     const nextErrors: FieldErrors = {};
-    if (!clean(bankCode)) nextErrors.bankCode = "Vui lòng nhập mã ngân hàng.";
-    if (!clean(bankName)) nextErrors.bankName = "Vui lòng nhập tên ngân hàng.";
+    if (!clean(bankCode) || !clean(bankName)) nextErrors.bankCode = "Vui lòng chọn ngân hàng thụ hưởng.";
     if (!clean(accountNumber)) nextErrors.accountNumber = "Vui lòng nhập số tài khoản.";
     if (!clean(accountName)) nextErrors.accountName = "Vui lòng nhập tên chủ tài khoản.";
     setErrors((current) => ({ ...current, ...nextErrors }));
@@ -274,7 +360,7 @@ export default function BusinessAccountInfoScreen() {
     try {
       setSavingSection("bank"); setSectionMessage("bank", null);
       await businessProfileApi.updateBankAccount({
-        bankCode: toUppercaseText(clean(bankCode)), bankName: toUppercaseText(clean(bankName)), accountNumber: clean(accountNumber), accountName: toUppercaseText(clean(accountName)),
+        bankCode: clean(bankCode), bankName: toUppercaseText(clean(bankName)), accountNumber: clean(accountNumber), accountName: toUppercaseText(clean(accountName)),
       });
       setSectionMessage("bank", { type: "success", text: "Đã cập nhật thông tin ngân hàng." });
       await fetchPageData();
@@ -327,8 +413,8 @@ export default function BusinessAccountInfoScreen() {
           <View style={styles.walletCard}><View style={styles.walletRow}><View><Text style={styles.walletLabel}>Số dư khả dụng</Text><Text style={styles.walletValue}>{formatCurrency(availableBalance)}</Text></View><Ionicons name="wallet-outline" size={30} color={COLORS.primary} /></View><Text style={styles.walletHold}>Đang giữ: {formatCurrency(holdBalance)}</Text><TouchableOpacity style={styles.historyButton} onPress={() => router.push("/payments/history" as any)}><Text style={styles.historyButtonText}>Xem lịch sử thanh toán</Text><Ionicons name="chevron-forward" size={18} color={COLORS.primary} /></TouchableOpacity></View>
 
           <SectionTitle title="TÀI KHOẢN" /><View style={styles.card}>
-            <Text style={styles.inputLabel}>Tên tài khoản *</Text><TextInput style={[styles.input, errors.username ? styles.inputError : undefined]} value={username} onChangeText={(value) => { setUsername(value); clearFieldError("username", "account"); }} placeholder="Nhập tên tài khoản" /><FieldError text={errors.username} />
-            <Text style={styles.inputLabel}>Số điện thoại *</Text><TextInput style={[styles.input, errors.phoneNumber ? styles.inputError : undefined]} value={phoneNumber} onChangeText={(value) => { setPhoneNumber(value.replace(/[^0-9]/g, "").slice(0, 10)); clearFieldError("phoneNumber", "account"); }} keyboardType="phone-pad" placeholder="VD: 0987654321" /><FieldError text={errors.phoneNumber} /><InlineMessage message={messages.account || null} /><SaveButton title="Lưu tên tài khoản & số điện thoại" loading={savingSection === "account"} onPress={() => void saveAccount()} />
+            <Text style={styles.inputLabel}>Tên tài khoản *</Text><TextInput style={[styles.input, errors.username ? styles.inputError : undefined]} value={username} maxLength={USERNAME_MAX_LENGTH} onChangeText={(value) => { setUsername(value); clearFieldError("username", "account"); }} placeholder="Nhập tên tài khoản" /><FieldError text={errors.username} />
+            <Text style={styles.inputLabel}>Số điện thoại *</Text><TextInput style={[styles.input, errors.phoneNumber ? styles.inputError : undefined]} value={phoneNumber} maxLength={20} onChangeText={(value) => { setPhoneNumber(value); clearFieldError("phoneNumber", "account"); }} keyboardType="phone-pad" placeholder="VD: 0987654321" /><FieldError text={errors.phoneNumber} /><InlineMessage message={messages.account || null} /><SaveButton title="Lưu tên tài khoản & số điện thoại" loading={savingSection === "account"} onPress={() => void saveAccount()} />
           </View>
 
           <SectionTitle title="ẢNH ĐẠI DIỆN" /><View style={styles.card}><View style={styles.avatarRow}>{avatarUri ? <Image source={{ uri: avatarUri }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="business-outline" size={38} color={COLORS.textLight} /></View>}<View style={styles.flex}><TouchableOpacity style={styles.outlineButton} onPress={async () => { const asset = await pickSingleImage(); if (asset) { setAvatarAsset(asset); clearFieldError("avatar", "avatar"); } }}><Ionicons name="camera-outline" size={18} color={COLORS.primary} /><Text style={styles.outlineButtonText}>Chọn ảnh mới</Text></TouchableOpacity><FieldError text={errors.avatar} /></View></View><InlineMessage message={messages.avatar || null} /><SaveButton title="Cập nhật ảnh đại diện" loading={savingSection === "avatar"} onPress={() => void saveAvatar()} /></View>
@@ -343,8 +429,44 @@ export default function BusinessAccountInfoScreen() {
           </View>
 
           <SectionTitle title="THÔNG TIN ĐỊNH DANH" /><View style={styles.card}>
-            <Text style={styles.inputLabel}>Họ và tên *</Text><TextInput style={[styles.input, errors.fullName ? styles.inputError : undefined]} value={fullName} onChangeText={(value) => { setFullName(capitalizeWordInitials(value)); clearFieldError("fullName", "identity"); }} autoCapitalize="words" autoCorrect={false} placeholder="Nhập họ và tên" /><FieldError text={errors.fullName} />
-            <Text style={styles.inputLabel}>Số CCCD *</Text><TextInput style={[styles.input, errors.identityNumber ? styles.inputError : undefined]} value={identityNumber} onChangeText={(value) => { setIdentityNumber(value.replace(/[^0-9]/g, "").slice(0, 12)); clearFieldError("identityNumber", "identity"); }} keyboardType="number-pad" placeholder="Nhập 12 số CCCD" /><FieldError text={errors.identityNumber} />
+            <Text style={styles.inputLabel}>Họ và tên *</Text><TextInput style={[styles.input, errors.fullName ? styles.inputError : undefined]} value={fullName} maxLength={FULL_NAME_MAX_LENGTH} onChangeText={(value) => { setFullName(capitalizeWordInitials(value)); clearFieldError("fullName", "identity"); }} autoCapitalize="words" autoCorrect={false} placeholder="Nhập họ và tên" /><FieldError text={errors.fullName} />
+            <Text style={styles.inputLabel}>Số CCCD *</Text><SensitiveNumberField
+              containerStyle={[
+                styles.input,
+                errors.identityNumber
+                  ? styles.inputError
+                  : undefined,
+                { paddingHorizontal: 0 },
+              ]}
+              inputStyle={{
+                paddingHorizontal: 12,
+              }}
+              hasError={Boolean(
+                errors.identityNumber,
+              )}
+              value={identityNumber}
+              onChangeText={(value) => {
+                setIdentityNumber(
+                  value
+                    .replace(
+                      /[^0-9]/g,
+                      "",
+                    )
+                    .slice(0, 12),
+                );
+
+                clearFieldError(
+                  "identityNumber",
+                  "identity",
+                );
+              }}
+              keyboardType="number-pad"
+              maxLength={12}
+              placeholder="Nhập 12 số CCCD"
+              editable={
+                savingSection !== "identity"
+              }
+            /><FieldError text={errors.identityNumber} />
             <IdentityNameField label="Họ tên trên CCCD" required value={identityName} onChangeText={(value) => { setIdentityName(value); clearFieldError("identityName", "identity"); }} error={errors.identityName} containerStyle={styles.identityFieldContainer} inputStyle={styles.identityInput} />
             <Text style={styles.inputLabel}>Ngày sinh *</Text><CalendarDateField value={identityDob} onChange={(value) => { setIdentityDob(value); clearFieldError("identityDob", "identity"); }} maximumDate={new Date()} hasError={Boolean(errors.identityDob)} placeholder="Chọn ngày sinh" /><FieldError text={errors.identityDob} />
             <Text style={styles.inputLabel}>Địa chỉ thường trú *</Text><AddressPickerField value={identityAddress} onChange={(value, selection) => { setIdentityAddress(value); setIdentityAddressSelection(selection); clearFieldError("identityAddress", "identity"); }} hasError={Boolean(errors.identityAddress)} placeholder="Chọn địa chỉ thường trú" /><FieldError text={errors.identityAddress} />
@@ -359,10 +481,57 @@ export default function BusinessAccountInfoScreen() {
 
           <SectionTitle title="THÔNG TIN NGÂN HÀNG" /><View style={styles.card}>
             <Text style={styles.helperText}>Cần điền đủ thông tin ngân hàng để đi tiếp tới thanh toán.</Text>
-            <Text style={styles.inputLabel}>Mã ngân hàng *</Text><TextInput style={[styles.input, errors.bankCode ? styles.inputError : undefined]} value={bankCode} onChangeText={(value) => { setBankCode(toUppercaseText(value)); clearFieldError("bankCode", "bank"); }} autoCapitalize="characters" autoCorrect={false} placeholder="VD: BIDV, VCB, TCB..." /><FieldError text={errors.bankCode} />
-            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng *</Text><TextInput style={[styles.input, errors.bankName ? styles.inputError : undefined]} value={bankName} onChangeText={(value) => { setBankName(toUppercaseText(value)); clearFieldError("bankName", "bank"); }} autoCapitalize="characters" autoCorrect={false} placeholder="VD: BIDV, VIETCOMBANK..." /><FieldError text={errors.bankName} />
-            <Text style={styles.inputLabel}>Số tài khoản *</Text><TextInput style={[styles.input, errors.accountNumber ? styles.inputError : undefined]} value={accountNumber} onChangeText={(value) => { setAccountNumber(value.replace(/[^0-9]/g, "")); clearFieldError("accountNumber", "bank"); }} keyboardType="number-pad" placeholder="Nhập số tài khoản" /><FieldError text={errors.accountNumber} />
-            <IdentityNameField label="Tên chủ tài khoản" required value={accountName} onChangeText={(value) => { setAccountName(value); clearFieldError("accountName", "bank"); }} error={errors.accountName} containerStyle={styles.identityFieldContainer} inputStyle={styles.identityInput} placeholder="VD: NGUYEN VAN A" /><InlineMessage message={messages.bank || null} /><SaveButton title="Lưu thông tin ngân hàng" loading={savingSection === "bank"} onPress={() => void saveBank()} />
+            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng *</Text>
+            <BankPickerField
+              bankBin={bankCode}
+              bankName={bankName}
+              onChange={(bank) => {
+                setBankCode(String(bank.bin));
+                setBankName(bank.shortName);
+                clearFieldError("bankCode", "bank");
+                clearFieldError("bankName", "bank");
+              }}
+              disabled={savingSection === "bank"}
+              hasError={Boolean(errors.bankCode || errors.bankName)}
+              placeholder="Chọn ngân hàng thụ hưởng"
+              style={{ marginBottom: 12 }}
+            />
+            <FieldError text={errors.bankCode || errors.bankName} />
+            <Text style={styles.inputLabel}>Số tài khoản *</Text><SensitiveNumberField
+              containerStyle={[
+                styles.input,
+                errors.accountNumber
+                  ? styles.inputError
+                  : undefined,
+                { paddingHorizontal: 0 },
+              ]}
+              inputStyle={{
+                paddingHorizontal: 12,
+              }}
+              hasError={Boolean(
+                errors.accountNumber,
+              )}
+              value={accountNumber}
+              onChangeText={(value) => {
+                setAccountNumber(
+                  value.replace(
+                    /[^0-9]/g,
+                    "",
+                  ),
+                );
+
+                clearFieldError(
+                  "accountNumber",
+                  "bank",
+                );
+              }}
+              keyboardType="number-pad"
+              placeholder="Nhập số tài khoản"
+              editable={
+                savingSection !== "bank"
+              }
+            /><FieldError text={errors.accountNumber} />
+            <IdentityNameField label="Tên chủ tài khoản" required value={accountName} onChangeText={(value) => { setAccountName(toUppercaseText(value)); clearFieldError("accountName", "bank"); }} error={errors.accountName} containerStyle={styles.identityFieldContainer} inputStyle={styles.identityInput} placeholder="VD: NGUYEN VAN A" /><InlineMessage message={messages.bank || null} /><SaveButton title="Lưu thông tin ngân hàng" loading={savingSection === "bank"} onPress={() => void saveBank()} />
           </View>
 
           <TouchableOpacity style={styles.surveyButton} onPress={() => router.push("/profile/business-survey" as any)}><Ionicons name="document-text-outline" size={20} color={COLORS.primary} /><Text style={styles.surveyButtonText}>Xem lại bản Khảo sát thu mua</Text></TouchableOpacity>
@@ -377,25 +546,25 @@ export default function BusinessAccountInfoScreen() {
 function SectionTitle({ title }: { title: string }) { return <View style={styles.sectionTitleContainer}><View style={styles.sectionTitleBar} /><Text style={styles.sectionTitleText}>{title}</Text></View>; }
 function FieldError({ text }: { text?: string }) { return text ? <Text style={styles.fieldError}>{text}</Text> : null; }
 function SaveButton({ title, loading, onPress }: { title: string; loading: boolean; onPress: () => void }) { return <TouchableOpacity style={[styles.saveButton, loading ? styles.disabledButton : undefined]} onPress={onPress} disabled={loading}>{loading ? <ActivityIndicator color={COLORS.white} /> : <><Ionicons name="save-outline" size={19} color={COLORS.white} /><Text style={styles.saveButtonText}>{title}</Text></>}</TouchableOpacity>; }
-function FilePickerButton({ label, hasFile, onPress }: { label: string; hasFile: boolean; onPress: () => void }) { return <TouchableOpacity style={styles.filePicker} onPress={onPress}><Ionicons name={hasFile ? "checkmark-circle-outline" : "cloud-upload-outline"} size={20} color={hasFile ? "#047857" : COLORS.primary} /><Text style={styles.filePickerText} numberOfLines={1}>{label}</Text></TouchableOpacity>; }
+function FilePickerButton({ label, hasFile, onPress }: { label: string; hasFile: boolean; onPress: () => void }) { return <TouchableOpacity style={styles.filePicker} onPress={onPress}><Ionicons name={hasFile ? "checkmark-circle-outline" : "cloud-upload-outline"} size={20} color={hasFile ? "#2F765D" : COLORS.primary} /><Text style={styles.filePickerText} numberOfLines={1}>{label}</Text></TouchableOpacity>; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" }, flex: { flex: 1 }, centered: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 24 }, loadingText: { marginTop: 10, color: COLORS.textLight }, loadErrorText: { color: COLORS.error, textAlign: "center", lineHeight: 20 },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" }, flex: { flex: 1 }, centered: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 24 }, loadingText: { marginTop: 10, color: COLORS.textLight }, loadErrorText: { color: COLORS.error, textAlign: "center", lineHeight: 20 },
   retryButton: { marginTop: 16, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 9, backgroundColor: COLORS.primary }, retryButtonText: { color: COLORS.white, fontWeight: "800" },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.white }, backButton: { padding: 4, marginLeft: -4 }, headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text }, scrollContainer: { paddingHorizontal: 20, paddingBottom: 50 },
-  sectionTitleContainer: { flexDirection: "row", alignItems: "center", marginTop: 24, marginBottom: 12 }, sectionTitleBar: { width: 4, height: 18, backgroundColor: COLORS.primary, borderRadius: 2, marginRight: 8 }, sectionTitleText: { fontSize: 15, fontWeight: "800", color: "#334155" },
-  card: { backgroundColor: COLORS.white, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border }, walletCard: { marginTop: 20, backgroundColor: "#ECFDF5", borderWidth: 1, borderColor: "#A7F3D0", borderRadius: 14, padding: 16 }, walletRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, walletLabel: { color: "#047857", fontSize: 12, fontWeight: "700" }, walletValue: { color: "#065F46", fontSize: 24, fontWeight: "900", marginTop: 4 }, walletHold: { color: "#047857", marginTop: 6, fontSize: 12 },
+  sectionTitleContainer: { flexDirection: "row", alignItems: "center", marginTop: 24, marginBottom: 12 }, sectionTitleBar: { width: 4, height: 18, backgroundColor: COLORS.primary, borderRadius: 2, marginRight: 8 }, sectionTitleText: { fontSize: 15, fontWeight: "800", color: "#172830" },
+  card: { backgroundColor: COLORS.white, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border }, walletCard: { marginTop: 20, backgroundColor: "rgba(47, 118, 93, 0.10)", borderWidth: 1, borderColor: "rgba(47, 118, 93, 0.24)", borderRadius: 14, padding: 16 }, walletRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, walletLabel: { color: "#2F765D", fontSize: 12, fontWeight: "700" }, walletValue: { color: "#2F765D", fontSize: 24, fontWeight: "900", marginTop: 4 }, walletHold: { color: "#2F765D", marginTop: 6, fontSize: 12 },
   historyButton: { marginTop: 14, minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.white, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, historyButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 13 },
   inputLabel: { color: COLORS.text, fontSize: 13, fontWeight: "700", marginBottom: 7, marginTop: 2 }, input: { minHeight: 50, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, paddingHorizontal: 14, color: COLORS.text, backgroundColor: COLORS.white, fontSize: 14, marginBottom: 12 }, multilineInput: { minHeight: 92, textAlignVertical: "top", paddingTop: 12 }, inputError: { borderColor: COLORS.error },
   fieldError: { color: COLORS.error, fontSize: 12, lineHeight: 17, marginTop: -7, marginBottom: 12 }, helperText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, fontStyle: "italic", marginBottom: 14 }, existingFileText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginBottom: 8 },
   selectTrigger: { minHeight: 50, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, paddingHorizontal: 14, marginBottom: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: COLORS.white }, selectValue: { color: COLORS.text, fontSize: 14 }, selectPlaceholder: { color: COLORS.textLight, fontSize: 14 },
   filePicker: { minHeight: 52, borderWidth: 1, borderStyle: "dashed", borderColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 12 }, filePickerText: { flex: 1, color: COLORS.text, fontSize: 13 },
   saveButton: { minHeight: 50, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, saveButtonText: { color: COLORS.white, fontWeight: "800", fontSize: 14 }, disabledButton: { opacity: 0.6 },
-  messageBox: { borderWidth: 1, borderRadius: 9, padding: 10, marginBottom: 12 }, messageText: { fontSize: 12, lineHeight: 18 }, messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" }, messageErrorText: { color: "#B91C1C" }, messageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" }, messageSuccessText: { color: "#047857" }, messageWarning: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" }, messageWarningText: { color: "#B45309" }, messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" }, messageInfoText: { color: "#1D4ED8" },
-  avatarRow: { flexDirection: "row", alignItems: "center", gap: 14 }, avatar: { width: 84, height: 84, borderRadius: 42 }, avatarPlaceholder: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: COLORS.border }, outlineButton: { minHeight: 44, borderWidth: 1, borderColor: COLORS.primary, borderRadius: 9, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }, outlineButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 13 },
-  identityFieldContainer: { marginBottom: 0 }, identityInput: { minHeight: 50, borderRadius: 10 }, documentPreview: { width: "100%", height: 150, borderRadius: 10, marginBottom: 10, resizeMode: "cover", backgroundColor: "#F1F5F9" },
-  serviceAreaRow: { flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingVertical: 11 }, serviceAreaText: { color: COLORS.text, fontSize: 13, lineHeight: 18 }, iconButton: { padding: 8 }, emptyText: { color: COLORS.textLight, fontStyle: "italic", marginBottom: 14 }, inlineButtons: { flexDirection: "row", gap: 10, alignItems: "center" },
-  secondaryButton: { minHeight: 46, borderRadius: 9, borderWidth: 1, borderColor: COLORS.primary, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" }, secondaryButtonText: { color: COLORS.primary, fontWeight: "800" }, inlineDeleteConfirm: { marginTop: 8, marginBottom: 14, padding: 12, borderWidth: 1, borderColor: "#FECACA", borderRadius: 10, backgroundColor: "#FEF2F2" }, inlineDeleteTitle: { color: "#991B1B", fontSize: 14, fontWeight: "800", marginBottom: 5 }, confirmText: { color: COLORS.textLight, lineHeight: 20, marginBottom: 12 }, confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 }, deleteButton: { minHeight: 46, borderRadius: 9, backgroundColor: "#B91C1C", paddingHorizontal: 18, alignItems: "center", justifyContent: "center" }, deleteButtonText: { color: COLORS.white, fontWeight: "800" },
-  surveyButton: { marginTop: 26, minHeight: 52, borderRadius: 12, borderWidth: 1, borderColor: "#BAE6FD", backgroundColor: "#F0F9FF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, surveyButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 14 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(15, 23, 42, 0.45)", justifyContent: "center", padding: 20 }, modalCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 18 }, modalTitle: { color: COLORS.text, fontSize: 18, fontWeight: "900", marginBottom: 12 }, optionRow: { minHeight: 50, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" }, optionText: { color: COLORS.text, fontSize: 14 },
+  messageBox: { borderWidth: 1, borderRadius: 9, padding: 10, marginBottom: 12 }, messageText: { fontSize: 12, lineHeight: 18 }, messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" }, messageErrorText: { color: "#7A1012" }, messageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" }, messageSuccessText: { color: "#2F765D" }, messageWarning: { backgroundColor: "rgba(154, 100, 24, 0.10)", borderColor: "rgba(154, 100, 24, 0.24)" }, messageWarningText: { color: "#9A6418" }, messageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" }, messageInfoText: { color: "#2B5659" },
+  avatarRow: { flexDirection: "row", alignItems: "center", gap: 14 }, avatar: { width: 84, height: 84, borderRadius: 42 }, avatarPlaceholder: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", backgroundColor: "#F8F9FA", borderWidth: 1, borderColor: COLORS.border }, outlineButton: { minHeight: 44, borderWidth: 1, borderColor: COLORS.primary, borderRadius: 9, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }, outlineButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 13 },
+  identityFieldContainer: { marginBottom: 0 }, identityInput: { minHeight: 50, borderRadius: 10 }, documentPreview: { width: "100%", height: 150, borderRadius: 10, marginBottom: 10, resizeMode: "cover", backgroundColor: "#F8F9FA" },
+  serviceAreaRow: { flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, borderBottomColor: "#BAC2C1", paddingVertical: 11 }, serviceAreaText: { color: COLORS.text, fontSize: 13, lineHeight: 18 }, iconButton: { padding: 8 }, emptyText: { color: COLORS.textLight, fontStyle: "italic", marginBottom: 14 }, inlineButtons: { flexDirection: "row", gap: 10, alignItems: "center" },
+  secondaryButton: { minHeight: 46, borderRadius: 9, borderWidth: 1, borderColor: COLORS.primary, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" }, secondaryButtonText: { color: COLORS.primary, fontWeight: "800" }, inlineDeleteConfirm: { marginTop: 8, marginBottom: 14, padding: 12, borderWidth: 1, borderColor: "rgba(122, 16, 18, 0.22)", borderRadius: 10, backgroundColor: "rgba(122, 16, 18, 0.08)" }, inlineDeleteTitle: { color: "#7A1012", fontSize: 14, fontWeight: "800", marginBottom: 5 }, confirmText: { color: COLORS.textLight, lineHeight: 20, marginBottom: 12 }, confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 }, deleteButton: { minHeight: 46, borderRadius: 9, backgroundColor: "#7A1012", paddingHorizontal: 18, alignItems: "center", justifyContent: "center" }, deleteButtonText: { color: COLORS.white, fontWeight: "800" },
+  surveyButton: { marginTop: 26, minHeight: 52, borderRadius: 12, borderWidth: 1, borderColor: "rgba(84, 123, 125, 0.24)", backgroundColor: "rgba(84, 123, 125, 0.10)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, surveyButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 14 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(23, 40, 48, 0.45)", justifyContent: "center", padding: 20 }, modalCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 18 }, modalTitle: { color: COLORS.text, fontSize: 18, fontWeight: "900", marginBottom: 12 }, optionRow: { minHeight: 50, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: "#BAC2C1" }, optionText: { color: COLORS.text, fontSize: 14 },
 });

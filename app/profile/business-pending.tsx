@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import SensitiveValue from "../../src/components/shared/SensitiveValue";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 
@@ -124,7 +125,7 @@ export default function BusinessPendingScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.pendingBanner}>
-          <Ionicons name="time" size={48} color="#F59E0B" />
+          <Ionicons name="time" size={48} color="#9A6418" />
           <Text style={styles.bannerTitle}>Đang chờ Moderator xét duyệt</Text>
           <Text style={styles.bannerText}>
             Hồ sơ doanh nghiệp của bạn đang trong hàng đợi kiểm tra pháp lý.
@@ -134,7 +135,7 @@ export default function BusinessPendingScreen() {
 
         {loadError ? (
           <View style={styles.errorBanner}>
-            <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+            <Ionicons name="alert-circle" size={20} color="#7A1012" />
             <Text style={styles.errorBannerText}>{loadError}</Text>
           </View>
         ) : null}
@@ -246,9 +247,16 @@ export default function BusinessPendingScreen() {
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Số CCCD:</Text>
-                  <Text style={styles.detailValue}>
-                    {getOptionalText(data.identityNumber, "Không có")}
-                  </Text>
+                  <SensitiveValue
+                    value={data.identityNumber}
+                    fallback="Không có"
+                    containerStyle={
+                      styles.sensitiveDetailContainer
+                    }
+                    textStyle={
+                      styles.sensitiveDetailText
+                    }
+                  />
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Ngày sinh:</Text>
@@ -274,9 +282,16 @@ export default function BusinessPendingScreen() {
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Số tài khoản:</Text>
-                  <Text style={styles.detailValue}>
-                    {getOptionalText(data.accountNumber, "Không có")}
-                  </Text>
+                  <SensitiveValue
+                    value={data.accountNumber}
+                    fallback="Không có"
+                    containerStyle={
+                      styles.sensitiveDetailContainer
+                    }
+                    textStyle={
+                      styles.sensitiveDetailText
+                    }
+                  />
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Chủ tài khoản:</Text>
@@ -321,7 +336,7 @@ export default function BusinessPendingScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
@@ -337,25 +352,25 @@ const styles = StyleSheet.create({
   container: { padding: 20 },
 
   pendingBanner: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     padding: 32,
     borderRadius: 16,
     alignItems: "center",
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: "#FDE68A",
+    borderColor: "rgba(154, 100, 24, 0.24)",
   },
   bannerTitle: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#B45309",
+    color: "#9A6418",
     marginTop: 16,
     marginBottom: 8,
     textAlign: "center",
   },
   bannerText: {
     fontSize: 14,
-    color: "#92400E",
+    color: "#9A6418",
     textAlign: "center",
     lineHeight: 22,
   },
@@ -363,16 +378,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     padding: 14,
     borderRadius: 12,
     marginBottom: 16,
   },
   errorBannerText: {
     flex: 1,
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 13,
     lineHeight: 19,
   },
@@ -414,7 +429,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
     paddingBottom: 8,
   },
   detailRow: {
@@ -432,6 +447,19 @@ const styles = StyleSheet.create({
     textAlign: "right",
     lineHeight: 20,
   },
+  sensitiveDetailContainer: {
+    flex: 2,
+    justifyContent: "flex-end",
+  },
+
+  sensitiveDetailText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
+    textAlign: "right",
+    lineHeight: 20,
+  },
+
   emptyValueText: {
     fontSize: 13,
     color: COLORS.textLight,
@@ -440,11 +468,11 @@ const styles = StyleSheet.create({
 
   documentItem: {
     marginBottom: 16,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#BAC2C1",
   },
   documentLabel: {
     fontSize: 13,
@@ -457,6 +485,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 200,
     borderRadius: 8,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#F8F9FA",
   },
 });
