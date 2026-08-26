@@ -28,10 +28,15 @@ import CalendarDateField, {
 } from "../../src/components/shared/CalendarDateField";
 import FullNameField from "../../src/components/shared/FullNameField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  FULL_NAME_MAX_LENGTH,
+  validateFullName,
+} from "../../src/utils/formValidation";
 
 interface Bank {
   id: number;
@@ -471,9 +476,7 @@ export default function BusinessSetupScreen() {
       return;
     }
 
-    let nextFullNameError = fullName.trim()
-      ? ""
-      : "Vui lòng nhập họ và tên người đại diện / chủ hộ.";
+    let nextFullNameError = validateFullName(fullName);
     const nextBusinessNameError = businessName.trim()
       ? ""
       : model === "household"
@@ -881,7 +884,7 @@ export default function BusinessSetupScreen() {
           <Ionicons
             name={icon}
             size={24}
-            color={hasError ? "#B91C1C" : COLORS.primary}
+            color={hasError ? "#7A1012" : COLORS.primary}
             style={styles.uploadIcon}
           />
           <Text
@@ -961,16 +964,16 @@ export default function BusinessSetupScreen() {
 
           {loadError && step === 2 ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+              <Ionicons name="alert-circle" size={20} color="#7A1012" />
               <Text style={styles.errorBannerText}>{loadError}</Text>
             </View>
           ) : null}
 
           {rejectReasonMsg && step === 2 && (
             <View style={styles.warningBanner}>
-              <Ionicons name="warning" size={20} color="#B45309" />
+              <Ionicons name="warning" size={20} color="#9A6418" />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: "bold", color: "#92400E" }}>
+                <Text style={{ fontWeight: "bold", color: "#9A6418" }}>
                   Yêu cầu chỉnh sửa:
                 </Text>
                 <Text style={styles.warningText}>{rejectReasonMsg}</Text>
@@ -1222,6 +1225,7 @@ export default function BusinessSetupScreen() {
                 value={fullName}
                 onChangeText={handleFullNameChange}
                 mode="words"
+                maxLength={FULL_NAME_MAX_LENGTH}
                 error={fullNameError}
                 helperText="*Phải trùng khớp hoàn toàn với CCCD và tài khoản ngân hàng"
                 placeholder="NHẬP ĐẦY ĐỦ HỌ VÀ TÊN"
@@ -1230,21 +1234,37 @@ export default function BusinessSetupScreen() {
               />
 
               <Text style={styles.label}>Số CCCD *</Text>
-              <TextInput
-                style={[
+              <SensitiveNumberField
+                containerStyle={[
                   styles.input,
-                  webInputStyle,
-                  identityNumberError ? styles.inputError : undefined,
+                  { paddingHorizontal: 0 },
+                  identityNumberError
+                    ? styles.inputError
+                    : undefined,
                 ]}
+                inputStyle={{
+                  paddingHorizontal: 16,
+                }}
+                hasError={Boolean(
+                  identityNumberError,
+                )}
                 placeholder="Nhập 12 chữ số CCCD"
-                placeholderTextColor={COLORS.textLight}
+                placeholderTextColor={
+                  COLORS.textLight
+                }
                 keyboardType="numeric"
                 inputMode="numeric"
                 maxLength={12}
                 value={identityNumber}
                 onChangeText={(value) => {
-                  const numericValue = value.replace(/\D/g, "").slice(0, 12);
-                  setIdentityNumber(numericValue);
+                  const numericValue = value
+                    .replace(/\D/g, "")
+                    .slice(0, 12);
+
+                  setIdentityNumber(
+                    numericValue,
+                  );
+
                   setIdentityNumberError("");
                 }}
                 editable={!isLoading}
@@ -1410,7 +1430,7 @@ export default function BusinessSetupScreen() {
                   <Ionicons
                     name="chevron-down"
                     size={20}
-                    color={bankError ? "#B91C1C" : COLORS.textLight}
+                    color={bankError ? "#7A1012" : COLORS.textLight}
                   />
                 </TouchableOpacity>
                 {bankError ? (
@@ -1420,14 +1440,24 @@ export default function BusinessSetupScreen() {
                 ) : null}
 
                 <Text style={styles.label}>Số tài khoản *</Text>
-                <TextInput
-                  style={[
+                <SensitiveNumberField
+                  containerStyle={[
                     styles.inputPayment,
-                    webInputStyle,
-                    accountNumberError ? styles.inputError : undefined,
+                    { paddingHorizontal: 0 },
+                    accountNumberError
+                      ? styles.inputError
+                      : undefined,
                   ]}
+                  inputStyle={{
+                    paddingHorizontal: 16,
+                  }}
+                  hasError={Boolean(
+                    accountNumberError,
+                  )}
                   placeholder="Nhập số tài khoản ngân hàng"
-                  placeholderTextColor={COLORS.textLight}
+                  placeholderTextColor={
+                    COLORS.textLight
+                  }
                   keyboardType="numeric"
                   value={accountNumber}
                   onChangeText={(value) => {
@@ -1503,7 +1533,7 @@ export default function BusinessSetupScreen() {
           {step === 3 && (
             <View style={styles.successWrapper}>
               <View style={styles.iconCircle}>
-                <Ionicons name="checkmark-circle" size={64} color="#0EA5E9" />
+                <Ionicons name="checkmark-circle" size={64} color="#2F765D" />
               </View>
 
               <Text style={styles.successTitle}>Nộp hồ sơ thành công!</Text>
@@ -1717,10 +1747,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   cardsContainer: { flexDirection: "row", gap: 12, marginBottom: 24 },
-  inputError: { borderColor: "#B91C1C" },
-  errorTextColor: { color: "#B91C1C" },
+  inputError: { borderColor: "#7A1012" },
+  errorTextColor: { color: "#7A1012" },
   modelErrorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: -12,
@@ -1738,11 +1768,11 @@ const styles = StyleSheet.create({
   cardActive: {
     borderColor: COLORS.primary,
     borderWidth: 1.5,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8F9FA",
   },
   cardLocked: { opacity: 0.6 },
   cardIconBox: {
-    backgroundColor: "#F0F4F4",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     width: 48,
     height: 48,
     borderRadius: 8,
@@ -1804,28 +1834,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   fieldErrorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: -10,
     marginBottom: 14,
   },
   uploadFieldErrorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 11,
     lineHeight: 16,
     marginTop: -10,
     marginBottom: 4,
   },
   paymentFieldErrorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 17,
     marginTop: -6,
     marginBottom: 12,
   },
   submitErrorText: {
-    color: "#B91C1C",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 10,
@@ -1858,14 +1888,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8F9FA",
     overflow: "hidden",
   },
   uploadIcon: { marginBottom: 8 },
   uploadBoxText: { fontSize: 12, color: COLORS.textLight, textAlign: "center" },
   uploadedImage: { width: "100%", height: "100%" },
   paymentBox: {
-    backgroundColor: "#F0F7F6",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     padding: 16,
     borderRadius: 12,
     marginBottom: 24,
@@ -1911,7 +1941,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
   },
-  inactiveButton: { backgroundColor: "#A0B4B3" },
+  inactiveButton: { backgroundColor: "#BAC2C1" },
   primaryButtonText: {
     color: COLORS.white,
     fontSize: 14,
@@ -1920,7 +1950,7 @@ const styles = StyleSheet.create({
   },
   buttonIcon: { marginLeft: 8 },
   submitButton: {
-    backgroundColor: "#7B1E1E",
+    backgroundColor: "#7A1012",
     height: 52,
     borderRadius: 8,
     justifyContent: "center",
@@ -1943,7 +1973,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "#F0F9FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 24,
@@ -1975,7 +2005,7 @@ const styles = StyleSheet.create({
 
   readOnlyCard: {
     width: "100%",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F8F9FA",
     padding: 16,
     borderRadius: 12,
     marginBottom: 32,
@@ -2012,7 +2042,7 @@ const styles = StyleSheet.create({
 
   warningBanner: {
     flexDirection: "row",
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "rgba(154, 100, 24, 0.10)",
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
@@ -2021,26 +2051,26 @@ const styles = StyleSheet.create({
   },
   warningText: {
     fontSize: 13,
-    color: "#92400E",
+    color: "#9A6418",
     lineHeight: 18,
     marginTop: 4,
     paddingRight: 20,
   },
   errorBanner: {
     flexDirection: "row",
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     padding: 14,
     borderRadius: 12,
     marginBottom: 16,
     alignItems: "flex-start",
     gap: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "rgba(122, 16, 18, 0.22)",
   },
   errorBannerText: {
     flex: 1,
     fontSize: 13,
-    color: "#B91C1C",
+    color: "#7A1012",
     lineHeight: 18,
   },
 
@@ -2086,7 +2116,7 @@ const styles = StyleSheet.create({
   },
   scopeOptionSelected: {
     borderColor: COLORS.primary,
-    backgroundColor: "#F0F9FF",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   scopeOptionText: {
     flex: 1,
@@ -2101,7 +2131,7 @@ const styles = StyleSheet.create({
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F6F8",
+    backgroundColor: "#F8F9FA",
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -2121,7 +2151,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#BAC2C1",
   },
   bankLogo: {
     width: 40,

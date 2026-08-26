@@ -22,6 +22,7 @@ import {
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
@@ -364,7 +365,7 @@ export default function VerificationSetupScreen() {
             <Ionicons
               name="shield-checkmark"
               size={48}
-              color="#27AE60"
+              color="#2F765D"
               style={styles.headerIcon}
             />
             <Text style={styles.title}>Xác minh & Thanh toán</Text>
@@ -379,14 +380,28 @@ export default function VerificationSetupScreen() {
           </View>
 
           <Text style={styles.fieldLabel}>Số CCCD/CMND</Text>
-          <TextInput
-            style={[styles.input, errors.repCode ? styles.inputError : undefined]}
+          <SensitiveNumberField
+            containerStyle={[
+              styles.input,
+              { paddingHorizontal: 0 },
+            ]}
+            inputStyle={{
+              paddingHorizontal: 16,
+            }}
+            hasError={Boolean(errors.repCode)}
             placeholder="Nhập số CCCD (12 số)..."
-            placeholderTextColor={COLORS.textLight}
+            placeholderTextColor={
+              COLORS.textLight
+            }
             keyboardType="numeric"
             value={repCode}
             onChangeText={(value) => {
-              setRepCode(value.replace(/[^0-9]/g, ""));
+              setRepCode(
+                value
+                  .replace(/[^0-9]/g, "")
+                  .slice(0, 12),
+              );
+
               clearError("repCode");
             }}
             editable={!isLoading}
@@ -502,14 +517,31 @@ export default function VerificationSetupScreen() {
             {errors.bank ? <Text style={styles.fieldError}>{errors.bank}</Text> : null}
 
             <Text style={styles.fieldLabel}>Số tài khoản</Text>
-            <TextInput
-              style={[styles.input, errors.bankAccount ? styles.inputError : undefined]}
+            <SensitiveNumberField
+              containerStyle={[
+                styles.input,
+                { paddingHorizontal: 0 },
+              ]}
+              inputStyle={{
+                paddingHorizontal: 16,
+              }}
+              hasError={Boolean(
+                errors.bankAccount,
+              )}
               placeholder="Nhập số tài khoản..."
-              placeholderTextColor={COLORS.textLight}
+              placeholderTextColor={
+                COLORS.textLight
+              }
               keyboardType="number-pad"
               value={bankAccount}
               onChangeText={(value) => {
-                setBankAccount(value.replace(/[^0-9]/g, ""));
+                setBankAccount(
+                  value.replace(
+                    /[^0-9]/g,
+                    "",
+                  ),
+                );
+
                 clearError("bankAccount");
               }}
               editable={!isLoading}
@@ -635,7 +667,7 @@ export default function VerificationSetupScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   header: { paddingHorizontal: 20, paddingTop: 16 },
   backButton: { alignSelf: "flex-start", padding: 4 },
   scrollContainer: { padding: 24, paddingTop: 12, paddingBottom: 44 },
@@ -657,9 +689,9 @@ const styles = StyleSheet.create({
   },
   paymentHeader: { marginTop: 30 },
   verticalBar: { width: 4, height: 20, borderRadius: 2, backgroundColor: COLORS.primary },
-  sectionTitle: { fontSize: 17, fontWeight: "900", color: "#334155" },
-  fieldLabel: { color: "#334155", fontSize: 13, fontWeight: "800", marginBottom: 8 },
-  sharedLabel: { color: "#334155", fontSize: 13, fontWeight: "800", marginBottom: 8 },
+  sectionTitle: { fontSize: 17, fontWeight: "900", color: "#172830" },
+  fieldLabel: { color: "#172830", fontSize: 13, fontWeight: "800", marginBottom: 8 },
+  sharedLabel: { color: "#172830", fontSize: 13, fontWeight: "800", marginBottom: 8 },
   input: {
     minHeight: 54,
     borderWidth: 1,
@@ -687,7 +719,7 @@ const styles = StyleSheet.create({
     height: 126,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#CBD5E1",
+    borderColor: "#BAC2C1",
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
@@ -696,7 +728,7 @@ const styles = StyleSheet.create({
   },
   imagePickerText: { marginTop: 8, color: COLORS.textLight, fontSize: 13 },
   previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  paymentCard: { backgroundColor: "#F1F5F9", borderRadius: 14, padding: 16 },
+  paymentCard: { backgroundColor: "#F8F9FA", borderRadius: 14, padding: 16 },
   bankPicker: {
     minHeight: 54,
     borderWidth: 1,
@@ -725,13 +757,13 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.65 },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 20 },
   messageText: { fontSize: 12, lineHeight: 18 },
-  messageError: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  messageErrorText: { color: "#B91C1C" },
-  messageSuccess: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-  messageSuccessText: { color: "#047857" },
-  messageInfo: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-  messageInfoText: { color: "#1D4ED8" },
-  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(15,23,42,0.45)" },
+  messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
+  messageErrorText: { color: "#7A1012" },
+  messageSuccess: { backgroundColor: "rgba(47, 118, 93, 0.10)", borderColor: "rgba(47, 118, 93, 0.24)" },
+  messageSuccessText: { color: "#2F765D" },
+  messageInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
+  messageInfoText: { color: "#2B5659" },
+  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(23, 40, 48, 0.45)" },
   modalContent: {
     maxHeight: "75%",
     backgroundColor: COLORS.white,
@@ -761,7 +793,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#BAC2C1",
   },
   bankOptionLogo: { width: 34, height: 34, resizeMode: "contain" },
   bankOptionName: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
