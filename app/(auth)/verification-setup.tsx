@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -20,6 +19,7 @@ import {
 } from "react-native";
 
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
+import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
@@ -28,14 +28,6 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
-interface Bank {
-  id: number;
-  name: string;
-  code: string;
-  bin: string;
-  shortName: string;
-  logo: string;
-}
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -86,6 +78,45 @@ const appendFileToForm = async (
 const uppercaseName = (value: string) =>
   value.normalize("NFC").toLocaleUpperCase("vi-VN");
 
+const getStringParam = (
+  value: string | string[] | undefined,
+) => {
+  return Array.isArray(value)
+    ? value[0] ?? ""
+    : value ?? "";
+};
+
+const isRegistrationSessionExpiredError = (
+  error: unknown,
+) => {
+  const responseData = (error as any)
+    ?.response?.data;
+
+  const payload =
+    responseData?.data ?? responseData;
+
+  const code = String(
+    payload?.code ??
+      responseData?.code ??
+      "",
+  ).toUpperCase();
+
+  const message = String(
+    payload?.message ??
+      responseData?.message ??
+      "",
+  ).toLowerCase();
+
+  return (
+    code === "VALIDATION_ERROR" &&
+    message.includes("registration session") &&
+    (
+      message.includes("invalid") ||
+      message.includes("expired")
+    )
+  );
+};
+
 export default function VerificationSetupScreen() {
   const router = useRouter();
   const { login } = useAuth();
@@ -104,6 +135,43 @@ export default function VerificationSetupScreen() {
   const [message, setMessage] = useState<InlineMessage>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
 
+  const emailValue = getStringParam(email);
+
+  const [
+    activeRegistrationToken,
+    setActiveRegistrationToken,
+  ] = useState(
+    getStringParam(registrationToken),
+  );
+
+  const [
+    needsReverification,
+    setNeedsReverification,
+  ] = useState(false);
+
+  const [
+    showReverifyModal,
+    setShowReverifyModal,
+  ] = useState(false);
+
+  const [reverifyOtp, setReverifyOtp] =
+    useState("");
+
+  const [
+    reverifyError,
+    setReverifyError,
+  ] = useState("");
+
+  const [
+    isReverifyLoading,
+    setIsReverifyLoading,
+  ] = useState(false);
+
+  const [
+    pendingIncludeVerification,
+    setPendingIncludeVerification,
+  ] = useState<boolean | null>(null);
+
   const [repCode, setRepCode] = useState("");
   const [repName, setRepName] = useState("");
   const [repDob, setRepDob] = useState("");
@@ -113,50 +181,9 @@ export default function VerificationSetupScreen() {
 
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState("");
-  const [bankDisplayCode, setBankDisplayCode] = useState("");
-  const [bankLogo, setBankLogo] = useState<string | null>(null);
   const [bankAccount, setBankAccount] = useState("");
   const [bankAccountName, setBankAccountName] = useState("");
 
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [isBankLoading, setIsBankLoading] = useState(false);
-  const [bankLoadError, setBankLoadError] = useState("");
-  const [searchBankQuery, setSearchBankQuery] = useState("");
-
-  useEffect(() => {
-    const fetchBanks = async () => {
-      try {
-        setIsBankLoading(true);
-        setBankLoadError("");
-        const response = await fetch("https://api.vietqr.io/v2/banks");
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const json = await response.json();
-        if (json.code !== "00" || !Array.isArray(json.data)) {
-          throw new Error("Dữ liệu ngân hàng không hợp lệ.");
-        }
-        setBanks(json.data);
-      } catch (error) {
-        setBankLoadError(
-          getApiErrorMessage(error, "Không thể tải danh sách ngân hàng. Vui lòng thử lại."),
-        );
-      } finally {
-        setIsBankLoading(false);
-      }
-    };
-
-    void fetchBanks();
-  }, []);
-
-  const filteredBanks = useMemo(() => {
-    const keyword = searchBankQuery.trim().toLocaleLowerCase("vi-VN");
-    if (!keyword) return banks;
-    return banks.filter((bank) =>
-      [bank.shortName, bank.name, bank.code, bank.bin].some((value) =>
-        String(value).toLocaleLowerCase("vi-VN").includes(keyword),
-      ),
-    );
-  }, [banks, searchBankQuery]);
 
   const hasVerificationData = useMemo(
     () =>
@@ -189,15 +216,7 @@ export default function VerificationSetupScreen() {
     setMessage(null);
   };
 
-  const handleSelectBank = (bank: Bank) => {
-    setBankCode(String(bank.bin));
-    setBankName(uppercaseName(bank.shortName));
-    setBankDisplayCode(uppercaseName(bank.code));
-    setBankLogo(bank.logo);
-    setSearchBankQuery("");
-    setShowBankModal(false);
-    clearError("bank");
-  };
+
 
   const pickImage = async (side: "front" | "back") => {
     try {
@@ -268,77 +287,346 @@ export default function VerificationSetupScreen() {
     return Object.keys(next).length === 0;
   };
 
-  const executeRegistration = async (includeVerification: boolean) => {
+  const executeRegistration = async (
+    includeVerification: boolean,
+    tokenOverride?: string,
+  ) => {
     setMessage(null);
-    if (includeVerification && !validateVerification()) return;
+
+    if (
+      includeVerification &&
+      !validateVerification()
+    ) {
+      return;
+    }
+
+    const tokenToUse =
+      tokenOverride ??
+      activeRegistrationToken;
+
+    if (!tokenToUse) {
+      setNeedsReverification(true);
+      setPendingIncludeVerification(
+        includeVerification,
+      );
+
+      setMessage({
+        type: "error",
+        text:
+          "Phiên xác thực email không còn hợp lệ. " +
+          "Vui lòng xác thực lại email để tiếp tục đăng ký.",
+      });
+
+      return;
+    }
 
     try {
       setIsLoading(true);
+
       const formData = new FormData();
 
-      formData.append("Username", String(username || ""));
-      formData.append("Password", String(password || ""));
-      formData.append("PhoneNumber", String(phoneNumber || ""));
-      formData.append("FullName", String(fullName || ""));
+      formData.append(
+        "Username",
+        String(username || ""),
+      );
+
+      formData.append(
+        "Password",
+        String(password || ""),
+      );
+
+      formData.append(
+        "PhoneNumber",
+        String(phoneNumber || ""),
+      );
+
+      formData.append(
+        "FullName",
+        String(fullName || ""),
+      );
 
       const hasAvatar =
         avatarUri &&
         avatarUri !== "undefined" &&
         avatarUri !== "null" &&
         String(avatarUri).trim() !== "";
+
       if (hasAvatar) {
-        await appendFileToForm(formData, "AvatarUrl", String(avatarUri), "avatar.jpg");
+        await appendFileToForm(
+          formData,
+          "AvatarUrl",
+          String(avatarUri),
+          "avatar.jpg",
+        );
       }
 
       if (includeVerification) {
-        if (repCode.trim()) formData.append("RepresentativeCode", repCode.trim());
-        if (repName.trim()) formData.append("RepresentativeName", uppercaseName(repName.trim()));
-        if (repDob.trim()) formData.append("RepresentativeDob", repDob.trim());
-        if (repAddress.trim()) formData.append("RepresentativeAddress", repAddress.trim());
-        if (bankCode.trim()) formData.append("BankCode", bankCode.trim());
-        if (bankName.trim()) formData.append("BankName", uppercaseName(bankName.trim()));
-        if (bankAccount.trim()) formData.append("AccountNumber", bankAccount.trim());
+        if (repCode.trim()) {
+          formData.append(
+            "RepresentativeCode",
+            repCode.trim(),
+          );
+        }
+
+        if (repName.trim()) {
+          formData.append(
+            "RepresentativeName",
+            uppercaseName(
+              repName.trim(),
+            ),
+          );
+        }
+
+        if (repDob.trim()) {
+          formData.append(
+            "RepresentativeDob",
+            repDob.trim(),
+          );
+        }
+
+        if (repAddress.trim()) {
+          formData.append(
+            "RepresentativeAddress",
+            repAddress.trim(),
+          );
+        }
+
+        if (bankCode.trim()) {
+          formData.append(
+            "BankCode",
+            bankCode.trim(),
+          );
+        }
+
+        if (bankName.trim()) {
+          formData.append(
+            "BankName",
+            uppercaseName(
+              bankName.trim(),
+            ),
+          );
+        }
+
+        if (bankAccount.trim()) {
+          formData.append(
+            "AccountNumber",
+            bankAccount.trim(),
+          );
+        }
+
         if (bankAccountName.trim()) {
-          formData.append("AccountName", uppercaseName(bankAccountName.trim()));
+          formData.append(
+            "AccountName",
+            uppercaseName(
+              bankAccountName.trim(),
+            ),
+          );
         }
+
         if (frontImage) {
-          await appendFileToForm(formData, "FrontIDCardImage", frontImage, "front.jpg");
+          await appendFileToForm(
+            formData,
+            "FrontIDCardImage",
+            frontImage,
+            "front.jpg",
+          );
         }
+
         if (backImage) {
-          await appendFileToForm(formData, "BackIDCardImage", backImage, "back.jpg");
+          await appendFileToForm(
+            formData,
+            "BackIDCardImage",
+            backImage,
+            "back.jpg",
+          );
         }
       }
 
-      const response = await authApi.registerPersonal(
-        String(registrationToken || ""),
-        formData,
-      );
+      const response =
+        await authApi.registerPersonal(
+          tokenToUse,
+          formData,
+        );
 
-      const realEmail = response.data?.data?.user?.email || email;
+      setNeedsReverification(false);
+      setPendingIncludeVerification(null);
+
+      const realEmail =
+        response.data?.data?.user?.email ||
+        emailValue;
+
       if (!realEmail || !password) {
         setMessage({
           type: "success",
-          text: "Tạo tài khoản thành công. Vui lòng đăng nhập để tiếp tục.",
+          text:
+            "Tạo tài khoản thành công. " +
+            "Vui lòng đăng nhập để tiếp tục.",
         });
+
         router.replace("/(auth)/login");
         return;
       }
 
       try {
-        await login(String(realEmail), String(password));
+        await login(
+          String(realEmail),
+          String(password),
+        );
+
         router.replace("/(tabs)");
       } catch {
         router.replace("/(auth)/login");
       }
     } catch (error) {
+      if (
+        isRegistrationSessionExpiredError(
+          error,
+        )
+      ) {
+        setNeedsReverification(true);
+
+        setPendingIncludeVerification(
+          includeVerification,
+        );
+
+        setMessage({
+          type: "error",
+          text:
+            "Phiên xác thực email đã hết hạn. " +
+            "Vui lòng xác thực lại email để tiếp tục đăng ký.",
+        });
+
+        return;
+      }
+
       setMessage({
         type: "error",
-        text: getApiErrorMessage(error, "Không thể tạo tài khoản. Vui lòng thử lại."),
+        text: getApiErrorMessage(
+          error,
+          "Không thể tạo tài khoản. Vui lòng thử lại.",
+        ),
       });
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleStartReverification =
+    async () => {
+      if (!emailValue) {
+        setMessage({
+          type: "error",
+          text:
+            "Không tìm thấy email đăng ký. " +
+            "Vui lòng thực hiện lại quá trình đăng ký.",
+        });
+
+        return;
+      }
+
+      try {
+        setIsReverifyLoading(true);
+        setReverifyError("");
+
+        await authApi.sendOtp(emailValue);
+
+        setReverifyOtp("");
+        setShowReverifyModal(true);
+      } catch (error) {
+        setMessage({
+          type: "error",
+          text: getApiErrorMessage(
+            error,
+            "Không thể gửi mã OTP. Vui lòng thử lại.",
+          ),
+        });
+      } finally {
+        setIsReverifyLoading(false);
+      }
+    };
+
+  const handleVerifyRegistrationOtp =
+    async () => {
+      const normalizedOtp =
+        reverifyOtp
+          .replace(/\D/g, "")
+          .slice(0, 6);
+
+      if (normalizedOtp.length !== 6) {
+        setReverifyError(
+          "Vui lòng nhập đủ 6 chữ số OTP.",
+        );
+
+        return;
+      }
+
+      if (!emailValue) {
+        setReverifyError(
+          "Không tìm thấy email đăng ký.",
+        );
+
+        return;
+      }
+
+      try {
+        setIsReverifyLoading(true);
+        setReverifyError("");
+
+        const response =
+          await authApi.verifyOtp(
+            emailValue,
+            normalizedOtp,
+          );
+
+        const newRegistrationToken =
+          response.data
+            ?.registrationToken ??
+          response.data?.data
+            ?.registrationToken;
+
+        if (!newRegistrationToken) {
+          setReverifyError(
+            "Không nhận được phiên đăng ký mới. Vui lòng thử lại.",
+          );
+
+          return;
+        }
+
+        const newToken = String(
+          newRegistrationToken,
+        );
+
+        setActiveRegistrationToken(
+          newToken,
+        );
+
+        setNeedsReverification(false);
+        setShowReverifyModal(false);
+        setReverifyOtp("");
+
+        const shouldIncludeVerification =
+          pendingIncludeVerification ??
+          hasVerificationData;
+
+        setPendingIncludeVerification(
+          null,
+        );
+
+        await executeRegistration(
+          shouldIncludeVerification,
+          newToken,
+        );
+      } catch (error) {
+        setReverifyError(
+          getApiErrorMessage(
+            error,
+            "Mã OTP không chính xác hoặc đã hết hạn.",
+          ),
+        );
+      } finally {
+        setIsReverifyLoading(false);
+      }
+    };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -494,27 +782,27 @@ export default function VerificationSetupScreen() {
 
           <View style={styles.paymentCard}>
             <Text style={styles.fieldLabel}>Ngân hàng thụ hưởng</Text>
-            <TouchableOpacity
-              style={[styles.bankPicker, errors.bank ? styles.inputError : undefined]}
-              onPress={() => setShowBankModal(true)}
+            <BankPickerField
+              bankBin={bankCode}
+              bankName={bankName}
+              onChange={(bank) => {
+                setBankCode(String(bank.bin));
+                setBankName(uppercaseName(bank.shortName));
+                clearError("bank");
+              }}
+              onClear={() => {
+                setBankCode("");
+                setBankName("");
+                clearError("bank");
+              }}
               disabled={isLoading}
-            >
-              {bankLogo ? <Image source={{ uri: bankLogo }} style={styles.bankLogo} /> : null}
-              <Text
-                style={bankCode ? styles.bankValue : styles.bankPlaceholder}
-                numberOfLines={1}
-              >
-                {bankCode
-                  ? `${bankName}${bankDisplayCode ? ` (${bankDisplayCode})` : ""}`
-                  : "Chọn ngân hàng của bạn..."}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
-            {isBankLoading ? (
-              <Text style={styles.helperText}>Đang tải danh sách ngân hàng...</Text>
+              hasError={Boolean(errors.bank)}
+              placeholder="Chọn ngân hàng của bạn..."
+              style={{ marginBottom: 16 }}
+            />
+            {errors.bank ? (
+              <Text style={styles.fieldError}>{errors.bank}</Text>
             ) : null}
-            {bankLoadError ? <Text style={styles.fieldError}>{bankLoadError}</Text> : null}
-            {errors.bank ? <Text style={styles.fieldError}>{errors.bank}</Text> : null}
 
             <Text style={styles.fieldLabel}>Số tài khoản</Text>
             <SensitiveNumberField
@@ -595,6 +883,46 @@ export default function VerificationSetupScreen() {
             </View>
           ) : null}
 
+          {needsReverification ? (
+            <TouchableOpacity
+              style={[
+                styles.reverifyButton,
+                isReverifyLoading
+                  ? styles.disabledButton
+                  : undefined,
+              ]}
+              disabled={
+                isLoading ||
+                isReverifyLoading
+              }
+              onPress={() =>
+                void handleStartReverification()
+              }
+            >
+              {isReverifyLoading ? (
+                <ActivityIndicator
+                  color={COLORS.primary}
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="mail-unread-outline"
+                    size={19}
+                    color={COLORS.primary}
+                  />
+
+                  <Text
+                    style={
+                      styles.reverifyButtonText
+                    }
+                  >
+                    Xác thực lại email
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.primaryButton, isLoading ? styles.disabledButton : undefined]}
             disabled={isLoading}
@@ -612,54 +940,149 @@ export default function VerificationSetupScreen() {
       </KeyboardAvoidingView>
 
       <Modal
-        visible={showBankModal}
+        visible={showReverifyModal}
         transparent
-        animationType="slide"
-        onRequestClose={() => setShowBankModal(false)}
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isReverifyLoading) {
+            setShowReverifyModal(false);
+          }
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <KeyboardAvoidingView
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : "height"
+          }
+          style={styles.modalOverlay}
+        >
+          <View
+            style={
+              styles.reverifyModalContent
+            }
+          >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Chọn ngân hàng</Text>
-              <TouchableOpacity onPress={() => setShowBankModal(false)}>
-                <Ionicons name="close" size={24} color={COLORS.text} />
+              <Text style={styles.modalTitle}>
+                Xác thực lại email
+              </Text>
+
+              <TouchableOpacity
+                disabled={isReverifyLoading}
+                onPress={() =>
+                  setShowReverifyModal(false)
+                }
+              >
+                <Ionicons
+                  name="close"
+                  size={24}
+                  color={COLORS.text}
+                />
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Tìm tên hoặc mã ngân hàng..."
-              placeholderTextColor={COLORS.textLight}
-              value={searchBankQuery}
-              onChangeText={setSearchBankQuery}
-              autoCapitalize="characters"
-            />
-            {bankLoadError ? (
-              <Text style={styles.fieldError}>{bankLoadError}</Text>
-            ) : null}
-            <FlatList
-              data={filteredBanks}
-              keyExtractor={(item) => String(item.id)}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.bankOption}
-                  onPress={() => handleSelectBank(item)}
-                >
-                  {item.logo ? <Image source={{ uri: item.logo }} style={styles.bankOptionLogo} /> : null}
-                  <View style={styles.flex}>
-                    <Text style={styles.bankOptionName}>{uppercaseName(item.shortName)}</Text>
-                    <Text style={styles.bankOptionCode}>{uppercaseName(item.code)}</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>
-                  {isBankLoading ? "Đang tải..." : "Không tìm thấy ngân hàng."}
-                </Text>
+
+            <Text
+              style={
+                styles.reverifyDescription
               }
+            >
+              Mã OTP mới đã được gửi đến{" "}
+              {emailValue}. Nhập mã để tiếp tục
+              đăng ký mà không mất thông tin đã
+              điền.
+            </Text>
+
+            <TextInput
+              style={[
+                styles.reverifyOtpInput,
+                reverifyError
+                  ? styles.inputError
+                  : undefined,
+              ]}
+              value={reverifyOtp}
+              onChangeText={(value) => {
+                setReverifyOtp(
+                  value
+                    .replace(/\D/g, "")
+                    .slice(0, 6),
+                );
+
+                setReverifyError("");
+              }}
+              placeholder="000000"
+              placeholderTextColor={
+                COLORS.textLight
+              }
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() =>
+                void handleVerifyRegistrationOtp()
+              }
+              editable={!isReverifyLoading}
             />
+
+            {reverifyError ? (
+              <Text
+                style={
+                  styles.reverifyErrorText
+                }
+              >
+                {reverifyError}
+              </Text>
+            ) : null}
+
+            <View
+              style={styles.reverifyActions}
+            >
+              <TouchableOpacity
+                style={
+                  styles.reverifyCancelButton
+                }
+                disabled={isReverifyLoading}
+                onPress={() =>
+                  setShowReverifyModal(false)
+                }
+              >
+                <Text
+                  style={
+                    styles.reverifyCancelText
+                  }
+                >
+                  HỦY
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.reverifyConfirmButton,
+                  isReverifyLoading
+                    ? styles.disabledButton
+                    : undefined,
+                ]}
+                disabled={isReverifyLoading}
+                onPress={() =>
+                  void handleVerifyRegistrationOtp()
+                }
+              >
+                {isReverifyLoading ? (
+                  <ActivityIndicator
+                    color={COLORS.white}
+                  />
+                ) : (
+                  <Text
+                    style={
+                      styles.reverifyConfirmText
+                    }
+                  >
+                    XÁC NHẬN
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -730,20 +1153,70 @@ const styles = StyleSheet.create({
   previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
   paymentCard: { backgroundColor: "#F8F9FA", borderRadius: 14, padding: 16 },
   bankPicker: {
+    width: "100%",
     minHeight: 54,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 10,
     backgroundColor: COLORS.white,
-    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+
+  bankPickerSelection: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 16,
+    paddingLeft: 14,
+    paddingRight: 8,
   },
-  bankLogo: { width: 26, height: 26, resizeMode: "contain" },
-  bankValue: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: "700" },
-  bankPlaceholder: { flex: 1, color: COLORS.textLight, fontSize: 14 },
+
+  bankActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 0,
+    marginLeft: "auto",
+    paddingRight: 6,
+  },
+
+  bankClearButton: {
+    width: 34,
+    height: 54,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  bankChevronButton: {
+    width: 34,
+    height: 54,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  bankLogo: {
+    width: 26,
+    height: 26,
+    resizeMode: "contain",
+  },
+
+  bankValue: {
+    flex: 1,
+    minWidth: 0,
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  bankPlaceholder: {
+    flex: 1,
+    minWidth: 0,
+    color: COLORS.textLight,
+    fontSize: 14,
+  },
   helperText: { color: COLORS.textLight, fontSize: 11, marginTop: -10, marginBottom: 14 },
   primaryButton: {
     minHeight: 58,
@@ -755,6 +1228,86 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "900" },
   disabledButton: { opacity: 0.65 },
+  reverifyButton: {
+    minHeight: 52,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  reverifyButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  reverifyModalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 20,
+  },
+  reverifyDescription: {
+    color: COLORS.textLight,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 18,
+  },
+  reverifyOtpInput: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    color: COLORS.text,
+    fontSize: 22,
+    fontWeight: "800",
+    textAlign: "center",
+    letterSpacing: 8,
+    paddingHorizontal: 16,
+  },
+  reverifyErrorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  reverifyActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+  },
+  reverifyCancelButton: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+  },
+  reverifyCancelText: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  reverifyConfirmButton: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  reverifyConfirmText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: "900",
+  },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 20 },
   messageText: { fontSize: 12, lineHeight: 18 },
   messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },

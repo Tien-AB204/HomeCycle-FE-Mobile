@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -26,6 +25,7 @@ import AddressPickerField, {
 import CalendarDateField, {
   CalendarDateFieldHandle,
 } from "../../src/components/shared/CalendarDateField";
+import BankPickerField from "../../src/components/shared/BankPickerField";
 import FullNameField from "../../src/components/shared/FullNameField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
@@ -38,14 +38,6 @@ import {
   validateFullName,
 } from "../../src/utils/formValidation";
 
-interface Bank {
-  id: number;
-  name: string;
-  code: string;
-  bin: string;
-  shortName: string;
-  logo: string;
-}
 
 const OPERATING_SCOPE_OPTIONS = [
   "Toàn quốc",
@@ -170,7 +162,6 @@ export default function BusinessSetupScreen() {
   const [backImageError, setBackImageError] = useState("");
   const [authorizationLetterError, setAuthorizationLetterError] = useState("");
   const [bankError, setBankError] = useState("");
-  const [bankLoadError, setBankLoadError] = useState("");
   const [accountNumberError, setAccountNumberError] = useState("");
   const [accountNameError, setAccountNameError] = useState("");
 
@@ -209,18 +200,10 @@ export default function BusinessSetupScreen() {
 
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState("");
-  const [bankDisplayCode, setBankDisplayCode] = useState("");
-  const [bankLogo, setBankLogo] = useState<string | null>(null);
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
   const [isAccountNameManuallyEdited, setIsAccountNameManuallyEdited] =
     useState(false);
-
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [filteredBanks, setFilteredBanks] = useState<Bank[]>([]);
-  const [isBankLoading, setIsBankLoading] = useState(false);
-  const [searchBankQuery, setSearchBankQuery] = useState("");
 
   // API business registration nằm trực tiếp trong file đang sử dụng nó.
   useEffect(() => {
@@ -315,72 +298,6 @@ export default function BusinessSetupScreen() {
     fetchOldData();
   }, [isRejected]);
 
-  // API danh sách ngân hàng được sử dụng trực tiếp tại form này.
-  useEffect(() => {
-    const fetchBanks = async () => {
-      try {
-        setIsBankLoading(true);
-        setBankLoadError("");
-        const response = await fetch("https://api.vietqr.io/v2/banks");
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const json = await response.json();
-        if (json.code === "00" && Array.isArray(json.data)) {
-          setBanks(json.data);
-          setFilteredBanks(json.data);
-          return;
-        }
-        throw new Error("Invalid bank response");
-      } catch {
-        setBankLoadError(
-          "Không thể tải danh sách ngân hàng. Vui lòng thử lại sau.",
-        );
-      } finally {
-        setIsBankLoading(false);
-      }
-    };
-    fetchBanks();
-  }, []);
-
-  useEffect(() => {
-    if (!bankCode || banks.length === 0) return;
-
-    const matchedBank = banks.find(
-      (bank) =>
-        String(bank.bin) === String(bankCode) || bank.code === bankCode,
-    );
-
-    if (!matchedBank) return;
-
-    setBankDisplayCode(matchedBank.code);
-    setBankLogo(matchedBank.logo);
-    if (!bankName) setBankName(matchedBank.shortName);
-  }, [bankCode, bankName, banks]);
-
-  const handleSearchBank = (text: string) => {
-    setSearchBankQuery(text);
-    const normalizedText = text.trim().toLowerCase();
-    if (!normalizedText) return setFilteredBanks(banks);
-    setFilteredBanks(
-      banks.filter(
-        (b) =>
-          b.shortName.toLowerCase().includes(normalizedText) ||
-          b.name.toLowerCase().includes(normalizedText) ||
-          b.code.toLowerCase().includes(normalizedText),
-      ),
-    );
-  };
-
-  const handleSelectBank = (bank: Bank) => {
-    setBankCode(String(bank.bin));
-    setBankName(bank.shortName);
-    setBankDisplayCode(bank.code);
-    setBankLogo(bank.logo);
-    setBankError("");
-    setBankLoadError("");
-    setShowBankModal(false);
-    setSearchBankQuery("");
-    setFilteredBanks(banks);
-  };
 
   const setUploadError = (
     type: "license" | "front" | "back" | "authorization",
@@ -1400,43 +1317,26 @@ export default function BusinessSetupScreen() {
 
               <View style={styles.paymentBox}>
                 <Text style={styles.label}>Ngân hàng thụ hưởng *</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.bankSelector,
-                    bankError ? styles.inputError : undefined,
-                  ]}
-                  onPress={() => setShowBankModal(true)}
+                <BankPickerField
+                  bankBin={bankCode}
+                  bankName={bankName}
+                  onChange={(bank) => {
+                    setBankCode(String(bank.bin));
+                    setBankName(bank.shortName);
+                    setBankError("");
+                  }}
+                  onClear={() => {
+                    setBankCode("");
+                    setBankName("");
+                    setBankError("");
+                  }}
                   disabled={isLoading}
-                >
-                  {bankName ? (
-                    <View style={styles.selectedBankRow}>
-                      {bankLogo ? (
-                        <Image
-                          source={{ uri: bankLogo }}
-                          style={styles.selectedBankLogo}
-                          resizeMode="contain"
-                        />
-                      ) : null}
-                      <Text style={styles.inputBankText}>
-                        {bankName}
-                        {bankDisplayCode ? ` (${bankDisplayCode})` : ""}
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.placeholderText}>
-                      Chọn ngân hàng của bạn...
-                    </Text>
-                  )}
-                  <Ionicons
-                    name="chevron-down"
-                    size={20}
-                    color={bankError ? "#7A1012" : COLORS.textLight}
-                  />
-                </TouchableOpacity>
+                  hasError={Boolean(bankError)}
+                  placeholder="Chọn ngân hàng của bạn..."
+                  style={{ marginBottom: 16 }}
+                />
                 {bankError ? (
                   <Text style={styles.fieldErrorText}>{bankError}</Text>
-                ) : bankLoadError ? (
-                  <Text style={styles.fieldErrorText}>{bankLoadError}</Text>
                 ) : null}
 
                 <Text style={styles.label}>Số tài khoản *</Text>
@@ -1611,83 +1511,6 @@ export default function BusinessSetupScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showBankModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowBankModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Chọn Ngân Hàng</Text>
-              <TouchableOpacity
-                onPress={() => setShowBankModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchBarContainer}>
-              <Ionicons
-                name="search"
-                size={20}
-                color={COLORS.textLight}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={[styles.bankSearchInput, webInputStyle]}
-                placeholder="Tìm tên hoặc mã ngân hàng..."
-                placeholderTextColor={COLORS.textLight}
-                value={searchBankQuery}
-                onChangeText={handleSearchBank}
-                autoCapitalize="none"
-              />
-            </View>
-            {isBankLoading ? (
-              <ActivityIndicator
-                size="large"
-                color={COLORS.primary}
-                style={styles.bankLoading}
-              />
-            ) : (
-              <FlatList
-                data={filteredBanks}
-                keyExtractor={(item) => item.id.toString()}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.bankItem}
-                    onPress={() => handleSelectBank(item)}
-                  >
-                    <Image
-                      source={{ uri: item.logo }}
-                      style={styles.bankLogo}
-                      resizeMode="contain"
-                    />
-                    <View style={styles.bankInfo}>
-                      <Text style={styles.bankShortName}>
-                        {item.shortName}{" "}
-                        <Text style={styles.bankCodeText}>({item.code})</Text>
-                      </Text>
-                      <Text style={styles.bankFullName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  <Text style={styles.emptyBankText}>
-                    Không tìm thấy ngân hàng
-                  </Text>
-                }
-              />
-            )}
           </View>
         </View>
       </Modal>

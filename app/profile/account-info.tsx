@@ -1,14 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
+import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
@@ -40,14 +41,6 @@ import {
 
 const PLACEHOLDER_COLOR = "#547B7D";
 
-interface Bank {
-  id: number;
-  name: string;
-  code: string;
-  bin: string;
-  shortName: string;
-  logo: string;
-}
 
 const getRobustUrl = (url: string) => {
   if (url?.includes("googleusercontent.com")) {
@@ -86,6 +79,8 @@ type SaveMessage = {
   text: string;
 } | null;
 
+type PersonalSection = "profile" | "identity" | "bank";
+
 export default function AccountInfoScreen() {
   const router = useRouter();
   const { user, reloadUser } = useAuth();
@@ -93,6 +88,8 @@ export default function AccountInfoScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [saveMessage, setSaveMessage] = useState<SaveMessage>(null);
+  const [editingSection, setEditingSection] = useState<PersonalSection | null>(null);
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -112,33 +109,7 @@ export default function AccountInfoScreen() {
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
 
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [isBankLoading, setIsBankLoading] = useState(false);
-  const [bankLoadError, setBankLoadError] = useState("");
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [bankSearch, setBankSearch] = useState("");
 
-  const fetchBanks = useCallback(async () => {
-    try {
-      setIsBankLoading(true);
-      setBankLoadError("");
-      const response = await fetch("https://api.vietqr.io/v2/banks");
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const json = await response.json();
-      if (json.code !== "00" || !Array.isArray(json.data)) {
-        throw new Error("Invalid bank response");
-      }
-      setBanks(json.data);
-    } catch {
-      setBankLoadError("Không thể tải danh sách ngân hàng. Vui lòng thử lại.");
-    } finally {
-      setIsBankLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchBanks();
-  }, [fetchBanks]);
 
   useEffect(() => {
     setImageError(false);
@@ -166,27 +137,67 @@ export default function AccountInfoScreen() {
     setAccountName(toUppercaseText(sanitize(bank.accountName)));
   }, [user]);
 
-  const selectedBank = useMemo(
-    () =>
-      banks.find(
-        (bank) =>
-          String(bank.bin) === String(bankCode) ||
-          bank.code.toLocaleLowerCase("vi-VN") ===
-            bankCode.toLocaleLowerCase("vi-VN"),
-      ),
-    [bankCode, banks],
-  );
+  const resetSection = useCallback((section: PersonalSection) => {
+    if (!user) return;
 
-  const filteredBanks = useMemo(() => {
-    const keyword = bankSearch.trim().toLocaleLowerCase("vi-VN");
-    if (!keyword) return banks;
+    if (section === "profile") {
+      setUsername(sanitize(user.username));
+      setFullName(capitalizeWordInitials(sanitize(user.fullName || user.name)));
+      setPhoneNumber(sanitize(user.phoneNumber || user.phone));
+      setAvatarUrl(sanitize(user.avatarUrl || user.avatar));
+      setNewAvatarFile(null);
+    }
 
-    return banks.filter((bank) =>
-      [bank.shortName, bank.name, bank.code, bank.bin].some((value) =>
-        String(value).toLocaleLowerCase("vi-VN").includes(keyword),
-      ),
-    );
-  }, [bankSearch, banks]);
+    if (section === "identity") {
+      setRepCode(sanitize(user.representativeCode));
+      setRepName(toUppercaseText(sanitize(user.representativeName)));
+      setRepDob(sanitize(user.representativeDob));
+      setRepAddress(sanitize(user.representativeAddress));
+      setFrontImage(null);
+      setBackImage(null);
+    }
+
+    if (section === "bank") {
+      const bank = user.bankAccount || {};
+      setBankCode(sanitize(bank.bankCode));
+      setBankName(toUppercaseText(sanitize(bank.bankName)));
+      setAccountNumber(sanitize(bank.accountNumber));
+      setAccountName(toUppercaseText(sanitize(bank.accountName)));
+    }
+
+    setSaveMessage(null);
+  }, [user]);
+
+  const beginEdit = (section: PersonalSection) => {
+    if (isSaving) return;
+    resetSection(section);
+    setEditingSection(section);
+  };
+
+  const cancelEdit = (section: PersonalSection) => {
+    if (isSaving) return;
+    resetSection(section);
+    setEditingSection(null);
+  };
+
+  const dismissActiveEdit = () => {
+    if (!editingSection || isSaving) return;
+    cancelEdit(editingSection);
+  };
+
+  const handleSectionPress = (section: PersonalSection) => {
+    if (isSaving) return;
+
+    if (editingSection === section) return;
+
+    if (editingSection) {
+      cancelEdit(editingSection);
+      return;
+    }
+
+    beginEdit(section);
+  };
+
 
   const pickImage = async (type: "avatar" | "front" | "back") => {
     try {
@@ -212,15 +223,33 @@ export default function AccountInfoScreen() {
     }
   };
 
-  const handleSelectBank = (bank: Bank) => {
-    setBankCode(String(bank.bin));
-    setBankName(toUppercaseText(bank.shortName));
-    setBankSearch("");
-    setShowBankModal(false);
+
+  const handleAvatarImageChange = async () => {
+    if (isSaving) return;
+
+    if (editingSection && editingSection !== "profile") {
+      cancelEdit(editingSection);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (result.canceled) return;
+
+    if (editingSection !== "profile") {
+      beginEdit("profile");
+    }
+
     setSaveMessage(null);
+    setNewAvatarFile(result.assets[0]);
   };
 
-  const handleSaveChanges = async () => {
+  const handleSaveChanges = async (section: PersonalSection) => {
     setIsSaving(true);
     setSaveMessage(null);
 
@@ -229,185 +258,131 @@ export default function AccountInfoScreen() {
       const originalData = user || {};
       const bank = originalData.bankAccount || {};
 
-      const normalizedUsername =
-        username.trim();
-
-      const normalizedFullName =
-        capitalizeWordInitials(
+      if (section === "profile") {
+        const normalizedUsername = username.trim();
+        const normalizedFullName = capitalizeWordInitials(
           fullName.trim().replace(/\s+/gu, " "),
         );
-
-      const normalizedPhone =
-        normalizeVietnamPhone(phoneNumber);
-
-      const normalizedAccountName =
-        toUppercaseText(accountName).trim();
-
-      const originalUsername =
-        sanitize(originalData.username).trim();
-
-      const originalFullName =
-        capitalizeWordInitials(
-          sanitize(
-            originalData.fullName ||
-              originalData.name,
-          ),
-        )
-          .trim()
-          .replace(/\s+/gu, " ");
-
-      const originalPhone =
-        sanitize(
-          originalData.phoneNumber ||
-            originalData.phone,
+        const normalizedPhone = normalizeVietnamPhone(phoneNumber);
+        const originalUsername = sanitize(originalData.username).trim();
+        const originalFullName = capitalizeWordInitials(
+          sanitize(originalData.fullName || originalData.name),
+        ).trim().replace(/\s+/gu, " ");
+        const originalPhone = sanitize(
+          originalData.phoneNumber || originalData.phone,
         );
 
-      const usernameChanged =
-        normalizedUsername !== originalUsername;
+        const usernameChanged = normalizedUsername !== originalUsername;
+        const fullNameChanged = normalizedFullName !== originalFullName;
+        const phoneChanged =
+          normalizedPhone !== normalizeVietnamPhone(originalPhone);
 
-      const fullNameChanged =
-        normalizedFullName !== originalFullName;
+        if (usernameChanged || fullNameChanged || phoneChanged) {
+          const profileValidationError =
+            (usernameChanged ? validateUsername(username) : "") ||
+            (fullNameChanged ? validateFullName(fullName) : "") ||
+            (phoneChanged ? validateVietnamPhone(phoneNumber) : "");
 
-      const phoneChanged =
-        normalizedPhone !==
-        normalizeVietnamPhone(originalPhone);
+          if (profileValidationError) {
+            setSaveMessage({ type: "error", text: profileValidationError });
+            return;
+          }
 
-      const profileChanged =
-        usernameChanged ||
-        fullNameChanged ||
-        phoneChanged;
-
-      if (profileChanged) {
-        const usernameValidationError =
-          usernameChanged
-            ? validateUsername(username)
-            : "";
-
-        const fullNameValidationError =
-          fullNameChanged
-            ? validateFullName(fullName)
-            : "";
-
-        const phoneValidationError =
-          phoneChanged
-            ? validateVietnamPhone(phoneNumber)
-            : "";
-
-        const profileValidationError =
-          usernameValidationError ||
-          fullNameValidationError ||
-          phoneValidationError;
-
-        if (profileValidationError) {
-          setSaveMessage({
-            type: "error",
-            text: profileValidationError,
-          });
-          return;
-        }
-
-        apiTasks.push(
-          apiClient.patch(
-            "/personal-profiles/me/profile",
-            {
-              username: usernameChanged
-                ? normalizedUsername
-                : originalUsername,
-
-              fullName: fullNameChanged
-                ? normalizedFullName
-                : originalFullName,
-
-              phoneNumber: phoneChanged
-                ? normalizedPhone
-                : originalPhone,
-            },
-          ),
-        );
-      }
-      if (newAvatarFile) {
-        const formData = new FormData();
-        await appendFileToForm(
-          formData,
-          "AvatarUrl",
-          newAvatarFile,
-          "avatar.jpg",
-        );
-        apiTasks.push(
-          apiClient.patch("/personal-profiles/me/avatar", formData, {
-            timeout: 60000,
-          }),
-        );
-      }
-
-      const identityChanged =
-        repCode !== sanitize(originalData.representativeCode) ||
-        toUppercaseText(repName) !==
-          toUppercaseText(sanitize(originalData.representativeName)) ||
-        repDob !== sanitize(originalData.representativeDob) ||
-        repAddress !== sanitize(originalData.representativeAddress) ||
-        frontImage !== null ||
-        backImage !== null;
-
-      if (identityChanged) {
-        const formData = new FormData();
-        formData.append("RepresentativeCode", repCode || "");
-        formData.append("RepresentativeName", toUppercaseText(repName));
-        formData.append("RepresentativeDob", repDob || "");
-        formData.append("RepresentativeAddress", repAddress || "");
-
-        if (frontImage) {
-          await appendFileToForm(
-            formData,
-            "FrontIDCardImage",
-            frontImage,
-            "front.jpg",
-          );
-        }
-        if (backImage) {
-          await appendFileToForm(
-            formData,
-            "BackIDCardImage",
-            backImage,
-            "back.jpg",
+          apiTasks.push(
+            apiClient.patch("/personal-profiles/me/profile", {
+              username: usernameChanged ? normalizedUsername : originalUsername,
+              fullName: fullNameChanged ? normalizedFullName : originalFullName,
+              phoneNumber: phoneChanged ? normalizedPhone : originalPhone,
+            }),
           );
         }
 
-        apiTasks.push(
-          apiClient.patch("/personal-profiles/me/identity", formData, {
-            timeout: 60000,
-          }),
-        );
+        if (newAvatarFile) {
+          const formData = new FormData();
+          await appendFileToForm(formData, "AvatarUrl", newAvatarFile, "avatar.jpg");
+          apiTasks.push(
+            apiClient.patch("/personal-profiles/me/avatar", formData, {
+              timeout: 60000,
+            }),
+          );
+        }
       }
 
-      const bankChanged =
-        bankCode !== sanitize(bank.bankCode) ||
-        toUppercaseText(bankName) !== toUppercaseText(sanitize(bank.bankName)) ||
-        accountNumber !== sanitize(bank.accountNumber) ||
-        normalizedAccountName !== toUppercaseText(sanitize(bank.accountName)).trim();
+      if (section === "identity") {
+        const identityChanged =
+          repCode !== sanitize(originalData.representativeCode) ||
+          toUppercaseText(repName) !==
+            toUppercaseText(sanitize(originalData.representativeName)) ||
+          repDob !== sanitize(originalData.representativeDob) ||
+          repAddress !== sanitize(originalData.representativeAddress) ||
+          frontImage !== null ||
+          backImage !== null;
 
-      if (bankChanged) {
-        if (
-          !bankCode.trim() ||
-          !bankName.trim() ||
-          !accountNumber.trim() ||
-          !normalizedAccountName
-        ) {
-          setSaveMessage({
-            type: "warning",
-            text: "Vui lòng chọn ngân hàng và điền đủ số tài khoản, tên chủ tài khoản.",
-          });
-          return;
+        if (identityChanged) {
+          const formData = new FormData();
+          formData.append("RepresentativeCode", repCode || "");
+          formData.append("RepresentativeName", toUppercaseText(repName));
+          formData.append("RepresentativeDob", repDob || "");
+          formData.append("RepresentativeAddress", repAddress || "");
+
+          if (frontImage) {
+            await appendFileToForm(
+              formData,
+              "FrontIDCardImage",
+              frontImage,
+              "front.jpg",
+            );
+          }
+          if (backImage) {
+            await appendFileToForm(
+              formData,
+              "BackIDCardImage",
+              backImage,
+              "back.jpg",
+            );
+          }
+
+          apiTasks.push(
+            apiClient.patch("/personal-profiles/me/identity", formData, {
+              timeout: 60000,
+            }),
+          );
         }
+      }
 
-        apiTasks.push(
-          apiClient.patch("/personal-profiles/me/bank", {
-            bankCode: bankCode.trim(),
-            bankName: toUppercaseText(bankName).trim(),
-            accountNumber: accountNumber.trim(),
-            accountName: normalizedAccountName,
-          }),
-        );
+      if (section === "bank") {
+        const normalizedAccountName = toUppercaseText(accountName).trim();
+        const bankChanged =
+          bankCode !== sanitize(bank.bankCode) ||
+          toUppercaseText(bankName) !==
+            toUppercaseText(sanitize(bank.bankName)) ||
+          accountNumber !== sanitize(bank.accountNumber) ||
+          normalizedAccountName !==
+            toUppercaseText(sanitize(bank.accountName)).trim();
+
+        if (bankChanged) {
+          if (
+            !bankCode.trim() ||
+            !bankName.trim() ||
+            !accountNumber.trim() ||
+            !normalizedAccountName
+          ) {
+            setSaveMessage({
+              type: "warning",
+              text: "Vui lòng chọn ngân hàng và điền đủ số tài khoản, tên chủ tài khoản.",
+            });
+            return;
+          }
+
+          apiTasks.push(
+            apiClient.patch("/personal-profiles/me/bank", {
+              bankCode: bankCode.trim(),
+              bankName: toUppercaseText(bankName).trim(),
+              accountNumber: accountNumber.trim(),
+              accountName: normalizedAccountName,
+            }),
+          );
+        }
       }
 
       if (apiTasks.length === 0) {
@@ -420,13 +395,16 @@ export default function AccountInfoScreen() {
 
       await Promise.all(apiTasks);
       await reloadUser();
-      setNewAvatarFile(null);
-      setFrontImage(null);
-      setBackImage(null);
+      if (section === "profile") setNewAvatarFile(null);
+      if (section === "identity") {
+        setFrontImage(null);
+        setBackImage(null);
+      }
       setSaveMessage({
         type: "success",
         text: "Cập nhật thông tin thành công.",
       });
+      setEditingSection(null);
     } catch (error: unknown) {
       setSaveMessage({
         type: "error",
@@ -448,13 +426,52 @@ export default function AccountInfoScreen() {
     : avatarUrl && !imageError
       ? { uri: getRobustUrl(avatarUrl) }
       : { uri: defaultAvatar };
+  const hasActualAvatar = Boolean(newAvatarFile?.uri || avatarUrl);
+  const avatarPreviewUri = newAvatarFile?.uri
+    ? newAvatarFile.uri
+    : avatarUrl
+      ? getRobustUrl(avatarUrl)
+      : "";
 
   const SectionHeader = ({ title }: { title: string }) => (
     <View style={styles.sectionHeader}>
-      <View style={styles.sectionBar} />
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionHeading}>
+        <View style={styles.sectionBar} />
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
     </View>
   );
+
+  const EditActions = ({ section }: { section: PersonalSection }) =>
+    editingSection === section ? (
+      <View style={styles.sectionActions}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => cancelEdit(section)}
+          disabled={isSaving}
+        >
+          <Text style={styles.cancelButtonText}>Hủy</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            styles.sectionSaveButton,
+            isSaving ? styles.disabled : undefined,
+          ]}
+          onPress={() => void handleSaveChanges(section)}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={18} color={COLORS.white} />
+              <Text style={styles.primaryButtonText}>Xác nhận chỉnh sửa</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    ) : null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -480,7 +497,16 @@ export default function AccountInfoScreen() {
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={dismissActiveEdit}
         >
+          <Pressable style={styles.contentPressArea} onPress={dismissActiveEdit}>
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) => {
+              event.stopPropagation();
+              handleSectionPress("profile");
+            }}
+          >
           <View style={styles.avatarWrapper}>
             <View style={styles.avatarContainer}>
               <Image
@@ -488,16 +514,80 @@ export default function AccountInfoScreen() {
                 style={styles.avatar}
                 onError={() => setImageError(true)}
               />
-              <TouchableOpacity
-                style={styles.cameraIcon}
-                onPress={() => void pickImage("avatar")}
-              >
-                <Ionicons name="camera" size={16} color={COLORS.white} />
-              </TouchableOpacity>
             </View>
+
+            <View style={styles.avatarActionRow}>
+              {hasActualAvatar ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.avatarActionButton, styles.avatarViewButton]}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      setShowAvatarPreview(true);
+                    }}
+                    disabled={isSaving}
+                  >
+                    <Ionicons
+                      name="eye-outline"
+                      size={18}
+                      color={COLORS.primary}
+                    />
+                    <Text style={styles.avatarViewButtonText} numberOfLines={1}>
+                      Xem ảnh đại diện
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.avatarActionButton, styles.avatarChangeButton]}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      void handleAvatarImageChange();
+                    }}
+                    disabled={isSaving}
+                  >
+                    <Ionicons
+                      name="camera-outline"
+                      size={18}
+                      color={COLORS.white}
+                    />
+                    <Text style={styles.avatarChangeButtonText} numberOfLines={1}>
+                      Đổi ảnh đại diện
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.avatarActionButton,
+                    styles.avatarChangeButton,
+                    styles.avatarAddButton,
+                  ]}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void handleAvatarImageChange();
+                  }}
+                  disabled={isSaving}
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={18}
+                    color={COLORS.white}
+                  />
+                  <Text style={styles.avatarChangeButtonText} numberOfLines={1}>
+                    Thêm ảnh đại diện
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {editingSection === "profile" && newAvatarFile ? (
+              <Text style={styles.avatarPendingText}>
+                Ảnh mới đang được xem trước. Xác nhận chỉnh sửa để lưu.
+              </Text>
+            ) : null}
           </View>
 
-          <SectionHeader title="THÔNG TIN CÁ NHÂN" />
+            <SectionHeader title="THÔNG TIN CÁ NHÂN" />
 
           <Text style={styles.label}>Tên đăng nhập (Username)</Text>
           <View style={styles.inputContainer}>
@@ -510,6 +600,7 @@ export default function AccountInfoScreen() {
                 setSaveMessage(null);
               }}
               autoCapitalize="none"
+              editable={editingSection === "profile" && !isSaving}
               placeholder="Chưa có"
               placeholderTextColor={PLACEHOLDER_COLOR}
             />
@@ -527,6 +618,7 @@ export default function AccountInfoScreen() {
               }}
               autoCapitalize="words"
               autoCorrect={false}
+              editable={editingSection === "profile" && !isSaving}
               placeholder="Chưa có"
               placeholderTextColor={PLACEHOLDER_COLOR}
             />
@@ -543,16 +635,32 @@ export default function AccountInfoScreen() {
                 setSaveMessage(null);
               }}
               keyboardType="phone-pad"
+              editable={editingSection === "profile" && !isSaving}
               placeholder="Chưa có"
               placeholderTextColor={PLACEHOLDER_COLOR}
             />
           </View>
 
-          <SectionHeader title="HỒ SƠ PHÁP LÝ" />
+          <EditActions section="profile" />
+
+          </Pressable>
+
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) => {
+              event.stopPropagation();
+              handleSectionPress("identity");
+            }}
+          >
+            <SectionHeader title="HỒ SƠ PHÁP LÝ" />
 
           <Text style={styles.label}>CCCD của bạn</Text>
           <View style={styles.cccdRow}>
-            <TouchableOpacity style={styles.cccdBox} onPress={() => void pickImage("front")}>
+            <TouchableOpacity
+              style={styles.cccdBox}
+              onPress={() => void pickImage("front")}
+              disabled={editingSection !== "identity" || isSaving}
+            >
               {frontImage?.uri || sanitize(user?.frontIDCardImage) ? (
                 <Image
                   source={{
@@ -576,7 +684,11 @@ export default function AccountInfoScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cccdBox} onPress={() => void pickImage("back")}>
+            <TouchableOpacity
+              style={styles.cccdBox}
+              onPress={() => void pickImage("back")}
+              disabled={editingSection !== "identity" || isSaving}
+            >
               {backImage?.uri || sanitize(user?.backIDCardImage) ? (
                 <Image
                   source={{
@@ -623,7 +735,7 @@ export default function AccountInfoScreen() {
             }}
             keyboardType="number-pad"
             maxLength={12}
-            editable={!isSaving}
+            editable={editingSection === "identity" && !isSaving}
             placeholder="Chưa có"
             placeholderTextColor={
               PLACEHOLDER_COLOR
@@ -637,6 +749,7 @@ export default function AccountInfoScreen() {
               setRepName(value);
               setSaveMessage(null);
             }}
+            editable={editingSection === "identity" && !isSaving}
             placeholder="Chưa có"
             labelStyle={styles.label}
             inputStyle={styles.identityNameInput}
@@ -652,7 +765,7 @@ export default function AccountInfoScreen() {
             placeholder="Chưa có"
             defaultViewDate="2000-01-01"
             maximumDate={new Date()}
-            disabled={isSaving}
+            disabled={editingSection !== "identity" || isSaving}
           />
 
           <Text style={styles.label}>Địa chỉ thường trú</Text>
@@ -663,45 +776,51 @@ export default function AccountInfoScreen() {
               setSaveMessage(null);
             }}
             placeholder="Chưa có"
-            disabled={isSaving}
+            disabled={editingSection !== "identity" || isSaving}
           />
 
-          <SectionHeader title="THÔNG TIN THANH TOÁN" />
+          <EditActions section="identity" />
+
+          </Pressable>
+
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) => {
+              event.stopPropagation();
+              handleSectionPress("bank");
+            }}
+          >
+            <SectionHeader title="THÔNG TIN THANH TOÁN" />
 
           <Text style={styles.label}>Ngân hàng thụ hưởng</Text>
-          <TouchableOpacity
-            style={styles.bankSelector}
-            onPress={() => {
-              setBankSearch("");
-              setShowBankModal(true);
-            }}
-            disabled={isSaving}
-          >
-            {bankName ? (
-              <View style={styles.selectedBankRow}>
-                {selectedBank?.logo ? (
-                  <Image
-                    source={{ uri: selectedBank.logo }}
-                    style={styles.selectedBankLogo}
-                    resizeMode="contain"
-                  />
-                ) : null}
-                <Text style={styles.inputBankText} numberOfLines={1}>
-                  {toUppercaseText(bankName)}
-                  {selectedBank?.code
-                    ? ` (${toUppercaseText(selectedBank.code)})`
-                    : ""}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.placeholderText}>Chưa có</Text>
-            )}
-            <Ionicons name="chevron-down" size={20} color={COLORS.textLight} />
-          </TouchableOpacity>
-
-          {bankLoadError ? (
-            <Text style={styles.bankLoadHint}>{bankLoadError}</Text>
-          ) : null}
+          {editingSection === "bank" ? (
+            <BankPickerField
+              bankBin={bankCode}
+              bankName={bankName}
+              onChange={(bank) => {
+                setBankCode(String(bank.bin));
+                setBankName(toUppercaseText(bank.shortName));
+                setSaveMessage(null);
+              }}
+              onClear={() => {
+                setBankCode("");
+                setBankName("");
+                setSaveMessage(null);
+              }}
+              disabled={isSaving}
+              placeholder="Chưa có"
+              style={{ marginBottom: 20 }}
+            />
+          ) : (
+            <View style={styles.inputContainer}>
+              <Text
+                style={bankName ? styles.readOnlyValue : styles.placeholderText}
+                numberOfLines={1}
+              >
+                {bankName || "Chưa có"}
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.label}>Số tài khoản</Text>
           <SensitiveNumberField
@@ -724,7 +843,7 @@ export default function AccountInfoScreen() {
               setSaveMessage(null);
             }}
             keyboardType="number-pad"
-            editable={!isSaving}
+            editable={editingSection === "bank" && !isSaving}
             placeholder="Chưa có"
             placeholderTextColor={
               PLACEHOLDER_COLOR
@@ -739,10 +858,14 @@ export default function AccountInfoScreen() {
               setSaveMessage(null);
             }}
             placeholder="VD: NGUYEN VAN A"
-            editable={!isSaving}
+            editable={editingSection === "bank" && !isSaving}
             labelStyle={styles.label}
             inputStyle={styles.identityNameInput}
           />
+
+          <EditActions section="bank" />
+
+          </Pressable>
 
           {saveMessage ? (
             <Text
@@ -759,108 +882,42 @@ export default function AccountInfoScreen() {
               {saveMessage.text}
             </Text>
           ) : null}
-
-          <TouchableOpacity
-            style={[styles.primaryButton, isSaving ? styles.disabled : undefined]}
-            onPress={() => void handleSaveChanges()}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>LƯU THAY ĐỔI</Text>
-            )}
-          </TouchableOpacity>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
 
       <Modal
-        visible={showBankModal}
-        animationType="slide"
+        visible={showAvatarPreview && Boolean(avatarPreviewUri)}
         transparent
-        onRequestClose={() => setShowBankModal(false)}
+        animationType="fade"
+        onRequestClose={() => setShowAvatarPreview(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Chọn Ngân Hàng</Text>
+        <Pressable
+          style={styles.avatarPreviewOverlay}
+          onPress={() => setShowAvatarPreview(false)}
+        >
+          <Pressable
+            style={styles.avatarPreviewCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View style={styles.avatarPreviewHeader}>
+              <Text style={styles.avatarPreviewTitle}>Ảnh đại diện</Text>
               <TouchableOpacity
-                onPress={() => setShowBankModal(false)}
-                style={styles.modalCloseButton}
+                style={styles.avatarPreviewClose}
+                onPress={() => setShowAvatarPreview(false)}
               >
                 <Ionicons name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
             </View>
-
-            <View style={styles.searchBarContainer}>
-              <Ionicons
-                name="search"
-                size={20}
-                color={COLORS.textLight}
-                style={styles.searchIcon}
+            {avatarPreviewUri ? (
+              <Image
+                source={{ uri: avatarPreviewUri }}
+                style={styles.avatarPreviewImage}
+                resizeMode="contain"
               />
-              <TextInput
-                style={styles.bankSearchInput}
-                placeholder="Tìm tên hoặc mã ngân hàng..."
-                placeholderTextColor={COLORS.textLight}
-                value={bankSearch}
-                onChangeText={setBankSearch}
-                autoCapitalize="none"
-              />
-            </View>
-
-            {isBankLoading ? (
-              <ActivityIndicator
-                size="large"
-                color={COLORS.primary}
-                style={styles.bankLoading}
-              />
-            ) : bankLoadError ? (
-              <View style={styles.bankModalState}>
-                <Text style={styles.bankErrorText}>{bankLoadError}</Text>
-                <TouchableOpacity
-                  style={styles.retryButton}
-                  onPress={() => void fetchBanks()}
-                >
-                  <Text style={styles.retryButtonText}>Thử lại</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <FlatList
-                data={filteredBanks}
-                keyExtractor={(item) => item.id.toString()}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.bankItem}
-                    onPress={() => handleSelectBank(item)}
-                  >
-                    <Image
-                      source={{ uri: item.logo }}
-                      style={styles.bankLogo}
-                      resizeMode="contain"
-                    />
-                    <View style={styles.bankInfo}>
-                      <Text style={styles.bankShortName}>
-                        {toUppercaseText(item.shortName)}{" "}
-                        <Text style={styles.bankCodeText}>
-                          ({toUppercaseText(item.code)})
-                        </Text>
-                      </Text>
-                      <Text style={styles.bankFullName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  <Text style={styles.emptyBankText}>Không tìm thấy ngân hàng</Text>
-                }
-              />
-            )}
-          </View>
-        </View>
+            ) : null}
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -881,7 +938,14 @@ const styles = StyleSheet.create({
   backButton: { padding: 4 },
   headerTitle: { fontSize: 17, fontWeight: "bold", color: COLORS.text },
   scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
-  avatarWrapper: { alignItems: "center", marginTop: 24, marginBottom: 16 },
+  contentPressArea: { flexGrow: 1 },
+  editableSection: { width: "100%" },
+  avatarWrapper: {
+    width: "100%",
+    alignItems: "center",
+    marginTop: 24,
+    marginBottom: 16,
+  },
   avatarContainer: { position: "relative" },
   avatar: {
     width: 90,
@@ -891,25 +955,100 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  cameraIcon: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#2B5659",
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  avatarActionRow: {
+    width: "100%",
+    alignSelf: "stretch",
+    flexDirection: "row",
     justifyContent: "center",
+    gap: 10,
+    marginTop: 14,
+    paddingHorizontal: 8,
+  },
+  avatarActionButton: {
+    minHeight: 42,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: COLORS.white,
+    justifyContent: "center",
+    gap: 7,
+  },
+  avatarViewButton: {
+    flex: 1,
+    maxWidth: 210,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  avatarViewButtonText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  avatarChangeButton: {
+    flex: 1,
+    maxWidth: 210,
+    backgroundColor: COLORS.primary,
+  },
+  avatarChangeButtonText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  avatarAddButton: {
+    flex: 0,
+    width: 210,
+    maxWidth: "100%",
+  },
+  avatarPendingText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  avatarPreviewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.62)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  avatarPreviewCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    overflow: "hidden",
+  },
+  avatarPreviewHeader: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  avatarPreviewTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  avatarPreviewClose: { padding: 6 },
+  avatarPreviewImage: {
+    width: "100%",
+    height: 420,
+    backgroundColor: "#F8F9FA",
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginTop: 24,
     marginBottom: 16,
   },
+  sectionHeading: { flexDirection: "row", alignItems: "center", flex: 1 },
   sectionBar: {
     width: 4,
     height: 16,
@@ -917,7 +1056,21 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginRight: 8,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#172830" },
+  sectionTitle: { fontSize: 14, fontWeight: "600", color: "#172830" },
+  editButton: {
+    minHeight: 34,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(43, 86, 89, 0.28)",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginLeft: 12,
+  },
+  editButtonText: { color: COLORS.primary, fontSize: 12, fontWeight: "700" },
+  editingLabel: { color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "600", color: "#172830", marginBottom: 8 },
   inputContainer: {
     flexDirection: "row",
@@ -941,6 +1094,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: PLACEHOLDER_COLOR,
+  },
+  readOnlyValue: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
   },
   identityNameInput: {
     minHeight: 52,
@@ -1006,7 +1164,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
   },
-  primaryButtonText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
+  primaryButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "700" },
+  sectionActions: { flexDirection: "row", gap: 10, alignItems: "center", marginTop: 4, marginBottom: 4 },
+  cancelButton: { minHeight: 50, minWidth: 96, paddingHorizontal: 18, borderRadius: 10, borderWidth: 1, borderColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  cancelButtonText: { color: COLORS.primary, fontSize: 14, fontWeight: "600" },
+  sectionSaveButton: { flex: 1, minHeight: 50, height: 50, marginTop: 0, flexDirection: "row", gap: 7 },
   disabled: { opacity: 0.65 },
   modalOverlay: {
     flex: 1,

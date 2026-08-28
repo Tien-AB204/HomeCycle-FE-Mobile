@@ -30,6 +30,7 @@ type Props = {
   bankBin?: string;
   bankName?: string;
   onChange: (bank: BankOption) => void;
+  onClear?: () => void;
   disabled?: boolean;
   hasError?: boolean;
   placeholder?: string;
@@ -40,6 +41,7 @@ export default function BankPickerField({
   bankBin = "",
   bankName = "",
   onChange,
+  onClear,
   disabled = false,
   hasError = false,
   placeholder = "Chọn ngân hàng",
@@ -116,7 +118,7 @@ export default function BankPickerField({
     if (!keyword) return banks;
 
     return banks.filter((bank) =>
-      [bank.shortName, bank.name, bank.code]
+      [bank.shortName, bank.name, bank.code, bank.bin]
         .map((value) => String(value).toLowerCase())
         .some((value) => value.includes(keyword)),
     );
@@ -130,43 +132,92 @@ export default function BankPickerField({
 
   const displayCode = selectedBank?.code || "";
 
+  const openPicker = () => {
+    if (disabled) return;
+    setSearchQuery("");
+    setIsOpen(true);
+  };
+
+  const clearBank = () => {
+    if (disabled || !onClear) return;
+    setSearchQuery("");
+    onClear();
+  };
+
   return (
     <>
-      <TouchableOpacity
+      <View
         style={[
           styles.trigger,
           hasError ? styles.triggerError : undefined,
           disabled ? styles.disabled : undefined,
           style,
         ]}
-        onPress={() => setIsOpen(true)}
-        disabled={disabled}
-        activeOpacity={0.8}
       >
-        {displayName ? (
-          <View style={styles.selectedRow}>
-            {selectedBank?.logo ? (
-              <Image
-                source={{ uri: selectedBank.logo }}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            ) : null}
-            <Text style={styles.selectedText} numberOfLines={1}>
-              {displayName}
-              {displayCode ? ` (${displayCode})` : ""}
-            </Text>
-          </View>
-        ) : (
-          <Text style={styles.placeholder}>{placeholder}</Text>
-        )}
+        <TouchableOpacity
+          style={styles.selection}
+          onPress={openPicker}
+          disabled={disabled}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Chọn ngân hàng"
+        >
+          {displayName ? (
+            <View style={styles.selectedRow}>
+              {selectedBank?.logo ? (
+                <Image
+                  source={{ uri: selectedBank.logo }}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : null}
 
-        <Ionicons
-          name="chevron-down"
-          size={20}
-          color={hasError ? COLORS.error : COLORS.textLight}
-        />
-      </TouchableOpacity>
+              <Text style={styles.selectedText} numberOfLines={1}>
+                {displayName}
+                {displayCode ? ` (${displayCode})` : ""}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.placeholder} numberOfLines={1}>
+              {placeholder}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.actions}>
+          {displayName && onClear ? (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={clearBank}
+              disabled={disabled}
+              accessibilityRole="button"
+              accessibilityLabel="Xóa ngân hàng đã chọn"
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close-circle"
+                size={21}
+                color={hasError ? COLORS.error : COLORS.textLight}
+              />
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={openPicker}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel="Mở danh sách ngân hàng"
+            hitSlop={8}
+          >
+            <Ionicons
+              name="chevron-down"
+              size={20}
+              color={hasError ? COLORS.error : COLORS.textLight}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <Modal
         visible={isOpen}
@@ -192,7 +243,7 @@ export default function BankPickerField({
                 style={styles.searchInput}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                placeholder="Tìm tên ngân hàng..."
+                placeholder="Tìm tên hoặc mã ngân hàng..."
                 placeholderTextColor={COLORS.textLight}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -202,7 +253,9 @@ export default function BankPickerField({
             {isLoading ? (
               <View style={styles.centered}>
                 <ActivityIndicator color={COLORS.primary} />
-                <Text style={styles.helperText}>Đang tải danh sách ngân hàng...</Text>
+                <Text style={styles.helperText}>
+                  Đang tải danh sách ngân hàng...
+                </Text>
               </View>
             ) : loadError ? (
               <View style={styles.centered}>
@@ -229,7 +282,9 @@ export default function BankPickerField({
                       resizeMode="contain"
                     />
                     <View style={styles.bankInfo}>
-                      <Text style={styles.bankShortName}>{item.shortName}</Text>
+                      <Text style={styles.bankShortName}>
+                        {item.shortName}
+                      </Text>
                       <Text style={styles.bankName} numberOfLines={1}>
                         {item.name}
                       </Text>
@@ -239,7 +294,9 @@ export default function BankPickerField({
                 )}
                 ListEmptyComponent={
                   <View style={styles.centered}>
-                    <Text style={styles.helperText}>Không tìm thấy ngân hàng phù hợp.</Text>
+                    <Text style={styles.helperText}>
+                      Không tìm thấy ngân hàng phù hợp.
+                    </Text>
                   </View>
                 }
               />
@@ -253,14 +310,13 @@ export default function BankPickerField({
 
 const styles = StyleSheet.create({
   trigger: {
+    width: "100%",
     minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 10,
-    paddingHorizontal: 14,
     backgroundColor: COLORS.white,
   },
   triggerError: {
@@ -269,11 +325,20 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.6,
   },
-  selectedRow: {
+  selection: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 10,
+    paddingLeft: 14,
+    paddingRight: 6,
+  },
+  selectedRow: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
   },
   logo: {
     width: 28,
@@ -282,14 +347,28 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     flex: 1,
+    minWidth: 0,
     color: COLORS.text,
     fontSize: 15,
     fontWeight: "600",
   },
   placeholder: {
     flex: 1,
+    minWidth: 0,
     color: COLORS.textLight,
     fontSize: 15,
+  },
+  actions: {
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 6,
+  },
+  actionButton: {
+    width: 34,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
   },
   overlay: {
     flex: 1,
