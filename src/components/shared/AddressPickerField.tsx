@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "../../constants/theme";
 import { capitalizeWordInitials } from "../../utils/textFormat";
+import { ModalBackdrop, ModalSurface } from "./ModalBackdrop";
 
 interface ProvinceOption {
   label: string;
@@ -595,12 +596,8 @@ const AddressPickerField = forwardRef<
           }
           keyboardVerticalOffset={0}
         >
-          <View style={styles.backdrop}>
-            <View
-              style={
-                styles.modalCard
-              }
-            >
+          <ModalBackdrop style={styles.backdrop} onPress={closeModal}>
+            <ModalSurface style={styles.modalCard}>
               <ScrollView
                 style={
                   styles.modalScroll
@@ -1028,8 +1025,8 @@ const AddressPickerField = forwardRef<
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
-            </View>
-          </View>
+            </ModalSurface>
+          </ModalBackdrop>
         </KeyboardAvoidingView>
       </Modal>
     </>

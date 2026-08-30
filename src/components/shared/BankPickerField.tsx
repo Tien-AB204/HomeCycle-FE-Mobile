@@ -16,6 +16,7 @@ import {
 
 import { COLORS } from "../../constants/theme";
 import { NETWORK_ERROR_MESSAGE } from "../../utils/errorMessage";
+import { ModalBackdrop, ModalSurface } from "./ModalBackdrop";
 
 export type BankOption = {
   id: number;
@@ -225,8 +226,8 @@ export default function BankPickerField({
         animationType="slide"
         onRequestClose={() => setIsOpen(false)}
       >
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
+        <ModalBackdrop style={styles.overlay} onPress={() => setIsOpen(false)}>
+          <ModalSurface style={styles.sheet}>
             <View style={styles.header}>
               <Text style={styles.title}>Chọn ngân hàng</Text>
               <TouchableOpacity
@@ -301,8 +302,8 @@ export default function BankPickerField({
                 }
               />
             )}
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </>
   );

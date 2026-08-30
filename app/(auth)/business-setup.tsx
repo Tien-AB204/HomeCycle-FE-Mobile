@@ -29,6 +29,7 @@ import BankPickerField from "../../src/components/shared/BankPickerField";
 import FullNameField from "../../src/components/shared/FullNameField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -1465,8 +1466,11 @@ export default function BusinessSetupScreen() {
         transparent
         onRequestClose={() => setShowOperatingScopeModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.scopeModalContent}>
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          onPress={() => setShowOperatingScopeModal(false)}
+        >
+          <ModalSurface style={styles.scopeModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Chọn phạm vi hoạt động</Text>
               <TouchableOpacity
@@ -1511,8 +1515,8 @@ export default function BusinessSetupScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );

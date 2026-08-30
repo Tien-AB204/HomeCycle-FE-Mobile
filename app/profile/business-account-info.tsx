@@ -25,6 +25,7 @@ import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
@@ -379,6 +380,41 @@ export default function BusinessAccountInfoScreen() {
     cancelEdit(editingSection);
   };
 
+  const handleEditableSectionPress = (
+    section: EditableSectionKey,
+    event: any,
+  ) => {
+    const pressedDirectSectionSurface =
+      event.target === event.currentTarget;
+
+    event.stopPropagation();
+
+    if (
+      editingSection === section &&
+      pressedDirectSectionSurface
+    ) {
+      dismissActiveEdit();
+      return;
+    }
+
+    if (editingSection && editingSection !== section) {
+      cancelEdit(editingSection);
+    }
+  };
+
+  const handleEditableCardPress = (
+    event: any,
+  ) => {
+    const pressedDirectCardSurface =
+      event.target === event.currentTarget;
+
+    event.stopPropagation();
+
+    if (editingSection && pressedDirectCardSurface) {
+      dismissActiveEdit();
+    }
+  };
+
   const handleFieldFocus = (section: EditableSectionKey) => {
     if (savingSection) return;
     setShowAvatarActions(false);
@@ -397,7 +433,6 @@ export default function BusinessAccountInfoScreen() {
 
     if (editingSection) {
       cancelEdit(editingSection);
-      return;
     }
 
     setShowAvatarActions((current) => !current);
@@ -406,9 +441,10 @@ export default function BusinessAccountInfoScreen() {
   const handleAvatarImageChange = async () => {
     if (savingSection) return;
 
+    setShowAvatarActions(false);
+
     if (editingSection && editingSection !== "avatar") {
       cancelEdit(editingSection);
-      return;
     }
 
     const asset = await pickSingleImage();
@@ -830,7 +866,10 @@ export default function BusinessAccountInfoScreen() {
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={dismissActiveEdit}
         >
-          <View style={styles.contentPressArea}>
+          <Pressable
+            style={styles.contentPressArea}
+            onPress={dismissActiveEdit}
+          >
             <Pressable
               style={styles.avatarTopSection}
               onPress={(event) => event.stopPropagation()}
@@ -949,9 +988,17 @@ export default function BusinessAccountInfoScreen() {
               ) : null}
             </Pressable>
 
-          <View style={styles.editableSection}>
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) =>
+              handleEditableSectionPress("account", event)
+            }
+          >
             <SectionTitle title="TÀI KHOẢN" />
-            <View style={styles.card}>
+            <Pressable
+              style={styles.card}
+              onPress={handleEditableCardPress}
+            >
               <Text style={styles.inputLabel}>Tên tài khoản *</Text>
               <TextInput
                 style={[
@@ -964,6 +1011,7 @@ export default function BusinessAccountInfoScreen() {
                   setUsername(value);
                   clearFieldError("username", "account");
                 }}
+                onPressIn={(event) => event.stopPropagation()}
                 onFocus={() => handleFieldFocus("account")}
                 editable={!savingSection}
                 placeholder="Nhập tên tài khoản"
@@ -981,6 +1029,7 @@ export default function BusinessAccountInfoScreen() {
                   setPhoneNumber(value);
                   clearFieldError("phoneNumber", "account");
                 }}
+                onPressIn={(event) => event.stopPropagation()}
                 onFocus={() => handleFieldFocus("account")}
                 editable={!savingSection}
                 keyboardType="phone-pad"
@@ -996,12 +1045,20 @@ export default function BusinessAccountInfoScreen() {
                   saveTitle="Xác nhận chỉnh sửa"
                 />
               ) : null}
-            </View>
-          </View>
+            </Pressable>
+          </Pressable>
 
-          <View style={styles.editableSection}>
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) =>
+              handleEditableSectionPress("registration", event)
+            }
+          >
             <SectionTitle title="ĐĂNG KÝ KINH DOANH" />
-          <View style={styles.card}>
+          <Pressable
+              style={styles.card}
+              onPress={handleEditableCardPress}
+            >
             <Text style={styles.inputLabel}>
               Tên doanh nghiệp / Hộ kinh doanh *
             </Text>
@@ -1015,6 +1072,7 @@ export default function BusinessAccountInfoScreen() {
                 setBusinessName(value);
                 clearFieldError("businessName", "registration");
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("registration")}
               editable={!savingSection}
             />
@@ -1027,6 +1085,7 @@ export default function BusinessAccountInfoScreen() {
                 setBusinessDescription(value);
                 setSectionMessage("registration", null);
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("registration")}
               editable={!savingSection}
               multiline
@@ -1043,6 +1102,7 @@ export default function BusinessAccountInfoScreen() {
                 setTaxCode(value.replace(/[^0-9]/g, ""));
                 clearFieldError("taxCode", "registration");
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("registration")}
               editable={!savingSection}
               keyboardType="number-pad"
@@ -1118,14 +1178,22 @@ export default function BusinessAccountInfoScreen() {
                 saveTitle="Xác nhận chỉnh sửa"
               />
             ) : null}
-          </View>
+          </Pressable>
 
 
-          </View>
+          </Pressable>
 
-          <View style={styles.editableSection}>
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) =>
+              handleEditableSectionPress("identity", event)
+            }
+          >
             <SectionTitle title="THÔNG TIN ĐỊNH DANH" />
-          <View style={styles.card}>
+          <Pressable
+              style={styles.card}
+              onPress={handleEditableCardPress}
+            >
             <Text style={styles.inputLabel}>Họ và tên *</Text>
             <TextInput
               style={[
@@ -1138,6 +1206,7 @@ export default function BusinessAccountInfoScreen() {
                 setFullName(capitalizeWordInitials(value));
                 clearFieldError("fullName", "identity");
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("identity")}
               editable={!savingSection}
               autoCapitalize="words"
@@ -1157,6 +1226,7 @@ export default function BusinessAccountInfoScreen() {
               }}
               hasError={Boolean(errors.identityNumber)}
               value={identityNumber}
+              isEditing={isEditing("identity")}
               onChangeText={(value) => {
                 setIdentityNumber(value.replace(/[^0-9]/g, "").slice(0, 12));
 
@@ -1165,6 +1235,7 @@ export default function BusinessAccountInfoScreen() {
               keyboardType="number-pad"
               maxLength={12}
               placeholder="Nhập 12 số CCCD"
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("identity")}
               editable={!savingSection}
             />
@@ -1177,6 +1248,7 @@ export default function BusinessAccountInfoScreen() {
                 setIdentityName(value);
                 clearFieldError("identityName", "identity");
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("identity")}
               editable={!savingSection}
               error={errors.identityName}
@@ -1264,10 +1336,10 @@ export default function BusinessAccountInfoScreen() {
                 saveTitle="Xác nhận chỉnh sửa"
               />
             ) : null}
-          </View>
+          </Pressable>
 
 
-          </View>
+          </Pressable>
 
           <SectionTitle title="KHU VỰC DỊCH VỤ" />
           <View style={styles.card}>
@@ -1398,9 +1470,17 @@ export default function BusinessAccountInfoScreen() {
             </View>
           </View>
 
-          <View style={styles.editableSection}>
+          <Pressable
+            style={styles.editableSection}
+            onPress={(event) =>
+              handleEditableSectionPress("bank", event)
+            }
+          >
             <SectionTitle title="THÔNG TIN NGÂN HÀNG" />
-          <View style={styles.card}>
+          <Pressable
+              style={styles.card}
+              onPress={handleEditableCardPress}
+            >
             <Text style={styles.helperText}>
               Cần điền đủ thông tin ngân hàng để đi tiếp tới thanh toán.
             </Text>
@@ -1453,6 +1533,7 @@ export default function BusinessAccountInfoScreen() {
               }}
               hasError={Boolean(errors.accountNumber)}
               value={accountNumber}
+              isEditing={isEditing("bank")}
               onChangeText={(value) => {
                 setAccountNumber(value.replace(/[^0-9]/g, ""));
 
@@ -1460,6 +1541,7 @@ export default function BusinessAccountInfoScreen() {
               }}
               keyboardType="number-pad"
               placeholder="Nhập số tài khoản"
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("bank")}
               editable={!savingSection}
             />
@@ -1472,6 +1554,7 @@ export default function BusinessAccountInfoScreen() {
                 setAccountName(toUppercaseText(value));
                 clearFieldError("accountName", "bank");
               }}
+              onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("bank")}
               editable={!savingSection}
               error={errors.accountName}
@@ -1488,10 +1571,10 @@ export default function BusinessAccountInfoScreen() {
                 saveTitle="Xác nhận chỉnh sửa"
               />
             ) : null}
-          </View>
+          </Pressable>
 
 
-          </View>
+          </Pressable>
 
           <View style={styles.walletCard}>
             <View style={styles.walletRow}>
@@ -1538,7 +1621,7 @@ export default function BusinessAccountInfoScreen() {
               Xem lại bản Khảo sát thu mua
             </Text>
           </TouchableOpacity>
-          </View>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1548,14 +1631,11 @@ export default function BusinessAccountInfoScreen() {
         animationType="fade"
         onRequestClose={() => setShowAvatarPreview(false)}
       >
-        <Pressable
+        <ModalBackdrop
           style={styles.avatarPreviewOverlay}
           onPress={() => setShowAvatarPreview(false)}
         >
-          <Pressable
-            style={styles.avatarPreviewCard}
-            onPress={(event) => event.stopPropagation()}
-          >
+          <ModalSurface style={styles.avatarPreviewCard}>
             <View style={styles.avatarPreviewHeader}>
               <Text style={styles.avatarPreviewTitle}>Ảnh đại diện</Text>
               <TouchableOpacity
@@ -1572,8 +1652,8 @@ export default function BusinessAccountInfoScreen() {
                 resizeMode="contain"
               />
             ) : null}
-          </Pressable>
-        </Pressable>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
 
       <Modal
@@ -1582,8 +1662,11 @@ export default function BusinessAccountInfoScreen() {
         animationType="fade"
         onRequestClose={() => setShowScopeModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          onPress={() => setShowScopeModal(false)}
+        >
+          <ModalSurface style={styles.modalCard}>
             <Text style={styles.modalTitle}>Chọn phạm vi hoạt động</Text>
             <TouchableOpacity
               style={styles.optionRow}
@@ -1606,8 +1689,8 @@ export default function BusinessAccountInfoScreen() {
                 <Text style={styles.optionText}>{option}</Text>
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );

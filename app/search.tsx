@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ModalBackdrop, ModalSurface } from "../src/components/shared/ModalBackdrop";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
@@ -825,6 +826,149 @@ export default function SearchScreen() {
     </View>
   );
 
+  const activeFilterLabels = (() => {
+    const labels: string[] = [];
+
+    if (postType) {
+      labels.push(`Tin ${postType.toLowerCase()}`);
+    }
+
+    if (selectedCat) {
+      const category = filterCategories.find(
+        (item) =>
+          String(item.categoryId) ===
+          String(selectedCat),
+      );
+
+      if (category?.categoryName) {
+        labels.push(category.categoryName);
+      }
+    }
+
+    if (selectedCondition) {
+      labels.push(selectedCondition);
+    }
+
+    if (minPrice || maxPrice) {
+      const formatFilterPrice = (
+        value: string,
+      ) =>
+        `${Number(value).toLocaleString(
+          "vi-VN",
+        )} đ`;
+
+      if (minPrice && maxPrice) {
+        const first = Number(minPrice);
+        const second = Number(maxPrice);
+
+        const lower = Math.min(
+          first,
+          second,
+        );
+
+        const upper = Math.max(
+          first,
+          second,
+        );
+
+        labels.push(
+          `Giá ${lower.toLocaleString(
+            "vi-VN",
+          )} đ – ${upper.toLocaleString(
+            "vi-VN",
+          )} đ`,
+        );
+      } else if (minPrice) {
+        labels.push(
+          `Giá từ ${formatFilterPrice(
+            minPrice,
+          )}`,
+        );
+      } else if (maxPrice) {
+        labels.push(
+          `Giá đến ${formatFilterPrice(
+            maxPrice,
+          )}`,
+        );
+      }
+    }
+
+    if (minUsage || maxUsage) {
+      if (minUsage && maxUsage) {
+        const lower = Math.min(
+          Number(minUsage),
+          Number(maxUsage),
+        );
+
+        const upper = Math.max(
+          Number(minUsage),
+          Number(maxUsage),
+        );
+
+        labels.push(
+          `Đã dùng ${lower}–${upper} tháng`,
+        );
+      } else if (minUsage) {
+        labels.push(
+          `Đã dùng từ ${minUsage} tháng`,
+        );
+      } else if (maxUsage) {
+        labels.push(
+          `Đã dùng tối đa ${maxUsage} tháng`,
+        );
+      }
+    }
+
+    if (
+      minDamage !== null ||
+      maxDamage !== null
+    ) {
+      const minLabel =
+        minDamage !== null
+          ? DAMAGE_LEVELS.find(
+              (item) =>
+                item.value === minDamage,
+            )?.label
+          : null;
+
+      const maxLabel =
+        maxDamage !== null
+          ? DAMAGE_LEVELS.find(
+              (item) =>
+                item.value === maxDamage,
+            )?.label
+          : null;
+
+      if (minLabel && maxLabel) {
+        labels.push(
+          `Hư hại: ${minLabel} – ${maxLabel}`,
+        );
+      } else if (minLabel) {
+        labels.push(
+          `Hư hại từ: ${minLabel}`,
+        );
+      } else if (maxLabel) {
+        labels.push(
+          `Hư hại đến: ${maxLabel}`,
+        );
+      }
+    }
+
+    if (city.trim()) {
+      labels.push(city.trim());
+    }
+
+    if (deliveryMethod) {
+      labels.push(deliveryMethod);
+    }
+
+    if (priorityLevel) {
+      labels.push(priorityLevel);
+    }
+
+    return labels;
+  })();
+
   const renderResultsView = () => (
     <View style={styles.flex1}>
       <View style={styles.sortBar}>
@@ -862,22 +1006,66 @@ export default function SearchScreen() {
           </View>
         ) : null}
 
-        {query.trim().length > 0 && !isLoading ? (
+        {!isLoading &&
+        (query.trim().length > 0 ||
+          activeFilterLabels.length > 0) ? (
           <View style={styles.categorySection}>
-            <View style={styles.keywordHeader}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={COLORS.textLight}
-              />
-              <Text style={styles.keywordHeaderText}>
-                Kết quả tìm kiếm cho từ khoá &apos;
-                <Text style={{ color: COLORS.error, fontWeight: "bold" }}>
-                  {query}
+            {query.trim().length > 0 ? (
+              <View style={styles.keywordHeader}>
+                <Ionicons
+                  name="search-outline"
+                  size={18}
+                  color={COLORS.textLight}
+                />
+
+                <Text
+                  style={styles.keywordHeaderText}
+                >
+                  <Text
+                    style={{
+                      fontWeight: "700",
+                      color: COLORS.text,
+                    }}
+                  >
+                    Đang tìm theo:{" "}
+                  </Text>
+
+                  <Text
+                    style={{
+                      color: COLORS.primary,
+                      fontWeight: "700",
+                    }}
+                  >
+                    &quot;{query.trim()}&quot;
+                  </Text>
                 </Text>
-                &apos;
-              </Text>
-            </View>
+              </View>
+            ) : null}
+
+            {activeFilterLabels.length > 0 ? (
+              <View style={styles.keywordHeader}>
+                <Ionicons
+                  name="filter-outline"
+                  size={18}
+                  color={COLORS.textLight}
+                />
+
+                <Text
+                  style={styles.keywordHeaderText}
+                >
+                  <Text
+                    style={{
+                      fontWeight: "700",
+                      color: COLORS.text,
+                    }}
+                  >
+                    Đang lọc theo:{" "}
+                  </Text>
+
+                  {activeFilterLabels.join(" • ")}
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -1114,13 +1302,17 @@ export default function SearchScreen() {
       {viewState === "RESULTS" && renderResultsView()}
 
       {showDamagePicker !== null ? (
-        <Modal visible transparent animationType="fade">
-          <TouchableOpacity
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowDamagePicker(null)}
+        >
+          <ModalBackdrop
             style={styles.modalOverlay}
-            activeOpacity={1}
             onPress={() => setShowDamagePicker(null)}
           >
-            <View style={styles.pickerModalContent}>
+            <ModalSurface style={styles.pickerModalContent}>
               <View style={styles.modalDragIndicator} />
               <Text style={styles.actionModalTitle}>Chọn mức độ hư hại</Text>
               <TouchableOpacity
@@ -1156,8 +1348,8 @@ export default function SearchScreen() {
                   ) : null}
                 </TouchableOpacity>
               ))}
-            </View>
-          </TouchableOpacity>
+            </ModalSurface>
+          </ModalBackdrop>
         </Modal>
       ) : null}
     </SafeAreaView>
@@ -1419,7 +1611,13 @@ const styles = StyleSheet.create({
     borderBottomColor: "#BAC2C1",
   },
   keywordHeader: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-  keywordHeaderText: { fontSize: 14, color: COLORS.text, marginLeft: 6 },
+  keywordHeaderText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: COLORS.text,
+    marginLeft: 6,
+  },
   shopeeSortBar: {
     flexDirection: "row",
     alignItems: "center",

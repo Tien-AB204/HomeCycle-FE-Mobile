@@ -136,7 +136,7 @@ export default function CheckoutScreen() {
       setWallet(null);
       setIsLoading(false);
       showError("Không tìm thấy mã hợp đồng cần thanh toán.");
-      return;
+      return false;
     }
 
     try {
@@ -161,12 +161,15 @@ export default function CheckoutScreen() {
         setWallet(null);
         setWalletLoadError("Không tải được số dư ví lúc này.");
       }
+
+      return true;
     } catch (error: unknown) {
       console.error("Lỗi lấy thông tin thanh toán:", error);
       setAgreement(null);
       showError(
         getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
       );
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -212,7 +215,6 @@ export default function CheckoutScreen() {
     const result = await WebBrowser.openBrowserAsync(checkoutUrl);
 
     if (result.type === "cancel") {
-      setIsProcessing(false);
       showInfo("Bạn đã đóng trang thanh toán.");
     }
   };
@@ -246,20 +248,6 @@ export default function CheckoutScreen() {
 
     try {
       setIsProcessing(true);
-
-      const checkRes = await agreementApi.getAgreementById(agreementId);
-      const latestData = unwrap(checkRes);
-      const latestStatus = String(latestData?.agreementStatus ?? "")
-        .replace(/[\s_-]/g, "")
-        .toLowerCase();
-
-      if (latestStatus !== "awaitingpayment" && latestStatus !== "accepted") {
-        showError(
-          "Giao dịch bị gián đoạn: đối tác vừa cập nhật hoặc hủy hợp đồng. Vui lòng quay lại kiểm tra.",
-        );
-        setIsProcessing(false);
-        return;
-      }
 
       if (paymentMethod === "wallet") {
         const response = await paymentApi.checkoutWithWallet(agreementId);
@@ -300,7 +288,36 @@ export default function CheckoutScreen() {
       await openPayOSCheckout(checkoutUrl);
     } catch (error: unknown) {
       console.error("Lỗi thanh toán:", error);
-      showError(getApiErrorMessage(error, "Giao dịch thất bại."));
+
+      const errorCode = String(
+        (error as any)?.response?.data?.error?.code ??
+          (error as any)?.response?.data?.code ??
+          (error as any)?.error?.code ??
+          (error as any)?.code ??
+          "",
+      ).trim();
+
+      if (errorCode.toLowerCase() === "agreement.invalidstatus") {
+        const refreshed = await fetchCheckoutData();
+
+        if (!refreshed) {
+          return;
+        }
+
+        showError(
+          "Hợp đồng không còn ở trạng thái chờ thanh toán. Dữ liệu đã được làm mới, vui lòng kiểm tra lại.",
+        );
+
+        return;
+      }
+
+      showError(
+        getApiErrorMessage(
+          error,
+          "Giao dịch thất bại.",
+        ),
+      );
+    } finally {
       setIsProcessing(false);
     }
   };

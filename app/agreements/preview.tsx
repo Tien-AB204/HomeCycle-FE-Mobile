@@ -348,40 +348,21 @@ export default function AgreementPreviewScreen() {
     try {
       setIsProcessing(true);
 
-      // Lấy bản mới nhất ngay trước khi accept. Revision của bản này sẽ được
-      // gửi kèm PATCH accept để BE chặn race condition xảy ra sau lần GET này.
-      const checkRes = await agreementApi.getAgreementById(agreementId);
-      const latestData = unwrapResponse(checkRes);
-
-      const diffs = detectChanges(agreementData, latestData);
-
-      const currentUpdatedTime = new Date(
-        agreementData?.updatedAt || 0,
-      ).getTime();
-      const latestUpdatedTime = new Date(latestData?.updatedAt || 0).getTime();
-
-      if (
-        Object.keys(diffs).length > 0 ||
-        currentUpdatedTime !== latestUpdatedTime
-      ) {
-        setStatusMessage({
-          type: "warning",
-          text: "⚠️ Cảnh báo: Đối tác vừa thay đổi thông tin hợp đồng. Các mục bị thay đổi được bôi đỏ bên dưới. Vui lòng kiểm tra lại trước khi xác nhận!",
-        });
-        setChangedFields(diffs);
-        await fetchAgreementDetails(false);
-        return;
-      }
-
+      // Accept with the displayed revision; Backend rejects stale revisions atomically.
       const expectedRevision = Number(
-        latestData?.revision ?? latestData?.agreementDetails?.revision,
+        agreementData?.revision ??
+          agreementData?.agreementDetails?.revision,
       );
 
-      if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+      if (
+        !Number.isInteger(expectedRevision) ||
+        expectedRevision < 1
+      ) {
         setStatusMessage({
           type: "error",
-          text: "Không xác định được phiên bản hiện tại của hợp đồng. Vui lòng làm mới dữ liệu rồi xác nhận lại.",
+          text: "Không xác định được phiên bản đang hiển thị của hợp đồng. Dữ liệu đã được làm mới, vui lòng kiểm tra lại trước khi xác nhận.",
         });
+
         await fetchAgreementDetails(false);
         return;
       }
@@ -423,26 +404,60 @@ export default function AgreementPreviewScreen() {
       }
     } catch (error: any) {
       const errorCode = String(
-        error?.response?.data?.code ||
-          error?.response?.data?.error?.code ||
+        error?.response?.data?.error?.code ??
+          error?.response?.data?.code ??
+          error?.error?.code ??
+          error?.code ??
           "",
-      ).toLocaleLowerCase("vi-VN");
+      )
+        .trim()
+        .toLowerCase();
+
+      const isRevisionMismatch =
+        errorCode === "agreement.revisionmismatch" ||
+        errorCode.includes("revisionmismatch") ||
+        errorCode.includes("revision_mismatch");
+
+      if (isRevisionMismatch) {
+        const previousAgreement = agreementData;
+
+        const refreshed =
+          await fetchAgreementDetails(false);
+
+        const latestAgreement =
+          refreshed?.agreement;
+
+        if (!latestAgreement) {
+          setChangedFields(null);
+          return;
+        }
+
+        const diffs = detectChanges(
+          previousAgreement,
+          latestAgreement,
+        );
+
+        setChangedFields(
+          Object.keys(diffs).length > 0
+            ? diffs
+            : null,
+        );
+
+        setStatusMessage({
+          type: "warning",
+          text: "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa.",
+        });
+
+        return;
+      }
 
       setStatusMessage({
-        type:
-          errorCode.includes("revision") ||
-          errorCode.includes("stale") ||
-          errorCode.includes("conflict")
-            ? "warning"
-            : "error",
-        text:
-          errorCode.includes("revision") ||
-          errorCode.includes("stale") ||
-          errorCode.includes("conflict")
-            ? "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa."
-            : getApiErrorMessage(error, "Không thể xác nhận hợp đồng."),
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể xác nhận hợp đồng.",
+        ),
       });
-      await fetchAgreementDetails(false);
     } finally {
       setIsProcessing(false);
     }

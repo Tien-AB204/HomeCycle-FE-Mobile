@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,6 +23,7 @@ import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -90,6 +92,7 @@ export default function AccountInfoScreen() {
   const [saveMessage, setSaveMessage] = useState<SaveMessage>(null);
   const [editingSection, setEditingSection] = useState<PersonalSection | null>(null);
   const [showAvatarPreview, setShowAvatarPreview] = useState(false);
+  const [showAvatarActions, setShowAvatarActions] = useState(false);
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -170,6 +173,7 @@ export default function AccountInfoScreen() {
 
   const beginEdit = (section: PersonalSection) => {
     if (isSaving) return;
+    setShowAvatarActions(false);
     resetSection(section);
     setEditingSection(section);
   };
@@ -181,6 +185,8 @@ export default function AccountInfoScreen() {
   };
 
   const dismissActiveEdit = () => {
+    Keyboard.dismiss();
+    setShowAvatarActions(false);
     if (!editingSection || isSaving) return;
     cancelEdit(editingSection);
   };
@@ -192,10 +198,33 @@ export default function AccountInfoScreen() {
 
     if (editingSection) {
       cancelEdit(editingSection);
+      beginEdit(section);
       return;
     }
 
     beginEdit(section);
+  };
+
+  const handleSectionSurfacePress = (
+    section: PersonalSection,
+    event: any,
+  ) => {
+    const pressedDirectSectionSurface =
+      event.target === event.currentTarget;
+
+    event.stopPropagation();
+
+    if (
+      editingSection === section &&
+      pressedDirectSectionSurface
+    ) {
+      dismissActiveEdit();
+      return;
+    }
+
+    if (editingSection !== section) {
+      handleSectionPress(section);
+    }
   };
 
 
@@ -224,12 +253,24 @@ export default function AccountInfoScreen() {
   };
 
 
-  const handleAvatarImageChange = async () => {
+  const handleAvatarPress = (event: any) => {
+    event.stopPropagation();
     if (isSaving) return;
 
     if (editingSection && editingSection !== "profile") {
       cancelEdit(editingSection);
-      return;
+    }
+
+    setShowAvatarActions((current) => !current);
+  };
+
+  const handleAvatarImageChange = async () => {
+    if (isSaving) return;
+
+    setShowAvatarActions(false);
+
+    if (editingSection && editingSection !== "profile") {
+      cancelEdit(editingSection);
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -433,14 +474,40 @@ export default function AccountInfoScreen() {
       ? getRobustUrl(avatarUrl)
       : "";
 
-  const SectionHeader = ({ title }: { title: string }) => (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionHeading}>
-        <View style={styles.sectionBar} />
-        <Text style={styles.sectionTitle}>{title}</Text>
+  const SectionHeader = ({
+    title,
+    section,
+  }: {
+    title: string;
+    section: PersonalSection;
+  }) => {
+    const active = editingSection === section;
+
+    return (
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionHeading}>
+          <View style={styles.sectionBar} />
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+
+        <View
+          style={[
+            styles.sectionStateChip,
+            active ? styles.sectionStateChipActive : undefined,
+          ]}
+        >
+          <Ionicons
+            name={active ? "create" : "create-outline"}
+            size={14}
+            color={COLORS.primary}
+          />
+          <Text style={styles.sectionStateText}>
+            {active ? "Đang chỉnh sửa" : "Chỉnh sửa"}
+          </Text>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const EditActions = ({ section }: { section: PersonalSection }) =>
     editingSection === section ? (
@@ -500,22 +567,23 @@ export default function AccountInfoScreen() {
           onScrollBeginDrag={dismissActiveEdit}
         >
           <Pressable style={styles.contentPressArea} onPress={dismissActiveEdit}>
-          <Pressable
-            style={styles.editableSection}
-            onPress={(event) => {
-              event.stopPropagation();
-              handleSectionPress("profile");
-            }}
-          >
           <View style={styles.avatarWrapper}>
-            <View style={styles.avatarContainer}>
+            <TouchableOpacity
+              style={styles.avatarContainer}
+              onPress={handleAvatarPress}
+              disabled={isSaving}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Mở tùy chọn ảnh đại diện"
+            >
               <Image
                 source={displayAvatar}
                 style={styles.avatar}
                 onError={() => setImageError(true)}
               />
-            </View>
+            </TouchableOpacity>
 
+            {showAvatarActions ? (
             <View style={styles.avatarActionRow}>
               {hasActualAvatar ? (
                 <>
@@ -523,6 +591,7 @@ export default function AccountInfoScreen() {
                     style={[styles.avatarActionButton, styles.avatarViewButton]}
                     onPress={(event) => {
                       event.stopPropagation();
+                      setShowAvatarActions(false);
                       setShowAvatarPreview(true);
                     }}
                     disabled={isSaving}
@@ -541,6 +610,7 @@ export default function AccountInfoScreen() {
                     style={[styles.avatarActionButton, styles.avatarChangeButton]}
                     onPress={(event) => {
                       event.stopPropagation();
+                      setShowAvatarActions(false);
                       void handleAvatarImageChange();
                     }}
                     disabled={isSaving}
@@ -564,6 +634,7 @@ export default function AccountInfoScreen() {
                   ]}
                   onPress={(event) => {
                     event.stopPropagation();
+                    setShowAvatarActions(false);
                     void handleAvatarImageChange();
                   }}
                   disabled={isSaving}
@@ -579,6 +650,7 @@ export default function AccountInfoScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            ) : null}
 
             {editingSection === "profile" && newAvatarFile ? (
               <Text style={styles.avatarPendingText}>
@@ -587,7 +659,22 @@ export default function AccountInfoScreen() {
             ) : null}
           </View>
 
-            <SectionHeader title="THÔNG TIN CÁ NHÂN" />
+          <View style={styles.sectionShell}>
+            <Pressable
+              style={[
+                styles.sectionCard,
+                editingSection === "profile"
+                  ? styles.sectionCardEditing
+                  : undefined,
+              ]}
+              onPress={(event) =>
+                handleSectionSurfacePress("profile", event)
+              }
+            >
+              <SectionHeader
+                title="THÔNG TIN CÁ NHÂN"
+                section="profile"
+              />
 
           <Text style={styles.label}>Tên đăng nhập (Username)</Text>
           <View style={styles.inputContainer}>
@@ -643,16 +730,25 @@ export default function AccountInfoScreen() {
 
           <EditActions section="profile" />
 
-          </Pressable>
+            </Pressable>
+          </View>
 
-          <Pressable
-            style={styles.editableSection}
-            onPress={(event) => {
-              event.stopPropagation();
-              handleSectionPress("identity");
-            }}
-          >
-            <SectionHeader title="HỒ SƠ PHÁP LÝ" />
+          <View style={styles.sectionShell}>
+            <Pressable
+              style={[
+                styles.sectionCard,
+                editingSection === "identity"
+                  ? styles.sectionCardEditing
+                  : undefined,
+              ]}
+              onPress={(event) =>
+                handleSectionSurfacePress("identity", event)
+              }
+            >
+              <SectionHeader
+                title="HỒ SƠ PHÁP LÝ"
+                section="identity"
+              />
 
           <Text style={styles.label}>CCCD của bạn</Text>
           <View style={styles.cccdRow}>
@@ -781,16 +877,25 @@ export default function AccountInfoScreen() {
 
           <EditActions section="identity" />
 
-          </Pressable>
+            </Pressable>
+          </View>
 
-          <Pressable
-            style={styles.editableSection}
-            onPress={(event) => {
-              event.stopPropagation();
-              handleSectionPress("bank");
-            }}
-          >
-            <SectionHeader title="THÔNG TIN THANH TOÁN" />
+          <View style={styles.sectionShell}>
+            <Pressable
+              style={[
+                styles.sectionCard,
+                editingSection === "bank"
+                  ? styles.sectionCardEditing
+                  : undefined,
+              ]}
+              onPress={(event) =>
+                handleSectionSurfacePress("bank", event)
+              }
+            >
+              <SectionHeader
+                title="THÔNG TIN THANH TOÁN"
+                section="bank"
+              />
 
           <Text style={styles.label}>Ngân hàng thụ hưởng</Text>
           {editingSection === "bank" ? (
@@ -865,7 +970,8 @@ export default function AccountInfoScreen() {
 
           <EditActions section="bank" />
 
-          </Pressable>
+            </Pressable>
+          </View>
 
           {saveMessage ? (
             <Text
@@ -892,14 +998,11 @@ export default function AccountInfoScreen() {
         animationType="fade"
         onRequestClose={() => setShowAvatarPreview(false)}
       >
-        <Pressable
+        <ModalBackdrop
           style={styles.avatarPreviewOverlay}
           onPress={() => setShowAvatarPreview(false)}
         >
-          <Pressable
-            style={styles.avatarPreviewCard}
-            onPress={(event) => event.stopPropagation()}
-          >
+          <ModalSurface style={styles.avatarPreviewCard}>
             <View style={styles.avatarPreviewHeader}>
               <Text style={styles.avatarPreviewTitle}>Ảnh đại diện</Text>
               <TouchableOpacity
@@ -916,8 +1019,8 @@ export default function AccountInfoScreen() {
                 resizeMode="contain"
               />
             ) : null}
-          </Pressable>
-        </Pressable>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );
@@ -937,9 +1040,31 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 4 },
   headerTitle: { fontSize: 17, fontWeight: "bold", color: COLORS.text },
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
-  contentPressArea: { flexGrow: 1 },
-  editableSection: { width: "100%" },
+  scrollContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  contentPressArea: {
+    flexGrow: 1,
+  },
+  sectionShell: {
+    width: "100%",
+    marginBottom: 16,
+  },
+  sectionCard: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#D6DDDC",
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 18,
+  },
+  sectionCardEditing: {
+    borderColor: "rgba(43, 86, 89, 0.62)",
+    backgroundColor: "rgba(43, 86, 89, 0.035)",
+  },
   avatarWrapper: {
     width: "100%",
     alignItems: "center",
@@ -1045,7 +1170,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 24,
+    marginTop: 0,
     marginBottom: 16,
   },
   sectionHeading: { flexDirection: "row", alignItems: "center", flex: 1 },
@@ -1057,6 +1182,27 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   sectionTitle: { fontSize: 14, fontWeight: "600", color: "#172830" },
+  sectionStateChip: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderColor: "rgba(43, 86, 89, 0.20)",
+    backgroundColor: "rgba(43, 86, 89, 0.05)",
+    marginLeft: 10,
+  },
+  sectionStateChipActive: {
+    borderColor: "rgba(43, 86, 89, 0.45)",
+    backgroundColor: "rgba(43, 86, 89, 0.10)",
+  },
+  sectionStateText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   editButton: {
     minHeight: 34,
     paddingHorizontal: 10,

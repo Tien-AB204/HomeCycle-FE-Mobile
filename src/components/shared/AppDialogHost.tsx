@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "../../constants/theme";
+import { ModalBackdrop, ModalSurface } from "./ModalBackdrop";
 
 type DialogButton = {
   text?: string;
@@ -98,16 +99,11 @@ export default function AppDialogHost({ children }: Props) {
         statusBarTranslucent
         onRequestClose={handleBackdropPress}
       >
-        <TouchableOpacity
-          activeOpacity={1}
+        <ModalBackdrop
           style={styles.overlay}
           onPress={handleBackdropPress}
         >
-          <TouchableOpacity
-            activeOpacity={1}
-            style={styles.card}
-            onPress={() => undefined}
-          >
+          <ModalSurface style={styles.card}>
             <Text style={styles.title}>{dialog?.title}</Text>
             {dialog?.message ? (
               <Text style={styles.message}>{dialog.message}</Text>
@@ -141,8 +137,8 @@ export default function AppDialogHost({ children }: Props) {
                 );
               })}
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </>
   );

@@ -102,7 +102,7 @@ export default function ProfileSetupScreen() {
   const validateForm = () => {
     const normalizedFullName =
       capitalizeWordInitials(
-        fullName.trim().replace(/\s+/gu, " "),
+        fullName.trim(),
       );
 
     const normalizedUsername =

@@ -69,33 +69,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser({ role: "business", status: "active" });
         }
       } else {
-        // Luồng Personal như cũ
-        const profileResponse = await apiClient.get("/personal-profiles/me");
-        const profileData = profileResponse.data?.data || profileResponse.data;
+        // Personal authentication must not depend on profile hydration.
+        // Keep the token-backed session alive even when /personal-profiles/me
+        // is temporarily unavailable (for example a Backend 5xx).
+        let fallbackUserId = "";
+        let fallbackEmail = "";
 
-        setUser({
-          id: profileData.userId,
-          userId: profileData.userId,
-          username: profileData.username,
-          email: profileData.email,
-          name: profileData.fullName,
-          avatar: profileData.avatarUrl,
-          role: profileData.role ? profileData.role.toLowerCase() : "personal",
-          createdAt: profileData.createdAt,
-          phone: profileData.phoneNumber,
-          status: profileData.status,
-          verificationStatus: profileData.verificationStatus,
-          reputationScore: profileData.reputationScore,
-          isEmailVerified: profileData.isEmailVerified,
-          address: profileData.address || "",
-          representativeCode: profileData.representativeCode,
-          representativeName: profileData.representativeName,
-          representativeDob: profileData.representativeDob,
-          representativeAddress: profileData.representativeAddress,
-          frontIDCardImage: profileData.frontIDCardImage,
-          backIDCardImage: profileData.backIDCardImage,
-          bankAccount: profileData.bankAccount || null,
-        });
+        try {
+          const decoded: any = jwtDecode(token);
+          const userIdClaim =
+            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier";
+          const emailClaim =
+            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress";
+
+          fallbackUserId = decoded[userIdClaim] || decoded.sub || "";
+          fallbackEmail = decoded[emailClaim] || "";
+        } catch (decodeError) {
+          console.error("Lỗi giải mã token Personal:", decodeError);
+        }
+
+        const fallbackPersonalUser = {
+          id: fallbackUserId,
+          userId: fallbackUserId,
+          username: fallbackEmail || "Tài khoản cá nhân",
+          email: fallbackEmail,
+          role: "personal",
+          status: "active",
+          avatarUrl: null,
+          avatar: null,
+        };
+
+        setUser(fallbackPersonalUser);
+
+        try {
+          const profileResponse = await apiClient.get("/personal-profiles/me");
+          const profileData =
+            profileResponse.data?.data || profileResponse.data;
+
+          setUser({
+            ...fallbackPersonalUser,
+            id: profileData.userId || fallbackUserId,
+            userId: profileData.userId || fallbackUserId,
+            username: profileData.username || fallbackPersonalUser.username,
+            email: profileData.email || fallbackEmail,
+            name: profileData.fullName,
+            avatarUrl: profileData.avatarUrl || null,
+            avatar: profileData.avatarUrl || null,
+            role: profileData.role
+              ? profileData.role.toLowerCase()
+              : "personal",
+            createdAt: profileData.createdAt,
+            phone: profileData.phoneNumber,
+            status: profileData.status || "active",
+            verificationStatus: profileData.verificationStatus,
+            reputationScore: profileData.reputationScore,
+            isEmailVerified: profileData.isEmailVerified,
+            address: profileData.address || "",
+            representativeCode: profileData.representativeCode,
+            representativeName: profileData.representativeName,
+            representativeDob: profileData.representativeDob,
+            representativeAddress: profileData.representativeAddress,
+            frontIDCardImage: profileData.frontIDCardImage,
+            backIDCardImage: profileData.backIDCardImage,
+            bankAccount: profileData.bankAccount || null,
+          });
+        } catch (profileError: any) {
+          if (profileError.response?.status === 401) {
+            throw profileError;
+          }
+
+          console.log(
+            "[DEBUG] Personal profile unavailable; keeping token session:",
+            profileError.response?.status,
+          );
+        }
       }
     } catch (error: any) {
       console.log(

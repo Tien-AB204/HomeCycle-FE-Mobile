@@ -3,14 +3,22 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage, getApiSuccessMessage } from "../../src/utils/apiFeedback";
@@ -22,7 +30,17 @@ const offerApi = {
   cancelOffer: (offerId: string) =>
     apiClient.post(`/offers/${offerId}/cancel`).then((response) => response.data),
 
-  // PUT /offers/{offerId} cố ý KHÔNG gắn trên Mobile ở thời điểm hiện tại.
+  updateOffer: (
+    offerId: string,
+    data: {
+      offerPrice: number;
+      offerQuantity: number;
+      version: number;
+    },
+  ) =>
+    apiClient
+      .put(`/offers/${offerId}`, data)
+      .then((response) => response.data),
 };
 
 type InlineMessage = {
@@ -36,6 +54,17 @@ const normalizeStatus = (value: unknown) =>
   String(value ?? "")
     .replace(/[\s_-]/g, "")
     .toLowerCase();
+
+const getOfferErrorCode = (error: any) =>
+  String(
+    error?.response?.data?.error?.code ??
+      error?.response?.data?.code ??
+      error?.error?.code ??
+      error?.code ??
+      "",
+  )
+    .trim()
+    .toUpperCase();
 
 const translateStatus = (value: unknown) => {
   const status = normalizeStatus(value);
@@ -85,6 +114,10 @@ export default function OfferDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPrice, setEditPrice] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
   const [message, setMessage] = useState<InlineMessage>(null);
 
   const fetchOffer = useCallback(async () => {
@@ -115,6 +148,117 @@ export default function OfferDetailScreen() {
       void fetchOffer();
     }, [fetchOffer]),
   );
+
+  const handleOpenEditOffer = async () => {
+    const pendingNow =
+      normalizeStatus(offer?.offerStatus) === "pending" ||
+      String(offer?.offerStatus) === "0";
+    const version = Number(offer?.version ?? offer?.Version);
+
+    if (offer?.canUpdate !== true || !pendingNow) {
+      setMessage({
+        type: "warning",
+        text: "Đề nghị này không còn ở trạng thái có thể chỉnh sửa.",
+      });
+      return;
+    }
+
+    if (!Number.isInteger(version) || version < 0) {
+      setMessage({
+        type: "warning",
+        text: "Không xác định được phiên bản hiện tại của đề nghị. Dữ liệu sẽ được tải lại.",
+      });
+      await fetchOffer();
+      return;
+    }
+
+    setMessage(null);
+    setEditPrice(String(offer?.offerPrice ?? ""));
+    setEditQuantity(String(offer?.offerQuantity ?? ""));
+    setShowEditModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    if (isUpdating) return;
+    setShowEditModal(false);
+  };
+
+  const handleUpdateOffer = async () => {
+    if (!offerId) return;
+
+    const price = Number(editPrice.trim());
+    const quantity = Number(editQuantity.trim());
+    const version = Number(offer?.version ?? offer?.Version);
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      setMessage({
+        type: "warning",
+        text: "Vui lòng nhập giá và số lượng hợp lệ.",
+      });
+      return;
+    }
+
+    if (!Number.isInteger(version) || version < 0) {
+      setShowEditModal(false);
+      setMessage({
+        type: "warning",
+        text: "Không xác định được phiên bản hiện tại của đề nghị. Dữ liệu sẽ được tải lại.",
+      });
+      await fetchOffer();
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      setMessage(null);
+
+      const response = await offerApi.updateOffer(offerId, {
+        offerPrice: price,
+        offerQuantity: quantity,
+        version,
+      });
+
+      if (response?.isSuccess === false) {
+        throw response;
+      }
+
+      const updatedOffer = unwrap(response);
+
+      if (updatedOffer?.offerId) {
+        setOffer(updatedOffer);
+      } else {
+        await fetchOffer();
+      }
+
+      setShowEditModal(false);
+      setMessage({
+        type: "success",
+        text: getApiSuccessMessage(response, "Đã cập nhật đề nghị."),
+      });
+    } catch (error) {
+      if (getOfferErrorCode(error) === "OFFER_TERMS_CHANGED") {
+        setShowEditModal(false);
+        await fetchOffer();
+        setMessage({
+          type: "warning",
+          text: "Đề nghị đã thay đổi ở nơi khác. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra trước khi chỉnh sửa tiếp.",
+        });
+        return;
+      }
+
+      setMessage({
+        type: "error",
+        text: getApiErrorMessage(error, "Không thể cập nhật đề nghị lúc này."),
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const handleCancelOffer = async () => {
     if (!offerId) return;
@@ -175,7 +319,10 @@ export default function OfferDetailScreen() {
     );
   }
 
-  const pending = normalizeStatus(offer.offerStatus) === "pending" || String(offer.offerStatus) === "0";
+  const pending =
+    normalizeStatus(offer.offerStatus) === "pending" ||
+    String(offer.offerStatus) === "0";
+  const canUpdate = offer.canUpdate === true && pending;
   const canCancel = offer.canCancel === true && pending;
 
   return (
@@ -190,7 +337,11 @@ export default function OfferDetailScreen() {
             </View>
             <View style={styles.headerTextWrapper}>
               <Text style={styles.cardTitle}>Đề nghị thương lượng đã gửi</Text>
-              <Text style={styles.cardSubtitle}>Chỉ xem thông tin; không thể chỉnh sửa đề nghị.</Text>
+              <Text style={styles.cardSubtitle}>
+                {canUpdate
+                  ? "Đề nghị đang chờ phản hồi; bạn có thể cập nhật giá hoặc số lượng."
+                  : "Chỉ xem thông tin; đề nghị hiện không thể chỉnh sửa."}
+              </Text>
             </View>
           </View>
 
@@ -237,6 +388,23 @@ export default function OfferDetailScreen() {
           </Text>
         ) : null}
 
+        {canUpdate ? (
+          <TouchableOpacity
+            style={styles.updateButton}
+            onPress={() => void handleOpenEditOffer()}
+            disabled={isUpdating || isCancelling}
+          >
+            <Ionicons
+              name="create-outline"
+              size={19}
+              color={COLORS.white}
+            />
+            <Text style={styles.updateButtonText}>
+              Cập nhật đề nghị
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {isConfirmingCancel ? (
           <View style={styles.confirmBox}>
             <View style={styles.confirmHeader}>
@@ -244,7 +412,7 @@ export default function OfferDetailScreen() {
               <Text style={styles.confirmTitle}>Hủy đề nghị này?</Text>
             </View>
             <Text style={styles.confirmText}>
-              Sau khi hủy, đề nghị Pending này sẽ không còn chờ đối tác phản hồi.
+              Sau khi hủy, đề nghị này sẽ không còn chờ đối tác phản hồi.
             </Text>
             <View style={styles.actionRow}>
               <TouchableOpacity
@@ -295,6 +463,99 @@ export default function OfferDetailScreen() {
           <Text style={styles.backToPostText}>Quay lại bài đăng</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCloseEditModal}
+      >
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          disabled={isUpdating}
+          onPress={handleCloseEditModal}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ModalSurface style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Cập nhật đề nghị
+                </Text>
+                <TouchableOpacity
+                  onPress={handleCloseEditModal}
+                  disabled={isUpdating}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons
+                    name="close"
+                    size={24}
+                    color={COLORS.text}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.inputLabel}>
+                Giá đề nghị (VNĐ)
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  Platform.OS === "web"
+                    ? ({ outlineStyle: "none" } as any)
+                    : undefined,
+                ]}
+                value={editPrice}
+                onChangeText={setEditPrice}
+                keyboardType="numeric"
+                editable={!isUpdating}
+              />
+
+              <Text style={styles.inputLabel}>
+                Số lượng
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  Platform.OS === "web"
+                    ? ({ outlineStyle: "none" } as any)
+                    : undefined,
+                ]}
+                value={editQuantity}
+                onChangeText={setEditQuantity}
+                keyboardType="numeric"
+                editable={!isUpdating}
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.updateButton,
+                  styles.modalSubmitButton,
+                  isUpdating ? styles.disabled : undefined,
+                ]}
+                onPress={() => void handleUpdateOffer()}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="checkmark-outline"
+                      size={19}
+                      color={COLORS.white}
+                    />
+                    <Text style={styles.updateButtonText}>
+                      Lưu thay đổi
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -420,8 +681,24 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   secondaryButtonText: { color: COLORS.text, fontWeight: "700" },
-  cancelButton: {
+  updateButton: {
     marginTop: 16,
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+  },
+  updateButtonText: {
+    color: COLORS.white,
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  cancelButton: {
+    marginTop: 12,
     minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
@@ -464,4 +741,54 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   primaryButtonText: { color: COLORS.white, fontWeight: "800" },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalCard: {
+    padding: 20,
+    paddingBottom: Platform.OS === "ios" ? 36 : 20,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: COLORS.white,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  modalTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputLabel: {
+    marginBottom: 7,
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  input: {
+    minHeight: 48,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  modalSubmitButton: {
+    marginTop: 2,
+  },
 });

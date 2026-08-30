@@ -59,7 +59,7 @@ export const validatePassword = (value: string): string => {
  * - tối đa 100 ký tự
  */
 export const validateFullName = (value: string): string => {
-  const fullName = value.trim().replace(/\s+/gu, " ");
+  const fullName = value.trim();
 
   if (!fullName) {
     return "Vui lòng nhập họ và tên.";
@@ -67,6 +67,10 @@ export const validateFullName = (value: string): string => {
 
   if (fullName.length > FULL_NAME_MAX_LENGTH) {
     return `Họ và tên không được vượt quá ${FULL_NAME_MAX_LENGTH} ký tự.`;
+  }
+
+  if (/ {2,}/u.test(fullName)) {
+    return "Họ và tên chỉ được có một khoảng trắng giữa các từ.";
   }
 
   if (!/^[\p{L}]+(?: [\p{L}]+)*$/u.test(fullName)) {

@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -24,6 +25,7 @@ import {
   View,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
@@ -35,12 +37,14 @@ import {
 
 type ActiveTab = "chat" | "received" | "sent";
 type OfferTab = "received" | "sent";
+type OfferSort = "newest" | "highest";
 type OfferTabChanges = Record<OfferTab, boolean>;
 
 type FeedbackTarget =
   | { type: "page" }
   | { type: "offer"; offerId: string }
   | { type: "counter" }
+  | { type: "edit-offer" }
   | null;
 
 type LocalFeedback = {
@@ -61,31 +65,6 @@ type ConfirmState = {
   resolve: (value: boolean) => void;
 } | null;
 
-const OFFER_POLLING_DELAYS = [
-  10_000,
-  5_000,
-  5_000,
-  5_000,
-  5_000,
-  5_000,
-  7_000,
-  7_000,
-  7_000,
-  11_000,
-  11_000,
-  11_000,
-  13_000,
-  13_000,
-  13_000,
-  17_000,
-  17_000,
-  17_000,
-  19_000,
-  19_000,
-  19_000,
-];
-const MAX_OFFER_POLLING_DELAY = 19_000;
-
 const negotiationApi = {
   getNegotiations: (params?: { PageNumber?: number; PageSize?: number }) =>
     apiClient.get("/negotiations", { params }).then((response) => response.data),
@@ -100,9 +79,9 @@ const offerApi = {
       .get("/offers/received", { params })
       .then((response) => response.data),
 
-  acceptOffer: (offerId: string) =>
+  acceptOffer: (offerId: string, version: number) =>
     apiClient
-      .patch(`/offers/${offerId}/accept`)
+      .patch(`/offers/${offerId}/accept`, { version })
       .then((response) => response.data),
 
   rejectOffer: (offerId: string) =>
@@ -120,14 +99,25 @@ const offerApi = {
     data: {
       offerPrice: number;
       offerQuantity: number;
-      messageContent?: string;
+      version: number;
     },
   ) =>
     apiClient
       .patch(`/offers/${offerId}/counter`, data)
       .then((response) => response.data),
 
-  // PUT /offers/{offerId} cố ý KHÔNG gắn trên Mobile ở thời điểm hiện tại.
+  updateOffer: (
+    offerId: string,
+    data: {
+      offerPrice: number;
+      offerQuantity: number;
+      version: number;
+    },
+  ) =>
+    apiClient
+      .put(`/offers/${offerId}`, data)
+      .then((response) => response.data),
+
 };
 
 const wait = (milliseconds: number) =>
@@ -167,6 +157,17 @@ const normalizeSearchText = (value: unknown) =>
   String(value || "")
     .trim()
     .toLocaleLowerCase("vi-VN");
+
+const getOfferErrorCode = (error: any) =>
+  String(
+    error?.response?.data?.error?.code ??
+      error?.response?.data?.code ??
+      error?.error?.code ??
+      error?.code ??
+      "",
+  )
+    .trim()
+    .toUpperCase();
 
 const getRobustAvatar = (
   url: string | null | undefined,
@@ -270,8 +271,8 @@ function useLocalConfirm() {
       animationType="fade"
       onRequestClose={() => finish(false)}
     >
-      <View style={styles.confirmOverlay}>
-        <View style={styles.confirmCard}>
+      <ModalBackdrop style={styles.confirmOverlay} onPress={() => finish(false)}>
+        <ModalSurface style={styles.confirmCard}>
           <Text style={styles.confirmTitle}>{state?.options.title}</Text>
           <Text style={styles.confirmMessage}>{state?.options.message}</Text>
           <View style={styles.confirmActions}>
@@ -297,8 +298,8 @@ function useLocalConfirm() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </ModalSurface>
+      </ModalBackdrop>
     </Modal>
   );
 
@@ -311,11 +312,20 @@ export default function ChatListScreen() {
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
   const { user } = useAuth();
-  const { connection, joinNegotiation } = useChatRealtime();
+  const {
+    connection,
+    reconnectVersion,
+    joinNegotiation,
+  } = useChatRealtime();
   const currentUserId = user?.userId || user?.id;
 
   const fetchRequestIdRef = useRef(0);
   const activeTabRef = useRef<ActiveTab>("chat");
+  const handledReconnectVersionRef = useRef(0);
+  const isScreenFocusedRef = useRef(false);
+  const appStateRef = useRef(AppState.currentState);
+  const offerSyncInFlightRef = useRef(false);
+  const offerSyncPendingRef = useRef(false);
   const seenOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
   const latestOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
 
@@ -324,6 +334,7 @@ export default function ChatListScreen() {
     received: false,
     sent: false,
   });
+  const [offerSort, setOfferSort] = useState<OfferSort>("newest");
   const [searchQuery, setSearchQuery] = useState("");
   const [offersList, setOffersList] = useState<any[]>([]);
   const [negotiationsList, setNegotiationsList] = useState<any[]>([]);
@@ -333,7 +344,12 @@ export default function ChatListScreen() {
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const [counterPrice, setCounterPrice] = useState("");
   const [counterQuantity, setCounterQuantity] = useState("");
-  const [counterMessage, setCounterMessage] = useState("");
+
+  const [showEditOfferModal, setShowEditOfferModal] = useState(false);
+  const [editingOffer, setEditingOffer] = useState<any>(null);
+  const [editOfferPrice, setEditOfferPrice] = useState("");
+  const [editOfferQuantity, setEditOfferQuantity] = useState("");
+
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
 
@@ -359,6 +375,7 @@ export default function ChatListScreen() {
   }, [activeTab]);
 
   useEffect(() => {
+    handledReconnectVersionRef.current = 0;
     seenOfferSnapshotsRef.current = {};
     latestOfferSnapshotsRef.current = {};
     setOfferTabChanges({ received: false, sent: false });
@@ -518,18 +535,54 @@ export default function ChatListScreen() {
     [activeTab, joinNegotiation, showError, user],
   );
 
-  const pollOfferTabs = useCallback(async () => {
-    const [receivedResult, sentResult] = await Promise.allSettled([
-      offerApi.getReceivedOffers({ PageNumber: 1, PageSize: 50 }),
-      offerApi.getSentOffers({ PageNumber: 1, PageSize: 50 }),
-    ]);
-
-    if (receivedResult.status === "fulfilled") {
-      await checkOfferTabChanges("received", receivedResult.value);
+  const syncOfferTabs = useCallback(async () => {
+    if (offerSyncInFlightRef.current) {
+      offerSyncPendingRef.current = true;
+      return;
     }
 
-    if (sentResult.status === "fulfilled") {
-      await checkOfferTabChanges("sent", sentResult.value);
+    offerSyncInFlightRef.current = true;
+
+    try {
+      do {
+        offerSyncPendingRef.current = false;
+
+        const [receivedResult, sentResult] =
+          await Promise.allSettled([
+            offerApi.getReceivedOffers({
+              PageNumber: 1,
+              PageSize: 50,
+            }),
+            offerApi.getSentOffers({
+              PageNumber: 1,
+              PageSize: 50,
+            }),
+          ]);
+
+        const syncTasks: Promise<void>[] = [];
+
+        if (receivedResult.status === "fulfilled") {
+          syncTasks.push(
+            checkOfferTabChanges(
+              "received",
+              receivedResult.value,
+            ),
+          );
+        }
+
+        if (sentResult.status === "fulfilled") {
+          syncTasks.push(
+            checkOfferTabChanges(
+              "sent",
+              sentResult.value,
+            ),
+          );
+        }
+
+        await Promise.allSettled(syncTasks);
+      } while (offerSyncPendingRef.current);
+    } finally {
+      offerSyncInFlightRef.current = false;
     }
   }, [checkOfferTabChanges]);
 
@@ -568,51 +621,122 @@ export default function ChatListScreen() {
         }
       };
 
-      connection.on("ConversationUpdated", handleConversationUpdated);
-      connection.on("MessageCreated", handleMessageCreated);
-      return () => {
-        connection.off("ConversationUpdated", handleConversationUpdated);
-        connection.off("MessageCreated", handleMessageCreated);
+      const handleOfferChanged = () => {
+        void syncOfferTabs();
       };
-    }, [connection, fetchData]),
+
+      connection.on(
+        "ConversationUpdated",
+        handleConversationUpdated,
+      );
+      connection.on("MessageCreated", handleMessageCreated);
+      connection.on("OfferCreated", handleOfferChanged);
+      connection.on("OfferUpdated", handleOfferChanged);
+
+      return () => {
+        connection.off(
+          "ConversationUpdated",
+          handleConversationUpdated,
+        );
+        connection.off(
+          "MessageCreated",
+          handleMessageCreated,
+        );
+        connection.off("OfferCreated", handleOfferChanged);
+        connection.off("OfferUpdated", handleOfferChanged);
+      };
+    }, [connection, fetchData, syncOfferTabs]),
   );
+
+  useEffect(() => {
+    if (
+      !user ||
+      reconnectVersion <= 0 ||
+      handledReconnectVersionRef.current ===
+        reconnectVersion
+    ) {
+      return;
+    }
+
+    handledReconnectVersionRef.current =
+      reconnectVersion;
+
+    if (activeTabRef.current === "chat") {
+      void fetchData({ silent: true });
+    }
+
+    void syncOfferTabs();
+  }, [
+    fetchData,
+    reconnectVersion,
+    syncOfferTabs,
+    user,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
 
-      let cancelled = false;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      let delayIndex = 0;
+      isScreenFocusedRef.current = true;
 
-      void fetchData();
+      if (activeTabRef.current === "chat") {
+        void fetchData();
+        void syncOfferTabs();
+      } else {
+        setIsLoading(true);
 
-      const scheduleNextPoll = () => {
-        if (cancelled) return;
-
-        const nextDelay =
-          delayIndex < OFFER_POLLING_DELAYS.length
-            ? OFFER_POLLING_DELAYS[delayIndex]
-            : MAX_OFFER_POLLING_DELAY;
-
-        timer = setTimeout(async () => {
-          if (cancelled) return;
-          await pollOfferTabs();
-          if (cancelled) return;
-          delayIndex += 1;
-          scheduleNextPoll();
-        }, nextDelay);
-      };
-
-      scheduleNextPoll();
+        void syncOfferTabs().finally(() => {
+          if (isScreenFocusedRef.current) {
+            setIsLoading(false);
+          }
+        });
+      }
 
       return () => {
-        cancelled = true;
+        isScreenFocusedRef.current = false;
         fetchRequestIdRef.current += 1;
-        if (timer) clearTimeout(timer);
       };
-    }, [activeTab, fetchData, pollOfferTabs, user]),
+    }, [
+      activeTab,
+      fetchData,
+      syncOfferTabs,
+      user,
+    ]),
   );
+
+  useEffect(() => {
+    if (!user) return;
+
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        const previousState = appStateRef.current;
+        appStateRef.current = nextState;
+
+        if (
+          !isScreenFocusedRef.current ||
+          previousState === "active" ||
+          nextState !== "active"
+        ) {
+          return;
+        }
+
+        if (activeTabRef.current === "chat") {
+          void fetchData({ silent: true });
+        }
+
+        void syncOfferTabs();
+      },
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    fetchData,
+    syncOfferTabs,
+    user,
+  ]);
 
   const handleChangeTab = useCallback(
     (nextTab: ActiveTab) => {
@@ -636,7 +760,18 @@ export default function ChatListScreen() {
     [clearCurrentFeedback, markOfferTabAsSeen],
   );
 
-  const handleAcceptOffer = async (offerId: string) => {
+  const handleAcceptOffer = async (offer: any) => {
+    const offerId = String(offer?.offerId || "");
+    const version = Number(offer?.version ?? offer?.Version);
+
+    if (!offerId || !Number.isInteger(version) || version < 0) {
+      setFeedbackTarget({ type: "page" });
+      showError(
+        "Không xác định được phiên bản hiện tại của đề nghị. Vui lòng tải lại dữ liệu.",
+      );
+      await fetchData();
+      return;
+    }
     const confirmed = await confirm({
       title: "Chấp nhận thương lượng",
       message: "Bạn đồng ý mở phiên thương lượng với mức giá này?",
@@ -650,7 +785,7 @@ export default function ChatListScreen() {
 
     try {
       setIsProcessingAction(true);
-      const response = await offerApi.acceptOffer(offerId);
+      const response = await offerApi.acceptOffer(offerId, version);
       if (response?.isSuccess === false) throw response;
 
       showSuccess(
@@ -663,8 +798,20 @@ export default function ChatListScreen() {
       clearCurrentFeedback();
       await fetchData();
     } catch (error: unknown) {
+      if (getOfferErrorCode(error) === "OFFER_TERMS_CHANGED") {
+        setFeedbackTarget({ type: "page" });
+        showError(
+          "Đề nghị vừa được đối tác cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi chấp nhận.",
+        );
+        await fetchData();
+        return;
+      }
+
       showError(
-        getApiErrorMessage(error, "Không thể chấp nhận thương lượng."),
+        getApiErrorMessage(
+          error,
+          "Không thể chấp nhận thương lượng.",
+        ),
       );
     } finally {
       setIsProcessingAction(false);
@@ -704,7 +851,7 @@ export default function ChatListScreen() {
     const confirmed = await confirm({
       title: "Hủy đề nghị đã gửi",
       message:
-        "Đề nghị đang Pending sẽ bị hủy và không thể tiếp tục được đối tác chấp nhận. Bạn có muốn tiếp tục?",
+        "Đề nghị đang chờ phản hồi sẽ bị hủy và không thể tiếp tục được đối tác chấp nhận. Bạn có muốn tiếp tục?",
       confirmLabel: "Hủy đề nghị",
       cancelLabel: "Giữ lại",
       destructive: true,
@@ -730,12 +877,116 @@ export default function ChatListScreen() {
     }
   };
 
+  const handleOpenEditOfferModal = (offer: any) => {
+    clearCurrentFeedback();
+
+    setEditingOffer(offer);
+    setEditOfferPrice(String(offer?.offerPrice ?? ""));
+    setEditOfferQuantity(String(offer?.offerQuantity ?? "1"));
+    setShowEditOfferModal(true);
+  };
+
+  const handleCloseEditOfferModal = () => {
+    if (isProcessingAction) return;
+
+    clearCurrentFeedback();
+    setShowEditOfferModal(false);
+    setEditingOffer(null);
+  };
+
+  const handleSubmitEditOffer = async () => {
+    if (!editingOffer) return;
+
+    clearFeedback();
+    setFeedbackTarget({ type: "edit-offer" });
+
+    const price = Number(editOfferPrice.trim());
+    const quantity = Number(editOfferQuantity.trim());
+    const version = Number(
+      editingOffer?.version ?? editingOffer?.Version,
+    );
+
+    if (!Number.isInteger(version) || version < 0) {
+      setShowEditOfferModal(false);
+      setEditingOffer(null);
+
+      setFeedbackTarget({ type: "page" });
+      showError(
+        "Không xác định được phiên bản hiện tại của đề nghị. Danh sách đã được làm mới.",
+      );
+
+      await fetchData();
+      return;
+    }
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      showError("Vui lòng nhập giá và số lượng hợp lệ.");
+      return;
+    }
+
+    try {
+      setIsProcessingAction(true);
+
+      const response = await offerApi.updateOffer(
+        editingOffer.offerId,
+        {
+          offerPrice: price,
+          offerQuantity: quantity,
+          version,
+        },
+      );
+
+      if (response?.isSuccess === false) throw response;
+
+      showSuccess(
+        getApiSuccessMessage(
+          response,
+          "Đã cập nhật đề nghị thành công.",
+        ),
+      );
+
+      await wait(900);
+
+      clearCurrentFeedback();
+      setShowEditOfferModal(false);
+      setEditingOffer(null);
+
+      await fetchData();
+    } catch (error: unknown) {
+      if (getOfferErrorCode(error) === "OFFER_TERMS_CHANGED") {
+        setShowEditOfferModal(false);
+        setEditingOffer(null);
+
+        setFeedbackTarget({ type: "page" });
+        showError(
+          "Đề nghị vừa có thay đổi. Danh sách đã được làm mới, vui lòng xem lại trước khi chỉnh sửa.",
+        );
+
+        await fetchData();
+        return;
+      }
+
+      showError(
+        getApiErrorMessage(
+          error,
+          "Không thể cập nhật đề nghị lúc này.",
+        ),
+      );
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
   const handleOpenCounterModal = (offer: any) => {
     clearCurrentFeedback();
     setSelectedOffer(offer);
     setCounterPrice(offer.offerPrice?.toString() || "");
     setCounterQuantity(offer.offerQuantity?.toString() || "1");
-    setCounterMessage("Chào bạn, tôi muốn đề xuất mức giá mới này.");
     setShowCounterModal(true);
   };
 
@@ -754,6 +1005,20 @@ export default function ChatListScreen() {
 
     const price = Number(counterPrice.trim());
     const quantity = Number(counterQuantity.trim());
+    const version = Number(
+      selectedOffer?.version ?? selectedOffer?.Version,
+    );
+
+    if (!Number.isInteger(version) || version < 0) {
+      setShowCounterModal(false);
+      setSelectedOffer(null);
+      setFeedbackTarget({ type: "page" });
+      showError(
+        "Không xác định được phiên bản hiện tại của đề nghị. Danh sách đã được làm mới.",
+      );
+      await fetchData();
+      return;
+    }
 
     if (
       !Number.isFinite(price) ||
@@ -772,7 +1037,7 @@ export default function ChatListScreen() {
         {
           offerPrice: price,
           offerQuantity: quantity,
-          messageContent: counterMessage.trim() || undefined,
+          version,
         },
       );
       if (response?.isSuccess === false) throw response;
@@ -786,7 +1051,23 @@ export default function ChatListScreen() {
       setSelectedOffer(null);
       await fetchData();
     } catch (error: unknown) {
-      showError(getApiErrorMessage(error, "Không thể gửi đề xuất."));
+      if (getOfferErrorCode(error) === "OFFER_TERMS_CHANGED") {
+        setShowCounterModal(false);
+        setSelectedOffer(null);
+        setFeedbackTarget({ type: "page" });
+        showError(
+          "Đề nghị vừa được đối tác cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi đề xuất lại.",
+        );
+        await fetchData();
+        return;
+      }
+
+      showError(
+        getApiErrorMessage(
+          error,
+          "Không thể gửi đề xuất.",
+        ),
+      );
     } finally {
       setIsProcessingAction(false);
     }
@@ -820,35 +1101,59 @@ export default function ChatListScreen() {
       if (activeTab === "received") {
         return receiverId === myUserId && senderId !== myUserId;
       }
+
       if (activeTab === "sent") {
         return senderId === myUserId;
       }
+
       return false;
     });
 
     const query = normalizeSearchText(searchQuery);
-    if (!query) return offersOfCurrentTab;
 
-    return offersOfCurrentTab.filter((item) =>
-      [
-        item.senderName,
-        item.sender?.displayName,
-        item.receiverName,
-        item.receiver?.displayName,
-        item.productName,
-        item.postTitle,
-        item.offerPrice,
-        item.offerQuantity,
-      ]
-        .map(normalizeSearchText)
-        .join(" ")
-        .includes(query),
-    );
+    const searchedOffers = query
+      ? offersOfCurrentTab.filter((item) =>
+          [
+            item.senderName,
+            item.sender?.displayName,
+            item.receiverName,
+            item.receiver?.displayName,
+            item.productName,
+            item.postTitle,
+            item.offerPrice,
+            item.offerQuantity,
+          ]
+            .map(normalizeSearchText)
+            .join(" ")
+            .includes(query),
+        )
+      : offersOfCurrentTab;
+
+    return [...searchedOffers].sort((first, second) => {
+      const firstCreatedAt =
+        new Date(first?.createdAt ?? 0).getTime() || 0;
+      const secondCreatedAt =
+        new Date(second?.createdAt ?? 0).getTime() || 0;
+
+      if (offerSort === "highest") {
+        const firstPrice = Number(first?.offerPrice ?? 0);
+        const secondPrice = Number(second?.offerPrice ?? 0);
+
+        const priceDifference = secondPrice - firstPrice;
+
+        if (priceDifference !== 0) {
+          return priceDifference;
+        }
+      }
+
+      return secondCreatedAt - firstCreatedAt;
+    });
   }, [
     activeTab,
     currentUserId,
     getOfferReceiverId,
     getOfferSenderId,
+    offerSort,
     offersList,
     searchQuery,
   ]);
@@ -962,7 +1267,7 @@ export default function ChatListScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.acceptBtn}
-                onPress={() => void handleAcceptOffer(item.offerId)}
+                onPress={() => void handleAcceptOffer(item)}
                 disabled={isProcessingAction}
               >
                 <Text style={styles.acceptBtnText}>Đồng ý</Text>
@@ -987,6 +1292,38 @@ export default function ChatListScreen() {
           </View>
         ) : (
           <View style={styles.actionArea}>
+            <TouchableOpacity
+              style={styles.viewOfferBtn}
+              onPress={() =>
+                router.push(`/offers/${item.offerId}` as any)
+              }
+              disabled={isProcessingAction}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={17}
+                color={COLORS.text}
+              />
+              <Text style={styles.viewOfferBtnText}>
+                Xem chi tiết đề nghị
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.editOfferBtn}
+              onPress={() => handleOpenEditOfferModal(item)}
+              disabled={isProcessingAction}
+            >
+              <Ionicons
+                name="create-outline"
+                size={17}
+                color={COLORS.primary}
+              />
+              <Text style={styles.editOfferBtnText}>
+                Chỉnh sửa đề nghị
+              </Text>
+            </TouchableOpacity>
+
             <View style={styles.actionRow}>
               <TouchableOpacity
                 style={styles.cancelOfferBtn}
@@ -1022,6 +1359,8 @@ export default function ChatListScreen() {
     feedbackTarget?.type === "page" ? feedback : null;
   const counterFeedback =
     feedbackTarget?.type === "counter" ? feedback : null;
+  const editOfferFeedback =
+    feedbackTarget?.type === "edit-offer" ? feedback : null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1112,22 +1451,223 @@ export default function ChatListScreen() {
               }
             />
           ) : (
-            <FlatList
-              data={filteredOffers}
-              keyExtractor={(item) => item.offerId}
-              renderItem={renderOfferItem}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-              ListEmptyComponent={
-                <Text style={styles.emptyListText}>
-                  {searchQuery.trim()
-                    ? "Không tìm thấy yêu cầu thương lượng phù hợp."
-                    : "Bạn chưa có yêu cầu thương lượng nào."}
+            <View style={styles.offerListArea}>
+              <View style={styles.offerSortBar}>
+                <View style={styles.offerSortHeading}>
+                  <Ionicons
+                    name="options-outline"
+                    size={16}
+                    color={COLORS.textLight}
+                  />
+                  <Text style={styles.offerSortLabel}>
+                    Sắp xếp
+                  </Text>
+                </View>
+
+                <View style={styles.offerSortActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.offerSortChip,
+                      offerSort === "newest"
+                        ? styles.offerSortChipActive
+                        : undefined,
+                    ]}
+                    onPress={() => setOfferSort("newest")}
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={15}
+                      color={
+                        offerSort === "newest"
+                          ? COLORS.white
+                          : COLORS.textLight
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.offerSortChipText,
+                        offerSort === "newest"
+                          ? styles.offerSortChipTextActive
+                          : undefined,
+                      ]}
+                    >
+                      Mới nhất
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.offerSortChip,
+                      offerSort === "highest"
+                        ? styles.offerSortChipActive
+                        : undefined,
+                    ]}
+                    onPress={() => setOfferSort("highest")}
+                  >
+                    <Ionicons
+                      name="trophy-outline"
+                      size={15}
+                      color={
+                        offerSort === "highest"
+                          ? COLORS.white
+                          : COLORS.textLight
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.offerSortChipText,
+                        offerSort === "highest"
+                          ? styles.offerSortChipTextActive
+                          : undefined,
+                      ]}
+                    >
+                      Giá cao nhất
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {offerSort === "highest" ? (
+                <Text style={styles.offerSortHint}>
+                  Xếp theo giá trong danh sách hiện có tại đây.
                 </Text>
-              }
-            />
+              ) : null}
+
+              <FlatList
+                data={filteredOffers}
+                keyExtractor={(item) => item.offerId}
+                renderItem={renderOfferItem}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.offerListContent}
+                ListEmptyComponent={
+                  <Text style={styles.emptyListText}>
+                    {searchQuery.trim()
+                      ? "Không tìm thấy yêu cầu thương lượng phù hợp."
+                      : "Bạn chưa có yêu cầu thương lượng nào."}
+                  </Text>
+                }
+              />
+            </View>
           )}
         </View>
+
+        <Modal
+          visible={showEditOfferModal}
+          transparent
+          animationType="slide"
+          onRequestClose={handleCloseEditOfferModal}
+        >
+          <ModalBackdrop
+            style={styles.modalOverlay}
+            disabled={isProcessingAction}
+            onPress={handleCloseEditOfferModal}
+          >
+            <KeyboardAvoidingView
+              behavior={
+                Platform.OS === "ios"
+                  ? "padding"
+                  : "height"
+              }
+            >
+              <ModalSurface style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    Chỉnh sửa đề nghị
+                  </Text>
+
+                  <TouchableOpacity
+                    onPress={handleCloseEditOfferModal}
+                    disabled={isProcessingAction}
+                    style={styles.modalCloseButton}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={24}
+                      color={COLORS.text}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.modalBody}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>
+                      Giá đề nghị (VNĐ){" "}
+                      <Text style={styles.requiredMark}>
+                        *
+                      </Text>
+                    </Text>
+
+                    <TextInput
+                      style={[
+                        styles.input,
+                        Platform.OS === "web"
+                          ? ({ outlineStyle: "none" } as any)
+                          : undefined,
+                      ]}
+                      keyboardType="numeric"
+                      value={editOfferPrice}
+                      onChangeText={setEditOfferPrice}
+                      editable={!isProcessingAction}
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>
+                      Số lượng{" "}
+                      <Text style={styles.requiredMark}>
+                        *
+                      </Text>
+                    </Text>
+
+                    <TextInput
+                      style={[
+                        styles.input,
+                        Platform.OS === "web"
+                          ? ({ outlineStyle: "none" } as any)
+                          : undefined,
+                      ]}
+                      keyboardType="numeric"
+                      value={editOfferQuantity}
+                      onChangeText={setEditOfferQuantity}
+                      editable={!isProcessingAction}
+                    />
+                  </View>
+
+                  {editOfferFeedback ? (
+                    <InlineFeedback
+                      feedback={editOfferFeedback}
+                      onDismiss={clearCurrentFeedback}
+                      style={styles.counterFeedback}
+                    />
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      isProcessingAction
+                        ? styles.disabledButton
+                        : undefined,
+                    ]}
+                    onPress={() =>
+                      void handleSubmitEditOffer()
+                    }
+                    disabled={isProcessingAction}
+                  >
+                    {isProcessingAction ? (
+                      <ActivityIndicator
+                        color={COLORS.white}
+                      />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>
+                        Lưu thay đổi
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ModalSurface>
+            </KeyboardAvoidingView>
+          </ModalBackdrop>
+        </Modal>
 
         <Modal
           visible={showCounterModal}
@@ -1135,11 +1675,13 @@ export default function ChatListScreen() {
           animationType="slide"
           onRequestClose={handleCloseCounterModal}
         >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          <ModalBackdrop
             style={styles.modalOverlay}
+            disabled={isProcessingAction}
+            onPress={handleCloseCounterModal}
           >
-            <View style={styles.modalContent}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+              <ModalSurface style={styles.modalContent}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Đề xuất giá mới</Text>
                 <TouchableOpacity
@@ -1188,24 +1730,6 @@ export default function ChatListScreen() {
                   />
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Lời nhắn cho khách hàng</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      styles.messageInput,
-                      Platform.OS === "web"
-                        ? ({ outlineStyle: "none" } as any)
-                        : undefined,
-                    ]}
-                    multiline
-                    value={counterMessage}
-                    onChangeText={setCounterMessage}
-                    placeholder="Nhập lời nhắn..."
-                    placeholderTextColor={COLORS.textLight}
-                    editable={!isProcessingAction}
-                  />
-                </View>
 
                 {counterFeedback ? (
                   <InlineFeedback
@@ -1230,8 +1754,9 @@ export default function ChatListScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
-          </KeyboardAvoidingView>
+              </ModalSurface>
+            </KeyboardAvoidingView>
+          </ModalBackdrop>
         </Modal>
 
         {confirmationModal}
@@ -1313,6 +1838,71 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error,
   },
   contentArea: { flex: 1, backgroundColor: COLORS.white },
+  offerListArea: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  offerSortBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  offerSortHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  offerSortLabel: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  offerSortActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  offerSortChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    minHeight: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8F9FA",
+  },
+  offerSortChipActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+  },
+  offerSortChipText: {
+    color: COLORS.textLight,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  offerSortChipTextActive: {
+    color: COLORS.white,
+  },
+  offerSortHint: {
+    paddingHorizontal: 16,
+    paddingTop: 2,
+    paddingBottom: 2,
+    color: COLORS.textLight,
+    fontSize: 10,
+  },
+  offerListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 40,
+    gap: 12,
+  },
   pageFeedback: { marginHorizontal: 16, marginBottom: 8 },
   localFeedback: {
     flexDirection: "row",
@@ -1416,6 +2006,38 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   counterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
+  viewOfferBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8F9FA",
+  },
+  viewOfferBtnText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  editOfferBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  editOfferBtnText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
   cancelOfferBtn: {
     flex: 1,
     alignItems: "center",
@@ -1473,7 +2095,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: "#F8F9FA",
   },
-  messageInput: { height: 80, paddingTop: 12, textAlignVertical: "top" },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",

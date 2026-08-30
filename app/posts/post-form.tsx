@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -894,9 +895,9 @@ export default function PostFormScreen() {
       </KeyboardAvoidingView>
 
       <Modal visible={showDimensionsModal} animationType="slide" transparent onRequestClose={() => setShowDimensionsModal(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, styles.dimensionModal]}>
+        <ModalBackdrop style={styles.modalOverlay} onPress={() => setShowDimensionsModal(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ModalSurface style={[styles.modalContent, styles.dimensionModal]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Chi tiết Kích thước</Text>
                 <TouchableOpacity onPress={() => setShowDimensionsModal(false)}>
@@ -925,14 +926,14 @@ export default function PostFormScreen() {
               <TouchableOpacity style={styles.primaryButton} onPress={() => setShowDimensionsModal(false)}>
                 <Text style={styles.primaryButtonText}>Đóng</Text>
               </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
       </Modal>
 
       <Modal visible={showSelectModal} animationType="fade" transparent onRequestClose={() => setShowSelectModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <ModalBackdrop style={styles.modalOverlay} onPress={() => setShowSelectModal(false)}>
+          <ModalSurface style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{modalTitle}</Text>
               <TouchableOpacity onPress={() => setShowSelectModal(false)}>
@@ -951,8 +952,8 @@ export default function PostFormScreen() {
               )}
               ListEmptyComponent={<Text style={styles.modalEmptyText}>Không có dữ liệu</Text>}
             />
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );

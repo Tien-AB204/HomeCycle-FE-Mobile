@@ -28,6 +28,7 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 
 type FeedbackType = "error" | "success" | "warning" | "info";
 type LocalFeedback = {
@@ -161,8 +162,8 @@ function useLocalConfirm() {
       animationType="fade"
       onRequestClose={() => finish(false)}
     >
-      <View style={styles.confirmOverlay}>
-        <View style={styles.confirmCard}>
+      <ModalBackdrop style={styles.confirmOverlay} onPress={() => finish(false)}>
+        <ModalSurface style={styles.confirmCard}>
           <Text style={styles.confirmTitle}>{state?.options.title}</Text>
           <Text style={styles.confirmMessage}>{state?.options.message}</Text>
           <View style={styles.confirmActions}>
@@ -188,8 +189,8 @@ function useLocalConfirm() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </ModalSurface>
+      </ModalBackdrop>
     </Modal>
   );
 
@@ -1006,11 +1007,13 @@ export default function PostDetailScreen() {
           if (!isAddingToCart) setShowCartModal(false);
         }}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <ModalBackdrop
           style={styles.modalOverlay}
+          disabled={isAddingToCart}
+          onPress={() => setShowCartModal(false)}
         >
-          <View style={styles.modalContent}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ModalSurface style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Thêm vào giỏ hàng</Text>
               <TouchableOpacity
@@ -1111,8 +1114,9 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
-          </View>
-        </KeyboardAvoidingView>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
       </Modal>
 
       <Modal
@@ -1123,11 +1127,13 @@ export default function PostDetailScreen() {
           if (!isSubmittingOffer) setShowOfferModal(false);
         }}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <ModalBackdrop
           style={styles.modalOverlay}
+          disabled={isSubmittingOffer}
+          onPress={() => setShowOfferModal(false)}
         >
-          <View style={styles.modalContent}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ModalSurface style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Thương lượng giá</Text>
               <TouchableOpacity
@@ -1228,8 +1234,9 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
       </Modal>
 
       {confirmationModal}

@@ -10,7 +10,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { COLORS } from "../../constants/theme";
 
@@ -22,17 +22,84 @@ interface SensitiveNumberFieldProps
   containerStyle?: StyleProp<ViewStyle>;
   inputStyle?: StyleProp<TextStyle>;
   hasError?: boolean;
+  isEditing?: boolean;
+  visibleStartDigits?: number;
+  visibleEndDigits?: number;
 }
+
+const maskSensitiveValue = (
+  rawValue: string,
+  visibleStartDigits: number,
+  visibleEndDigits: number,
+) => {
+  if (!rawValue) return "";
+
+  if (rawValue.length <= 2) {
+    return "•".repeat(rawValue.length);
+  }
+
+  const minimumHiddenDigits = Math.min(2, rawValue.length - 1);
+  const visibleBudget = Math.max(
+    0,
+    rawValue.length - minimumHiddenDigits,
+  );
+
+  let startCount = Math.min(
+    Math.max(1, visibleStartDigits),
+    Math.ceil(visibleBudget / 2),
+  );
+  let endCount = Math.min(
+    Math.max(1, visibleEndDigits),
+    visibleBudget - startCount,
+  );
+
+  if (endCount < 1 && visibleBudget >= 2) {
+    endCount = 1;
+    startCount = visibleBudget - 1;
+  }
+
+  const hiddenCount = Math.max(
+    1,
+    rawValue.length - startCount - endCount,
+  );
+
+  return (
+    rawValue.slice(0, startCount) +
+    "•".repeat(hiddenCount) +
+    rawValue.slice(rawValue.length - endCount)
+  );
+};
 
 export default function SensitiveNumberField({
   containerStyle,
   inputStyle,
   hasError = false,
   editable = true,
+  isEditing,
   placeholderTextColor = COLORS.textLight,
+  visibleStartDigits = 3,
+  visibleEndDigits = 3,
+  value,
   ...props
 }: SensitiveNumberFieldProps) {
   const [isVisible, setIsVisible] = useState(false);
+
+  const rawValue = String(value ?? "");
+  const hasValue = rawValue.length > 0;
+  const privacyEditing = isEditing ?? editable;
+
+  useEffect(() => {
+    setIsVisible(false);
+  }, [privacyEditing]);
+
+  const displayValue =
+    privacyEditing || isVisible
+      ? rawValue
+      : maskSensitiveValue(
+          rawValue,
+          visibleStartDigits,
+          visibleEndDigits,
+        );
 
   const webInputStyle =
     Platform.OS === "web"
@@ -49,8 +116,11 @@ export default function SensitiveNumberField({
     >
       <TextInput
         {...props}
+        value={displayValue}
         editable={editable}
-        secureTextEntry={!isVisible}
+        secureTextEntry={
+          privacyEditing && !isVisible && hasValue
+        }
         placeholderTextColor={placeholderTextColor}
         style={[
           styles.input,
@@ -60,11 +130,16 @@ export default function SensitiveNumberField({
       />
 
       <TouchableOpacity
-        style={styles.eyeButton}
-        onPress={() =>
-          setIsVisible((current) => !current)
-        }
-        disabled={!editable}
+        style={[
+          styles.eyeButton,
+          !hasValue ? styles.eyeButtonDisabled : undefined,
+        ]}
+        onPress={(event) => {
+          event.stopPropagation();
+          if (!hasValue) return;
+          setIsVisible((current) => !current);
+        }}
+        disabled={!hasValue}
         accessibilityRole="button"
         accessibilityLabel={
           isVisible
@@ -72,7 +147,7 @@ export default function SensitiveNumberField({
             : "Hiện thông tin nhạy cảm"
         }
         accessibilityState={{
-          disabled: !editable,
+          disabled: !hasValue,
         }}
         hitSlop={8}
       >
@@ -120,5 +195,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingRight: 4,
+  },
+
+  eyeButtonDisabled: {
+    opacity: 0.45,
   },
 });

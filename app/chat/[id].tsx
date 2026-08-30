@@ -24,6 +24,7 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -881,6 +882,15 @@ export default function ChatDetailScreen() {
       }
     };
 
+    const handleMessageUpdated = async () => {
+      if (!isMounted) return;
+
+      // RejectProposal currently publishes MessageUpdated without
+      // ConversationUpdated. Reconcile from REST so the proposal card
+      // changes Pending -> Rejected on the other participant immediately.
+      await fetchMessagesOnly();
+    };
+
     const handleMessagesRead = () => {
       if (isMounted) {
         setMessages((prev) =>
@@ -928,6 +938,11 @@ export default function ChatDetailScreen() {
     );
 
     connection.on(
+      "MessageUpdated",
+      handleMessageUpdated,
+    );
+
+    connection.on(
       "MessagesRead",
       handleMessagesRead,
     );
@@ -955,6 +970,11 @@ export default function ChatDetailScreen() {
       connection.off(
         "MessageCreated",
         handleMessageCreated,
+      );
+
+      connection.off(
+        "MessageUpdated",
+        handleMessageUpdated,
       );
 
       connection.off(
@@ -2117,15 +2137,13 @@ export default function ChatDetailScreen() {
         visible={isActionMenuVisible}
         transparent
         animationType="fade"
+        onRequestClose={() => setActionMenuVisible(false)}
       >
-        <TouchableOpacity
+        <ModalBackdrop
           style={styles.menuOverlay}
-          activeOpacity={1}
-          onPress={() =>
-            setActionMenuVisible(false)
-          }
+          onPress={() => setActionMenuVisible(false)}
         >
-          <View
+          <ModalSurface
             style={[
               styles.menuSheetContent,
               {
@@ -2297,19 +2315,24 @@ export default function ChatDetailScreen() {
                 </TouchableOpacity>
               </>
             )}
-          </View>
-        </TouchableOpacity>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
 
       <Modal
         visible={isCounterModalVisible}
         transparent
         animationType="slide"
+        onRequestClose={() => {
+          if (!isProcessing) setCounterModalVisible(false);
+        }}
       >
-        <View
+        <ModalBackdrop
           style={styles.modalOverlay}
+          disabled={isProcessing}
+          onPress={() => setCounterModalVisible(false)}
         >
-          <View
+          <ModalSurface
             style={[
               styles.modalContent,
               {
@@ -2400,8 +2423,8 @@ export default function ChatDetailScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );

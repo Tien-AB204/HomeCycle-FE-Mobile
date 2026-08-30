@@ -23,6 +23,7 @@ import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
@@ -955,13 +956,14 @@ export default function VerificationSetupScreen() {
               ? "padding"
               : "height"
           }
-          style={styles.modalOverlay}
+          style={styles.flex}
         >
-          <View
-            style={
-              styles.reverifyModalContent
-            }
+          <ModalBackdrop
+            style={styles.modalOverlay}
+            disabled={isReverifyLoading}
+            onPress={() => setShowReverifyModal(false)}
           >
+            <ModalSurface style={styles.reverifyModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 Xác thực lại email
@@ -1081,7 +1083,8 @@ export default function VerificationSetupScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
+            </ModalSurface>
+          </ModalBackdrop>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>

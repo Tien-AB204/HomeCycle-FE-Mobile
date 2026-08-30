@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "../../constants/theme";
+import { ModalBackdrop, ModalSurface } from "./ModalBackdrop";
 
 export interface CalendarDateFieldHandle {
   open: () => void;
@@ -239,8 +240,8 @@ const CalendarDateField = forwardRef<
           setVisible(false)
         }
       >
-        <View style={styles.backdrop}>
-          <View style={styles.modalCard}>
+        <ModalBackdrop style={styles.backdrop} onPress={() => setVisible(false)}>
+          <ModalSurface style={styles.modalCard}>
             <View
               style={styles.yearNavigation}
             >
@@ -397,8 +398,8 @@ const CalendarDateField = forwardRef<
                 Đóng
               </Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </>
   );

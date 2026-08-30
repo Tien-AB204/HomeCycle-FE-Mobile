@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
@@ -437,8 +438,12 @@ export default function ProfileScreen() {
         animationType="fade"
         onRequestClose={() => !isLoggingOut && setShowLogoutConfirm(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.confirmCard}>
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          disabled={isLoggingOut}
+          onPress={() => setShowLogoutConfirm(false)}
+        >
+          <ModalSurface style={styles.confirmCard}>
             <Text style={styles.confirmTitle}>Đăng xuất</Text>
             <Text style={styles.confirmText}>Bạn có chắc muốn đăng xuất khỏi tài khoản hiện tại?</Text>
             <View style={styles.confirmActions}>
@@ -461,8 +466,8 @@ export default function ProfileScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </ModalSurface>
+        </ModalBackdrop>
       </Modal>
     </SafeAreaView>
   );

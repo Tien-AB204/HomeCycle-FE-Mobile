@@ -17,6 +17,16 @@ const CHAT_HUB_URL =
   "https://homecycle-backend.onrender.com/hubs/chat";
 
 const TOKEN_REFRESH_SAFETY_WINDOW_MS = 30_000;
+const SIGNALR_START_RETRY_DELAYS_MS = [
+  1_000,
+  2_000,
+  5_000,
+  10_000,
+  15_000,
+] as const;
+
+const waitForRetry = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 type JwtPayload = {
   exp?: number;
@@ -24,6 +34,7 @@ type JwtPayload = {
 
 type ChatRealtimeContextValue = {
   connection: signalR.HubConnection | null;
+  reconnectVersion: number;
   joinNegotiation: (negotiationId: string) => Promise<void>;
   leaveNegotiation: (negotiationId: string) => Promise<void>;
 };
@@ -85,6 +96,9 @@ export function ChatRealtimeProvider({
   const [connection, setConnection] =
     useState<signalR.HubConnection | null>(null);
 
+  const [reconnectVersion, setReconnectVersion] =
+    useState(0);
+
   const connectionRef =
     useRef<signalR.HubConnection | null>(null);
 
@@ -92,6 +106,8 @@ export function ChatRealtimeProvider({
 
   useEffect(() => {
     let cancelled = false;
+
+    setReconnectVersion(0);
 
     if (!userToken) {
       joinedNegotiationsRef.current.clear();
@@ -110,7 +126,7 @@ export function ChatRealtimeProvider({
 
     connectionRef.current = hubConnection;
 
-    hubConnection.onreconnected(async () => {
+    const rejoinTrackedNegotiations = async () => {
       const joinedNegotiations = Array.from(
         joinedNegotiationsRef.current,
       );
@@ -123,36 +139,71 @@ export function ChatRealtimeProvider({
           ),
         ),
       );
+    };
+
+    hubConnection.onreconnected(async () => {
+      await rejoinTrackedNegotiations();
+
+      if (!cancelled) {
+        setReconnectVersion((current) => current + 1);
+      }
     });
 
     const startConnection = async () => {
-      try {
-        const preparedAccessToken =
-          await getSignalRAccessToken();
+      let retryIndex = 0;
 
-        if (!preparedAccessToken || cancelled) {
-          return;
-        }
-
+      while (!cancelled) {
         try {
-          await hubConnection.start();
-        } catch (error) {
-          if (!isUnauthorizedSignalRError(error)) {
-            throw error;
+          const preparedAccessToken =
+            await getSignalRAccessToken();
+
+          if (!preparedAccessToken || cancelled) {
+            return;
           }
 
-          await refreshAccessToken();
-          await hubConnection.start();
-        }
+          try {
+            await hubConnection.start();
+          } catch (error) {
+            if (!isUnauthorizedSignalRError(error)) {
+              throw error;
+            }
 
-        if (cancelled) {
-          await hubConnection.stop();
+            await refreshAccessToken();
+            await hubConnection.start();
+          }
+
+          if (cancelled) {
+            await hubConnection.stop();
+            return;
+          }
+
+          // Negotiation ids can be registered before the initial hub start finishes.
+          // Join them here as well as after reconnects so realtime chat is not missed.
+          await rejoinTrackedNegotiations();
+
+          if (cancelled) {
+            await hubConnection.stop();
+            return;
+          }
+
+          setConnection(hubConnection);
           return;
-        }
+        } catch {
+          if (cancelled) {
+            return;
+          }
 
-        setConnection(hubConnection);
-      } catch (error) {
-        console.log("Không thể kết nối SignalR:", error);
+          const retryDelay =
+            SIGNALR_START_RETRY_DELAYS_MS[
+              Math.min(
+                retryIndex,
+                SIGNALR_START_RETRY_DELAYS_MS.length - 1,
+              )
+            ];
+
+          retryIndex += 1;
+          await waitForRetry(retryDelay);
+        }
       }
     };
 
@@ -223,6 +274,7 @@ export function ChatRealtimeProvider({
     <ChatRealtimeContext.Provider
       value={{
         connection,
+        reconnectVersion,
         joinNegotiation,
         leaveNegotiation,
       }}
