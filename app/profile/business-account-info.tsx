@@ -1,3 +1,4 @@
+import { getAvatarSource } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -881,20 +882,10 @@ export default function BusinessAccountInfoScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Mở tùy chọn ảnh đại diện doanh nghiệp"
               >
-                {avatarUri ? (
-                  <Image
-                    source={{ uri: avatarUri }}
-                    style={styles.avatarTopImage}
-                  />
-                ) : (
-                  <View style={styles.avatarTopPlaceholder}>
-                    <Ionicons
-                      name="business-outline"
-                      size={42}
-                      color={COLORS.textLight}
-                    />
-                  </View>
-                )}
+                <Image
+                  source={getAvatarSource(avatarUri)}
+                  style={styles.avatarTopImage}
+                />
               </TouchableOpacity>
 
               {showAvatarActions && !isEditing("avatar") ? (
@@ -1647,7 +1638,7 @@ export default function BusinessAccountInfoScreen() {
             </View>
             {avatarUri ? (
               <Image
-                source={{ uri: avatarUri }}
+                source={getAvatarSource(avatarUri)}
                 style={styles.avatarPreviewImage}
                 resizeMode="contain"
               />
