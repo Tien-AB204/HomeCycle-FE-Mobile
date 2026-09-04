@@ -1,12 +1,18 @@
+import { DEFAULT_AVATAR_URI } from "../../utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Image, Text, TouchableOpacity } from "react-native"; // BỔ SUNG TEXT ĐỂ LÀM NÚT ĐĂNG NHẬP
+import {
+  Image,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
+import { useNotifications } from "../../contexts/NotificationContext";
 import Header from "./Header";
 
-// HÀM CHỐNG CHẶN ẢNH TỪ NHÀ MẠNG
 const getRobustUrl = (url: string) => {
   if (url?.includes("googleusercontent.com")) {
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
@@ -25,6 +31,7 @@ export default function MainHeader({
 }) {
   const router = useRouter();
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
@@ -34,7 +41,7 @@ export default function MainHeader({
   const actualAvatar = user?.avatarUrl || user?.avatar;
   const isValidAvatar =
     actualAvatar && actualAvatar !== "string" && actualAvatar !== "null";
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || "U")}&background=208AEF&color=fff&size=100`;
+  const defaultAvatar = DEFAULT_AVATAR_URI;
 
   const avatarSource =
     isValidAvatar && !imageError
@@ -43,7 +50,6 @@ export default function MainHeader({
 
   const renderRightButtons = () => {
     if (user) {
-      // ĐÃ ĐĂNG NHẬP -> HIỆN 3 NÚT (CHAT, THÔNG BÁO, AVATAR)
       return (
         <>
           <TouchableOpacity onPress={() => router.push("/chat" as any)}>
@@ -56,12 +62,54 @@ export default function MainHeader({
 
           <TouchableOpacity
             onPress={() => router.push("/notifications" as any)}
+            style={{
+              position: "relative",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 2,
+            }}
+            accessibilityLabel={
+              unreadCount > 0
+                ? `Thông báo, ${unreadCount} chưa đọc`
+                : "Thông báo"
+            }
           >
             <Ionicons
               name="notifications-outline"
               size={24}
               color={COLORS.text}
             />
+
+            {unreadCount > 0 ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: -7,
+                  right: -9,
+                  minWidth: 18,
+                  height: 18,
+                  paddingHorizontal: 4,
+                  borderRadius: 9,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: COLORS.error,
+                  borderWidth: 1.5,
+                  borderColor: COLORS.white,
+                }}
+              >
+                <Text
+                  style={{
+                    color: COLORS.white,
+                    fontSize: 9,
+                    lineHeight: 12,
+                    fontWeight: "800",
+                  }}
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -85,7 +133,6 @@ export default function MainHeader({
       );
     }
 
-    // CHƯA ĐĂNG NHẬP -> HIỆN NÚT ĐĂNG NHẬP
     return (
       <TouchableOpacity
         onPress={() => router.push("/(auth)/login" as any)}

@@ -16,6 +16,7 @@ import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
 import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
+import { NotificationProvider } from "../src/contexts/NotificationContext";
 
 function RootNavigator() {
   const insets = useSafeAreaInsets();
@@ -61,7 +62,8 @@ function RootNavigator() {
     >
       <AuthProvider>
         <ChatRealtimeProvider>
-          <Stack
+          <NotificationProvider>
+            <Stack
             screenOptions={{
               headerShown: false,
             }}
@@ -69,7 +71,8 @@ function RootNavigator() {
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
-          </Stack>
+            </Stack>
+          </NotificationProvider>
         </ChatRealtimeProvider>
       </AuthProvider>
     </View>
