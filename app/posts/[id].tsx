@@ -29,6 +29,7 @@ import {
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
+import { getAvatarSource } from "../../src/utils/avatar";
 
 type FeedbackType = "error" | "success" | "warning" | "info";
 type LocalFeedback = {
@@ -247,6 +248,8 @@ export default function PostDetailScreen() {
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerQuantity, setOfferQuantity] = useState("1");
   const [offerPrice, setOfferPrice] = useState("");
+  const [focusedPlaceholderField, setFocusedPlaceholderField] =
+    useState<"quantity" | "offerPrice" | null>(null);
   const [isSubmittingOffer, setIsSubmittingOffer] = useState(false);
 
   const [showCartModal, setShowCartModal] = useState(false);
@@ -534,6 +537,13 @@ export default function PostDetailScreen() {
     setShowCartModal(true);
   };
 
+  const handleOpenOwnerReviews = () => {
+    const ownerId = post?.ownerId;
+    if (!ownerId) return;
+
+    router.push(`/reviews/user/${String(ownerId)}` as any);
+  };
+
   const handleAddToCart = async () => {
     const targetPostId =
       post?.postId || (Array.isArray(id) ? id[0] : id);
@@ -690,6 +700,21 @@ export default function PostDetailScreen() {
     .filter(Boolean)
     .join(", ");
 
+  const ownerName =
+    String(post.ownerName || post.ownerUsername || "").trim() ||
+    "Người dùng HomeCycle";
+  const ownerAvatarSource = getAvatarSource(post.avatarUrl);
+  const normalizedVerifyStatus = String(post.verifyStatus ?? "").toLowerCase();
+  const isOwnerVerified =
+    post.verifyStatus === 2 || normalizedVerifyStatus === "verified";
+  const averageRating = Number(post.averageRating ?? 0);
+  const totalReviews = Math.max(0, Number(post.totalReviews ?? 0));
+  const hasRating =
+    Number.isFinite(averageRating) && averageRating > 0 && totalReviews > 0;
+  const ownerRatingLabel = hasRating
+    ? `${averageRating.toFixed(1)} (${totalReviews} đánh giá)`
+    : "Chưa có đánh giá";
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -746,6 +771,55 @@ export default function PostDetailScreen() {
               <Text style={styles.tagText}>
                 {post.postType === "Sell" ? "Tin Bán" : "Tin Mua"}
               </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Người đăng</Text>
+          <View style={styles.ownerCard}>
+            <Image
+              source={ownerAvatarSource}
+              style={styles.ownerAvatar}
+              resizeMode="cover"
+            />
+            <View style={styles.ownerInfo}>
+              <View style={styles.ownerNameRow}>
+                <Text style={styles.ownerName} numberOfLines={1}>
+                  {ownerName}
+                </Text>
+                {isOwnerVerified ? (
+                  <View style={styles.verifiedBadge}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#2F765D"
+                    />
+                    <Text style={styles.verifiedBadgeText}>Đã xác minh</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <TouchableOpacity
+                style={styles.ownerRatingRow}
+                onPress={handleOpenOwnerReviews}
+                disabled={!post.ownerId}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={hasRating ? "star" : "star-outline"}
+                  size={15}
+                  color="#F5A623"
+                />
+                <Text style={styles.ownerRatingText}>{ownerRatingLabel}</Text>
+                {post.ownerId ? (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={15}
+                    color={COLORS.textLight}
+                  />
+                ) : null}
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -1060,7 +1134,14 @@ export default function PostDetailScreen() {
                     setCartAdded(false);
                     clearCartFeedback();
                   }}
-                  placeholder="Nhập số lượng..."
+                  placeholder={
+                    focusedPlaceholderField === "quantity"
+                      ? ""
+                      : "Nhập số lượng..."
+                  }
+                  placeholderTextColor="#A5B2B3"
+                  onFocus={() => setFocusedPlaceholderField("quantity")}
+                  onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isAddingToCart}
                   selectTextOnFocus
                 />
@@ -1170,7 +1251,14 @@ export default function PostDetailScreen() {
                     setOfferQuantity(value.replace(/[^0-9]/g, ""));
                     clearOfferFeedback();
                   }}
-                  placeholder="Nhập số lượng..."
+                  placeholder={
+                    focusedPlaceholderField === "quantity"
+                      ? ""
+                      : "Nhập số lượng..."
+                  }
+                  placeholderTextColor="#A5B2B3"
+                  onFocus={() => setFocusedPlaceholderField("quantity")}
+                  onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isSubmittingOffer}
                 />
               </View>
@@ -1204,7 +1292,14 @@ export default function PostDetailScreen() {
                     setOfferPrice(value.replace(/[^0-9]/g, ""));
                     clearOfferFeedback();
                   }}
-                  placeholder="Ví dụ: 1500000"
+                  placeholder={
+                    focusedPlaceholderField === "offerPrice"
+                      ? ""
+                      : "Ví dụ: 1500000"
+                  }
+                  placeholderTextColor="#A5B2B3"
+                  onFocus={() => setFocusedPlaceholderField("offerPrice")}
+                  onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isSubmittingOffer}
                 />
               </View>
@@ -1427,6 +1522,56 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 12,
   },
+  ownerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  ownerAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#EEF2F2",
+  },
+  ownerInfo: { flex: 1, minWidth: 0 },
+  ownerNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  ownerName: {
+    maxWidth: "70%",
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
+  },
+  verifiedBadgeText: {
+    color: "#2F765D",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  ownerRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 5,
+    marginTop: 7,
+  },
+  ownerRatingText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   specGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -8 },
   specItem: {
     width: "50%",
@@ -1549,7 +1694,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  sentOfferBtn: { backgroundColor: "#547B7D" },
+  sentOfferBtn: { backgroundColor: COLORS.primary },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
