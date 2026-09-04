@@ -1,3 +1,4 @@
+import { getAvatarSource } from "../../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -140,16 +141,10 @@ export default function UserReviewsScreen() {
           {reviews.map((review, index) => (
             <View key={review.reviewId || index} style={styles.reviewCard}>
               <View style={styles.reviewerRow}>
-                {review.reviewerAvatarUrl ? (
-                  <Image
-                    source={{ uri: review.reviewerAvatarUrl }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person" size={18} color={COLORS.textLight} />
-                  </View>
-                )}
+                <Image
+                  source={getAvatarSource(review.reviewerAvatarUrl)}
+                  style={styles.avatar}
+                />
 
                 <View style={styles.flex}>
                   <Text style={styles.reviewerName}>

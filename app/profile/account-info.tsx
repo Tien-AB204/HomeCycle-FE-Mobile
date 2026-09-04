@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -459,9 +460,7 @@ export default function AccountInfoScreen() {
     }
   };
 
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    username || "U",
-  )}&background=random&color=fff&size=200`;
+  const defaultAvatar = DEFAULT_AVATAR_URI;
   const displayAvatar = newAvatarFile?.uri
     ? { uri: newAvatarFile.uri }
     : avatarUrl && !imageError

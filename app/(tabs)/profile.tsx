@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -213,9 +214,7 @@ export default function ProfileScreen() {
     actualAvatar && actualAvatar !== "string" && actualAvatar !== "null" && !imageError;
   const avatarUri = validAvatar
     ? getRobustUrl(actualAvatar)
-    : `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        user.username || "U",
-      )}&background=208AEF&color=fff&size=200`;
+    : DEFAULT_AVATAR_URI;
 
   const getBusinessProfileMenu = (): ProfileMenuItem => {
     switch (bizStatus) {
