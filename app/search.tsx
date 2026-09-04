@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Image,
@@ -88,8 +88,25 @@ type ViewState = "BUILDER" | "HISTORY" | "RESULTS";
 
 export default function SearchScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { user } = useAuth();
   const inputRef = useRef<TextInput>(null);
+  const autoSearchStartedRef = useRef(false);
+
+  const autoSearchParam = Array.isArray(params.autoSearch)
+    ? params.autoSearch[0]
+    : params.autoSearch;
+  const routePostTypeParam = Array.isArray(params.postType)
+    ? params.postType[0]
+    : params.postType;
+  const isAutoSearchEntry = autoSearchParam === "true";
+  const initialPostType =
+    routePostTypeParam === "Bán" || routePostTypeParam === "Ban"
+      ? "Bán"
+      : routePostTypeParam === "Mua"
+        ? "Mua"
+        : "";
+
   const isBusiness = user?.role === "business";
   const visiblePostTypes = isBusiness ? ["Bán"] : POST_TYPES;
 
@@ -100,7 +117,7 @@ export default function SearchScreen() {
   const [sortBy, setSortBy] = useState("Relevance");
   const [searchError, setSearchError] = useState("");
 
-  const [postType, setPostType] = useState("");
+  const [postType, setPostType] = useState(initialPostType);
   const [filterCategories, setFilterCategories] = useState<any[]>([]);
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
   const [selectedCondition, setSelectedCondition] = useState("");
@@ -167,6 +184,12 @@ export default function SearchScreen() {
 
   const handleBack = () => {
     Keyboard.dismiss();
+
+    if (viewState === "RESULTS" && isAutoSearchEntry) {
+      router.canGoBack() ? router.back() : router.replace("/(tabs)");
+      return;
+    }
+
     if (viewState === "HISTORY" || viewState === "RESULTS") {
       setViewState("BUILDER");
     } else {
@@ -327,6 +350,13 @@ export default function SearchScreen() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAutoSearchEntry || autoSearchStartedRef.current) return;
+
+    autoSearchStartedRef.current = true;
+    void executeSearch();
+  }, [isAutoSearchEntry]);
 
   const handleSort = (type: string) => {
     setSortBy(type);
