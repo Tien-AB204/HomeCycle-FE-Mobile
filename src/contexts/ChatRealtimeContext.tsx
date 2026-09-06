@@ -32,11 +32,21 @@ type JwtPayload = {
   exp?: number;
 };
 
+type ChatConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
+
 type ChatRealtimeContextValue = {
   connection: signalR.HubConnection | null;
+  connectionStatus: ChatConnectionStatus;
   reconnectVersion: number;
   joinNegotiation: (negotiationId: string) => Promise<void>;
   leaveNegotiation: (negotiationId: string) => Promise<void>;
+  joinConversation: (conversationId: string) => Promise<void>;
+  leaveConversation: (conversationId: string) => Promise<void>;
 };
 
 const ChatRealtimeContext =
@@ -96,6 +106,9 @@ export function ChatRealtimeProvider({
   const [connection, setConnection] =
     useState<signalR.HubConnection | null>(null);
 
+  const [connectionStatus, setConnectionStatus] =
+    useState<ChatConnectionStatus>("idle");
+
   const [reconnectVersion, setReconnectVersion] =
     useState(0);
 
@@ -103,18 +116,25 @@ export function ChatRealtimeProvider({
     useRef<signalR.HubConnection | null>(null);
 
   const joinedNegotiationsRef = useRef<Set<string>>(new Set());
+  const joinedConversationsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
+    let hasConnectedOnce = false;
+    let hadStartFailure = false;
 
     setReconnectVersion(0);
 
     if (!userToken) {
       joinedNegotiationsRef.current.clear();
+      joinedConversationsRef.current.clear();
       connectionRef.current = null;
       setConnection(null);
+      setConnectionStatus("idle");
       return;
     }
+
+    setConnectionStatus("connecting");
 
     const hubConnection = new signalR.HubConnectionBuilder()
       .withUrl(CHAT_HUB_URL, {
@@ -126,25 +146,43 @@ export function ChatRealtimeProvider({
 
     connectionRef.current = hubConnection;
 
-    const rejoinTrackedNegotiations = async () => {
+    const rejoinTrackedRooms = async () => {
       const joinedNegotiations = Array.from(
         joinedNegotiationsRef.current,
       );
+      const joinedConversations = Array.from(
+        joinedConversationsRef.current,
+      );
 
-      await Promise.allSettled(
-        joinedNegotiations.map((negotiationId) =>
+      await Promise.allSettled([
+        ...joinedNegotiations.map((negotiationId) =>
           hubConnection.invoke(
             "JoinNegotiation",
             negotiationId,
           ),
         ),
-      );
+        ...joinedConversations.map((conversationId) =>
+          hubConnection.invoke(
+            "JoinConversation",
+            conversationId,
+          ),
+        ),
+      ]);
     };
 
+    hubConnection.onreconnecting(() => {
+      if (!cancelled) {
+        setConnectionStatus("reconnecting");
+      }
+    });
+
     hubConnection.onreconnected(async () => {
-      await rejoinTrackedNegotiations();
+      await rejoinTrackedRooms();
 
       if (!cancelled) {
+        hasConnectedOnce = true;
+        hadStartFailure = false;
+        setConnectionStatus("connected");
         setReconnectVersion((current) => current + 1);
       }
     });
@@ -177,21 +215,33 @@ export function ChatRealtimeProvider({
             return;
           }
 
-          // Negotiation ids can be registered before the initial hub start finishes.
-          // Join them here as well as after reconnects so realtime chat is not missed.
-          await rejoinTrackedNegotiations();
+          await rejoinTrackedRooms();
 
           if (cancelled) {
             await hubConnection.stop();
             return;
           }
 
+          const shouldNotifyReconnect =
+            hasConnectedOnce || hadStartFailure;
+
+          hasConnectedOnce = true;
+          hadStartFailure = false;
           setConnection(hubConnection);
+          setConnectionStatus("connected");
+
+          if (shouldNotifyReconnect) {
+            setReconnectVersion((current) => current + 1);
+          }
+
           return;
         } catch {
           if (cancelled) {
             return;
           }
+
+          hadStartFailure = true;
+          setConnectionStatus("disconnected");
 
           const retryDelay =
             SIGNALR_START_RETRY_DELAYS_MS[
@@ -207,6 +257,15 @@ export function ChatRealtimeProvider({
       }
     };
 
+    hubConnection.onclose(() => {
+      if (cancelled) {
+        return;
+      }
+
+      setConnectionStatus("disconnected");
+      void startConnection();
+    });
+
     void startConnection();
 
     return () => {
@@ -219,6 +278,7 @@ export function ChatRealtimeProvider({
       setConnection((current) =>
         current === hubConnection ? null : current,
       );
+      setConnectionStatus("idle");
 
       void hubConnection.stop();
     };
@@ -270,13 +330,62 @@ export function ChatRealtimeProvider({
     [],
   );
 
+  const joinConversation = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return;
+
+      joinedConversationsRef.current.add(conversationId);
+
+      const currentConnection = connectionRef.current;
+
+      if (
+        currentConnection?.state ===
+        signalR.HubConnectionState.Connected
+      ) {
+        await currentConnection.invoke(
+          "JoinConversation",
+          conversationId,
+        );
+      }
+    },
+    [],
+  );
+
+  const leaveConversation = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return;
+
+      joinedConversationsRef.current.delete(conversationId);
+
+      const currentConnection = connectionRef.current;
+
+      if (
+        currentConnection?.state ===
+        signalR.HubConnectionState.Connected
+      ) {
+        try {
+          await currentConnection.invoke(
+            "LeaveConversation",
+            conversationId,
+          );
+        } catch {
+          // Connection có thể vừa bị ngắt.
+        }
+      }
+    },
+    [],
+  );
+
   return (
     <ChatRealtimeContext.Provider
       value={{
         connection,
+        connectionStatus,
         reconnectVersion,
         joinNegotiation,
         leaveNegotiation,
+        joinConversation,
+        leaveConversation,
       }}
     >
       {children}
