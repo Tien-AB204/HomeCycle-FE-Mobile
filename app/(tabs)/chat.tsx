@@ -30,6 +30,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import conversationApi from "../../src/services/apis/conversationApi";
 import {
   getApiErrorMessage,
   getApiSuccessMessage,
@@ -64,11 +65,6 @@ type ConfirmState = {
   options: ConfirmOptions;
   resolve: (value: boolean) => void;
 } | null;
-
-const negotiationApi = {
-  getNegotiations: (params?: { PageNumber?: number; PageSize?: number }) =>
-    apiClient.get("/negotiations", { params }).then((response) => response.data),
-};
 
 const offerApi = {
   getSentOffers: (params?: { PageNumber?: number; PageSize?: number }) =>
@@ -314,10 +310,13 @@ export default function ChatListScreen() {
   const { user } = useAuth();
   const {
     connection,
+    connectionStatus,
     reconnectVersion,
-    joinNegotiation,
   } = useChatRealtime();
   const currentUserId = user?.userId || user?.id;
+  const isWaitingForNetwork =
+    connectionStatus === "reconnecting" ||
+    connectionStatus === "disconnected";
 
   const fetchRequestIdRef = useRef(0);
   const activeTabRef = useRef<ActiveTab>("chat");
@@ -337,7 +336,7 @@ export default function ChatListScreen() {
   const [offerSort, setOfferSort] = useState<OfferSort>("newest");
   const [searchQuery, setSearchQuery] = useState("");
   const [offersList, setOffersList] = useState<any[]>([]);
-  const [negotiationsList, setNegotiationsList] = useState<any[]>([]);
+  const [conversationsList, setConversationsList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [showCounterModal, setShowCounterModal] = useState(false);
@@ -478,16 +477,16 @@ export default function ChatListScreen() {
 
       if (!user) {
         setOffersList([]);
-        setNegotiationsList([]);
+        setConversationsList([]);
         if (!silent) setIsLoading(false);
-        return;
+        return false;
       }
 
       if (!silent) setIsLoading(true);
 
       try {
         if (activeTab === "chat") {
-          const response = await negotiationApi.getNegotiations({
+          const response = await conversationApi.getConversations({
             PageSize: 50,
             PageNumber: 1,
           });
@@ -496,16 +495,9 @@ export default function ChatListScreen() {
           if (response?.isSuccess === false) throw response;
 
           const items = response?.data?.items || response?.items || [];
-          const negotiationItems = Array.isArray(items) ? items : [];
-          setNegotiationsList(negotiationItems);
-
-          await Promise.allSettled(
-            negotiationItems
-              .map((item: any) => String(item?.negotiationId || ""))
-              .filter(Boolean)
-              .map((negotiationId: string) => joinNegotiation(negotiationId)),
-          );
-          return;
+          const conversationItems = Array.isArray(items) ? items : [];
+          setConversationsList(conversationItems);
+          return true;
         }
 
         const response =
@@ -517,22 +509,25 @@ export default function ChatListScreen() {
         if (response?.isSuccess === false) throw response;
 
         setOffersList(getPendingOffers(response));
+        return true;
       } catch (error: unknown) {
         if (requestId !== fetchRequestIdRef.current) return;
 
         if (!silent) {
           setFeedbackTarget({ type: "page" });
           showError(
-            getApiErrorMessage(error, "Không thể tải danh sách thương lượng."),
+            getApiErrorMessage(error, "Không thể tải danh sách trò chuyện."),
           );
         }
+
+        return false;
       } finally {
         if (!silent && requestId === fetchRequestIdRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [activeTab, joinNegotiation, showError, user],
+    [activeTab, showError, user],
   );
 
   const syncOfferTabs = useCallback(async () => {
@@ -607,20 +602,6 @@ export default function ChatListScreen() {
         }
       };
 
-      const handleMessageCreated = (payload: any) => {
-        if (activeTabRef.current !== "chat") return;
-
-        const rawType = payload?.messageType ?? payload?.MessageType;
-        const isAgreementMessage =
-          rawType === 4 ||
-          rawType === 5 ||
-          String(rawType ?? "").trim().toLowerCase() === "agreement";
-
-        if (isAgreementMessage) {
-          void fetchData({ silent: true });
-        }
-      };
-
       const handleOfferChanged = () => {
         void syncOfferTabs();
       };
@@ -629,7 +610,6 @@ export default function ChatListScreen() {
         "ConversationUpdated",
         handleConversationUpdated,
       );
-      connection.on("MessageCreated", handleMessageCreated);
       connection.on("OfferCreated", handleOfferChanged);
       connection.on("OfferUpdated", handleOfferChanged);
 
@@ -637,10 +617,6 @@ export default function ChatListScreen() {
         connection.off(
           "ConversationUpdated",
           handleConversationUpdated,
-        );
-        connection.off(
-          "MessageCreated",
-          handleMessageCreated,
         );
         connection.off("OfferCreated", handleOfferChanged);
         connection.off("OfferUpdated", handleOfferChanged);
@@ -662,11 +638,16 @@ export default function ChatListScreen() {
       reconnectVersion;
 
     if (activeTabRef.current === "chat") {
-      void fetchData({ silent: true });
+      void fetchData({ silent: true }).then((didLoad) => {
+        if (didLoad) {
+          clearCurrentFeedback();
+        }
+      });
     }
 
     void syncOfferTabs();
   }, [
+    clearCurrentFeedback,
     fetchData,
     reconnectVersion,
     syncOfferTabs,
@@ -1073,23 +1054,20 @@ export default function ChatListScreen() {
     }
   };
 
-  const filteredNegotiations = useMemo(() => {
+  const filteredConversations = useMemo(() => {
     const query = normalizeSearchText(searchQuery);
-    if (!query) return negotiationsList;
+    if (!query) return conversationsList;
 
-    return negotiationsList.filter((item) =>
+    return conversationsList.filter((item) =>
       [
-        item.otherPartyName,
-        item.productName,
-        item.postTitle,
-        item.currentOfferPrice,
-        item.currentOfferQuantity,
+        item?.otherParticipant?.displayName,
+        item?.latestMessagePreview,
       ]
         .map(normalizeSearchText)
         .join(" ")
         .includes(query),
     );
-  }, [negotiationsList, searchQuery]);
+  }, [conversationsList, searchQuery]);
 
   const filteredOffers = useMemo(() => {
     const myUserId = String(currentUserId ?? "");
@@ -1158,8 +1136,11 @@ export default function ChatListScreen() {
     searchQuery,
   ]);
 
-  const renderNegotiationItem = ({ item }: { item: any }) => {
-    const rawTime = item.lastMessageAt || item.createdAt;
+  const renderConversationItem = ({ item }: { item: any }) => {
+    const rawTime =
+      item?.latestMessageAt ||
+      item?.lastActivityAt ||
+      item?.createdAt;
     const timeString = rawTime
       ? new Date(rawTime).toLocaleString("vi-VN", {
           hour: "2-digit",
@@ -1168,14 +1149,40 @@ export default function ChatListScreen() {
           month: "2-digit",
         })
       : "";
-    const partnerName = item.otherPartyName || "Đối tác";
-    const avatarUri = getRobustAvatar(item.otherPartyAvatarUrl, partnerName);
-    const unreadCount = Number(item.unreadCount || 0);
+
+    const partnerName =
+      item?.otherParticipant?.displayName ||
+      "Đối tác";
+    const avatarUri = getRobustAvatar(
+      item?.otherParticipant?.avatarUrl,
+      partnerName,
+    );
+    const unreadCount = Number(item?.unreadCount || 0);
+    const preview =
+      String(item?.latestMessagePreview || "").trim() ||
+      "Chưa có tin nhắn";
 
     return (
       <TouchableOpacity
         style={styles.offerCard}
-        onPress={() => router.push(`/chat/${item.negotiationId}` as any)}
+        onPress={() => {
+          const conversationId = String(item?.conversationId || "");
+          if (!conversationId) return;
+
+          const latestNegotiationId = String(
+            item?.latestNegotiationId || "",
+          );
+
+          router.push({
+            pathname: "/chat/[id]",
+            params: {
+              id: conversationId,
+              ...(latestNegotiationId
+                ? { negotiationId: latestNegotiationId }
+                : {}),
+            },
+          });
+        }}
       >
         <View style={styles.negotiationRow}>
           <Image source={{ uri: avatarUri }} style={styles.negotiationAvatar} />
@@ -1188,11 +1195,7 @@ export default function ChatListScreen() {
             </View>
             <View style={styles.negotiationPreviewRow}>
               <Text style={styles.negotiationPrice} numberOfLines={1}>
-                Mức giá:{" "}
-                <Text style={styles.negotiationPriceValue}>
-                  {Number(item.currentOfferPrice || 0).toLocaleString("vi-VN")} đ
-                </Text>{" "}
-                (x{item.currentOfferQuantity || 0})
+                {preview}
               </Text>
               {unreadCount > 0 ? (
                 <View style={styles.unreadBadge}>
@@ -1355,6 +1358,14 @@ export default function ChatListScreen() {
     );
   };
 
+  const retryCurrentPage = useCallback(async () => {
+    const didLoad = await fetchData();
+
+    if (didLoad) {
+      clearCurrentFeedback();
+    }
+  }, [clearCurrentFeedback, fetchData]);
+
   const pageFeedback =
     feedbackTarget?.type === "page" ? feedback : null;
   const counterFeedback =
@@ -1421,12 +1432,30 @@ export default function ChatListScreen() {
           ))}
         </View>
 
-        {pageFeedback ? (
-          <InlineFeedback
-            feedback={pageFeedback}
-            onDismiss={clearCurrentFeedback}
-            style={styles.pageFeedback}
-          />
+        {isWaitingForNetwork ? (
+          <View style={styles.networkStatusBanner}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.networkStatusText}>Đang chờ mạng…</Text>
+          </View>
+        ) : null}
+
+        {pageFeedback && !isWaitingForNetwork ? (
+          <View style={styles.pageFeedbackBlock}>
+            <InlineFeedback
+              feedback={pageFeedback}
+              onDismiss={clearCurrentFeedback}
+              style={styles.pageFeedback}
+            />
+            {pageFeedback.type === "error" ? (
+              <TouchableOpacity
+                style={styles.pageRetryButton}
+                onPress={() => void retryCurrentPage()}
+              >
+                <Ionicons name="reload" size={16} color={COLORS.primary} />
+                <Text style={styles.pageRetryButtonText}>Thử lại</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         ) : null}
 
         <View style={styles.contentArea}>
@@ -1437,16 +1466,16 @@ export default function ChatListScreen() {
             </View>
           ) : activeTab === "chat" ? (
             <FlatList
-              data={filteredNegotiations}
-              keyExtractor={(item) => item.negotiationId}
-              renderItem={renderNegotiationItem}
+              data={filteredConversations}
+              keyExtractor={(item) => String(item?.conversationId || "")}
+              renderItem={renderConversationItem}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <Text style={styles.emptyListText}>
                   {searchQuery.trim()
                     ? "Không tìm thấy cuộc trò chuyện phù hợp."
-                    : "Chưa có cuộc trò chuyện nào đang diễn ra."}
+                    : "Chưa có cuộc trò chuyện nào."}
                 </Text>
               }
             />
@@ -1903,7 +1932,48 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 12,
   },
-  pageFeedback: { marginHorizontal: 16, marginBottom: 8 },
+  networkStatusBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.22)",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  networkStatusText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  pageFeedbackBlock: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  pageFeedback: {},
+  pageRetryButton: {
+    alignSelf: "flex-start",
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  pageRetryButtonText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   localFeedback: {
     flexDirection: "row",
     alignItems: "flex-start",
