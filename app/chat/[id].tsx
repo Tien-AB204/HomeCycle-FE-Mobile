@@ -30,6 +30,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import conversationApi from "../../src/services/apis/conversationApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 
@@ -147,6 +148,29 @@ const getRobustAvatar = (
   )}&background=547B7D&color=fff`;
 };
 
+const getNegotiationStatusLabel = (status: unknown) => {
+  const normalized = String(status ?? "").trim().toLowerCase();
+
+  const labels: Record<string, string> = {
+    "1": "Đang thương lượng",
+    open: "Đang thương lượng",
+    "2": "Đã thống nhất",
+    agreed: "Đã thống nhất",
+    "3": "Chờ ký hợp đồng",
+    agreementpending: "Chờ ký hợp đồng",
+    "4": "Hoàn tất",
+    completed: "Hoàn tất",
+    "5": "Đã đóng",
+    closed: "Đã đóng",
+    "6": "Hết hạn",
+    expired: "Hết hạn",
+    "7": "Đã hủy",
+    cancelled: "Đã hủy",
+  };
+
+  return labels[normalized] || "Phiên thương lượng";
+};
+
 const normalizeAgreementUiText = (text?: string | null) => {
   if (!text) {
     return "Đã tạo hợp đồng giao dịch, vui lòng kiểm tra và xác nhận.";
@@ -174,21 +198,116 @@ export default function ChatDetailScreen() {
 
   const params = useLocalSearchParams();
 
-  const negotiationId = Array.isArray(params.id)
+  const routeId = Array.isArray(params.id)
     ? params.id[0]
     : params.id;
+  const requestedNegotiationId = Array.isArray(
+    params.negotiationId,
+  )
+    ? params.negotiationId[0]
+    : params.negotiationId;
 
   const { user, isLoading: isAuthLoading } = useAuth();
 
-  const { connection } = useChatRealtime();
+  const {
+    connection,
+    connectionStatus,
+    reconnectVersion,
+    joinNegotiation,
+    leaveNegotiation,
+    joinConversation,
+    leaveConversation,
+  } = useChatRealtime();
 
   const currentUserId = user?.userId || user?.id;
+  const isWaitingForNetwork =
+    connectionStatus === "reconnecting" ||
+    connectionStatus === "disconnected";
+
+  const [conversationId, setConversationId] =
+    useState<string | null>(null);
+  const [negotiationId, setNegotiationId] =
+    useState<string | null>(null);
+  const [isResolvingRoute, setIsResolvingRoute] =
+    useState(true);
 
   const [negotiationInfo, setNegotiationInfo] =
     useState<any>(null);
+  const [conversationNegotiations, setConversationNegotiations] =
+    useState<any[]>([]);
+  const [isNegotiationPickerVisible, setNegotiationPickerVisible] =
+    useState(false);
+  const [isLoadingNegotiations, setIsLoadingNegotiations] =
+    useState(false);
+  const [negotiationLabels, setNegotiationLabels] =
+    useState<Record<string, string>>({});
 
   const negotiationInfoRef = useRef<any>(null);
   const isScreenFocusedRef = useRef(false);
+  const processedRealtimeMessageIdsRef =
+    useRef<Set<string>>(new Set());
+  const readRequestInFlightRef = useRef(false);
+  const activeReadTargetKeyRef = useRef<string | null>(null);
+  const pendingReadTargetRef = useRef<{
+    conversationId?: string | null;
+    negotiationId?: string | null;
+  } | null>(null);
+  const hydratedPostIdsRef = useRef<Set<string>>(new Set());
+  const focusedRouteLoadKeyRef = useRef<string | null>(null);
+  const messageListRef = useRef<FlatList<any>>(null);
+  const shouldScrollToLatestRef = useRef(true);
+  const animateNextScrollToLatestRef = useRef(false);
+  const isNearLatestRef = useRef(true);
+  const scrollRetryTimersRef =
+    useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearScheduledScrolls = useCallback(() => {
+    scrollRetryTimersRef.current.forEach((timer) =>
+      clearTimeout(timer),
+    );
+    scrollRetryTimersRef.current = [];
+  }, []);
+
+  const scrollToLatest = useCallback(
+    (animated = false) => {
+      clearScheduledScrolls();
+      animateNextScrollToLatestRef.current = false;
+      isNearLatestRef.current = true;
+
+      const performScroll = (useAnimation: boolean) => {
+        requestAnimationFrame(() => {
+          messageListRef.current?.scrollToEnd({
+            animated: useAnimation,
+          });
+        });
+      };
+
+      performScroll(animated);
+
+      [80, 220, 500].forEach((delay) => {
+        const timer = setTimeout(() => {
+          performScroll(false);
+        }, delay);
+
+        scrollRetryTimersRef.current.push(timer);
+      });
+
+      const settleTimer = setTimeout(() => {
+        shouldScrollToLatestRef.current = false;
+        scrollRetryTimersRef.current = [];
+      }, 650);
+
+      scrollRetryTimersRef.current.push(settleTimer);
+    },
+    [clearScheduledScrolls],
+  );
+
+  useEffect(
+    () => () => {
+      clearScheduledScrolls();
+    },
+    [clearScheduledScrolls],
+  );
 
   const [messages, setMessages] = useState<any[]>([]);
 
@@ -225,6 +344,22 @@ export default function ChatDetailScreen() {
   ] = useState("1");
 
   useEffect(() => {
+    setConversationId(null);
+    setNegotiationId(null);
+    setNegotiationInfo(null);
+    negotiationInfoRef.current = null;
+    processedRealtimeMessageIdsRef.current.clear();
+    setMessages([]);
+    setAgreementPreview(null);
+    setLoadError(null);
+    setNegotiationPickerVisible(false);
+    shouldScrollToLatestRef.current = true;
+    animateNextScrollToLatestRef.current = false;
+    isNearLatestRef.current = true;
+    setIsResolvingRoute(true);
+  }, [routeId, requestedNegotiationId]);
+
+  useEffect(() => {
     if (Platform.OS !== "android") {
       return;
     }
@@ -251,15 +386,269 @@ export default function ChatDetailScreen() {
     };
   }, []);
 
-  const fetchBaseInfo = useCallback(async () => {
-    if (!negotiationId || !currentUserId) {
+  const resolveRouteContext = useCallback(async () => {
+    if (!routeId || !currentUserId) {
+      return null;
+    }
+
+    setIsResolvingRoute(true);
+    setLoadError(null);
+
+    try {
+      try {
+        const conversationResponse =
+          await conversationApi.getConversationById(
+            String(routeId),
+          );
+
+        const conversation =
+          conversationResponse?.data ||
+          conversationResponse;
+
+        const resolvedConversationId = String(
+          conversation?.conversationId ||
+            routeId,
+        );
+        const resolvedNegotiationId = String(
+          requestedNegotiationId ||
+            conversation?.latestNegotiationId ||
+            "",
+        );
+
+        if (!resolvedNegotiationId) {
+          setLoadError(
+            "Cuộc trò chuyện này chưa có phiên thương lượng để mở.",
+          );
+          return null;
+        }
+
+        setConversationId(resolvedConversationId);
+        setNegotiationId(resolvedNegotiationId);
+
+        return {
+          conversationId: resolvedConversationId,
+          negotiationId: resolvedNegotiationId,
+        };
+      } catch {
+        const negotiationResponse =
+          await negotiationApi.getNegotiationById(
+            String(routeId),
+          );
+
+        const negotiation =
+          negotiationResponse?.data ||
+          negotiationResponse;
+
+        const resolvedNegotiationId = String(
+          negotiation?.negotiationId ||
+            routeId,
+        );
+        const resolvedConversationId = String(
+          negotiation?.conversationId ||
+            "",
+        );
+
+        setNegotiationId(resolvedNegotiationId);
+        setConversationId(
+          resolvedConversationId || null,
+        );
+
+        return {
+          conversationId:
+            resolvedConversationId || null,
+          negotiationId: resolvedNegotiationId,
+        };
+      }
+    } catch (error) {
+      console.error(
+        "Lỗi xác định cuộc trò chuyện:",
+        error,
+      );
+      setLoadError(
+        "Không thể mở cuộc trò chuyện này. Vui lòng thử lại.",
+      );
+      return null;
+    } finally {
+      setIsResolvingRoute(false);
+    }
+  }, [
+    currentUserId,
+    requestedNegotiationId,
+    routeId,
+  ]);
+
+  const markCurrentContextAsRead = useCallback(
+    async (target?: {
+      conversationId?: string | null;
+      negotiationId?: string | null;
+    }) => {
+      const readTarget = {
+        conversationId: target?.conversationId ?? conversationId,
+        negotiationId: target?.negotiationId ?? negotiationId,
+      };
+
+      if (!currentUserId || (!readTarget.conversationId && !readTarget.negotiationId)) {
+        return;
+      }
+
+      const readTargetKey = [
+        String(readTarget.conversationId ?? ""),
+        String(readTarget.negotiationId ?? ""),
+      ].join(":");
+
+      if (readRequestInFlightRef.current) {
+        const pendingTarget = pendingReadTargetRef.current;
+        const pendingTargetKey = pendingTarget
+          ? [
+              String(pendingTarget.conversationId ?? ""),
+              String(pendingTarget.negotiationId ?? ""),
+            ].join(":")
+          : null;
+
+        if (
+          activeReadTargetKeyRef.current === readTargetKey ||
+          pendingTargetKey === readTargetKey
+        ) {
+          return;
+        }
+
+        pendingReadTargetRef.current = readTarget;
+        return;
+      }
+
+      pendingReadTargetRef.current = readTarget;
+      readRequestInFlightRef.current = true;
+
+      try {
+        while (pendingReadTargetRef.current) {
+          const nextTarget = pendingReadTargetRef.current;
+          pendingReadTargetRef.current = null;
+          activeReadTargetKeyRef.current = [
+            String(nextTarget.conversationId ?? ""),
+            String(nextTarget.negotiationId ?? ""),
+          ].join(":");
+
+          try {
+            if (nextTarget.conversationId) {
+              await conversationApi.markConversationAsRead(
+                String(nextTarget.conversationId),
+              );
+            } else if (nextTarget.negotiationId) {
+              await messageApi.markAsRead(
+                String(nextTarget.negotiationId),
+              );
+            }
+          } catch {
+            // Read receipt không chặn UI; reconnect/focus sẽ thử lại.
+          }
+        }
+      } finally {
+        activeReadTargetKeyRef.current = null;
+        readRequestInFlightRef.current = false;
+      }
+    },
+    [conversationId, currentUserId, negotiationId],
+  );
+
+  const fetchConversationNegotiations = useCallback(
+    async (targetConversationId?: string | null) => {
+      const effectiveConversationId = targetConversationId;
+
+      if (!effectiveConversationId) {
+        setConversationNegotiations([]);
+        return [];
+      }
+
+      setIsLoadingNegotiations(true);
+
+      try {
+        const response =
+          await conversationApi.getConversationNegotiations(
+            String(effectiveConversationId),
+            { PageNumber: 1, PageSize: 50 },
+          );
+
+        if (response?.isSuccess === false) {
+          throw response;
+        }
+
+        const items =
+          response?.data?.items ?? response?.items ?? [];
+        const normalizedItems = Array.isArray(items) ? items : [];
+        setConversationNegotiations(normalizedItems);
+        return normalizedItems;
+      } catch {
+        setConversationNegotiations([]);
+        return [];
+      } finally {
+        setIsLoadingNegotiations(false);
+      }
+    },
+    [],
+  );
+
+  const hydrateNegotiationLabels = useCallback(async (items: any[]) => {
+    const targets = items.filter((item) => {
+      const postId = String(item?.postId ?? "");
+      return postId && !hydratedPostIdsRef.current.has(postId);
+    });
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    targets.forEach((item) => {
+      const postId = String(item?.postId ?? "");
+      if (postId) hydratedPostIdsRef.current.add(postId);
+    });
+
+    const results = await Promise.allSettled(
+      targets.map(async (item) => {
+        const postId = String(item?.postId ?? "");
+        const response = await postApi.getPostById(postId);
+        const post = response?.data ?? response;
+        const label = String(
+          post?.productName ??
+            post?.product?.productName ??
+            post?.productTypeName ??
+            "",
+        ).trim();
+
+        return { postId, label };
+      }),
+    );
+
+    const resolvedLabels: Record<string, string> = {};
+
+    results.forEach((result) => {
+      if (result.status === "fulfilled" && result.value.label) {
+        resolvedLabels[result.value.postId] = result.value.label;
+      }
+    });
+
+    if (Object.keys(resolvedLabels).length > 0) {
+      setNegotiationLabels((current) => ({
+        ...current,
+        ...resolvedLabels,
+      }));
+    }
+  }, []);
+
+  const fetchBaseInfo = useCallback(async (
+    targetNegotiationId?: string,
+  ) => {
+    const effectiveNegotiationId =
+      targetNegotiationId ||
+      negotiationId;
+
+    if (!effectiveNegotiationId || !currentUserId) {
       return null;
     }
 
     try {
       const negotiationResponse =
         await negotiationApi.getNegotiationById(
-          negotiationId,
+          effectiveNegotiationId,
         );
 
       const info =
@@ -380,7 +769,7 @@ export default function ChatDetailScreen() {
         try {
           const previewResponse =
             await agreementApi.getPreview(
-              negotiationId,
+              effectiveNegotiationId,
             );
 
           const preview =
@@ -434,8 +823,14 @@ export default function ChatDetailScreen() {
   ]);
 
   const fetchMessagesOnly =
-    useCallback(async () => {
-      if (!negotiationId || !currentUserId) {
+    useCallback(async (
+      targetNegotiationId?: string,
+    ) => {
+      const effectiveNegotiationId =
+        targetNegotiationId ||
+        negotiationId;
+
+      if (!effectiveNegotiationId || !currentUserId) {
         return;
       }
 
@@ -449,7 +844,7 @@ export default function ChatDetailScreen() {
       try {
         const messageResponse =
           await messageApi.getMessages({
-            negotiationId,
+            negotiationId: effectiveNegotiationId,
             PageNumber: 1,
             PageSize: 50,
           });
@@ -737,9 +1132,16 @@ export default function ChatDetailScreen() {
     ]);
 
   const initialLoad =
-    useCallback(async () => {
+    useCallback(async (
+      targetNegotiationId?: string,
+      targetConversationId?: string | null,
+    ) => {
+      const effectiveNegotiationId =
+        targetNegotiationId ||
+        negotiationId;
+
       if (
-        !negotiationId ||
+        !effectiveNegotiationId ||
         !currentUserId
       ) {
         return;
@@ -747,10 +1149,11 @@ export default function ChatDetailScreen() {
 
       setIsLoading(true);
       setLoadError(null);
+      shouldScrollToLatestRef.current = true;
 
       try {
         const loadedInfo =
-          await fetchBaseInfo();
+          await fetchBaseInfo(effectiveNegotiationId);
 
         if (!loadedInfo) {
           setLoadError(
@@ -760,22 +1163,21 @@ export default function ChatDetailScreen() {
           return;
         }
 
-        await fetchMessagesOnly();
+        await fetchMessagesOnly(effectiveNegotiationId);
 
-        try {
-          await messageApi.markAsRead(
-            negotiationId,
-          );
-        } catch {
-          // Không chặn UI nếu API read lỗi.
-        }
+        await markCurrentContextAsRead({
+          conversationId: targetConversationId ?? conversationId,
+          negotiationId: effectiveNegotiationId,
+        });
       } finally {
         setIsLoading(false);
       }
     }, [
       currentUserId,
+      conversationId,
       fetchBaseInfo,
       fetchMessagesOnly,
+      markCurrentContextAsRead,
       negotiationId,
     ]);
 
@@ -785,6 +1187,7 @@ export default function ChatDetailScreen() {
 
       return () => {
         isScreenFocusedRef.current = false;
+        focusedRouteLoadKeyRef.current = null;
       };
     }, []),
   );
@@ -796,12 +1199,12 @@ export default function ChatDetailScreen() {
         return;
       }
 
-      if (!negotiationId) {
+      if (!routeId) {
         setLoadError(
           "Không tìm thấy cuộc trò chuyện này.",
         );
-
         setIsLoading(false);
+        setIsResolvingRoute(false);
         return;
       }
 
@@ -809,17 +1212,65 @@ export default function ChatDetailScreen() {
         setLoadError(
           "Bạn cần đăng nhập để xem cuộc trò chuyện.",
         );
-
         setIsLoading(false);
+        setIsResolvingRoute(false);
         return;
       }
 
-      void initialLoad();
+      const focusLoadKey = [
+        String(routeId),
+        String(requestedNegotiationId ?? ""),
+        String(currentUserId),
+      ].join(":");
+
+      if (focusedRouteLoadKeyRef.current === focusLoadKey) {
+        return;
+      }
+
+      focusedRouteLoadKeyRef.current = focusLoadKey;
+      let cancelled = false;
+
+      const loadResolvedRoute = async () => {
+        setIsLoading(true);
+
+        const resolved =
+          await resolveRouteContext();
+
+        if (
+          cancelled ||
+          !resolved?.negotiationId
+        ) {
+          if (!cancelled) {
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        if (resolved.conversationId) {
+          void fetchConversationNegotiations(
+            resolved.conversationId,
+          );
+        }
+
+        await initialLoad(
+          resolved.negotiationId,
+          resolved.conversationId,
+        );
+      };
+
+      void loadResolvedRoute();
+
+      return () => {
+        cancelled = true;
+      };
     }, [
       currentUserId,
+      fetchConversationNegotiations,
       initialLoad,
       isAuthLoading,
-      negotiationId,
+      requestedNegotiationId,
+      resolveRouteContext,
+      routeId,
     ]),
   );
 
@@ -830,25 +1281,101 @@ export default function ChatDetailScreen() {
 
     let isMounted = true;
 
+    const isForActiveNegotiation = (payload: any) => {
+      const eventNegotiationId =
+        payload?.negotiationId ??
+        payload?.NegotiationId;
+
+      if (!eventNegotiationId) {
+        return true;
+      }
+
+      return (
+        String(eventNegotiationId).toLowerCase() ===
+        String(negotiationId).toLowerCase()
+      );
+    };
+
+    const isForActiveConversation = (payload: any) => {
+      if (!conversationId) {
+        return true;
+      }
+
+      const eventConversationId =
+        payload?.conversationId ??
+        payload?.ConversationId;
+
+      if (!eventConversationId) {
+        return true;
+      }
+
+      return (
+        String(eventConversationId).toLowerCase() ===
+        String(conversationId).toLowerCase()
+      );
+    };
+
     const handleMessageCreated = async (newMsg: any) => {
-      if (!isMounted) return;
+      if (
+        !isMounted ||
+        !isForActiveNegotiation(newMsg)
+      ) {
+        return;
+      }
+
+      const messageId = String(
+        newMsg?.messageId ??
+          newMsg?.MessageId ??
+          "",
+      );
+
+      if (
+        messageId &&
+        processedRealtimeMessageIdsRef.current.has(
+          messageId,
+        )
+      ) {
+        return;
+      }
+
+      if (messageId) {
+        processedRealtimeMessageIdsRef.current.add(
+          messageId,
+        );
+      }
+
+      const eventSenderId =
+        newMsg?.senderId ??
+        newMsg?.SenderId ??
+        "";
+      const eventMessageType =
+        newMsg?.messageType ??
+        newMsg?.MessageType;
 
       const isMe =
-        String(newMsg.senderId).toLowerCase() ===
+        String(eventSenderId).toLowerCase() ===
         String(currentUserId).toLowerCase();
 
+      if (isMe || isNearLatestRef.current) {
+        shouldScrollToLatestRef.current = true;
+        animateNextScrollToLatestRef.current = true;
+      }
+
       if (!isMe && isScreenFocusedRef.current) {
-        messageApi.markAsRead(negotiationId).catch(() => {});
+        void markCurrentContextAsRead({
+          conversationId,
+          negotiationId,
+        });
       }
 
       const isSpecialEvent =
-        newMsg.messageType === 2 ||
-        newMsg.messageType === 3 ||
-        newMsg.messageType === "Offer" ||
-        newMsg.messageType === "CounterOffer" ||
-        newMsg.messageType === "Agreement" ||
-        newMsg.messageType === 4 ||
-        newMsg.messageType === "AgreementCard" ||
+        eventMessageType === 2 ||
+        eventMessageType === 3 ||
+        eventMessageType === "Offer" ||
+        eventMessageType === "CounterOffer" ||
+        eventMessageType === "Agreement" ||
+        eventMessageType === 4 ||
+        eventMessageType === "AgreementCard" ||
         Number(newMsg.offerPrice) > 0 ||
         (newMsg.messageContent && newMsg.messageContent.toLowerCase().includes("đã chỉnh sửa hợp đồng"));
 
@@ -857,50 +1384,135 @@ export default function ChatDetailScreen() {
         await fetchMessagesOnly();
       } else {
         setMessages((prev) => {
-          if (prev.some((m) => m.id === newMsg.messageId)) return prev;
+          if (
+            prev.some(
+              (message) =>
+                message.id ===
+                (newMsg.messageId ||
+                  newMsg.MessageId),
+            )
+          ) {
+            return prev;
+          }
 
           const info = negotiationInfoRef.current;
 
           const formatted = {
-            id: newMsg.messageId || Date.now().toString(),
+            id:
+              newMsg.messageId ||
+              newMsg.MessageId ||
+              Date.now().toString(),
             type: "text",
-            text: newMsg.messageContent || "",
+            text:
+              newMsg.messageContent ||
+              newMsg.MessageContent ||
+              "",
             price: 0,
             quantity: 1,
             status: "pending",
-            isRead: newMsg.isRead === true,
+            isRead:
+              newMsg.isRead === true ||
+              newMsg.IsRead === true,
             sender: isMe ? "me" : "them",
-            avatar: isMe ? info?.myAvatar : info?.partnerAvatar,
-            senderName: isMe ? "Bạn" : info?.partnerName,
-            time: new Date(newMsg.createdAt || Date.now()).toLocaleTimeString(
-              [],
-              { hour: "2-digit", minute: "2-digit" },
-            ),
+            avatar: isMe
+              ? info?.myAvatar
+              : info?.partnerAvatar,
+            senderName: isMe
+              ? "Bạn"
+              : info?.partnerName,
+            time: new Date(
+              newMsg.createdAt ||
+                newMsg.CreatedAt ||
+                Date.now(),
+            ).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           };
+
           return [...prev, formatted];
         });
       }
     };
 
-    const handleMessageUpdated = async () => {
-      if (!isMounted) return;
+    const handleMessageUpdated = async (payload: any) => {
+      if (
+        !isMounted ||
+        !isForActiveNegotiation(payload)
+      ) {
+        return;
+      }
 
-      // RejectProposal currently publishes MessageUpdated without
-      // ConversationUpdated. Reconcile from REST so the proposal card
-      // changes Pending -> Rejected on the other participant immediately.
       await fetchMessagesOnly();
     };
 
-    const handleMessagesRead = () => {
-      if (isMounted) {
-        setMessages((prev) =>
-          prev.map((m) => (m.sender === "me" ? { ...m, isRead: true } : m)),
-        );
+    const handleMessagesRead = (payload?: any) => {
+      if (
+        !isMounted ||
+        !isForActiveNegotiation(payload)
+      ) {
+        return;
       }
+
+      const readerId =
+        payload?.readerId ?? payload?.ReaderId;
+
+      if (
+        readerId &&
+        String(readerId).toLowerCase() ===
+          String(currentUserId).toLowerCase()
+      ) {
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.sender === "me"
+            ? { ...message, isRead: true }
+            : message,
+        ),
+      );
     };
 
-    const handleConversationUpdated = async (payload: any) => {
-      if (!isMounted) return;
+    const handleConversationMessagesRead = (
+      payload?: any,
+    ) => {
+      if (
+        !isMounted ||
+        !isForActiveConversation(payload)
+      ) {
+        return;
+      }
+
+      const readerId =
+        payload?.readerId ?? payload?.ReaderId;
+
+      if (
+        readerId &&
+        String(readerId).toLowerCase() ===
+          String(currentUserId).toLowerCase()
+      ) {
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.sender === "me"
+            ? { ...message, isRead: true }
+            : message,
+        ),
+      );
+    };
+
+    const handleConversationUpdated = async (
+      payload: any,
+    ) => {
+      if (
+        !isMounted ||
+        !isForActiveConversation(payload)
+      ) {
+        return;
+      }
 
       const updatedNegotiationId =
         payload?.negotiationId ??
@@ -918,51 +1530,50 @@ export default function ChatDetailScreen() {
       await fetchMessagesOnly();
     };
 
-    const joinRoom = async () => {
-      try {
-        await connection.invoke(
-          "JoinNegotiation",
-          negotiationId,
-        );
-      } catch (error) {
-        console.log(
-          "Không thể tham gia phòng chat:",
-          error,
+    const joinRooms = async () => {
+      const tasks: Promise<void>[] = [
+        joinNegotiation(negotiationId),
+      ];
+
+      if (conversationId) {
+        tasks.push(
+          joinConversation(conversationId),
         );
       }
+
+      await Promise.allSettled(tasks);
     };
 
     connection.on(
       "MessageCreated",
       handleMessageCreated,
     );
-
+    connection.on(
+      "ConversationMessageCreated",
+      handleMessageCreated,
+    );
     connection.on(
       "MessageUpdated",
       handleMessageUpdated,
     );
-
+    connection.on(
+      "ConversationMessageUpdated",
+      handleMessageUpdated,
+    );
     connection.on(
       "MessagesRead",
       handleMessagesRead,
     );
-
+    connection.on(
+      "ConversationMessagesRead",
+      handleConversationMessagesRead,
+    );
     connection.on(
       "ConversationUpdated",
       handleConversationUpdated,
     );
 
-    connection.onreconnected(() => {
-      if (!isMounted) {
-        return;
-      }
-
-      void joinRoom().then(() =>
-        fetchMessagesOnly(),
-      );
-    });
-
-    void joinRoom();
+    void joinRooms();
 
     return () => {
       isMounted = false;
@@ -971,34 +1582,91 @@ export default function ChatDetailScreen() {
         "MessageCreated",
         handleMessageCreated,
       );
-
+      connection.off(
+        "ConversationMessageCreated",
+        handleMessageCreated,
+      );
       connection.off(
         "MessageUpdated",
         handleMessageUpdated,
       );
-
+      connection.off(
+        "ConversationMessageUpdated",
+        handleMessageUpdated,
+      );
       connection.off(
         "MessagesRead",
         handleMessagesRead,
       );
-
+      connection.off(
+        "ConversationMessagesRead",
+        handleConversationMessagesRead,
+      );
       connection.off(
         "ConversationUpdated",
         handleConversationUpdated,
       );
 
-      void connection
-        .invoke(
-          "LeaveNegotiation",
-          negotiationId,
-        )
-        .catch(() => undefined);
+      void leaveNegotiation(
+        negotiationId,
+      );
+
+      if (conversationId) {
+        void leaveConversation(
+          conversationId,
+        );
+      }
     };
   }, [
     connection,
+    conversationId,
+    currentUserId,
     fetchBaseInfo,
     fetchMessagesOnly,
+    joinConversation,
+    joinNegotiation,
+    leaveConversation,
+    leaveNegotiation,
+    markCurrentContextAsRead,
     negotiationId,
+  ]);
+
+  useEffect(() => {
+    if (
+      reconnectVersion <= 0 ||
+      !negotiationId ||
+      !isScreenFocusedRef.current
+    ) {
+      return;
+    }
+
+    const recoverAfterReconnect = async () => {
+      const loadedInfo = await fetchBaseInfo();
+      await fetchMessagesOnly();
+
+      if (loadedInfo) {
+        setLoadError(null);
+      }
+
+      await markCurrentContextAsRead({
+        conversationId,
+        negotiationId,
+      });
+
+      if (conversationId) {
+        await fetchConversationNegotiations(conversationId);
+      }
+    };
+
+    void recoverAfterReconnect();
+  }, [
+    conversationId,
+    fetchBaseInfo,
+    fetchConversationNegotiations,
+    fetchMessagesOnly,
+    markCurrentContextAsRead,
+    negotiationId,
+    reconnectVersion,
   ]);
 
   const currentActiveOffer =
@@ -1083,6 +1751,14 @@ export default function ChatDetailScreen() {
     }
 
     await fetchMessagesOnly();
+    await markCurrentContextAsRead({
+      conversationId,
+      negotiationId,
+    });
+
+    if (conversationId) {
+      await fetchConversationNegotiations(conversationId);
+    }
   };
 
   const openCounterModal = () => {
@@ -1293,6 +1969,12 @@ export default function ChatDetailScreen() {
 
     const content = inputText.trim();
 
+    if (isWaitingForNetwork) {
+      return;
+    }
+
+    shouldScrollToLatestRef.current = true;
+    animateNextScrollToLatestRef.current = true;
     setInputText("");
 
     try {
@@ -1320,6 +2002,8 @@ export default function ChatDetailScreen() {
         },
       );
     } catch (error: any) {
+      setInputText((current) => current || content);
+
       Alert.alert(
         "Lỗi",
         getApiErrorMessage(
@@ -1328,6 +2012,40 @@ export default function ChatDetailScreen() {
         ),
       );
     }
+  };
+
+  const openNegotiationPicker = () => {
+    if (conversationNegotiations.length <= 1) {
+      return;
+    }
+
+    setNegotiationPickerVisible(true);
+    void hydrateNegotiationLabels(conversationNegotiations);
+  };
+
+  const selectNegotiation = (item: any) => {
+    const nextNegotiationId = String(item?.negotiationId ?? "");
+
+    if (!nextNegotiationId) {
+      return;
+    }
+
+    setNegotiationPickerVisible(false);
+
+    if (
+      nextNegotiationId.toLowerCase() ===
+      String(negotiationId ?? "").toLowerCase()
+    ) {
+      return;
+    }
+
+    router.replace({
+      pathname: "/chat/[id]",
+      params: {
+        id: String(conversationId || routeId),
+        negotiationId: nextNegotiationId,
+      },
+    });
   };
 
   const renderProductBanner = () => (
@@ -1408,9 +2126,7 @@ export default function ChatDetailScreen() {
           style={styles.headerAvatar}
         />
 
-        <View
-          style={styles.headerTextBlock}
-        >
+        <View style={styles.headerTextBlock}>
           <Text
             style={styles.headerName}
             numberOfLines={1}
@@ -1422,18 +2138,38 @@ export default function ChatDetailScreen() {
     );
 
     const rightContent = (
-      <TouchableOpacity
-        style={styles.headerIcon}
-        onPress={() =>
-          void reloadAll()
-        }
-      >
-        <Ionicons
-          name="reload"
-          size={20}
-          color={COLORS.primary}
-        />
-      </TouchableOpacity>
+      <View style={styles.headerActions}>
+        {conversationNegotiations.length > 1 ? (
+          <TouchableOpacity
+            style={styles.headerNegotiationButton}
+            onPress={openNegotiationPicker}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name="layers-outline"
+              size={14}
+              color={COLORS.primary}
+            />
+            <Text style={styles.headerNegotiationButtonText}>
+              {conversationNegotiations.length} phiên
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.headerIcon}
+          onPress={() =>
+            void reloadAll()
+          }
+          activeOpacity={0.75}
+        >
+          <Ionicons
+            name="reload"
+            size={20}
+            color={COLORS.primary}
+          />
+        </TouchableOpacity>
+      </View>
     );
 
     return (
@@ -1962,7 +2698,7 @@ export default function ChatDetailScreen() {
         keyboardVerticalOffset={0}
         style={styles.mobileWrapper}
       >
-        {isAuthLoading || isLoading ? (
+        {isAuthLoading || isLoading || isResolvingRoute ? (
           <View
             style={
               styles.loadingContainer
@@ -1987,19 +2723,28 @@ export default function ChatDetailScreen() {
               styles.loadingContainer
             }
           >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={42}
-              color={COLORS.textLight}
-            />
+            {isWaitingForNetwork ? (
+              <ActivityIndicator
+                size="large"
+                color={COLORS.primary}
+              />
+            ) : (
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={42}
+                color={COLORS.textLight}
+              />
+            )}
 
             <Text
               style={
                 styles.loadErrorText
               }
             >
-              {loadError ||
-                "Không thể tải cuộc trò chuyện."}
+              {isWaitingForNetwork
+                ? "Đang chờ mạng…"
+                : loadError ||
+                  "Không thể tải cuộc trò chuyện."}
             </Text>
 
             {negotiationId &&
@@ -2042,9 +2787,19 @@ export default function ChatDetailScreen() {
         ) : (
           <>
             {renderHeader()}
+
+            {isWaitingForNetwork ? (
+              <View style={styles.networkStatusBanner}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={styles.networkStatusText}>Đang chờ mạng…</Text>
+              </View>
+            ) : null}
+
             {renderProductBanner()}
 
             <FlatList
+              ref={messageListRef}
+              style={styles.messageList}
               data={messages}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={
@@ -2061,9 +2816,30 @@ export default function ChatDetailScreen() {
               contentContainerStyle={
                 styles.chatList
               }
-              showsVerticalScrollIndicator={
-                false
-              }
+              showsVerticalScrollIndicator
+              persistentScrollbar
+              onScroll={(event) => {
+                const {
+                  layoutMeasurement,
+                  contentOffset,
+                  contentSize,
+                } = event.nativeEvent;
+
+                const distanceFromBottom =
+                  contentSize.height -
+                  (contentOffset.y + layoutMeasurement.height);
+
+                isNearLatestRef.current =
+                  distanceFromBottom <= 120;
+              }}
+              onScrollBeginDrag={() => {
+                if (shouldScrollToLatestRef.current) {
+                  clearScheduledScrolls();
+                  shouldScrollToLatestRef.current = false;
+                  animateNextScrollToLatestRef.current = false;
+                }
+              }}
+              scrollEventThrottle={16}
               ListHeaderComponent={
                 <Text
                   style={
@@ -2073,6 +2849,26 @@ export default function ChatDetailScreen() {
                   Giao dịch bắt đầu
                 </Text>
               }
+              onLayout={() => {
+                if (
+                  shouldScrollToLatestRef.current &&
+                  messages.length > 0
+                ) {
+                  scrollToLatest(false);
+                }
+              }}
+              onContentSizeChange={() => {
+                if (
+                  !shouldScrollToLatestRef.current ||
+                  messages.length === 0
+                ) {
+                  return;
+                }
+
+                scrollToLatest(
+                  animateNextScrollToLatestRef.current,
+                );
+              }}
             />
 
             <View
@@ -2132,6 +2928,116 @@ export default function ChatDetailScreen() {
           </>
         )}
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={isNegotiationPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNegotiationPickerVisible(false)}
+      >
+        <ModalBackdrop
+          style={styles.negotiationPickerOverlay}
+          onPress={() => setNegotiationPickerVisible(false)}
+        >
+          <ModalSurface style={styles.negotiationPickerCard}>
+            <View style={styles.negotiationPickerHeader}>
+              <View>
+                <Text style={styles.negotiationPickerTitle}>
+                  Đi đến phiên thương lượng
+                </Text>
+                <Text style={styles.negotiationPickerSubtitle}>
+                  Chuyển phiên ngay trong cuộc trò chuyện này
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setNegotiationPickerVisible(false)}
+                style={styles.negotiationPickerClose}
+              >
+                <Ionicons name="close" size={20} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            {isLoadingNegotiations ? (
+              <View style={styles.negotiationPickerLoading}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={styles.negotiationPickerSubtitle}>
+                  Đang tải các phiên…
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={conversationNegotiations}
+                keyExtractor={(item) => String(item?.negotiationId ?? "")}
+                showsVerticalScrollIndicator={false}
+                style={styles.negotiationPickerList}
+                renderItem={({ item, index }) => {
+                  const itemNegotiationId = String(
+                    item?.negotiationId ?? "",
+                  );
+                  const itemPostId = String(item?.postId ?? "");
+                  const isActive =
+                    itemNegotiationId.toLowerCase() ===
+                    String(negotiationId ?? "").toLowerCase();
+                  const itemLabel =
+                    negotiationLabels[itemPostId] ||
+                    (isActive ? negotiationInfo?.name : "") ||
+                    `Phiên ${index + 1}`;
+                  const unreadCount = Math.max(
+                    0,
+                    Number(item?.unreadCount ?? 0),
+                  );
+
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.negotiationPickerItem,
+                        isActive ? styles.negotiationPickerItemActive : undefined,
+                      ]}
+                      onPress={() => selectNegotiation(item)}
+                    >
+                      <View style={styles.negotiationPickerItemMain}>
+                        <Text
+                          style={styles.negotiationPickerItemTitle}
+                          numberOfLines={1}
+                        >
+                          {itemLabel}
+                        </Text>
+                        <Text style={styles.negotiationPickerItemMeta}>
+                          {getNegotiationStatusLabel(item?.negotiationStatus)}
+                          {Number(item?.currentOfferPrice ?? 0) > 0
+                            ? ` • ${formatCurrency(Number(item.currentOfferPrice))}`
+                            : ""}
+                        </Text>
+                      </View>
+
+                      {unreadCount > 0 ? (
+                        <View style={styles.negotiationUnreadBadge}>
+                          <Text style={styles.negotiationUnreadBadgeText}>
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </Text>
+                        </View>
+                      ) : isActive ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={COLORS.primary}
+                        />
+                      ) : (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={COLORS.textLight}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
 
       <Modal
         visible={isActionMenuVisible}
@@ -2488,6 +3394,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  networkStatusBanner: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(84, 123, 125, 0.18)",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+
+  networkStatusText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
   headerCenter: {
     flexDirection: "row",
     alignItems: "center",
@@ -2514,8 +3438,137 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+
+  headerNegotiationButton: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.28)",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+
+  headerNegotiationButtonText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
   headerIcon: {
     padding: 8,
+  },
+
+  negotiationPickerOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(16, 31, 32, 0.38)",
+  },
+
+  negotiationPickerCard: {
+    width: "100%",
+    maxWidth: 440,
+    maxHeight: "70%",
+    alignSelf: "center",
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: COLORS.white,
+  },
+
+  negotiationPickerHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+
+  negotiationPickerTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  negotiationPickerSubtitle: {
+    marginTop: 3,
+    color: COLORS.textLight,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  negotiationPickerClose: {
+    padding: 4,
+  },
+
+  negotiationPickerLoading: {
+    minHeight: 110,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  negotiationPickerList: {
+    marginTop: 8,
+  },
+
+  negotiationPickerItem: {
+    minHeight: 62,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+
+  negotiationPickerItemActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+
+  negotiationPickerItemMain: {
+    flex: 1,
+  },
+
+  negotiationPickerItemTitle: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  negotiationPickerItemMeta: {
+    marginTop: 4,
+    color: COLORS.textLight,
+    fontSize: 11,
+  },
+
+  negotiationUnreadBadge: {
+    minWidth: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: COLORS.error,
+  },
+
+  negotiationUnreadBadgeText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "800",
   },
 
   productBanner: {
@@ -2563,10 +3616,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
+  messageList: {
+    flex: 1,
+    minHeight: 0,
+  },
+
   chatList: {
     paddingHorizontal: 12,
-    paddingVertical: 16,
-    paddingBottom: 24,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
 
   dateSeparator: {
@@ -2651,7 +3709,9 @@ const styles = StyleSheet.create({
   },
 
   bubbleThem: {
-    backgroundColor: "#F8F9FA",
+    backgroundColor: "#EEF2F2",
+    borderWidth: 1,
+    borderColor: "#D3DDDC",
     borderBottomLeftRadius: 4,
   },
 
