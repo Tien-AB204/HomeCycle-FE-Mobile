@@ -191,7 +191,7 @@ export default function WalletScreen() {
     if (isBusiness) {
       setMessage({
         type: "warning",
-        text: "Backend hiện đang xử lý yêu cầu rút tiền bằng ví Personal. Tạm thời chưa cho phép tài khoản Doanh nghiệp gửi yêu cầu rút để tránh thao tác sai ví.",
+        text: "Tài khoản doanh nghiệp hiện chưa hỗ trợ yêu cầu rút tiền. Vui lòng thử lại khi tính năng này được mở.",
       });
       return false;
     }
