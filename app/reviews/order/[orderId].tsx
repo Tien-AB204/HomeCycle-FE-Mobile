@@ -19,6 +19,7 @@ import {
 import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import apiClient from "../../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
 
 const reviewApi = {
   getMine: (orderId: string) =>
@@ -60,12 +61,7 @@ const getErrorCode = (error: any) =>
   );
 
 const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.message ||
-      fallback,
-  );
+  getApiErrorMessage(error, fallback);
 
 const appendImageToForm = async (
   formData: FormData,
