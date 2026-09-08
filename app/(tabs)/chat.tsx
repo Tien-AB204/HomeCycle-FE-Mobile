@@ -1,6 +1,11 @@
+import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -182,9 +187,7 @@ const getRobustAvatar = (
     return url;
   }
 
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    name || "U",
-  )}&background=547B7D&color=fff`;
+  return DEFAULT_AVATAR_URI;
 };
 
 function InlineFeedback({
@@ -304,6 +307,16 @@ function useLocalConfirm() {
 
 export default function ChatListScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const requestedTabParam = Array.isArray(params.tab)
+    ? params.tab[0]
+    : params.tab;
+  const requestedTab: ActiveTab =
+    requestedTabParam === "received" ||
+    requestedTabParam === "sent"
+      ? requestedTabParam
+      : "chat";
+
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
 
@@ -319,7 +332,10 @@ export default function ChatListScreen() {
     connectionStatus === "disconnected";
 
   const fetchRequestIdRef = useRef(0);
-  const activeTabRef = useRef<ActiveTab>("chat");
+  const activeTabRef = useRef<ActiveTab>(requestedTab);
+  const lastHandledRequestedTabRef = useRef<string | undefined>(
+    undefined,
+  );
   const handledReconnectVersionRef = useRef(0);
   const isScreenFocusedRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
@@ -328,7 +344,8 @@ export default function ChatListScreen() {
   const seenOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
   const latestOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
+  const [activeTab, setActiveTab] =
+    useState<ActiveTab>(requestedTab);
   const [offerTabChanges, setOfferTabChanges] = useState<OfferTabChanges>({
     received: false,
     sent: false,
@@ -508,7 +525,7 @@ export default function ChatListScreen() {
         if (requestId !== fetchRequestIdRef.current) return;
         if (response?.isSuccess === false) throw response;
 
-        setOffersList(getPendingOffers(response));
+        await checkOfferTabChanges(activeTab as OfferTab, response);
         return true;
       } catch (error: unknown) {
         if (requestId !== fetchRequestIdRef.current) return;
@@ -527,7 +544,7 @@ export default function ChatListScreen() {
         }
       }
     },
-    [activeTab, showError, user],
+    [activeTab, checkOfferTabChanges, showError, user],
   );
 
   const syncOfferTabs = useCallback(async () => {
@@ -592,6 +609,167 @@ export default function ChatListScreen() {
     [saveSeenOfferSnapshot, updateOfferTabDot],
   );
 
+  const applyRealtimeOfferChange = useCallback(
+    (payload: any) => {
+      const offer = payload?.data ?? payload;
+      const offerId = String(
+        offer?.offerId ?? offer?.OfferId ?? "",
+      );
+
+      if (!offerId || !currentUserId) return;
+
+      const senderId = String(
+        offer?.senderId ??
+          offer?.SenderId ??
+          offer?.sender?.userId ??
+          offer?.sender?.UserId ??
+          "",
+      );
+      const receiverId = String(
+        offer?.receiverId ??
+          offer?.ReceiverId ??
+          offer?.receiver?.userId ??
+          offer?.receiver?.UserId ??
+          "",
+      );
+      const myUserId = String(currentUserId).toLowerCase();
+
+      const affectedTab: OfferTab | null =
+        receiverId.toLowerCase() === myUserId
+          ? "received"
+          : senderId.toLowerCase() === myUserId
+            ? "sent"
+            : null;
+
+      if (!affectedTab) {
+        // UpdateAsync currently publishes OfferResponse from the locked
+        // entity returned by GetByIdForUpdateAsync. That entity may not
+        // contain Sender/Receiver navigation data, so the event can still
+        // identify the Offer but not the affected tab. If the Offer is
+        // already visible in the active list, update it safely by offerId.
+        setOffersList((current) => {
+          const existingIndex = current.findIndex(
+            (item) => String(item?.offerId ?? "") === offerId,
+          );
+
+          if (existingIndex < 0) return current;
+
+          const fallbackStatus = String(
+            offer?.offerStatus ?? offer?.OfferStatus ?? "",
+          )
+            .trim()
+            .toLowerCase();
+          const fallbackIsPending =
+            fallbackStatus === "pending" || fallbackStatus === "0";
+
+          if (!fallbackIsPending) {
+            return current.filter(
+              (item) => String(item?.offerId ?? "") !== offerId,
+            );
+          }
+
+          return current.map((item) =>
+            String(item?.offerId ?? "") === offerId
+              ? {
+                  ...item,
+                  postId:
+                    offer?.postId ??
+                    offer?.PostId ??
+                    item?.postId,
+                  offerPrice:
+                    offer?.offerPrice ??
+                    offer?.OfferPrice ??
+                    item?.offerPrice,
+                  offerQuantity:
+                    offer?.offerQuantity ??
+                    offer?.OfferQuantity ??
+                    item?.offerQuantity,
+                  offerStatus:
+                    offer?.offerStatus ??
+                    offer?.OfferStatus ??
+                    item?.offerStatus,
+                  version:
+                    offer?.version ??
+                    offer?.Version ??
+                    item?.version,
+                  createdAt:
+                    offer?.createdAt ??
+                    offer?.CreatedAt ??
+                    item?.createdAt,
+                }
+              : item,
+          );
+        });
+
+        return;
+      }
+
+      const status = String(
+        offer?.offerStatus ?? offer?.OfferStatus ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const isPending =
+        status === "pending" || status === "0";
+
+      const normalizedOffer = {
+        ...offer,
+        offerId,
+        postId: offer?.postId ?? offer?.PostId ?? "",
+        senderId,
+        senderName:
+          offer?.senderName ??
+          offer?.SenderName ??
+          offer?.sender?.displayName ??
+          offer?.sender?.DisplayName ??
+          "",
+        senderAvatarUrl:
+          offer?.senderAvatarUrl ??
+          offer?.SenderAvatarUrl ??
+          offer?.sender?.avatarUrl ??
+          offer?.sender?.AvatarUrl ??
+          null,
+        receiverId,
+        receiverName:
+          offer?.receiverName ??
+          offer?.ReceiverName ??
+          offer?.receiver?.displayName ??
+          offer?.receiver?.DisplayName ??
+          "",
+        receiverAvatarUrl:
+          offer?.receiverAvatarUrl ??
+          offer?.ReceiverAvatarUrl ??
+          offer?.receiver?.avatarUrl ??
+          offer?.receiver?.AvatarUrl ??
+          null,
+        offerPrice: offer?.offerPrice ?? offer?.OfferPrice ?? 0,
+        offerQuantity:
+          offer?.offerQuantity ?? offer?.OfferQuantity ?? 0,
+        offerStatus: offer?.offerStatus ?? offer?.OfferStatus,
+        version: offer?.version ?? offer?.Version,
+        createdAt: offer?.createdAt ?? offer?.CreatedAt,
+      };
+
+      if (activeTabRef.current === affectedTab) {
+        setOffersList((current) => {
+          const withoutCurrentOffer = current.filter(
+            (item) => String(item?.offerId ?? "") !== offerId,
+          );
+
+          return isPending
+            ? [normalizedOffer, ...withoutCurrentOffer]
+            : withoutCurrentOffer;
+        });
+
+        updateOfferTabDot(affectedTab, false);
+        return;
+      }
+
+      updateOfferTabDot(affectedTab, true);
+    },
+    [currentUserId, updateOfferTabDot],
+  );
+
   useFocusEffect(
     useCallback(() => {
       if (!connection) return;
@@ -602,8 +780,8 @@ export default function ChatListScreen() {
         }
       };
 
-      const handleOfferChanged = () => {
-        void syncOfferTabs();
+      const handleOfferChanged = (payload: any) => {
+        applyRealtimeOfferChange(payload);
       };
 
       connection.on(
@@ -621,7 +799,7 @@ export default function ChatListScreen() {
         connection.off("OfferCreated", handleOfferChanged);
         connection.off("OfferUpdated", handleOfferChanged);
       };
-    }, [connection, fetchData, syncOfferTabs]),
+    }, [applyRealtimeOfferChange, connection, fetchData]),
   );
 
   useEffect(() => {
@@ -662,15 +840,14 @@ export default function ChatListScreen() {
 
       if (activeTabRef.current === "chat") {
         void fetchData();
+
+        // Initial route catch-up only. Realtime Offer events update local state
+        // directly; REST is kept for focus/reconnect/foreground recovery.
         void syncOfferTabs();
       } else {
-        setIsLoading(true);
-
-        void syncOfferTabs().finally(() => {
-          if (isScreenFocusedRef.current) {
-            setIsLoading(false);
-          }
-        });
+        // When viewing an Offer tab, fetch only that active tab.
+        // Do not request both sent + received on every tab change.
+        void fetchData();
       }
 
       return () => {
@@ -740,6 +917,25 @@ export default function ChatListScreen() {
     },
     [clearCurrentFeedback, markOfferTabAsSeen],
   );
+
+  useEffect(() => {
+    if (!requestedTabParam) return;
+
+    const requestedKey = String(requestedTabParam);
+
+    if (
+      lastHandledRequestedTabRef.current === requestedKey
+    ) {
+      return;
+    }
+
+    lastHandledRequestedTabRef.current = requestedKey;
+    handleChangeTab(requestedTab);
+  }, [
+    handleChangeTab,
+    requestedTab,
+    requestedTabParam,
+  ]);
 
   const handleAcceptOffer = async (offer: any) => {
     const offerId = String(offer?.offerId || "");
@@ -1220,6 +1416,7 @@ export default function ChatListScreen() {
       ? item.receiverAvatarUrl
       : item.senderAvatarUrl;
     const avatarUri = getRobustAvatar(partnerAvatarUrl, partnerName);
+    const postThumbnailUrl = String(item.postThumbnailUrl || "").trim();
     const timeString = item.createdAt
       ? new Date(item.createdAt).toLocaleString("vi-VN", {
           hour: "2-digit",
@@ -1249,13 +1446,36 @@ export default function ChatListScreen() {
         </View>
 
         <View style={styles.offerDetails}>
-          <Text style={styles.offerProduct} numberOfLines={1}>
-            {item.productName || item.postTitle || "Sản phẩm"}
-          </Text>
-          <Text style={styles.offerPrice}>
-            Giá thương lượng: {Number(item.offerPrice || 0).toLocaleString("vi-VN")} đ
-          </Text>
-          <Text style={styles.offerPrice}>Số lượng: {item.offerQuantity || 0}</Text>
+          <View style={styles.offerSummaryRow}>
+            {postThumbnailUrl ? (
+              <Image
+                source={{ uri: postThumbnailUrl }}
+                style={styles.offerThumbnail}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.offerThumbnailPlaceholder}>
+                <Ionicons
+                  name="image-outline"
+                  size={22}
+                  color={COLORS.textLight}
+                />
+              </View>
+            )}
+
+            <View style={styles.offerDetailsText}>
+              <Text style={styles.offerProduct} numberOfLines={2}>
+                {item.productName || item.postTitle || "Sản phẩm"}
+              </Text>
+              <Text style={styles.offerPrice}>
+                Giá thương lượng:{" "}
+                {Number(item.offerPrice || 0).toLocaleString("vi-VN")} đ
+              </Text>
+              <Text style={styles.offerQuantityText}>
+                Số lượng: {item.offerQuantity || 0}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {!isMySentOffer ? (
@@ -1277,13 +1497,29 @@ export default function ChatListScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.counterBtnOutline}
-              onPress={() => handleOpenCounterModal(item)}
-              disabled={isProcessingAction}
-            >
-              <Text style={styles.counterBtnText}>Đề xuất giá mới</Text>
-            </TouchableOpacity>
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.viewOfferBtn}
+                onPress={() =>
+                  router.push(`/offers/${item.offerId}` as any)
+                }
+                disabled={isProcessingAction}
+              >
+                <Text style={styles.viewOfferBtnText}>
+                  Xem chi tiết
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.counterBtnOutline}
+                onPress={() => handleOpenCounterModal(item)}
+                disabled={isProcessingAction}
+              >
+                <Text style={styles.counterBtnText}>
+                  Đề xuất giá mới
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {showOfferFeedback ? (
               <InlineFeedback
@@ -1295,20 +1531,16 @@ export default function ChatListScreen() {
           </View>
         ) : (
           <View style={styles.actionArea}>
-            <TouchableOpacity
-              style={styles.viewOfferBtn}
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.viewOfferBtn}
               onPress={() =>
                 router.push(`/offers/${item.offerId}` as any)
               }
               disabled={isProcessingAction}
             >
-              <Ionicons
-                name="document-text-outline"
-                size={17}
-                color={COLORS.text}
-              />
               <Text style={styles.viewOfferBtnText}>
-                Xem chi tiết đề nghị
+                Xem chi tiết
               </Text>
             </TouchableOpacity>
 
@@ -1317,15 +1549,11 @@ export default function ChatListScreen() {
               onPress={() => handleOpenEditOfferModal(item)}
               disabled={isProcessingAction}
             >
-              <Ionicons
-                name="create-outline"
-                size={17}
-                color={COLORS.primary}
-              />
               <Text style={styles.editOfferBtnText}>
-                Chỉnh sửa đề nghị
+                Chỉnh sửa
               </Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.actionRow}>
               <TouchableOpacity
@@ -1503,15 +1731,6 @@ export default function ChatListScreen() {
                     ]}
                     onPress={() => setOfferSort("newest")}
                   >
-                    <Ionicons
-                      name="time-outline"
-                      size={15}
-                      color={
-                        offerSort === "newest"
-                          ? COLORS.white
-                          : COLORS.textLight
-                      }
-                    />
                     <Text
                       style={[
                         styles.offerSortChipText,
@@ -1533,15 +1752,6 @@ export default function ChatListScreen() {
                     ]}
                     onPress={() => setOfferSort("highest")}
                   >
-                    <Ionicons
-                      name="trophy-outline"
-                      size={15}
-                      color={
-                        offerSort === "highest"
-                          ? COLORS.white
-                          : COLORS.textLight
-                      }
-                    />
                     <Text
                       style={[
                         styles.offerSortChipText,
@@ -2045,20 +2255,57 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F8F9FA",
   },
+  offerSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  offerThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  offerThumbnailPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerDetailsText: {
+    flex: 1,
+    minWidth: 0,
+  },
   offerProduct: { marginBottom: 4, color: COLORS.text, fontSize: 15, fontWeight: "600" },
+  offerQuantityText: {
+    marginTop: 3,
+    color: COLORS.textLight,
+    fontSize: 13,
+  },
   offerPrice: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
   actionArea: { gap: 8 },
   actionRow: { flexDirection: "row", gap: 12 },
   rejectBtn: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 10,
+    justifyContent: "center",
+    minHeight: 42,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#BAC2C1",
-    backgroundColor: "#F8F9FA",
+    borderColor: COLORS.error,
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
-  rejectBtnText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
+  rejectBtnText: {
+    color: COLORS.error,
+    fontSize: 13,
+    fontWeight: "700",
+  },
   acceptBtn: {
     flex: 1,
     alignItems: "center",
@@ -2068,6 +2315,7 @@ const styles = StyleSheet.create({
   },
   acceptBtnText: { color: COLORS.white, fontSize: 14, fontWeight: "600" },
   counterBtnOutline: {
+    flex: 1,
     alignItems: "center",
     paddingVertical: 10,
     borderRadius: 8,
@@ -2077,6 +2325,7 @@ const styles = StyleSheet.create({
   },
   counterBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
   viewOfferBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2093,6 +2342,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   editOfferBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
