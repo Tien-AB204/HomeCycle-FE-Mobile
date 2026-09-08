@@ -28,6 +28,7 @@ import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
@@ -198,6 +199,7 @@ function InlineMessage({ message }: { message: MessageState }) {
 
 export default function BusinessAccountInfoScreen() {
   const router = useRouter();
+  const { reloadUser } = useAuth();
   const [data, setData] = useState<any>(null);
   const [wallet, setWallet] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -528,6 +530,7 @@ export default function BusinessAccountInfoScreen() {
       });
 
       await fetchPageData();
+      await reloadUser();
       setEditingSection(null);
     } catch (error) {
       setSectionMessage("account", {
@@ -561,6 +564,7 @@ export default function BusinessAccountInfoScreen() {
         text: "Đã cập nhật ảnh đại diện.",
       });
       await fetchPageData();
+      await reloadUser();
       setEditingSection(null);
     } catch (error) {
       setSectionMessage("avatar", {
@@ -584,7 +588,7 @@ export default function BusinessAccountInfoScreen() {
         "Vui lòng chọn lại địa chỉ bằng bộ chọn địa chỉ để xác định Thành phố và Phường/Xã.";
     if (!registrationCertificate)
       nextErrors.registrationCertificate =
-        "BE yêu cầu tải lại giấy đăng ký kinh doanh mỗi lần cập nhật.";
+        "Vui lòng tải lại giấy đăng ký kinh doanh khi cập nhật thông tin này.";
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
     try {
