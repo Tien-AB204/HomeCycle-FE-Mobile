@@ -600,7 +600,7 @@ export default function PostDetailScreen() {
     price ? `${Number(price).toLocaleString("vi-VN")} đ` : "0 đ";
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return "Chưa có";
     return new Date(dateString).toLocaleDateString("vi-VN", {
       day: "2-digit",
       month: "2-digit",
@@ -635,10 +635,10 @@ export default function PostDetailScreen() {
       Bathroom: "Phòng tắm",
       Laundry_room: "Phòng giặt",
       Balcony: "Ban công",
-      Garage: "Garage",
+      Garage: "Nhà để xe",
       Restroom: "Nhà vệ sinh",
     };
-    return spaces[space] || space || "Không rõ";
+    return spaces[space] || "Không rõ";
   };
 
   const getEavValue = (attribute: any) =>
