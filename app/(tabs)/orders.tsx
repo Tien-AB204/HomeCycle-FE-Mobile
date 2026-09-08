@@ -53,19 +53,35 @@ const orderApi = {
 };
 
 const translateOrderStatus = (status: number | string | null | undefined) => {
-  switch (String(status)) {
+  const normalized = String(status ?? "")
+    .replace(/[\s_-]/g, "")
+    .toLowerCase();
+
+  switch (normalized) {
     case "0":
+    case "pending":
+    case "pendingpayment":
       return "Chờ thanh toán";
     case "1":
+    case "processing":
       return "Đang xử lý";
     case "2":
+    case "completed":
       return "Đã hoàn thành";
     case "3":
+    case "cancelled":
+    case "canceled":
       return "Đã hủy";
     case "4":
+    case "disputing":
+    case "disputed":
       return "Đang khiếu nại";
+
+    case "5":
+    case "returned":
+      return "Đã hoàn trả";
     default:
-      return "Chưa rõ trạng thái";
+      return "Đang cập nhật";
   }
 };
 
@@ -150,7 +166,7 @@ export default function OrdersScreen() {
           .map((order) => ({
             id: String(order.orderId || order.id || ""),
             orderCode: String(
-              order.orderCode || order.id?.substring?.(0, 8)?.toUpperCase?.() || "N/A",
+              order.orderCode || order.id?.substring?.(0, 8)?.toUpperCase?.() || "Chưa có mã",
             ),
             productName: String(order.productName || "Sản phẩm giao dịch"),
             price: Number(order.finalTotalAmount || order.price || 0),
