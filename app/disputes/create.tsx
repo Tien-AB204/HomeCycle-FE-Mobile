@@ -132,8 +132,8 @@ export default function CreateDisputeScreen() {
       valid = false;
     }
 
-    if (images.length < 3 || images.length > 5) {
-      setImageError("Cần cung cấp từ 3 đến 5 ảnh bằng chứng.");
+    if (images.length < 2 || images.length > 5) {
+      setImageError("Cần cung cấp từ 2 đến 5 ảnh bằng chứng.");
       valid = false;
     } else {
       const unsupported = images.find((asset) => !isSupportedImage(asset));
@@ -373,7 +373,7 @@ export default function CreateDisputeScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Ảnh bằng chứng</Text>
             <Text style={styles.helperText}>
-              Bắt buộc 3–5 ảnh. Mỗi ảnh tối đa 5MB, định dạng JPG/JPEG/PNG/WEBP.
+              Bắt buộc 2–5 ảnh. Mỗi ảnh tối đa 5MB, định dạng JPG/JPEG/PNG/WEBP.
             </Text>
 
             <TouchableOpacity style={styles.pickButton} onPress={() => void pickImages()}>
