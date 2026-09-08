@@ -51,9 +51,9 @@ const formatCurrency = (value: unknown) =>
   }).format(Number(value || 0));
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return "N/A";
+  if (!value) return "Chưa có";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "N/A";
+  if (Number.isNaN(date.getTime())) return "Chưa có";
   return date.toLocaleString("vi-VN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -74,7 +74,7 @@ const translateMethod = (value: number | string) => {
     return "Ví HomeCycle";
   }
   if (normalized === "3" || normalized.includes("unknown")) return "Không xác định";
-  return String(value || "Không xác định");
+  return "Không xác định";
 };
 
 const translateStatus = (value: number | string) => {
@@ -103,7 +103,7 @@ const translateStatus = (value: number | string) => {
   }
 
   return {
-    label: String(value || "Không rõ"),
+    label: "Chưa xác định",
     color: COLORS.textLight,
     background: "#F8F9FA",
   };
