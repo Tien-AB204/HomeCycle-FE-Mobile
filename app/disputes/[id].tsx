@@ -14,6 +14,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 const categoryLabels: Record<string, string> = {
   "1": "Không xuất hiện / bùng hẹn",
@@ -97,10 +98,9 @@ export default function DisputeDetailScreen() {
     } catch (error: any) {
       setDetail(null);
       setErrorMessage(
-        String(
-          error?.response?.data?.message ||
-            error?.response?.data?.error?.message ||
-            "Không thể tải chi tiết tranh chấp lúc này.",
+        getApiErrorMessage(
+          error,
+          "Không thể tải chi tiết tranh chấp lúc này.",
         ),
       );
     } finally {
