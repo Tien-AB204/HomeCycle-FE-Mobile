@@ -109,40 +109,68 @@ export default function ScheduleScreen() {
   };
 
   const formatTimeOnly = (dateString: string) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return "Chưa có";
     const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return "N/A";
+    if (Number.isNaN(date.getTime())) return "Chưa có";
     return date.toLocaleTimeString("vi-VN", {
       hour: "2-digit",
       minute: "2-digit",
     });
   };
 
+  const normalizeAppointmentStatus = (status: unknown) =>
+    String(status ?? "")
+      .replace(/[s_-]/g, "")
+      .toLowerCase();
+
   const translateAppointmentStatus = (
     status: number | string | null | undefined,
   ) => {
-    const s = String(status);
-    switch (s) {
+    switch (normalizeAppointmentStatus(status)) {
       case "0":
+      case "proposed":
         return "Chờ xác nhận";
       case "1":
-        return "Đã xác nhận";
+      case "scheduled":
+        return "Đã lên lịch";
+      case "5":
+      case "inprogress":
+        return "Đang diễn ra";
       case "2":
+      case "completed":
         return "Đã hoàn thành";
       case "3":
+      case "cancelled":
+      case "canceled":
         return "Đã hủy";
       case "4":
-        return "Bỏ lỡ";
+      case "expired":
+        return "Quá hạn";
       default:
-        return "Chờ xác nhận";
+        return "Chưa xác định";
     }
   };
 
   const getStatusColor = (status: number | string) => {
-    const s = String(status);
-    if (s === "2") return "#2F765D";
-    if (s === "3" || s === "4") return "#7A1012";
-    if (s === "1") return "#2B5659";
+    const normalized = normalizeAppointmentStatus(status);
+    if (normalized === "2" || normalized === "completed") return "#2F765D";
+    if (
+      normalized === "3" ||
+      normalized === "cancelled" ||
+      normalized === "canceled" ||
+      normalized === "4" ||
+      normalized === "expired"
+    ) {
+      return "#7A1012";
+    }
+    if (
+      normalized === "1" ||
+      normalized === "scheduled" ||
+      normalized === "5" ||
+      normalized === "inprogress"
+    ) {
+      return "#2B5659";
+    }
     return "#9A6418";
   };
 
