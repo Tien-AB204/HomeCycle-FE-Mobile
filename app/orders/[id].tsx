@@ -30,12 +30,6 @@ type DeliveryMethod =
   | "BuyerPickUp"
   | "Unknown";
 
-type CollectionState = {
-  bothCheckedIn: boolean | null;
-  buyerCheckedIn: boolean | null;
-  sellerCheckedIn: boolean | null;
-};
-
 const orderApi = {
   getOrderDetail: (orderId: string) =>
     apiClient.get(`/orders/${orderId}`).then((response) => response.data),
@@ -44,18 +38,6 @@ const orderApi = {
   getShipmentTracking: (orderId: string) =>
     apiClient
       .get(`/orders/${orderId}/shipment-tracking`)
-      .then((response) => response.data),
-  getBuyerCollections: () =>
-    apiClient
-      .get("/appointments/buyer/collections", {
-        params: { PageSize: 100, PageNumber: 1 },
-      })
-      .then((response) => response.data),
-  getSellerCollections: () =>
-    apiClient
-      .get("/appointments/seller/collections", {
-        params: { PageSize: 100, PageNumber: 1 },
-      })
       .then((response) => response.data),
   confirmHandover: (orderId: string) =>
     apiClient
@@ -73,21 +55,6 @@ const normalizeStatus = (value: unknown) =>
   String(value ?? "")
     .replace(/[\s_-]/g, "")
     .toLowerCase();
-
-const normalizeText = (value: unknown) =>
-  String(value ?? "")
-    .normalize("NFC")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase("vi-VN");
-
-const normalizeDate = (value: unknown) => {
-  if (!value) return "";
-  const date = new Date(String(value));
-  return Number.isNaN(date.getTime())
-    ? String(value).slice(0, 10)
-    : date.toISOString().slice(0, 10);
-};
 
 const normalizeDeliveryMethod = (value: unknown): DeliveryMethod => {
   const normalized = normalizeStatus(value);
@@ -107,6 +74,38 @@ const translateDeliveryMethod = (method: DeliveryMethod) => {
       return "Bên mua đến lấy";
     default:
       return "Chưa cập nhật";
+  }
+};
+
+const translateRelatedAppointmentType = (value: unknown) => {
+  const normalized = normalizeStatus(value);
+  return normalized === "1" || normalized === "collection"
+    ? "Lịch thu gom"
+    : "Lịch kiểm định";
+};
+
+const translateRelatedAppointmentStatus = (value: unknown) => {
+  switch (normalizeStatus(value)) {
+    case "0":
+    case "proposed":
+      return "Chờ xác nhận";
+    case "1":
+    case "scheduled":
+      return "Đã lên lịch";
+    case "5":
+    case "inprogress":
+      return "Đang diễn ra";
+    case "2":
+    case "completed":
+      return "Đã hoàn thành";
+    case "3":
+    case "cancelled":
+      return "Đã hủy";
+    case "4":
+    case "expired":
+      return "Quá hạn";
+    default:
+      return "Đang cập nhật";
   }
 };
 
@@ -157,63 +156,6 @@ const translateCreationStatus = (status: string) => {
   }
 };
 
-const extractItems = (response: any) => {
-  const raw = unwrap(response);
-  return raw?.items || raw?.data?.items || raw?.data || raw || [];
-};
-
-const getCollectionState = (
-  response: any,
-  agreementDetails: any,
-  deliveryMethod: DeliveryMethod,
-): CollectionState => {
-  const items = extractItems(response);
-  if (!Array.isArray(items) || items.length === 0) {
-    return {
-      bothCheckedIn: null,
-      buyerCheckedIn: null,
-      sellerCheckedIn: null,
-    };
-  }
-
-  const expectedDate = normalizeDate(agreementDetails?.collectionDate);
-  const expectedPickup = normalizeText(agreementDetails?.pickupAddress);
-  const expectedDelivery = normalizeText(agreementDetails?.deliveryAddress);
-
-  const scored = items
-    .map((item: any) => {
-      let score = 0;
-      if (normalizeDeliveryMethod(item?.deliveryMethod) === deliveryMethod) score += 2;
-      if (expectedDate && normalizeDate(item?.collectionDate) === expectedDate) score += 3;
-      if (expectedPickup && normalizeText(item?.pickupAddress) === expectedPickup) score += 3;
-      if (expectedDelivery && normalizeText(item?.deliveryAddress) === expectedDelivery) score += 3;
-      return { item, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  const best = scored[0];
-  if (!best || (items.length > 1 && best.score < 5)) {
-    return {
-      bothCheckedIn: null,
-      buyerCheckedIn: null,
-      sellerCheckedIn: null,
-    };
-  }
-
-  const buyerCheckedIn = Boolean(
-    best.item?.buyerCheckedIn || best.item?.buyerCheckAt,
-  );
-  const sellerCheckedIn = Boolean(
-    best.item?.sellerCheckedIn || best.item?.sellerCheckAt,
-  );
-
-  return {
-    buyerCheckedIn,
-    sellerCheckedIn,
-    bothCheckedIn: buyerCheckedIn && sellerCheckedIn,
-  };
-};
-
 export default function OrderDetailScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -228,11 +170,6 @@ export default function OrderDetailScreen() {
     useState<DeliveryMethod>("Unknown");
   const [transactionRole, setTransactionRole] =
     useState<TransactionRole>(null);
-  const [collectionState, setCollectionState] = useState<CollectionState>({
-    bothCheckedIn: null,
-    buyerCheckedIn: null,
-    sellerCheckedIn: null,
-  });
   const [trackingData, setTrackingData] = useState<any>(null);
   const [isTrackingLoading, setIsTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
@@ -254,7 +191,20 @@ export default function OrderDetailScreen() {
       setPendingAction(null);
 
       const detailResponse = await orderApi.getOrderDetail(orderId);
-      const responseData = unwrap(detailResponse);
+      const rawOrder = unwrap(detailResponse);
+      const responseData =
+        rawOrder?.order
+          ? rawOrder
+          : rawOrder?.orderId
+            ? {
+                ...rawOrder,
+                order: rawOrder,
+                counterpartyName:
+                  rawOrder?.counterparty?.username ||
+                  rawOrder?.counterparty?.name ||
+                  "Đối tác",
+              }
+            : rawOrder;
       setData(responseData);
 
       const order = responseData?.order;
@@ -296,39 +246,6 @@ export default function OrderDetailScreen() {
         setTransactionRole(null);
       }
 
-      if (
-        nextAgreement &&
-        nextRole &&
-        (nextDeliveryMethod === "BuyerPickUp" ||
-          nextDeliveryMethod === "SellerDelivers")
-      ) {
-        try {
-          const collectionResponse =
-            nextRole === "seller"
-              ? await orderApi.getSellerCollections()
-              : await orderApi.getBuyerCollections();
-          setCollectionState(
-            getCollectionState(
-              collectionResponse,
-              nextAgreement?.agreementDetails,
-              nextDeliveryMethod,
-            ),
-          );
-        } catch {
-          setCollectionState({
-            bothCheckedIn: null,
-            buyerCheckedIn: null,
-            sellerCheckedIn: null,
-          });
-        }
-      } else {
-        setCollectionState({
-          bothCheckedIn: null,
-          buyerCheckedIn: null,
-          sellerCheckedIn: null,
-        });
-      }
-
       if (nextDeliveryMethod === "GhnDelivery") {
         setIsTrackingLoading(true);
         try {
@@ -352,7 +269,7 @@ export default function OrderDetailScreen() {
         type: "error",
         text:
           status >= 500
-            ? "Lỗi server khi tải đơn hàng. Vui lòng thử lại sau."
+            ? "Không thể tải đơn hàng từ hệ thống lúc này. Vui lòng thử lại sau."
             : getApiErrorMessage(error, "Không thể tải dữ liệu đơn hàng lúc này."),
       });
       setData(null);
@@ -417,9 +334,9 @@ export default function OrderDetailScreen() {
       : "0 đ";
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return "Chưa có";
     const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return "N/A";
+    if (Number.isNaN(date.getTime())) return "Chưa có";
     return date.toLocaleString("vi-VN", {
       hour: "2-digit",
       minute: "2-digit",
@@ -430,15 +347,24 @@ export default function OrderDetailScreen() {
   };
 
   const translatePaymentStatus = (status: number | string) => {
-    switch (String(status)) {
+    switch (normalizeStatus(status)) {
       case "0":
+      case "pending":
         return "Chưa thanh toán đủ / Đang cọc";
       case "1":
+      case "completed":
+      case "paid":
         return "Đã thanh toán toàn phần";
       case "2":
+      case "refunded":
         return "Đã hoàn tiền";
+      case "cancelled":
+      case "canceled":
+        return "Đã hủy";
+      case "expired":
+        return "Đã hết hạn";
       default:
-        return String(status || "Chưa rõ");
+        return "Chưa rõ";
     }
   };
 
@@ -481,6 +407,11 @@ export default function OrderDetailScreen() {
   const postId = order.postId;
   const shipment = data.shipment;
   const dispute = data.dispute || {};
+  const relatedAppointments = Array.isArray(order.appointments)
+    ? order.appointments
+    : Array.isArray(data.appointments)
+      ? data.appointments
+      : [];
 
   const estimatedShippingFee = Math.max(
     0,
@@ -507,8 +438,6 @@ export default function OrderDetailScreen() {
   const canCreateDispute =
     !hasActiveDispute && (currentStatusCode === 1 || currentStatusCode === 2);
 
-  const isDirect =
-    deliveryMethod === "BuyerPickUp" || deliveryMethod === "SellerDelivers";
   const isGhn = deliveryMethod === "GhnDelivery";
   const creationStat = trackingData?.creationStatus;
   const trackingMsg = trackingData?.message;
@@ -519,38 +448,103 @@ export default function OrderDetailScreen() {
   const deliveredDate = trackingData?.deliveredAt || shipment?.deliveredAt;
   const lastSynced = trackingData?.lastSyncedAt;
   const isStaleData = trackingData?.isStale === true;
-  const shipmentStatus = Number(
-    trackingData?.shipmentStatus ?? shipment?.shipmentStatus ?? 0,
-  );
-  const isGhnDelivered =
-    isGhn && shipmentStatus === 3 && Boolean(deliveredDate);
+  const orderActions = data?.actions ?? order?.actions ?? {};
+  const normalizedConfirmAction = normalizeStatus(orderActions.confirmAction);
+  const canConfirmFromBackend = orderActions.canConfirm === true;
 
-  const directCheckInKnown = collectionState.bothCheckedIn !== null;
-  const directReady = isDirect && collectionState.bothCheckedIn === true;
   const sellerAlreadyConfirmed = Boolean(order.sellerHandoverConfirmedAt);
   const buyerAlreadyConfirmed = Boolean(order.buyerReceivedConfirmedAt);
 
   const canConfirmHandover =
-    isProcessing &&
-    !hasActiveDispute &&
-    transactionRole === "seller" &&
-    isDirect &&
-    directReady &&
-    !sellerAlreadyConfirmed;
+    canConfirmFromBackend &&
+    (
+      normalizedConfirmAction === "confirmhandover" ||
+      normalizedConfirmAction === "handover" ||
+      normalizedConfirmAction === "1"
+    );
 
   const canConfirmReceived =
-    isProcessing &&
-    !hasActiveDispute &&
-    transactionRole === "buyer" &&
-    !buyerAlreadyConfirmed &&
-    ((isDirect && directReady) || isGhnDelivered);
+    canConfirmFromBackend &&
+    (
+      normalizedConfirmAction === "confirmreceived" ||
+      normalizedConfirmAction === "received" ||
+      normalizedConfirmAction === "2"
+    );
 
   const shouldShowActionCard =
     !isCancelled &&
-    (isProcessing ||
+    (
+      canConfirmFromBackend ||
       sellerAlreadyConfirmed ||
       buyerAlreadyConfirmed ||
-      (isGhn && transactionRole === "buyer"));
+      hasActiveDispute ||
+      (isGhn && transactionRole === "seller" && isProcessing)
+    );
+
+  const renderDeliveryInfo = () => (
+    <>
+          <Text style={styles.sectionTitle}>Vận chuyển & Giao nhận</Text>
+          <InfoRow
+            label="Phương thức:"
+            value={translateDeliveryMethod(deliveryMethod)}
+            bold
+          />
+
+          {trackingError ? (
+            <View style={styles.inlineTrackingWarning}>
+              <Ionicons name="warning-outline" size={16} color="#9A6418" />
+              <Text style={styles.inlineTrackingWarningText}>{trackingError}</Text>
+            </View>
+          ) : null}
+
+          {isTrackingLoading ? (
+            <View style={styles.trackingLoadingBox}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.trackingLoadingText}>
+                Đang cập nhật trạng thái vận chuyển...
+              </Text>
+            </View>
+          ) : isGhn ? (
+            <>
+              {isStaleData ? (
+                <View style={styles.inlineTrackingWarning}>
+                  <Ionicons name="warning-outline" size={16} color="#9A6418" />
+                  <Text style={styles.inlineTrackingWarningText}>
+                    Đây là trạng thái GHN được cập nhật gần nhất.
+                  </Text>
+                </View>
+              ) : null}
+              <InfoRow
+                label="Trạng thái vận chuyển:"
+                value={
+                  creationStat && creationStat !== "Success"
+                    ? translateCreationStatus(creationStat) || "Đang cập nhật"
+                    : trackingMsg || translateCarrierStatus(carrierStat)
+                }
+                valueStyle={styles.primaryValue}
+              />
+              {trackingCode ? (
+                <InfoRow label="Mã vận đơn GHN:" value={trackingCode} bold />
+              ) : null}
+              {expectedDate ? (
+                <InfoRow label="Dự kiến giao:" value={formatDate(expectedDate)} />
+              ) : null}
+              {deliveredDate ? (
+                <InfoRow
+                  label="Thời gian GHN giao thành công:"
+                  value={formatDate(deliveredDate)}
+                />
+              ) : null}
+              {lastSynced ? (
+                <Text style={styles.syncTimeText}>
+                  Cập nhật lúc {formatDate(lastSynced)}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+
+    </>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -723,110 +717,73 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Vận chuyển & Giao nhận</Text>
-          <InfoRow
-            label="Phương thức:"
-            value={translateDeliveryMethod(deliveryMethod)}
-            bold
-          />
+        {relatedAppointments.length === 0 ? (
+          <View style={styles.card}>
+            {renderDeliveryInfo()}
+          </View>
+        ) : null}
 
-          {trackingError ? (
-            <View style={styles.inlineTrackingWarning}>
-              <Ionicons name="warning-outline" size={16} color="#9A6418" />
-              <Text style={styles.inlineTrackingWarningText}>{trackingError}</Text>
-            </View>
-          ) : null}
+        {relatedAppointments.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Lịch hẹn liên quan</Text>
 
-          {isTrackingLoading ? (
-            <View style={styles.trackingLoadingBox}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={styles.trackingLoadingText}>
-                Đang cập nhật trạng thái vận chuyển...
-              </Text>
-            </View>
-          ) : isGhn ? (
-            <>
-              {isStaleData ? (
-                <View style={styles.inlineTrackingWarning}>
-                  <Ionicons name="warning-outline" size={16} color="#9A6418" />
-                  <Text style={styles.inlineTrackingWarningText}>
-                    Đây là trạng thái GHN được cập nhật gần nhất.
-                  </Text>
-                </View>
-              ) : null}
-              <InfoRow
-                label="Trạng thái vận chuyển:"
-                value={
-                  creationStat && creationStat !== "Success"
-                    ? translateCreationStatus(creationStat) || "Đang cập nhật"
-                    : trackingMsg || translateCarrierStatus(carrierStat)
-                }
-                valueStyle={styles.primaryValue}
-              />
-              {trackingCode ? (
-                <InfoRow label="Mã vận đơn GHN:" value={trackingCode} bold />
-              ) : null}
-              {expectedDate ? (
-                <InfoRow label="Dự kiến giao:" value={formatDate(expectedDate)} />
-              ) : null}
-              {deliveredDate ? (
-                <InfoRow
-                  label="Thời gian GHN giao thành công:"
-                  value={formatDate(deliveredDate)}
-                />
-              ) : null}
-              {lastSynced ? (
-                <Text style={styles.syncTimeText}>
-                  Cập nhật lúc {formatDate(lastSynced)}
-                </Text>
-              ) : null}
-            </>
-          ) : null}
+            {relatedAppointments.map((appointmentItem: any, index: number) => {
+              const relatedAppointmentId = appointmentItem?.appointmentId;
+              if (!relatedAppointmentId) return null;
 
-          {isDirect ? (
-            <View style={styles.checkInBox}>
-              <View style={styles.checkInRow}>
-                <Ionicons
-                  name={
-                    collectionState.buyerCheckedIn === true
-                      ? "checkmark-circle"
-                      : "ellipse-outline"
+              return (
+                <TouchableOpacity
+                  key={String(relatedAppointmentId)}
+                  style={[
+                    styles.relatedAppointmentButton,
+                    index > 0 ? styles.relatedAppointmentButtonSpaced : undefined,
+                  ]}
+                  onPress={() =>
+                    router.push(("/appointments/" + relatedAppointmentId) as any)
                   }
-                  size={18}
-                  color={
-                    collectionState.buyerCheckedIn === true
-                      ? "#2F765D"
-                      : COLORS.textLight
-                  }
-                />
-                <Text style={styles.checkInText}>Buyer check-in</Text>
-              </View>
-              <View style={styles.checkInRow}>
-                <Ionicons
-                  name={
-                    collectionState.sellerCheckedIn === true
-                      ? "checkmark-circle"
-                      : "ellipse-outline"
-                  }
-                  size={18}
-                  color={
-                    collectionState.sellerCheckedIn === true
-                      ? "#2F765D"
-                      : COLORS.textLight
-                  }
-                />
-                <Text style={styles.checkInText}>Seller check-in</Text>
-              </View>
-              {!directCheckInKnown ? (
-                <Text style={styles.checkInHint}>
-                  Chưa đối chiếu được chính xác lịch thu gom với đơn hàng này. FE sẽ
-                  không hiện nút xác nhận cho tới khi có đủ bằng chứng check-in.
-                </Text>
-              ) : null}
+                >
+                  <View style={styles.relatedAppointmentIcon}>
+                    <Ionicons
+                      name="calendar-outline"
+                      size={19}
+                      color={COLORS.primary}
+                    />
+                  </View>
+
+                  <View style={styles.relatedAppointmentContent}>
+                    <Text style={styles.relatedAppointmentTitle}>
+                      {translateRelatedAppointmentType(
+                        appointmentItem?.appointmentType,
+                      )}
+                    </Text>
+                    <Text style={styles.relatedAppointmentMeta}>
+                      {translateRelatedAppointmentStatus(
+                        appointmentItem?.appointmentStatus,
+                      )}
+                      {appointmentItem?.scheduledAt
+                        ? " • " + formatDate(appointmentItem.scheduledAt)
+                        : ""}
+                    </Text>
+                  </View>
+
+                  <View style={styles.relatedAppointmentAction}>
+                    <Text style={styles.relatedAppointmentActionText}>
+                      Xem lịch hẹn
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={COLORS.primary}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            <View style={styles.relatedDeliverySection}>
+              {renderDeliveryInfo()}
             </View>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
 
         {shouldShowActionCard ? (
           <View style={styles.card}>
@@ -856,27 +813,6 @@ export default function OrderDetailScreen() {
             {hasActiveDispute ? (
               <Text style={styles.actionHintWarning}>
                 Đơn hàng đang có tranh chấp, FE tạm khóa thao tác xác nhận giao nhận.
-              </Text>
-            ) : null}
-
-            {isDirect && collectionState.bothCheckedIn === false ? (
-              <Text style={styles.actionHintWarning}>
-                Buyer và Seller cần check-in đủ lịch thu gom trước khi xác nhận giao
-                nhận.
-              </Text>
-            ) : null}
-
-            {isDirect && collectionState.bothCheckedIn === null && isProcessing ? (
-              <Text style={styles.actionHintWarning}>
-                Chưa xác minh được đủ check-in của lịch thu gom nên FE chưa mở thao
-                tác xác nhận giao nhận.
-              </Text>
-            ) : null}
-
-            {isGhn && transactionRole === "buyer" && !isGhnDelivered && isProcessing ? (
-              <Text style={styles.actionHint}>
-                GHN chưa có ShipmentStatus Delivered và DeliveredAt nên chưa thể hiện
-                nút “Đã nhận hàng”.
               </Text>
             ) : null}
 
@@ -1288,27 +1224,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: 4,
   },
-  checkInBox: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 12,
-    marginTop: 4,
-  },
-  checkInRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 6,
-  },
-  checkInText: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
-  checkInHint: {
-    color: COLORS.textLight,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-  },
   statusLine: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1316,6 +1231,54 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   statusLineText: { flex: 1, color: "#2F765D", fontSize: 13, lineHeight: 18 },
+  relatedAppointmentButton: {
+    minHeight: 64,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8F9FA",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  relatedAppointmentButtonSpaced: { marginTop: 10 },
+  relatedAppointmentIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  relatedAppointmentContent: { flex: 1 },
+  relatedAppointmentTitle: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  relatedAppointmentMeta: {
+    color: COLORS.textLight,
+    fontSize: 11,
+    marginTop: 3,
+  },
+  relatedAppointmentAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  relatedAppointmentActionText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  relatedDeliverySection: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
   actionHint: {
     color: COLORS.textLight,
     fontSize: 13,
