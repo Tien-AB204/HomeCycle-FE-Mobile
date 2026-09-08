@@ -47,6 +47,13 @@ const agreementApi = {
   */
 };
 
+const orderApi = {
+  getByAgreement: async (agreementId: string) => {
+    const response = await apiClient.get(`/orders/agreement/${agreementId}`);
+    return response.data;
+  },
+};
+
 const profileApi = {
   getPersonalProfile: async () => {
     const response = await apiClient.get("/personal-profiles/me");
@@ -133,6 +140,49 @@ export default function AgreementPreviewScreen() {
   );
   const [bankRequirement, setBankRequirement] =
     useState<BankRequirementState>(null);
+  const [postPaymentLinks, setPostPaymentLinks] = useState<{
+    orderId: string | null;
+    appointmentId: string | null;
+  }>({ orderId: null, appointmentId: null });
+
+  const resolvePostPaymentLinks = useCallback(
+    async (targetAgreementId: string) => {
+      try {
+        const response = await orderApi.getByAgreement(targetAgreementId);
+        const raw = unwrapResponse(response);
+        const order = raw?.order || raw;
+        const resolvedOrderId =
+          order?.orderId || raw?.orderId || raw?.id || null;
+        const appointments = Array.isArray(order?.appointments)
+          ? order.appointments
+          : Array.isArray(raw?.appointments)
+            ? raw.appointments
+            : [];
+        const preferredAppointment =
+          appointments.find((item: any) => {
+            const normalized = normalizeStatus(item?.appointmentStatus);
+            return (
+              normalized === "scheduled" ||
+              normalized === "1" ||
+              normalized === "inprogress" ||
+              normalized === "5"
+            );
+          }) || appointments[0] || null;
+        const resolvedAppointmentId =
+          preferredAppointment?.appointmentId || null;
+
+        setPostPaymentLinks({
+          orderId: resolvedOrderId ? String(resolvedOrderId) : null,
+          appointmentId: resolvedAppointmentId
+            ? String(resolvedAppointmentId)
+            : null,
+        });
+      } catch {
+        setPostPaymentLinks({ orderId: null, appointmentId: null });
+      }
+    },
+    [],
+  );
 
   const fetchAgreementDetails = useCallback(
     async (showLoader = true) => {
@@ -161,6 +211,19 @@ export default function AgreementPreviewScreen() {
         setAgreementData(agreement);
         setPreviewInfo(preview);
 
+        const latestStatus = normalizeStatus(agreement?.agreementStatus);
+        const isPostPayment =
+          latestStatus === "confirmed" ||
+          latestStatus === "2" ||
+          latestStatus === "paid" ||
+          latestStatus === "completed";
+
+        if (isPostPayment && agreementId) {
+          await resolvePostPaymentLinks(agreementId);
+        } else {
+          setPostPaymentLinks({ orderId: null, appointmentId: null });
+        }
+
         return { agreement, preview };
       } catch (error) {
         console.error("Lỗi tải chi tiết hợp đồng:", error);
@@ -175,7 +238,7 @@ export default function AgreementPreviewScreen() {
         }
       }
     },
-    [agreementId, negotiationId],
+    [agreementId, negotiationId, resolvePostPaymentLinks],
   );
 
   useFocusEffect(
@@ -567,8 +630,10 @@ export default function AgreementPreviewScreen() {
       case "awaitingpayment":
       case "accepted":
         return "Chờ thanh toán";
+      case "confirmed":
+      case "2":
       case "paid":
-        return "Đã thanh toán";
+        return "Đã xác nhận";
       case "completed":
         return "Đã hoàn tất";
       case "rejected":
@@ -577,7 +642,7 @@ export default function AgreementPreviewScreen() {
       case "canceled":
         return "Đã hủy";
       default:
-        return status || "Chưa xác định";
+        return "Chưa xác định";
     }
   };
 
@@ -640,6 +705,11 @@ export default function AgreementPreviewScreen() {
   const isPending = status === "pending";
   const isAwaitingPayment =
     status === "awaitingpayment" || status === "accepted";
+  const isPostPayment =
+    status === "confirmed" ||
+    status === "2" ||
+    status === "paid" ||
+    status === "completed";
 
   const sellerId = normalizeId(
     agreementData.sellerId ||
@@ -1114,11 +1184,60 @@ export default function AgreementPreviewScreen() {
           </View>
         )}
 
-        {!isConfirmingEditConflict && !isPending && !isAwaitingPayment && (
-          <Text style={styles.waitingText}>
-            Hợp đồng hiện không có thao tác cần xử lý.
-          </Text>
+        {!isConfirmingEditConflict && isPostPayment && (
+          <View style={styles.postPaymentActions}>
+            {postPaymentLinks.orderId ? (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() =>
+                  router.push(("/orders/" + postPaymentLinks.orderId) as any)
+                }
+              >
+                <Ionicons
+                  name="receipt-outline"
+                  size={18}
+                  color={COLORS.white}
+                  style={{ marginRight: 7 }}
+                />
+                <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {postPaymentLinks.appointmentId ? (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() =>
+                  router.push(
+                    ("/appointments/" + postPaymentLinks.appointmentId) as any,
+                  )
+                }
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={18}
+                  color={COLORS.primary}
+                  style={{ marginRight: 7 }}
+                />
+                <Text style={styles.secondaryBtnText}>Xem lịch hẹn</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {!postPaymentLinks.orderId && !postPaymentLinks.appointmentId ? (
+              <Text style={styles.waitingText}>
+                Hợp đồng đã thanh toán. Đơn hàng đang được đồng bộ...
+              </Text>
+            ) : null}
+          </View>
         )}
+
+        {!isConfirmingEditConflict &&
+          !isPending &&
+          !isAwaitingPayment &&
+          !isPostPayment && (
+            <Text style={styles.waitingText}>
+              Hợp đồng hiện không có thao tác cần xử lý.
+            </Text>
+          )}
       </View>
     </SafeAreaView>
   );
@@ -1270,6 +1389,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 12,
+  },
+  postPaymentActions: {
+    gap: 10,
   },
   bottomBar: {
     padding: 16,
