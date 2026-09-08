@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -21,16 +21,33 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 
 const disputeCategories = [
-  { value: 1, label: "Không xuất hiện / bùng hẹn" },
-  { value: 2, label: "Hàng hóa không đúng mô tả" },
-  { value: 3, label: "Người bán không giao hàng" },
-  { value: 4, label: "Hàng hóa hư hỏng hoặc thất lạc" },
-  { value: 5, label: "Không nhận được hàng" },
-  { value: 6, label: "Gian lận / lừa đảo" },
-  { value: 8, label: "Không thanh toán theo thỏa thuận" },
-  { value: 9, label: "Vi phạm cam kết giao dịch" },
-  { value: 99, label: "Khác" },
+  { value: 1, key: "NoShow", label: "Không xuất hiện / bùng hẹn" },
+  { value: 2, key: "ItemMismatch", label: "Hàng hóa không đúng mô tả" },
+  { value: 3, key: "SellerNotShipped", label: "Người bán không giao hàng" },
+  { value: 4, key: "DamagedOrLost", label: "Hàng hóa hư hỏng hoặc thất lạc" },
+  { value: 5, key: "ItemNotReceived", label: "Không nhận được hàng" },
+  { value: 6, key: "FraudOrScam", label: "Gian lận / lừa đảo" },
+  { value: 8, key: "PaymentNotCompleted", label: "Không thanh toán theo thỏa thuận" },
+  { value: 9, key: "CommitmentViolation", label: "Vi phạm cam kết giao dịch" },
+  { value: 99, key: "Other", label: "Khác" },
 ] as const;
+
+const normalizeAllowedDisputeCategory = (value: unknown): number | null => {
+  const raw = String(value ?? "").trim();
+  const numeric = Number(raw);
+
+  if (Number.isFinite(numeric)) {
+    return disputeCategories.find((item) => item.value === numeric)?.value ?? null;
+  }
+
+  const normalized = raw.replace(/[\s_-]/g, "").toLowerCase();
+
+  return (
+    disputeCategories.find(
+      (item) => item.key.replace(/[\s_-]/g, "").toLowerCase() === normalized,
+    )?.value ?? null
+  );
+};
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
@@ -98,11 +115,109 @@ export default function CreateDisputeScreen() {
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  const [isCheckingDisputeEligibility, setIsCheckingDisputeEligibility] = useState(
+    Boolean(orderId),
+  );
+  const [disputeEligibilityError, setDisputeEligibilityError] = useState<string | null>(
+    null,
+  );
+  const [disputeEligibility, setDisputeEligibility] = useState<{
+    canDispute: boolean;
+    allowedCategories: number[];
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDisputeEligibility = async () => {
+      if (!orderId) {
+        if (active) {
+          setDisputeEligibility(null);
+          setDisputeEligibilityError(null);
+          setIsCheckingDisputeEligibility(false);
+        }
+        return;
+      }
+
+      try {
+        setIsCheckingDisputeEligibility(true);
+        setDisputeEligibilityError(null);
+
+        const response = await apiClient.get(`/orders/${orderId}`);
+        const orderDetail = response.data?.data || response.data;
+        const actions = orderDetail?.actions ?? orderDetail?.order?.actions;
+
+        if (
+          !actions ||
+          typeof actions.canDispute !== "boolean" ||
+          !Array.isArray(actions.allowedDisputeCategories)
+        ) {
+          throw new Error("ORDER_DISPUTE_ACTION_CONTRACT_UNAVAILABLE");
+        }
+
+        const normalizedCategories: number[] =
+          actions.allowedDisputeCategories
+            .map(
+              (value: unknown): number | null =>
+                normalizeAllowedDisputeCategory(value),
+            )
+            .filter(
+              (value: number | null): value is number => value !== null,
+            );
+
+        const allowedCategories = Array.from(
+          new Set<number>(normalizedCategories),
+        );
+
+        if (!active) return;
+
+        setDisputeEligibility({
+          canDispute: actions.canDispute,
+          allowedCategories,
+        });
+
+        setCategory((current) =>
+          current !== null && !allowedCategories.includes(current) ? null : current,
+        );
+      } catch {
+        if (!active) return;
+
+        setDisputeEligibility(null);
+        setDisputeEligibilityError(
+          "Không thể kiểm tra điều kiện khiếu nại của đơn hàng lúc này.",
+        );
+      } finally {
+        if (active) {
+          setIsCheckingDisputeEligibility(false);
+        }
+      }
+    };
+
+    void loadDisputeEligibility();
+
+    return () => {
+      active = false;
+    };
+  }, [orderId]);
+
+  const availableDisputeCategories = useMemo(() => {
+    if (!disputeEligibility?.canDispute) return [];
+
+    return disputeCategories.filter((item) =>
+      disputeEligibility.allowedCategories.includes(item.value),
+    );
+  }, [disputeEligibility]);
 
   const selectedCategoryLabel = useMemo(
     () => disputeCategories.find((item) => item.value === category)?.label,
     [category],
   );
+
+  const isDisputeSubmitDisabled =
+    isSubmitting ||
+    isCheckingDisputeEligibility ||
+    disputeEligibility?.canDispute !== true ||
+    availableDisputeCategories.length === 0;
 
   const clearMessage = () => setPageMessage(null);
 
@@ -116,10 +231,38 @@ export default function CreateDisputeScreen() {
     if (!orderId) {
       setPageMessage({ type: "error", text: "Không tìm thấy mã đơn hàng để khiếu nại." });
       valid = false;
+    } else if (isCheckingDisputeEligibility) {
+      setPageMessage({
+        type: "warning",
+        text: "Đang kiểm tra điều kiện khiếu nại. Vui lòng chờ trong giây lát.",
+      });
+      valid = false;
+    } else if (!disputeEligibility) {
+      setPageMessage({
+        type: "error",
+        text:
+          disputeEligibilityError ||
+          "Không thể kiểm tra điều kiện khiếu nại của đơn hàng lúc này.",
+      });
+      valid = false;
+    } else if (!disputeEligibility.canDispute) {
+      setPageMessage({
+        type: "warning",
+        text: "Trạng thái hiện tại của đơn hàng không cho phép tạo khiếu nại.",
+      });
+      valid = false;
     }
 
     if (!category) {
       setCategoryError("Vui lòng chọn loại khiếu nại.");
+      valid = false;
+    } else if (
+      disputeEligibility &&
+      !disputeEligibility.allowedCategories.includes(category)
+    ) {
+      setCategoryError(
+        "Loại khiếu nại này không còn được phép với trạng thái hiện tại của đơn hàng.",
+      );
       valid = false;
     }
 
@@ -315,8 +458,25 @@ export default function CreateDisputeScreen() {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Loại khiếu nại</Text>
+
+            {isCheckingDisputeEligibility ? (
+              <Text style={styles.helperText}>
+                Đang kiểm tra các loại khiếu nại được phép...
+              </Text>
+            ) : disputeEligibilityError ? (
+              <Text style={styles.fieldError}>{disputeEligibilityError}</Text>
+            ) : disputeEligibility && !disputeEligibility.canDispute ? (
+              <Text style={styles.fieldError}>
+                Trạng thái hiện tại của đơn hàng không cho phép tạo khiếu nại.
+              </Text>
+            ) : disputeEligibility && availableDisputeCategories.length === 0 ? (
+              <Text style={styles.helperText}>
+                Hiện không có loại khiếu nại phù hợp với đơn hàng này.
+              </Text>
+            ) : null}
+
             <View style={styles.categoryList}>
-              {disputeCategories.map((item) => {
+              {availableDisputeCategories.map((item) => {
                 const selected = category === item.value;
                 return (
                   <TouchableOpacity
@@ -405,8 +565,11 @@ export default function CreateDisputeScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-            disabled={isSubmitting}
+            style={[
+              styles.submitButton,
+              isDisputeSubmitDisabled && styles.submitButtonDisabled,
+            ]}
+            disabled={isDisputeSubmitDisabled}
             onPress={() => void submit()}
           >
             {isSubmitting ? (
