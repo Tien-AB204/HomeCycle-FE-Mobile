@@ -221,9 +221,9 @@ export default function PostsScreen() {
     `${Number(price || 0).toLocaleString("vi-VN")} đ`;
 
   const getTimeAgo = (dateString: string) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return "Chưa có";
     const past = new Date(dateString);
-    if (Number.isNaN(past.getTime())) return "N/A";
+    if (Number.isNaN(past.getTime())) return "Chưa có";
 
     const diffMinutes = Math.floor((Date.now() - past.getTime()) / (1000 * 60));
     if (diffMinutes < 60) return "Vừa xong";
@@ -244,16 +244,26 @@ export default function PostsScreen() {
   };
 
   const translateStatus = (status: string) => {
-    switch (status) {
-      case "Active":
+    const normalized = String(status || "").trim().toLowerCase();
+
+    switch (normalized) {
+      case "active":
         return { text: "Đang hoạt động", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
-      case "Pending":
+      case "pending":
         return { text: "Chờ duyệt", color: "#9A6418", background: "rgba(154, 100, 24, 0.10)" };
-      case "Closed":
+      case "closed":
         return { text: "Đã đóng", color: "#547B7D", background: "#F8F9FA" };
       default:
-        return { text: status || "N/A", color: "#547B7D", background: "#F8F9FA" };
+        return { text: "Chưa xác định", color: "#547B7D", background: "#F8F9FA" };
     }
+  };
+
+  const translatePostType = (postType: unknown) => {
+    const normalized = String(postType || "").trim().toLowerCase();
+
+    if (normalized === "sell" || normalized === "1") return "Tin bán";
+    if (normalized === "buy" || normalized === "2") return "Tin mua";
+    return "Chưa xác định";
   };
 
   if (!user) {
@@ -350,11 +360,13 @@ export default function PostsScreen() {
                 </Text>
               </View>
               <View style={styles.tag}>
-                <Text style={styles.tagText}>Loại: {post.postType || "N/A"}</Text>
+                <Text style={styles.tagText}>
+                  Loại: {translatePostType(post.postType)}
+                </Text>
               </View>
               <View style={styles.tag}>
                 <Text style={styles.tagText}>
-                  SL: {post.remainingQuantity ?? 0} / {post.quantity ?? 0}
+                  Số lượng: {post.remainingQuantity ?? 0} / {post.quantity ?? 0}
                 </Text>
               </View>
             </View>
