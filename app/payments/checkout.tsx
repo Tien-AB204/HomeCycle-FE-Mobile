@@ -114,6 +114,7 @@ export default function CheckoutScreen() {
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   const clearFeedback = useCallback(() => setFeedback(null), []);
@@ -156,10 +157,17 @@ export default function CheckoutScreen() {
       setAgreement(unwrap(agreementResult.value));
 
       if (walletResult.status === "fulfilled") {
-        setWallet(unwrap(walletResult.value));
+        const nextWallet = unwrap(walletResult.value);
+        setWallet(nextWallet);
+
+        if (!nextWallet) {
+          setWalletLoadError("Không tải được số dư ví lúc này.");
+          setPaymentMethod("payos");
+        }
       } else {
         setWallet(null);
         setWalletLoadError("Không tải được số dư ví lúc này.");
+        setPaymentMethod("payos");
       }
 
       return true;
@@ -193,6 +201,24 @@ export default function CheckoutScreen() {
   const hasWalletData = wallet !== null;
   const walletHasEnoughBalance =
     hasWalletData && availableBalance >= totalPayment;
+  const isWalletUnavailable = !hasWalletData;
+  const isWalletInsufficient =
+    hasWalletData && availableBalance < totalPayment;
+  const isWalletDisabled =
+    isWalletUnavailable || isWalletInsufficient;
+  const isWalletSelected =
+    paymentMethod === "wallet" && !isWalletDisabled;
+  const isSubmitDisabled =
+    isProcessing ||
+    isPaymentCompleted ||
+    !hasAcceptedTerms ||
+    (paymentMethod === "wallet" && isWalletDisabled);
+
+  React.useEffect(() => {
+    if (!isLoading && isWalletDisabled && paymentMethod === "wallet") {
+      setPaymentMethod("payos");
+    }
+  }, [isLoading, isWalletDisabled, paymentMethod]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("vi-VN", {
@@ -226,6 +252,13 @@ export default function CheckoutScreen() {
     }
 
     if (isPaymentCompleted) return;
+
+    if (!hasAcceptedTerms) {
+      showError(
+        "Vui lòng xác nhận đã đọc và đồng ý với điều khoản thanh toán trước khi tiếp tục.",
+      );
+      return;
+    }
 
     if (paymentMethod === "wallet") {
       if (!hasWalletData) {
@@ -386,26 +419,32 @@ export default function CheckoutScreen() {
         <TouchableOpacity
           style={[
             styles.methodCard,
-            paymentMethod === "wallet" && styles.methodCardActive,
+            isWalletSelected && styles.methodCardActive,
+            isWalletDisabled && styles.methodCardDisabled,
           ]}
           onPress={() => {
+            if (isWalletDisabled) return;
             clearFeedback();
             setPaymentMethod("wallet");
           }}
           activeOpacity={0.8}
-          disabled={isProcessing || isPaymentCompleted}
+          disabled={
+            isProcessing ||
+            isPaymentCompleted ||
+            isWalletDisabled
+          }
         >
           <View
             style={[
               styles.methodIconBox,
-              paymentMethod === "wallet" && styles.methodIconBoxActive,
+              isWalletSelected && styles.methodIconBoxActive,
             ]}
           >
             <Ionicons
               name="wallet"
               size={24}
               color={
-                paymentMethod === "wallet" ? COLORS.white : COLORS.textLight
+                isWalletSelected ? COLORS.white : COLORS.textLight
               }
             />
           </View>
@@ -427,10 +466,10 @@ export default function CheckoutScreen() {
           <View
             style={[
               styles.radioCircle,
-              paymentMethod === "wallet" && styles.radioCircleActive,
+              isWalletSelected && styles.radioCircleActive,
             ]}
           >
-            {paymentMethod === "wallet" ? (
+            {isWalletSelected ? (
               <View style={styles.radioInner} />
             ) : null}
           </View>
@@ -483,13 +522,52 @@ export default function CheckoutScreen() {
 
       <View style={styles.bottomBar}>
         <InlineFeedback feedback={feedback} />
+        {!isPaymentCompleted ? (
+          <View style={styles.termsBox}>
+            <TouchableOpacity
+              style={styles.termsRow}
+              onPress={() => {
+                clearFeedback();
+                setHasAcceptedTerms((current) => !current);
+              }}
+              disabled={isProcessing}
+              accessibilityRole="checkbox"
+              accessibilityState={{
+                checked: hasAcceptedTerms,
+                disabled: isProcessing,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={hasAcceptedTerms ? "checkbox" : "square-outline"}
+                size={22}
+                color={
+                  hasAcceptedTerms ? COLORS.primary : COLORS.textLight
+                }
+              />
+              <Text style={styles.termsText}>
+                Tôi đã đọc và đồng ý với điều khoản thanh toán.
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/policy")}
+              disabled={isProcessing}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.termsLink}>
+                Xem Quy định & Chính sách
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <TouchableOpacity
           style={[
             styles.submitBtn,
-            (isProcessing || isPaymentCompleted) && styles.disabledBtn,
+            isSubmitDisabled && styles.disabledBtn,
           ]}
           onPress={() => void handlePaymentSubmit()}
-          disabled={isProcessing || isPaymentCompleted}
+          disabled={isSubmitDisabled}
         >
           {isProcessing ? (
             <ActivityIndicator color={COLORS.white} />
@@ -585,6 +663,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   methodCardActive: { borderColor: COLORS.primary, backgroundColor: "rgba(84, 123, 125, 0.10)" },
+  methodCardDisabled: { opacity: 0.55 },
   methodIconBox: {
     width: 44,
     height: 44,
@@ -644,6 +723,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+  },
+  termsBox: {
+    marginBottom: 12,
+  },
+  termsRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  termsText: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  termsLink: {
+    marginLeft: 32,
+    marginTop: 6,
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   disabledBtn: { opacity: 0.7 },
   submitBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
