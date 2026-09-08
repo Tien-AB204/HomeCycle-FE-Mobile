@@ -120,7 +120,7 @@ export default function ScheduleScreen() {
 
   const normalizeAppointmentStatus = (status: unknown) =>
     String(status ?? "")
-      .replace(/[s_-]/g, "")
+      .replace(/[\s_-]/g, "")
       .toLowerCase();
 
   const translateAppointmentStatus = (
