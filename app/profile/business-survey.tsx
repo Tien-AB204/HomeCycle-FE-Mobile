@@ -17,6 +17,7 @@ import AddressPickerField, {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 const DAMAGE_OPTIONS = [
   { value: 0, label: "Không hư hại" },
@@ -96,12 +97,7 @@ const unwrap = (value: any) => value?.data ?? value;
 const asArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
 const getErrorMessage = (error: any, fallback: string) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      error?.response?.data?.error?.Message ||
-      fallback,
-  );
+  getApiErrorMessage(error, fallback);
 
 const normalizeStatus = (value: unknown) =>
   String(value ?? "")
