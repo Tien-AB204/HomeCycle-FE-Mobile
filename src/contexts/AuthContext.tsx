@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JWT
 import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "../services/apis/axiosClient";
+import { getApiErrorMessage } from "../utils/apiFeedback";
 
 interface AuthContextType {
   user: any | null;
@@ -40,33 +41,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserToken(token);
 
       if (role === "business") {
-        // GIẢI MÃ TOKEN ĐỂ LẤY ID VÀ EMAIL
+        let fallbackUserId = "";
+        let fallbackEmail = "";
+
         try {
           const decoded: any = jwtDecode(token);
-
-          // Claim name URL của .NET C# JWT
           const userIdClaim =
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier";
           const emailClaim =
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress";
 
-          const extractedUserId = decoded[userIdClaim] || decoded.sub;
-          const extractedEmail = decoded[emailClaim] || "";
-
-          // CẬP NHẬT USER VỚI ĐẦY ĐỦ ID
-          setUser({
-            id: extractedUserId,
-            userId: extractedUserId,
-            email: extractedEmail,
-            role: "business",
-            status: "active",
-            username: "Tài khoản Doanh nghiệp", // Tạm để trống/mặc định
-            avatarUrl: null, // Không có avatar thì trả ra null để xài avatar mặc định
-          });
+          fallbackUserId = decoded[userIdClaim] || decoded.sub || "";
+          fallbackEmail = decoded[emailClaim] || "";
         } catch (decodeError) {
-          console.error("Lỗi giải mã token Business:", decodeError);
-          // Fallback nếu token lỗi format
-          setUser({ role: "business", status: "active" });
+          console.error("Lỗi giải mã token doanh nghiệp:", decodeError);
+        }
+
+        const fallbackBusinessUser = {
+          id: fallbackUserId,
+          userId: fallbackUserId,
+          email: fallbackEmail,
+          role: "business",
+          status: "active",
+          username: "Tài khoản doanh nghiệp",
+          avatarUrl: null,
+          avatar: null,
+        };
+
+        setUser(fallbackBusinessUser);
+
+        try {
+          const profileResponse = await apiClient.get("/business-profiles");
+          const profileData =
+            profileResponse.data?.data || profileResponse.data;
+
+          setUser({
+            ...fallbackBusinessUser,
+            id: profileData.userId || fallbackUserId,
+            userId: profileData.userId || fallbackUserId,
+            username:
+              profileData.username || fallbackBusinessUser.username,
+            email: profileData.email || fallbackEmail,
+            name: profileData.fullName,
+            avatarUrl: profileData.avatarUrl || null,
+            avatar: profileData.avatarUrl || null,
+            createdAt: profileData.createdAt,
+            phone: profileData.phoneNumber,
+            verificationStatus: profileData.verificationStatus,
+            reputationScore: profileData.reputationScore,
+            displayStarRating: profileData.displayStarRating,
+            bankAccount: profileData.bankAccount || null,
+            businessName: profileData.businessName,
+          });
+        } catch (profileError: any) {
+          if (profileError.response?.status === 401) {
+            throw profileError;
+          }
+
+          console.log(
+            "[DEBUG] Không thể tải hồ sơ doanh nghiệp; giữ phiên đăng nhập:",
+            profileError.response?.status,
+          );
         }
       } else {
         // Personal authentication must not depend on profile hydration.
@@ -123,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             status: profileData.status || "active",
             verificationStatus: profileData.verificationStatus,
             reputationScore: profileData.reputationScore,
+            displayStarRating: profileData.displayStarRating,
             isEmailVerified: profileData.isEmailVerified,
             address: profileData.address || "",
             representativeCode: profileData.representativeCode,
@@ -217,10 +253,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await reloadUser();
       router.replace("/(tabs)");
     } catch (error: any) {
-      console.error("Login Error:", error);
+      console.error("Lỗi đăng nhập:", error);
       throw new Error(
-        error.response?.data?.message ||
+        getApiErrorMessage(
+          error,
           "Đăng nhập thất bại. Vui lòng thử lại!",
+        ),
       );
     }
   };

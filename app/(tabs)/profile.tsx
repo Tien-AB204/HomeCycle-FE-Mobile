@@ -61,9 +61,9 @@ const getRobustUrl = (url: string) => {
 };
 
 const formatFullDate = (dateString?: string) => {
-  if (!dateString) return "N/A";
+  if (!dateString) return "Chưa có";
   const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "N/A";
+  if (Number.isNaN(date.getTime())) return "Chưa có";
   return date.toLocaleDateString("vi-VN");
 };
 
@@ -343,6 +343,12 @@ export default function ProfileScreen() {
             <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
             <View style={styles.statsBadge}>
               <Text style={styles.statsStrong}>Điểm uy tín: {user.reputationScore ?? 0}</Text>
+              <Text style={styles.statsDivider}>|</Text>
+              <Text style={styles.statsStrong}>
+                {Number(user.displayStarRating ?? 0) > 0
+                  ? `★ ${Number(user.displayStarRating).toFixed(1)}`
+                  : "Chưa có đánh giá"}
+              </Text>
               <Text style={styles.statsDivider}>|</Text>
               <Text style={styles.statsText}>
                 {user.role === "business" ? "Tài khoản Doanh nghiệp" : "Tài khoản Cá nhân"}
