@@ -64,7 +64,7 @@ const getFetchErrorMessage = (
   status?: number,
 ) => {
   if (status && status >= 500) {
-    return "Lỗi server. Không thể tải dữ liệu địa chỉ.";
+    return "Không thể tải dữ liệu địa chỉ từ hệ thống. Vui lòng thử lại.";
   }
 
   return "Không thể tải dữ liệu địa chỉ. Vui lòng thử lại.";
