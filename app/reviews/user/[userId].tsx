@@ -15,6 +15,7 @@ import {
 import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import apiClient from "../../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
 
 const PAGE_SIZE = 10;
 
@@ -77,10 +78,9 @@ export default function UserReviewsScreen() {
       } catch (error: any) {
         setReviews([]);
         setErrorMessage(
-          String(
-            error?.response?.data?.message ||
-              error?.response?.data?.error?.message ||
-              "Không thể tải danh sách đánh giá của người dùng này.",
+          getApiErrorMessage(
+            error,
+            "Không thể tải danh sách đánh giá của người dùng này.",
           ),
         );
       } finally {
