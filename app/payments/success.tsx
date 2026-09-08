@@ -27,6 +27,20 @@ const orderApi = {
       .then((response) => response.data),
 };
 
+const agreementApi = {
+  getAgreementById: (agreementId: string) =>
+    apiClient
+      .get(`/agreements/${agreementId}`)
+      .then((response) => response.data),
+};
+
+const negotiationApi = {
+  getNegotiationById: (negotiationId: string) =>
+    apiClient
+      .get(`/negotiations/${negotiationId}`)
+      .then((response) => response.data),
+};
+
 const normalizeStatus = (value: unknown) =>
   String(value ?? "")
     .trim()
@@ -49,8 +63,10 @@ export default function PaymentSuccessScreen() {
   const [loading, setLoading] = useState(true);
   const [isPaid, setIsPaid] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isOpeningChat, setIsOpeningChat] = useState(false);
 
   const isPaidUrl = payosStatus === "PAID" && cancel !== "true";
 
@@ -62,6 +78,28 @@ export default function PaymentSuccessScreen() {
       orderData?.orderId ||
       orderData?.id ||
       null;
+
+    const order = orderData?.order || orderData;
+    const appointments = Array.isArray(order?.appointments)
+      ? order.appointments
+      : Array.isArray(orderData?.appointments)
+        ? orderData.appointments
+        : [];
+    const preferredAppointment =
+      appointments.find((item: any) => {
+        const normalized = normalizeStatus(item?.appointmentStatus);
+        return (
+          normalized === "scheduled" ||
+          normalized === "1" ||
+          normalized === "inprogress" ||
+          normalized === "5"
+        );
+      }) || appointments[0] || null;
+    const resolvedAppointmentId = preferredAppointment?.appointmentId || null;
+
+    setAppointmentId(
+      resolvedAppointmentId ? String(resolvedAppointmentId) : null,
+    );
 
     if (resolvedOrderId) {
       setOrderId(String(resolvedOrderId));
@@ -87,7 +125,13 @@ export default function PaymentSuccessScreen() {
       setStatusMessage(null);
 
       const statusResponse = await paymentApi.getStatus(agreementId);
-      const rawStatus = unwrap(statusResponse);
+      const statusData = unwrap(statusResponse);
+      const rawStatus =
+        statusData?.paymentStatus ??
+        statusData?.status ??
+        statusData?.payment?.paymentStatus ??
+        statusData?.payment?.status ??
+        statusData;
       const normalized = normalizeStatus(rawStatus);
 
       setPaymentStatus(String(rawStatus ?? ""));
@@ -96,6 +140,27 @@ export default function PaymentSuccessScreen() {
       setIsPaid(completed);
 
       if (completed) {
+        const statusOrderId =
+          statusData?.orderId ||
+          statusData?.order?.orderId ||
+          null;
+        const statusAppointmentId =
+          statusData?.appointmentId ||
+          statusData?.appointment?.appointmentId ||
+          null;
+
+        if (statusAppointmentId) {
+          setAppointmentId(String(statusAppointmentId));
+        }
+
+        if (statusOrderId) {
+          setOrderId(String(statusOrderId));
+          if (!statusAppointmentId) {
+            await resolveOrder(agreementId);
+          }
+          return;
+        }
+
         const resolvedOrderId = await resolveOrder(agreementId);
         if (!resolvedOrderId) {
           setStatusMessage(
@@ -163,6 +228,109 @@ export default function PaymentSuccessScreen() {
     }
   };
 
+  const handleGoToChat = async () => {
+    if (!agreementId || isOpeningChat) return;
+
+    try {
+      setIsOpeningChat(true);
+
+      const agreementResponse =
+        await agreementApi.getAgreementById(agreementId);
+      const agreementData = unwrap(agreementResponse);
+      const resolvedNegotiationId =
+        agreementData?.negotiationId ||
+        agreementData?.agreement?.negotiationId ||
+        null;
+
+      if (!resolvedNegotiationId) {
+        setStatusMessage("Chưa thể mở lại đoạn chat lúc này. Vui lòng thử lại sau.");
+        return;
+      }
+
+      const negotiationId = String(resolvedNegotiationId);
+      let conversationId: string | null = null;
+
+      try {
+        const negotiationResponse =
+          await negotiationApi.getNegotiationById(negotiationId);
+        const negotiationData = unwrap(negotiationResponse);
+        const resolvedConversationId =
+          negotiationData?.conversationId ||
+          negotiationData?.negotiation?.conversationId ||
+          null;
+
+        conversationId = resolvedConversationId
+          ? String(resolvedConversationId)
+          : null;
+      } catch {
+        conversationId = null;
+      }
+
+      if (conversationId) {
+        router.replace({
+          pathname: "/chat/[id]",
+          params: {
+            id: conversationId,
+            negotiationId,
+          },
+        } as any);
+        return;
+      }
+
+      router.replace(`/chat/${negotiationId}` as any);
+    } catch {
+      setStatusMessage("Chưa thể mở lại đoạn chat lúc này. Vui lòng thử lại sau.");
+    } finally {
+      setIsOpeningChat(false);
+    }
+  };
+
+  const handleGoToAppointment = async () => {
+    if (!agreementId) return;
+
+    let targetAppointmentId = appointmentId;
+
+    if (!targetAppointmentId) {
+      try {
+        setLoading(true);
+        setStatusMessage(null);
+        await resolveOrder(agreementId);
+        const orderResponse = await orderApi.getByAgreement(agreementId);
+        const orderData = unwrap(orderResponse);
+        const order = orderData?.order || orderData;
+        const appointments = Array.isArray(order?.appointments)
+          ? order.appointments
+          : Array.isArray(orderData?.appointments)
+            ? orderData.appointments
+            : [];
+        const preferredAppointment =
+          appointments.find((item: any) => {
+            const normalized = normalizeStatus(item?.appointmentStatus);
+            return (
+              normalized === "scheduled" ||
+              normalized === "1" ||
+              normalized === "inprogress" ||
+              normalized === "5"
+            );
+          }) || appointments[0] || null;
+        targetAppointmentId = preferredAppointment?.appointmentId
+          ? String(preferredAppointment.appointmentId)
+          : null;
+        setAppointmentId(targetAppointmentId);
+      } catch {
+        setStatusMessage(
+          "Chưa thể lấy thông tin lịch hẹn. Vui lòng thử lại sau.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (targetAppointmentId) {
+      router.replace(("/appointments/" + targetAppointmentId) as any);
+    }
+  };
+
   const handleGoHome = () => {
     router.replace("/(tabs)");
   };
@@ -204,7 +372,7 @@ export default function PaymentSuccessScreen() {
 
               <Text style={styles.subtitle}>
                 {isPaid
-                  ? "Giao dịch đã được Backend xác nhận và đơn hàng đã được tạo."
+                  ? "Giao dịch đã được xác nhận và đơn hàng đã được tạo."
                   : statusMessage || "Vui lòng kiểm tra lại giao dịch."}
               </Text>
 
@@ -239,6 +407,51 @@ export default function PaymentSuccessScreen() {
                       style={styles.buttonIcon}
                     />
                     <Text style={styles.primaryBtnText}>Xem đơn hàng</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {isPaid && appointmentId ? (
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    onPress={() => void handleGoToAppointment()}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={18}
+                      color={COLORS.primary}
+                      style={styles.buttonIcon}
+                    />
+                    <Text style={styles.secondaryBtnText}>Xem lịch hẹn</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {isPaid ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryBtn,
+                      isOpeningChat && styles.buttonDisabled,
+                    ]}
+                    onPress={() => void handleGoToChat()}
+                    disabled={isOpeningChat}
+                  >
+                    {isOpeningChat ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={COLORS.primary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="chatbubble-ellipses-outline"
+                          size={18}
+                          color={COLORS.primary}
+                          style={styles.buttonIcon}
+                        />
+                        <Text style={styles.secondaryBtnText}>
+                          Quay lại đoạn chat
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 ) : null}
 
@@ -356,5 +569,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   secondaryBtnText: { color: COLORS.primary, fontSize: 15, fontWeight: "bold" },
+  buttonDisabled: { opacity: 0.6 },
   buttonIcon: { marginRight: 8 },
 });
