@@ -436,7 +436,7 @@ export default function OrderDetailScreen() {
   const latestDisputeId = dispute?.latestDisputeId;
   const canOpenDispute = hasActiveDispute && Boolean(latestDisputeId);
   const canCreateDispute =
-    !hasActiveDispute && (currentStatusCode === 1 || currentStatusCode === 2);
+    (data?.actions ?? order?.actions ?? {}).canDispute === true;
 
   const isGhn = deliveryMethod === "GhnDelivery";
   const creationStat = trackingData?.creationStatus;
