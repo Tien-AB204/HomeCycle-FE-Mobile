@@ -1,7 +1,6 @@
 import {
   getSafeErrorMessage,
   NETWORK_ERROR_MESSAGE,
-  readSafeApiMessage,
   SERVER_ERROR_MESSAGE,
 } from "./errorMessage";
 
@@ -17,6 +16,6 @@ export const getApiErrorMessage = (
 ) => getSafeErrorMessage(error, fallback);
 
 export const getApiSuccessMessage = (
-  response: unknown,
+  _response: unknown,
   fallback: string,
-) => readSafeApiMessage(response) || fallback;
+) => fallback;
