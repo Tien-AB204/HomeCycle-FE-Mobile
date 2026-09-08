@@ -48,25 +48,43 @@ const formatDateTime = (dateString?: string | null) => {
   });
 };
 
+const normalizeAppointmentStatus = (value: unknown) =>
+  String(value ?? "")
+    .replace(/[\s_-]/g, "")
+    .toLowerCase();
+
 const translateStatus = (status: number | string) => {
-  switch (String(status)) {
+  switch (normalizeAppointmentStatus(status)) {
     case "0":
+    case "proposed":
       return "Chờ xác nhận";
     case "1":
-      return "Đã xác nhận";
+    case "scheduled":
+      return "Đã lên lịch";
+    case "5":
+    case "inprogress":
+      return "Đang diễn ra";
     case "2":
+    case "completed":
       return "Đã hoàn thành";
     case "3":
+    case "cancelled":
       return "Đã hủy";
     case "4":
-      return "Bỏ lỡ";
+    case "expired":
+      return "Quá hạn";
     default:
-      return "Chờ xác nhận";
+      return "Chưa xác định";
   }
 };
 
+const isCollectionAppointmentType = (type: unknown) => {
+  const normalized = String(type ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "collection";
+};
+
 const translateAppointmentType = (type: number | string) =>
-  String(type) === "1" ? "Lịch thu gom" : "Lịch kiểm định";
+  isCollectionAppointmentType(type) ? "Lịch thu gom" : "Lịch kiểm định";
 
 const translateDeliveryMethod = (value: unknown) => {
   switch (String(value || "").toLowerCase()) {
@@ -107,7 +125,19 @@ export default function AppointmentDetailScreen() {
         if (showLoading) setIsLoading(true);
         setLoadError(null);
         const response = await appointmentApi.getAppointmentDetail(appointmentId);
-        setData(unwrap(response));
+        const rawAppointment = unwrap(response);
+        const normalizedData =
+          rawAppointment?.appointment
+            ? rawAppointment
+            : rawAppointment?.appointmentId
+              ? {
+                  ...rawAppointment,
+                  appointment: rawAppointment,
+                  inspectionAppointment: rawAppointment?.inspection,
+                  collectionAppointment: rawAppointment?.collection,
+                }
+              : rawAppointment;
+        setData(normalizedData);
       } catch (error) {
         setData(null);
         setLoadError(
@@ -138,12 +168,15 @@ export default function AppointmentDetailScreen() {
 
       await fetchDetail(false);
 
-      const completed = Number(result?.appointmentStatus) === 2;
+      const completedStatus =
+        normalizeAppointmentStatus(result?.appointmentStatus);
+      const completed =
+        completedStatus === "2" || completedStatus === "completed";
       setActionMessage({
         type: "success",
         text: completed
-          ? "Check-in thành công. Cả hai bên đã check-in nên lịch hẹn đã hoàn thành."
-          : "Check-in thành công. Đang chờ bên còn lại check-in.",
+          ? "Check-in thành công. Lịch hẹn hiện đã hoàn thành."
+          : "Check-in thành công. Hệ thống đã ghi nhận thời điểm check-in.",
       });
     } catch (error: any) {
       const code = String(
@@ -218,28 +251,58 @@ export default function AppointmentDetailScreen() {
 
   const appt = data.appointment;
   const isCollection =
-    String(appt.appointmentType) === "1" || Boolean(data.collectionAppointment);
+    isCollectionAppointmentType(appt.appointmentType) ||
+    Boolean(data.collectionAppointment);
   const detail = isCollection
     ? data.collectionAppointment || {}
     : data.inspectionAppointment || {};
-  const statusCode = Number(appt.appointmentStatus ?? 0);
-  const isCancelled = statusCode === 3 || Boolean(appt.cancelledAt);
-  const isCompleted = statusCode === 2 || Boolean(appt.completedAt);
-  const isMissed = statusCode === 4;
+  const normalizedStatus = normalizeAppointmentStatus(appt.appointmentStatus);
+  const isCancelled =
+    normalizedStatus === "3" ||
+    normalizedStatus === "cancelled" ||
+    Boolean(data?.cancellation?.cancelledAt);
+  const isCompleted =
+    normalizedStatus === "2" ||
+    normalizedStatus === "completed" ||
+    Boolean(appt.completedAt);
+  const isExpired =
+    normalizedStatus === "4" || normalizedStatus === "expired";
+  const isScheduled =
+    normalizedStatus === "1" || normalizedStatus === "scheduled";
+  const isInProgress =
+    normalizedStatus === "5" || normalizedStatus === "inprogress";
   const progressStep =
-    isCompleted || isCancelled || isMissed ? 2 : statusCode >= 1 ? 1 : 0;
+    isCompleted || isCancelled || isExpired
+      ? 2
+      : isScheduled || isInProgress
+        ? 1
+        : 0;
 
-  const buyerCheckAt = appt.buyerCheckAt || appt.buyerCheckedAt || null;
-  const sellerCheckAt = appt.sellerCheckAt || appt.sellerCheckedAt || null;
+  const checkIn = isCollection ? null : detail?.checkIn || null;
+  const buyerCheckAt =
+    checkIn?.buyerCheckAt || appt.buyerCheckAt || appt.buyerCheckedAt || null;
+  const sellerCheckAt =
+    checkIn?.sellerCheckAt || appt.sellerCheckAt || appt.sellerCheckedAt || null;
 
   const stepLabels = [
     "Chờ xác nhận",
-    "Đã xác nhận",
-    isCancelled ? "Đã hủy" : isMissed ? "Bỏ lỡ" : "Hoàn thành",
+    isInProgress ? "Đang diễn ra" : "Đã lên lịch",
+    isCancelled ? "Đã hủy" : isExpired ? "Quá hạn" : "Hoàn thành",
   ];
 
   const checkInDisabled =
-    isCheckingIn || isCancelled || isCompleted || isMissed;
+    isCheckingIn || checkIn?.canCheckIn !== true;
+  const checkInOpenAt = checkIn?.checkInOpenAt || null;
+  const checkInOpenDate = checkInOpenAt ? new Date(checkInOpenAt) : null;
+  const isBeforeCheckInWindow =
+    !isCollection &&
+    !isCompleted &&
+    !isCancelled &&
+    !isExpired &&
+    checkInOpenDate instanceof Date &&
+    !Number.isNaN(checkInOpenDate.getTime()) &&
+    Date.now() < checkInOpenDate.getTime();
+  const relatedOrderId = data?.order?.orderId || null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -277,7 +340,7 @@ export default function AppointmentDetailScreen() {
                         : isCurrent
                           ? styles.circleActive
                           : styles.circlePending,
-                      (isCancelled || isMissed) && index === 2
+                      (isCancelled || isExpired) && index === 2
                         ? styles.circleFailed
                         : undefined,
                     ]}
@@ -351,40 +414,73 @@ export default function AppointmentDetailScreen() {
           )}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Trạng thái Check-in</Text>
-          <View style={styles.checkRow}>
-            <Ionicons
-              name={buyerCheckAt ? "checkmark-circle" : "ellipse-outline"}
-              size={20}
-              color={buyerCheckAt ? "#2F765D" : COLORS.textLight}
-            />
-            <View style={styles.flex}>
-              <Text style={styles.checkLabel}>Người mua</Text>
-              <Text style={styles.checkTime}>
-                {buyerCheckAt
-                  ? `Đã check-in ${formatDateTime(buyerCheckAt)}`
-                  : "Chưa check-in"}
-              </Text>
-            </View>
+        {relatedOrderId ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Đơn hàng liên quan</Text>
+            <TouchableOpacity
+              style={styles.relatedOrderButton}
+              onPress={() => router.push(("/orders/" + relatedOrderId) as any)}
+            >
+              <View style={styles.relatedOrderIcon}>
+                <Ionicons
+                  name="receipt-outline"
+                  size={19}
+                  color={COLORS.primary}
+                />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.relatedOrderTitle}>Xem đơn hàng</Text>
+                <Text style={styles.relatedOrderMeta}>
+                  {data?.order?.orderCode
+                    ? "Mã đơn: " + data.order.orderCode
+                    : "Mở chi tiết đơn hàng liên quan"}
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
           </View>
+        ) : null}
 
-          <View style={styles.checkRow}>
-            <Ionicons
-              name={sellerCheckAt ? "checkmark-circle" : "ellipse-outline"}
-              size={20}
-              color={sellerCheckAt ? "#2F765D" : COLORS.textLight}
-            />
-            <View style={styles.flex}>
-              <Text style={styles.checkLabel}>Người bán</Text>
-              <Text style={styles.checkTime}>
-                {sellerCheckAt
-                  ? `Đã check-in ${formatDateTime(sellerCheckAt)}`
-                  : "Chưa check-in"}
-              </Text>
+        {!isCollection ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Trạng thái Check-in</Text>
+            <View style={styles.checkRow}>
+              <Ionicons
+                name={buyerCheckAt ? "checkmark-circle" : "ellipse-outline"}
+                size={20}
+                color={buyerCheckAt ? "#2F765D" : COLORS.textLight}
+              />
+              <View style={styles.flex}>
+                <Text style={styles.checkLabel}>Người mua</Text>
+                <Text style={styles.checkTime}>
+                  {buyerCheckAt
+                    ? `Đã check-in ${formatDateTime(buyerCheckAt)}`
+                    : "Chưa check-in"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.checkRow}>
+              <Ionicons
+                name={sellerCheckAt ? "checkmark-circle" : "ellipse-outline"}
+                size={20}
+                color={sellerCheckAt ? "#2F765D" : COLORS.textLight}
+              />
+              <View style={styles.flex}>
+                <Text style={styles.checkLabel}>Người bán</Text>
+                <Text style={styles.checkTime}>
+                  {sellerCheckAt
+                    ? `Đã check-in ${formatDateTime(sellerCheckAt)}`
+                    : "Chưa check-in"}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thông tin hệ thống</Text>
@@ -426,37 +522,54 @@ export default function AppointmentDetailScreen() {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          style={[
-            styles.primaryButton,
-            checkInDisabled ? styles.disabledButton : undefined,
-          ]}
-          onPress={() => void handleCheckIn()}
-          disabled={checkInDisabled}
-        >
-          {isCheckingIn ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <>
-              <Ionicons
-                name={
-                  isCompleted ? "checkmark-circle-outline" : "location-outline"
-                }
-                size={19}
-                color={COLORS.white}
-              />
-              <Text style={styles.primaryButtonText}>
-                {isCompleted
-                  ? "Lịch hẹn đã hoàn thành"
-                  : isCancelled
-                    ? "Lịch hẹn đã bị hủy"
-                    : isMissed
-                      ? "Lịch hẹn đã bị bỏ lỡ"
-                      : "Check-in tại điểm hẹn"}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {!isCollection ? (
+          <>
+            {isBeforeCheckInWindow && checkInOpenAt ? (
+              <View style={styles.checkInWindowHint}>
+                <Ionicons
+                  name="time-outline"
+                  size={17}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.checkInWindowHintText}>
+                  Check-in mở lúc {formatDateTime(checkInOpenAt)}
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                checkInDisabled ? styles.disabledButton : undefined,
+              ]}
+            onPress={() => void handleCheckIn()}
+            disabled={checkInDisabled}
+          >
+            {isCheckingIn ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <>
+                <Ionicons
+                  name={
+                    isCompleted ? "checkmark-circle-outline" : "location-outline"
+                  }
+                  size={19}
+                  color={COLORS.white}
+                />
+                <Text style={styles.primaryButtonText}>
+                  {isCompleted
+                    ? "Lịch hẹn đã hoàn thành"
+                    : isCancelled
+                      ? "Lịch hẹn đã bị hủy"
+                      : isExpired
+                        ? "Lịch hẹn đã quá hạn"
+                        : "Check-in tại điểm hẹn"}
+                </Text>
+              </>
+            )}
+            </TouchableOpacity>
+          </>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -533,12 +646,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   statusHighlightLabel: {
-    color: "#9A6418",
+    color: "rgba(255,255,255,0.78)",
     fontSize: 13,
     fontWeight: "700",
   },
   statusHighlightValue: {
-    color: "#9A6418",
+    color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -611,6 +724,36 @@ const styles = StyleSheet.create({
   },
   checkLabel: { color: COLORS.text, fontSize: 13, fontWeight: "800" },
   checkTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  relatedOrderButton: {
+    minHeight: 62,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8F9FA",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  relatedOrderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  relatedOrderTitle: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  relatedOrderMeta: {
+    color: COLORS.textLight,
+    fontSize: 11,
+    marginTop: 3,
+  },
   bottomBar: {
     position: "absolute",
     left: 0,
@@ -634,6 +777,25 @@ const styles = StyleSheet.create({
   actionSuccessText: { color: "#2F765D" },
   actionInfo: { backgroundColor: "rgba(84, 123, 125, 0.10)", borderColor: "rgba(84, 123, 125, 0.24)" },
   actionInfoText: { color: "#2B5659" },
+  checkInWindowHint: {
+    minHeight: 40,
+    borderRadius: 9,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.22)",
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+  },
+  checkInWindowHintText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
   primaryButton: {
     minHeight: 52,
     borderRadius: 11,
