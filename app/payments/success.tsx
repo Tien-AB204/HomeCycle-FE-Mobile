@@ -136,7 +136,7 @@ export default function PaymentSuccessScreen() {
 
       setPaymentStatus(String(rawStatus ?? ""));
 
-      const completed = normalized === "completed";
+      const completed = normalized === "completed" || normalized === "1";
       setIsPaid(completed);
 
       if (completed) {
@@ -170,7 +170,7 @@ export default function PaymentSuccessScreen() {
         return;
       }
 
-      if (normalized === "pending") {
+      if (normalized === "pending" || normalized === "0") {
         setStatusMessage(
           isPaidUrl
             ? "PayOS đã chuyển bạn về sau thanh toán nhưng hệ thống vẫn đang đồng bộ trạng thái. Hãy thử kiểm tra lại."
@@ -179,13 +179,35 @@ export default function PaymentSuccessScreen() {
         return;
       }
 
-      if (normalized === "cancelled") {
-        setStatusMessage("Giao dịch đã bị hủy.");
+      if (normalized === "failed" || normalized === "2") {
+        setStatusMessage("Giao dịch không thành công.");
         return;
       }
 
-      if (normalized === "expired") {
+      if (normalized === "refunded" || normalized === "3") {
+        setStatusMessage("Giao dịch đã được hoàn tiền.");
+        return;
+      }
+
+      if (
+        normalized === "partiallyrefunded" ||
+        normalized === "4"
+      ) {
+        setStatusMessage("Giao dịch đã được hoàn tiền một phần.");
+        return;
+      }
+
+      if (normalized === "expired" || normalized === "5") {
         setStatusMessage("Phiên thanh toán đã hết hạn.");
+        return;
+      }
+
+      if (
+        normalized === "cancelled" ||
+        normalized === "canceled" ||
+        normalized === "6"
+      ) {
+        setStatusMessage("Giao dịch đã bị hủy.");
         return;
       }
 

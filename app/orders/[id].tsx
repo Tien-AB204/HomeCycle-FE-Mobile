@@ -356,13 +356,21 @@ export default function OrderDetailScreen() {
       case "paid":
         return "Đã thanh toán toàn phần";
       case "2":
+      case "failed":
+        return "Thanh toán thất bại";
+      case "3":
       case "refunded":
         return "Đã hoàn tiền";
+      case "4":
+      case "partiallyrefunded":
+        return "Đã hoàn tiền một phần";
+      case "5":
+      case "expired":
+        return "Đã hết hạn";
+      case "6":
       case "cancelled":
       case "canceled":
         return "Đã hủy";
-      case "expired":
-        return "Đã hết hạn";
       default:
         return "Chưa rõ";
     }
