@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,6 +20,7 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage, getApiSuccessMessage } from "../../src/utils/apiFeedback";
 
@@ -66,8 +67,18 @@ const getOfferErrorCode = (error: any) =>
     .trim()
     .toUpperCase();
 
-const translateStatus = (value: unknown) => {
+const translateStatus = (
+  value: unknown,
+  negotiationId?: unknown,
+) => {
   const status = normalizeStatus(value);
+
+  if (
+    (status === "1" || status === "accepted") &&
+    Boolean(negotiationId)
+  ) {
+    return "Đã chuyển sang thương lượng";
+  }
 
   switch (status) {
     case "0":
@@ -85,6 +96,23 @@ const translateStatus = (value: unknown) => {
       return "Đã hủy";
     default:
       return value ? String(value) : "Chưa xác định";
+  }
+};
+
+const getReadOnlyOfferSubtitle = (value: unknown) => {
+  switch (normalizeStatus(value)) {
+    case "1":
+    case "accepted":
+      return "Đề nghị đã được chấp nhận và chỉ còn để xem.";
+    case "2":
+    case "rejected":
+      return "Đề nghị đã bị từ chối và chỉ còn để xem.";
+    case "3":
+    case "cancelled":
+    case "canceled":
+      return "Đề nghị đã hủy và chỉ còn để xem.";
+    default:
+      return "Đề nghị hiện chỉ còn để xem.";
   }
 };
 
@@ -106,8 +134,8 @@ const formatDate = (value: unknown) => {
 };
 
 export default function OfferDetailScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams();
+  const { connection } = useChatRealtime();
   const offerId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [offer, setOffer] = useState<any>(null);
@@ -148,6 +176,29 @@ export default function OfferDetailScreen() {
       void fetchOffer();
     }, [fetchOffer]),
   );
+
+  useEffect(() => {
+    if (!connection || !offerId) return;
+
+    const handleOfferUpdated = (payload: any) => {
+      const updatedOffer = payload?.data ?? payload;
+      const updatedOfferId = String(
+        updatedOffer?.offerId ?? updatedOffer?.OfferId ?? "",
+      );
+
+      if (updatedOfferId === String(offerId)) {
+        // OfferResponse realtime không chứa đầy đủ canUpdate/canCancel.
+        // Refetch đúng detail này một lần để giữ action flags authoritative.
+        void fetchOffer();
+      }
+    };
+
+    connection.on("OfferUpdated", handleOfferUpdated);
+
+    return () => {
+      connection.off("OfferUpdated", handleOfferUpdated);
+    };
+  }, [connection, fetchOffer, offerId]);
 
   const handleOpenEditOffer = async () => {
     const pendingNow =
@@ -324,6 +375,10 @@ export default function OfferDetailScreen() {
     String(offer.offerStatus) === "0";
   const canUpdate = offer.canUpdate === true && pending;
   const canCancel = offer.canCancel === true && pending;
+  const movedToNegotiation =
+    (normalizeStatus(offer.offerStatus) === "accepted" ||
+      String(offer.offerStatus) === "1") &&
+    Boolean(offer.negotiationId);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -340,7 +395,9 @@ export default function OfferDetailScreen() {
               <Text style={styles.cardSubtitle}>
                 {canUpdate
                   ? "Đề nghị đang chờ phản hồi; bạn có thể cập nhật giá hoặc số lượng."
-                  : "Chỉ xem thông tin; đề nghị hiện không thể chỉnh sửa."}
+                  : movedToNegotiation
+                    ? "Đề nghị đã chuyển sang phiên thương lượng."
+                    : "Đề nghị này chỉ còn để xem."}
               </Text>
             </View>
           </View>
@@ -362,7 +419,10 @@ export default function OfferDetailScreen() {
 
           <View style={styles.row}>
             <Text style={styles.label}>Trạng thái</Text>
-            <Text style={[styles.value, styles.statusValue]}>{translateStatus(offer.offerStatus)}</Text>
+            <Text style={[styles.value, styles.statusValue]}>{translateStatus(
+              offer.offerStatus,
+              offer.negotiationId,
+            )}</Text>
           </View>
 
           <View style={[styles.row, styles.lastRow]}>
@@ -450,18 +510,7 @@ export default function OfferDetailScreen() {
             <Ionicons name="trash-outline" size={19} color={COLORS.white} />
             <Text style={styles.cancelButtonText}>Hủy đề nghị</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={styles.readOnlyNotice}>
-            <Ionicons name="information-circle-outline" size={18} color={COLORS.textLight} />
-            <Text style={styles.readOnlyNoticeText}>
-              Đề nghị này không còn ở trạng thái có thể hủy.
-            </Text>
-          </View>
-        )}
-
-        <TouchableOpacity style={styles.backToPostButton} onPress={() => router.back()}>
-          <Text style={styles.backToPostText}>Quay lại bài đăng</Text>
-        </TouchableOpacity>
+        ) : null}
       </ScrollView>
 
       <Modal
@@ -710,27 +759,6 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: { color: COLORS.white, fontWeight: "800", fontSize: 14 },
   disabled: { opacity: 0.65 },
-  readOnlyNotice: {
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#F8F9FA",
-  },
-  readOnlyNoticeText: { flex: 1, color: COLORS.textLight, fontSize: 13 },
-  backToPostButton: {
-    marginTop: 12,
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.white,
-  },
-  backToPostText: { color: COLORS.primary, fontWeight: "800" },
   primaryButton: {
     marginTop: 16,
     minHeight: 48,
