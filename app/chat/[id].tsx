@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
@@ -125,6 +126,18 @@ const postApi = {
       .then((response) => response.data),
 };
 
+const orderApi = {
+  getByAgreement: (agreementId: string) =>
+    apiClient
+      .get(`/orders/agreement/${agreementId}`)
+      .then((response) => response.data),
+
+  getDetail: (orderId: string) =>
+    apiClient
+      .get(`/orders/${orderId}`)
+      .then((response) => response.data),
+};
+
 const getRobustAvatar = (
   url: string | null | undefined,
   name: string,
@@ -143,9 +156,7 @@ const getRobustAvatar = (
     return url;
   }
 
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    name || "U",
-  )}&background=547B7D&color=fff`;
+  return DEFAULT_AVATAR_URI;
 };
 
 const getNegotiationStatusLabel = (status: unknown) => {
@@ -171,15 +182,183 @@ const getNegotiationStatusLabel = (status: unknown) => {
   return labels[normalized] || "Phiên thương lượng";
 };
 
-const normalizeAgreementUiText = (text?: string | null) => {
-  if (!text) {
-    return "Đã tạo hợp đồng giao dịch, vui lòng kiểm tra và xác nhận.";
+const getPostTypeLabel = (value: unknown) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "1" || normalized === "sell") {
+    return "Tin bán";
   }
 
-  return text
+  if (normalized === "2" || normalized === "buy") {
+    return "Tin mua";
+  }
+
+  return "";
+};
+
+const normalizeAgreementUiText = (
+  text?: string | null,
+  actorName?: string | null,
+) => {
+  let normalized = (
+    text || "Đã tạo hợp đồng giao dịch, vui lòng kiểm tra và xác nhận."
+  )
     .replace(/\bagreement\b/gi, "hợp đồng")
     .replace(/đơn xác nhận/gi, "hợp đồng")
     .replace(/thỏa thuận mua bán/gi, "hợp đồng giao dịch");
+
+  const resolvedActorName = String(actorName || "").trim();
+
+  if (resolvedActorName) {
+    normalized = normalized.replace(
+      /^(Người bán|Người mua)\b/i,
+      resolvedActorName,
+    );
+
+    if (/^Đã tạo hợp đồng giao dịch\b/i.test(normalized)) {
+      normalized = `${resolvedActorName} đã tạo hợp đồng giao dịch, vui lòng kiểm tra và xác nhận.`;
+    }
+  }
+
+  return normalized;
+};
+
+const normalizeSystemUiText = (text?: string | null) => {
+  const normalized = String(text || "").trim();
+
+  if (
+    /thanh toán thành công/i.test(normalized) &&
+    /đơn hàng đã được tạo/i.test(normalized)
+  ) {
+    return "Hợp đồng đã được thanh toán. Đơn hàng và lịch hẹn đã được tạo.";
+  }
+
+  return normalized || "Cập nhật phiên thương lượng.";
+};
+
+const isPaymentCompletedSystemText = (text?: string | null) => {
+  const normalized = String(text || "")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
+
+  return (
+    (
+      normalized.includes("thanh toán thành công") &&
+      normalized.includes("đơn hàng")
+    ) ||
+    (
+      normalized.includes("hợp đồng đã được thanh toán") &&
+      normalized.includes("đơn hàng")
+    )
+  );
+};
+
+const isBilateralSystemText = (text?: string | null) => {
+  const normalized = String(text || "")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
+
+  return (
+    normalized.includes("cả hai bên") ||
+    normalized.includes("hai bên đã xác nhận")
+  );
+};
+
+type AgreementTimelineKind = "created" | "updated" | "confirmed";
+
+const getAgreementTimelineKind = (text?: string | null): AgreementTimelineKind => {
+  const normalized = String(text || "")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
+
+  if (
+    normalized.includes("cả hai bên") &&
+    normalized.includes("xác nhận")
+  ) {
+    return "confirmed";
+  }
+
+  if (
+    normalized.includes("đã tạo") ||
+    normalized.includes("tạo thỏa thuận")
+  ) {
+    return "created";
+  }
+
+  return "updated";
+};
+
+const getAgreementTimelineTitle = (kind?: AgreementTimelineKind) => {
+  switch (kind) {
+    case "created":
+      return "Hợp đồng đã tạo";
+    case "confirmed":
+      return "Hợp đồng đã xác nhận";
+    default:
+      return "Hợp đồng đã cập nhật";
+  }
+};
+
+const getTimelineTime = (value: unknown) => {
+  const time = new Date(String(value || "")).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const applyTimelineGrouping = (items: any[]) => {
+  const grouped = items.map((item) => ({
+    ...item,
+    groupWithPrevious: false,
+    groupWithNext: false,
+  }));
+  const groupingWindowMs = 5 * 60 * 1000;
+
+  const canGroupPair = (first: any, second: any) => {
+    if (!first || !second || first.type !== second.type) {
+      return false;
+    }
+
+    if (first.type === "text") {
+      if (first.sender !== second.sender) {
+        return false;
+      }
+    } else if (first.type === "system") {
+      if (first.hideAvatar || second.hideAvatar) {
+        return false;
+      }
+
+      const firstActor = String(
+        first.actorName || first.accepterName || "",
+      ).trim();
+      const secondActor = String(
+        second.actorName || second.accepterName || "",
+      ).trim();
+
+      if (!firstActor || firstActor !== secondActor) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+
+    const firstTime = getTimelineTime(first.createdAt);
+    const secondTime = getTimelineTime(second.createdAt);
+
+    return (
+      firstTime > 0 &&
+      secondTime > 0 &&
+      secondTime >= firstTime &&
+      secondTime - firstTime <= groupingWindowMs
+    );
+  };
+
+  for (let index = 1; index < grouped.length; index += 1) {
+    if (canGroupPair(grouped[index - 1], grouped[index])) {
+      grouped[index - 1].groupWithNext = true;
+      grouped[index].groupWithPrevious = true;
+    }
+  }
+
+  return grouped;
 };
 
 export default function ChatDetailScreen() {
@@ -343,6 +522,11 @@ export default function ChatDetailScreen() {
     setCounterQuantityInput,
   ] = useState("1");
 
+  const [
+    revealedSystemMessageIds,
+    setRevealedSystemMessageIds,
+  ] = useState<Set<string>>(() => new Set());
+
   useEffect(() => {
     setConversationId(null);
     setNegotiationId(null);
@@ -351,6 +535,7 @@ export default function ChatDetailScreen() {
     processedRealtimeMessageIdsRef.current.clear();
     setMessages([]);
     setAgreementPreview(null);
+    setRevealedSystemMessageIds(new Set());
     setLoadError(null);
     setNegotiationPickerVisible(false);
     shouldScrollToLatestRef.current = true;
@@ -661,8 +846,14 @@ export default function ChatDetailScreen() {
         basePrice: 0,
         city: "",
         productTypeName: "",
+        postType: null,
         partnerName: info?.otherPartyName,
         partnerAvatar: info?.otherPartyAvatarUrl,
+        myName:
+          user?.name ||
+          user?.displayName ||
+          user?.username ||
+          "Bạn",
         myAvatar: user?.avatarUrl || user?.avatar,
       };
 
@@ -691,6 +882,12 @@ export default function ChatDetailScreen() {
               isCurrentUserSender
                 ? offer.receiver
                 : offer.sender;
+
+            productDetails.myName =
+              currentUserData?.displayName ||
+              currentUserData?.username ||
+              currentUserData?.name ||
+              productDetails.myName;
 
             if (currentUserData?.avatarUrl) {
               productDetails.myAvatar =
@@ -735,6 +932,9 @@ export default function ChatDetailScreen() {
               post?.product?.productTypeName ||
               post?.productTypeName ||
               "";
+
+            productDetails.postType =
+              post?.postType ?? null;
 
             if (
               Array.isArray(post?.medias) &&
@@ -793,6 +993,123 @@ export default function ChatDetailScreen() {
             combinedInfo.agreementData =
               agreementResponse?.data ||
               agreementResponse;
+
+            const agreementStatus = String(
+              combinedInfo.agreementData?.agreementStatus ?? "",
+            )
+              .trim()
+              .toLowerCase();
+
+            const isPaidAgreement =
+              agreementStatus === "confirmed" ||
+              agreementStatus === "2";
+
+            combinedInfo.isPaidAgreement = isPaidAgreement;
+            combinedInfo.orderId = null;
+            combinedInfo.appointmentId = null;
+
+            if (isPaidAgreement) {
+              try {
+                const orderResponse =
+                  await orderApi.getByAgreement(preview.agreementId);
+                const orderRef =
+                  orderResponse?.data || orderResponse;
+                const resolvedOrderId =
+                  orderRef?.orderId ||
+                  orderRef?.order?.orderId ||
+                  null;
+
+                if (resolvedOrderId) {
+                  combinedInfo.orderId =
+                    String(resolvedOrderId);
+
+                  const orderDetailResponse =
+                    await orderApi.getDetail(
+                      String(resolvedOrderId),
+                    );
+                  const orderDetail =
+                    orderDetailResponse?.data ||
+                    orderDetailResponse;
+
+                  const appointments = Array.isArray(
+                    orderDetail?.appointments,
+                  )
+                    ? orderDetail.appointments
+                    : Array.isArray(
+                          orderDetail?.order?.appointments,
+                        )
+                      ? orderDetail.order.appointments
+                      : [];
+
+                  const sortedAppointments = [
+                    ...appointments,
+                  ].sort((first, second) => {
+                    const firstTime = new Date(
+                      first?.createdAt ||
+                        first?.scheduledAt ||
+                        0,
+                    ).getTime();
+                    const secondTime = new Date(
+                      second?.createdAt ||
+                        second?.scheduledAt ||
+                        0,
+                    ).getTime();
+
+                    return secondTime - firstTime;
+                  });
+
+                  const normalizeAppointmentStatus = (
+                    value: unknown,
+                  ) =>
+                    String(value ?? "")
+                      .trim()
+                      .toLowerCase();
+
+                  const currentAppointment =
+                    sortedAppointments.find(
+                      (appointment) => {
+                        const status =
+                          normalizeAppointmentStatus(
+                            appointment?.appointmentStatus,
+                          );
+
+                        return ![
+                          "0",
+                          "proposed",
+                          "3",
+                          "cancelled",
+                          "canceled",
+                        ].includes(status);
+                      },
+                    ) ||
+                    sortedAppointments.find(
+                      (appointment) => {
+                        const status =
+                          normalizeAppointmentStatus(
+                            appointment?.appointmentStatus,
+                          );
+
+                        return ![
+                          "3",
+                          "cancelled",
+                          "canceled",
+                        ].includes(status);
+                      },
+                    ) ||
+                    sortedAppointments[0] ||
+                    null;
+
+                  combinedInfo.appointmentId =
+                    currentAppointment?.appointmentId ||
+                    null;
+                }
+              } catch (error) {
+                console.log(
+                  "Lỗi tải Order/Appointment từ Agreement:",
+                  error,
+                );
+              }
+            }
           }
         } catch (error) {
           console.log(
@@ -992,42 +1309,127 @@ export default function ChatDetailScreen() {
             // =========================================================================
             // LẮNG NGHE SỰ KIỆN HỢP ĐỒNG & RENDER CARD
             // =========================================================================
-            const isSystemAgreementEvent = 
-              message.messageType === "Agreement" || 
-              message.messageType === 4 ||
-              (message.messageContent && message.messageContent.toLowerCase().includes("đã chỉnh sửa hợp đồng"));
+            const isSystemAgreementEvent =
+              message.messageType === "Agreement" ||
+              message.messageType === 5 ||
+              String(message.messageType ?? "").trim() === "5" ||
+              (message.messageContent &&
+                message.messageContent
+                  .toLowerCase()
+                  .includes("đã chỉnh sửa hợp đồng"));
 
             if (isSystemAgreementEvent && info.agreementData) {
-              
-              // 1. KẾ THỪA SENDER ID VÀ TRẠNG THÁI ĐÃ ĐỌC (isRead)
-              // Thay vì gán sender: "system" như cũ, giờ gán theo người thực sự đã tạo/sửa (isMe).
-              // Như vậy thẻ sẽ nằm bên phải nếu mình sửa, nằm trái nếu đối tác sửa. Kèm theo có cả Tick Đã Đọc.
-              formattedMessages.push({
+              const actorName = isMe
+                ? info.myName || "Bạn"
+                : info.partnerName || "Đối tác giao dịch";
+              const agreementUiText = normalizeAgreementUiText(
+                message.messageContent,
+                actorName,
+              );
+              const timelineKind = getAgreementTimelineKind(
+                message.messageContent,
+              );
+
+              const agreementCardMessage = {
                 id: `card-${message.messageId}`,
                 type: "agreement_card",
                 agreementId: info.agreementData.agreementId,
-                agreementData: info.agreementData, 
-                sender: isMe ? "me" : "them", // KHẮC PHỤC LỖI NẰM SAI BÊN
-                isRead: message.isRead === true, // KHẮC PHỤC LỖI THIẾU TICK XANH ĐÃ ĐỌC
+                agreementData: info.agreementData,
+                agreementTimelineKind: timelineKind,
+                sender: isMe ? "me" : "them",
+                senderName: actorName,
+                avatar: isMe ? info.myAvatar : info.partnerAvatar,
+                isRead: message.isRead === true,
+                createdAt: message.createdAt || null,
                 time: new Date(message.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                isLatestAgreement: false, 
-              });
-              
+                isLatestAgreement: false,
+              };
+
+              const agreementSystemMessage = {
+                id: message.messageId,
+                type: "system",
+                text: agreementUiText,
+                createdAt: message.createdAt || null,
+                avatar: isMe ? info.myAvatar : info.partnerAvatar,
+                actorName,
+                hideAvatar: isBilateralSystemText(agreementUiText),
+              };
+
+              // Mọi mốc Agreement đều theo cùng chronology:
+              // System event trước -> resource card ngay sau.
+              formattedMessages.push(agreementSystemMessage);
+              formattedMessages.push(agreementCardMessage);
               lastAgreementCardIndex = formattedMessages.length - 1;
 
-              // 2. Chèn Bong bóng (Bubble) thông báo hệ thống màu xám ở DƯỚI Card
-              // Bong bóng này vẫn hiển thị dạng "system_agreed" để hiện khung màu xám căn giữa màn hình
-              formattedMessages.push({
-                id: message.messageId,
-                type: "system_agreed",
-                text: normalizeAgreementUiText(message.messageContent) || message.messageContent,
-                avatar: isMe ? info.myAvatar : info.partnerAvatar,
-                accepterName: isMe ? "Bạn" : info.partnerName,
-              });
-              
+              return;
+            }
+
+            const normalizedMessageType = String(
+              message.messageType ?? "",
+            )
+              .trim()
+              .toLowerCase();
+
+            const isSystemMessage =
+              normalizedMessageType === "system" ||
+              normalizedMessageType === "4";
+
+            if (isSystemMessage) {
+              const actorName = isMe
+                ? info.myName || "Bạn"
+                : info.partnerName || "Đối tác giao dịch";
+              const systemUiText = normalizeSystemUiText(
+                message.messageContent,
+              );
+
+              const systemMessage = {
+                id:
+                  message.messageId ||
+                  "system-" + index,
+                type: "system",
+                text: systemUiText,
+                createdAt:
+                  message.createdAt || null,
+                avatar: isMe
+                  ? info.myAvatar
+                  : info.partnerAvatar,
+                actorName,
+                hideAvatar: isBilateralSystemText(systemUiText),
+              };
+
+              formattedMessages.push(systemMessage);
+
+              if (
+                isPaymentCompletedSystemText(message.messageContent) &&
+                info.agreementData
+              ) {
+                formattedMessages.push({
+                  id: `paid-card-${message.messageId || index}`,
+                  type: "agreement_card",
+                  agreementId: info.agreementData.agreementId,
+                  agreementData: info.agreementData,
+                  agreementTimelineKind: "confirmed",
+                  sender: isMe ? "me" : "them",
+                  senderName: actorName,
+                  avatar: isMe ? info.myAvatar : info.partnerAvatar,
+                  isRead: message.isRead === true,
+                  createdAt: message.createdAt || null,
+                  time: message.createdAt
+                    ? new Date(message.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "Vừa xong",
+                  isLatestAgreement: true,
+                  isPaidAgreement: true,
+                  orderId: info.orderId || null,
+                  appointmentId: info.appointmentId || null,
+                });
+              }
+
               return;
             }
 
@@ -1072,6 +1474,7 @@ export default function ChatDetailScreen() {
               senderName: isMe
                 ? "Bạn"
                 : info.partnerName,
+              createdAt: message.createdAt || null,
               time: message.createdAt
                 ? new Date(
                     message.createdAt,
@@ -1096,30 +1499,38 @@ export default function ChatDetailScreen() {
 
               const accepterName =
                 currentUserAccepted
-                  ? "Bạn"
-                  : info.partnerName;
+                  ? info.myName || "Bạn"
+                  : info.partnerName || "Đối tác giao dịch";
 
               formattedMessages.push({
                 id: `system-agreed-${formattedMessage.id}`,
-                type: "system_agreed",
-                text: currentUserAccepted
-                  ? "Bạn đã chấp nhận thương lượng"
-                  : `${accepterName} đã chấp nhận thương lượng`,
+                type: "system",
+                text: `${accepterName} đã chấp nhận thương lượng`,
+                createdAt: message.createdAt || null,
                 avatar:
                   currentUserAccepted
                     ? info.myAvatar
                     : info.partnerAvatar,
-                accepterName,
+                actorName: accepterName,
+                hideAvatar: false,
               });
             }
           },
         );
 
         if (lastAgreementCardIndex !== -1) {
-          formattedMessages[lastAgreementCardIndex].isLatestAgreement = true;
+          const latestAgreementCard =
+            formattedMessages[lastAgreementCardIndex];
+
+          // Agreement event cuối vẫn là mốc "đã xác nhận".
+          // Mốc "đã thanh toán" được tạo riêng từ System payment message phía sau.
+          latestAgreementCard.isLatestAgreement = true;
+          latestAgreementCard.isPaidAgreement = false;
+          latestAgreementCard.orderId = null;
+          latestAgreementCard.appointmentId = null;
         }
 
-        setMessages(formattedMessages);
+        setMessages(applyTimelineGrouping(formattedMessages));
       } catch (error) {
         console.error(
           "Lỗi tải tin nhắn:",
@@ -1368,16 +1779,27 @@ export default function ChatDetailScreen() {
         });
       }
 
+      const normalizedNewMessageType = String(
+        eventMessageType ?? "",
+      )
+        .trim()
+        .toLowerCase();
+
       const isSpecialEvent =
         eventMessageType === 2 ||
         eventMessageType === 3 ||
-        eventMessageType === "Offer" ||
-        eventMessageType === "CounterOffer" ||
-        eventMessageType === "Agreement" ||
-        eventMessageType === 4 ||
-        eventMessageType === "AgreementCard" ||
+        normalizedNewMessageType === "offer" ||
+        normalizedNewMessageType === "counteroffer" ||
+        normalizedNewMessageType === "system" ||
+        normalizedNewMessageType === "4" ||
+        normalizedNewMessageType === "agreement" ||
+        normalizedNewMessageType === "5" ||
+        normalizedNewMessageType === "agreementcard" ||
         Number(newMsg.offerPrice) > 0 ||
-        (newMsg.messageContent && newMsg.messageContent.toLowerCase().includes("đã chỉnh sửa hợp đồng"));
+        (newMsg.messageContent &&
+          newMsg.messageContent
+            .toLowerCase()
+            .includes("đã chỉnh sửa hợp đồng"));
 
       if (isSpecialEvent) {
         await fetchBaseInfo();
@@ -1420,6 +1842,10 @@ export default function ChatDetailScreen() {
             senderName: isMe
               ? "Bạn"
               : info?.partnerName,
+            createdAt:
+              newMsg.createdAt ||
+              newMsg.CreatedAt ||
+              new Date().toISOString(),
             time: new Date(
               newMsg.createdAt ||
                 newMsg.CreatedAt ||
@@ -1430,7 +1856,7 @@ export default function ChatDetailScreen() {
             }),
           };
 
-          return [...prev, formatted];
+          return applyTimelineGrouping([...prev, formatted]);
         });
       }
     };
@@ -1738,26 +2164,31 @@ export default function ChatDetailScreen() {
 
   const reloadAll = async () => {
     setLoadError(null);
+    setIsLoading(true);
 
-    const loadedInfo =
-      await fetchBaseInfo();
+    try {
+      const loadedInfo =
+        await fetchBaseInfo();
 
-    if (!loadedInfo) {
-      setLoadError(
-        "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
-      );
+      if (!loadedInfo) {
+        setLoadError(
+          "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+        );
 
-      return;
-    }
+        return;
+      }
 
-    await fetchMessagesOnly();
-    await markCurrentContextAsRead({
-      conversationId,
-      negotiationId,
-    });
+      await fetchMessagesOnly();
+      await markCurrentContextAsRead({
+        conversationId,
+        negotiationId,
+      });
 
-    if (conversationId) {
-      await fetchConversationNegotiations(conversationId);
+      if (conversationId) {
+        await fetchConversationNegotiations(conversationId);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1933,7 +2364,7 @@ export default function ChatDetailScreen() {
           "Lỗi",
           getApiErrorMessage(
             error,
-            "Không thể hủy giao dịch.",
+            "Không thể hủy phiên thương lượng.",
           ),
         );
       } finally {
@@ -1942,7 +2373,7 @@ export default function ChatDetailScreen() {
     };
 
     Alert.alert(
-      "Hủy giao dịch",
+      "Hủy phiên thương lượng",
       "Bạn có chắc chắn muốn hủy phiên thương lượng này không?",
       [
         {
@@ -1950,7 +2381,7 @@ export default function ChatDetailScreen() {
           style: "cancel",
         },
         {
-          text: "Hủy giao dịch",
+          text: "Hủy phiên thương lượng",
           style: "destructive",
           onPress: () =>
             void executeCancel(),
@@ -2081,15 +2512,25 @@ export default function ChatDetailScreen() {
           {negotiationInfo?.name}
         </Text>
 
-        <Text
-          style={styles.productSubText}
-          numberOfLines={1}
-        >
-          {negotiationInfo?.productTypeName ||
-            "Khác"}{" "}
-          •{" "}
-          {negotiationInfo?.city || "N/A"}
-        </Text>
+        <View style={styles.productMetaRow}>
+          {getPostTypeLabel(negotiationInfo?.postType) ? (
+            <View style={styles.postTypeTag}>
+              <Text style={styles.postTypeTagText}>
+                {getPostTypeLabel(negotiationInfo?.postType)}
+              </Text>
+            </View>
+          ) : null}
+
+          <Text
+            style={styles.productSubText}
+            numberOfLines={1}
+          >
+            {negotiationInfo?.productTypeName ||
+              "Khác"}{" "}
+            •{" "}
+            {negotiationInfo?.city || "N/A"}
+          </Text>
+        </View>
 
         <Text style={styles.productPrice}>
           Giá niêm yết:{" "}
@@ -2188,6 +2629,85 @@ export default function ChatDetailScreen() {
   }) => {
     const isMe = item.sender === "me";
 
+    if (item.type === "system") {
+      const systemMessageId = String(item.id);
+      const systemAvatarUri = getRobustAvatar(
+        item.avatar,
+        item.actorName ||
+          item.accepterName ||
+          item.senderName ||
+          "Người dùng",
+      );
+
+      const isTimestampVisible =
+        revealedSystemMessageIds.has(
+          systemMessageId,
+        );
+
+      const systemTimestamp = item.createdAt
+        ? new Date(item.createdAt).toLocaleString(
+            "vi-VN",
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            },
+          )
+        : "";
+
+      return (
+        <TouchableOpacity
+          activeOpacity={0.75}
+          style={[
+            styles.systemNoticeContainer,
+            item.groupWithNext && styles.systemNoticeContainerGrouped,
+          ]}
+          onPress={() => {
+            setRevealedSystemMessageIds(
+              (previousIds) => {
+                const nextIds = new Set(
+                  previousIds,
+                );
+
+                if (nextIds.has(systemMessageId)) {
+                  nextIds.delete(systemMessageId);
+                } else {
+                  nextIds.add(systemMessageId);
+                }
+
+                return nextIds;
+              },
+            );
+          }}
+        >
+          <View
+            style={[
+              styles.systemNoticePill,
+              item.hideAvatar && styles.systemNoticePillWithoutAvatar,
+            ]}
+          >
+            {!item.hideAvatar ? (
+              <Image
+                source={{ uri: systemAvatarUri }}
+                style={styles.systemNoticeAvatar}
+              />
+            ) : null}
+            <Text style={styles.systemNoticeText}>
+              {item.text}
+            </Text>
+          </View>
+
+          {isTimestampVisible && systemTimestamp ? (
+            <Text style={styles.systemNoticeTime}>
+              {systemTimestamp}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      );
+    }
+
     if (
       item.type === "system_agreed"
     ) {
@@ -2236,90 +2756,106 @@ export default function ChatDetailScreen() {
       if (
         item.type === "agreement_card"
       ) {
+        const agreementTitle = item.isPaidAgreement
+          ? "Hợp đồng đã thanh toán"
+          : getAgreementTimelineTitle(item.agreementTimelineKind);
+
         return (
           <View
             style={[
               styles.offerCard,
               styles.fullWidth,
+              styles.flowCard,
             ]}
           >
-            <View
-              style={styles.offerHeader}
-            >
+            <View style={styles.flowCardHeader}>
               <Ionicons
                 name="document-text"
-                size={18}
+                size={17}
                 color={COLORS.primary}
                 style={styles.offerIcon}
               />
 
-              <Text
-                style={styles.offerTitle}
-              >
-                Hợp đồng giao dịch
+              <Text style={styles.flowCardTitle}>
+                {agreementTitle}
               </Text>
             </View>
 
-            <View
-              style={
-                styles.offerPriceBox
-              }
-            >
-              <Text
-                style={
-                  styles.offerPriceValue
-                }
-              >
-                {formatCurrency(
-                  item.agreementData
-                    ?.finalPrice,
-                )}
+            <View style={styles.flowCardMetaRow}>
+              <Text style={styles.flowCardPrice}>
+                {formatCurrency(item.agreementData?.finalPrice)}
               </Text>
 
-              <Text
-                style={
-                  styles.offerQuantity
-                }
-              >
-                Số lượng:{" "}
-                {
-                  item.agreementData
-                    ?.quantity
-                }
+              <Text style={styles.flowCardQuantity}>
+                Số lượng: {item.agreementData?.quantity}
               </Text>
             </View>
 
             {item.isLatestAgreement ? (
-              <TouchableOpacity
-                style={
-                  styles.viewAgreementBtnFill
-                }
-                onPress={() => {
-                  router.push({
-                    pathname:
-                      "/agreements/preview",
-                    params: {
-                      agreementId: String(
-                        item.agreementId,
-                      ),
-                      negotiationId: String(
-                        negotiationId,
-                      ),
-                    },
-                  });
-                }}
-              >
-                <Text
-                  style={
-                    styles.viewAgreementBtnFillText
-                  }
+              <>
+                <TouchableOpacity
+                  style={styles.viewAgreementBtnFill}
+                  onPress={() => {
+                    router.push({
+                      pathname: "/agreements/preview",
+                      params: {
+                        agreementId: String(item.agreementId),
+                        negotiationId: String(negotiationId),
+                      },
+                    });
+                  }}
                 >
-                  Xem chi tiết
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.outdatedOfferText}>(Hợp đồng đã được cập nhật)</Text>
-            )}
+                  <Text style={styles.viewAgreementBtnFillText}>
+                    Xem chi tiết hợp đồng
+                  </Text>
+                </TouchableOpacity>
+
+                {item.isPaidAgreement &&
+                (item.orderId || item.appointmentId) ? (
+                  <View style={styles.commerceShortcutColumn}>
+                    {item.orderId ? (
+                      <TouchableOpacity
+                        style={styles.commerceShortcutBtn}
+                        onPress={() =>
+                          router.push(`/orders/${String(item.orderId)}` as any)
+                        }
+                      >
+                        <Ionicons
+                          name="receipt-outline"
+                          size={16}
+                          color={COLORS.primary}
+                        />
+
+                        <Text style={styles.commerceShortcutText}>
+                          Xem đơn hàng
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    {item.appointmentId ? (
+                      <TouchableOpacity
+                        style={styles.commerceShortcutBtn}
+                        onPress={() =>
+                          router.push(
+                            `/appointments/${String(item.appointmentId)}` as any,
+                          )
+                        }
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color={COLORS.primary}
+                        />
+
+                        <Text style={styles.commerceShortcutText}>
+                          Xem lịch hẹn
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
           </View>
         );
       }
@@ -2344,52 +2880,33 @@ export default function ChatDetailScreen() {
           <View
             style={[
               styles.offerCard,
+              styles.fullWidth,
+              styles.flowCard,
               (!isLatestOffer ||
-                item.status ===
-                  "superseded") &&
+                item.status === "superseded") &&
                 styles.outdatedCard,
             ]}
           >
-            <View
-              style={styles.offerHeader}
-            >
+            <View style={styles.flowCardHeader}>
               <Ionicons
                 name="pricetag"
-                size={18}
+                size={17}
                 color={COLORS.primary}
                 style={styles.offerIcon}
               />
 
-              <Text
-                style={styles.offerTitle}
-              >
+              <Text style={styles.flowCardTitle}>
                 {title}
               </Text>
             </View>
 
-            <View
-              style={
-                styles.offerPriceBox
-              }
-            >
-              <Text
-
-                style={
-                  styles.offerPriceValue
-                }
-              >
-                {formatCurrency(
-                  item.price,
-                )}
+            <View style={styles.flowCardMetaRow}>
+              <Text style={styles.flowCardPrice}>
+                {formatCurrency(item.price)}
               </Text>
 
-              <Text
-                style={
-                  styles.offerQuantity
-                }
-              >
-                Số lượng:{" "}
-                {item.quantity}
+              <Text style={styles.flowCardQuantity}>
+                Số lượng: {item.quantity}
               </Text>
             </View>
 
@@ -2607,6 +3124,14 @@ export default function ChatDetailScreen() {
             isMe
               ? styles.bubbleMe
               : styles.bubbleThem,
+            item.groupWithPrevious &&
+              (isMe
+                ? styles.bubbleMeGroupedTop
+                : styles.bubbleThemGroupedTop),
+            item.groupWithNext &&
+              (isMe
+                ? styles.bubbleMeGroupedBottom
+                : styles.bubbleThemGroupedBottom),
           ]}
         >
           <Text
@@ -2627,12 +3152,18 @@ export default function ChatDetailScreen() {
       <View
         style={[
           styles.messageWrapper,
+          item.groupWithNext && styles.messageWrapperGrouped,
           isMe
             ? styles.messageWrapperMe
             : styles.messageWrapperThem,
         ]}
       >
-        {!isMe && avatarComponent}
+        {!isMe &&
+          (item.type === "text" && item.groupWithNext ? (
+            <View style={styles.chatAvatarSpacer} />
+          ) : (
+            avatarComponent
+          ))}
 
         <View
           style={[
@@ -2646,37 +3177,37 @@ export default function ChatDetailScreen() {
         >
           {renderContent()}
 
-          <View
-            style={[
-              styles.timeRow,
-              isMe
-                ? styles.timeRowMe
-                : styles.timeRowThem,
-            ]}
-          >
-            <Text
-              style={styles.timeText}
+          {item.type !== "text" || !item.groupWithNext ? (
+            <View
+              style={[
+                styles.timeRow,
+                isMe
+                  ? styles.timeRowMe
+                  : styles.timeRowThem,
+              ]}
             >
-              {item.time}
-            </Text>
+              <Text style={styles.timeText}>
+                {item.time}
+              </Text>
 
-            {isMe && (
-              <Ionicons
-                name={
-                  item.isRead
-                    ? "checkmark-done"
-                    : "checkmark"
-                }
-                size={14}
-                color={
-                  item.isRead
-                    ? COLORS.primary
-                    : COLORS.textLight
-                }
-                style={styles.readIcon}
-              />
-            )}
-          </View>
+              {isMe && (
+                <Ionicons
+                  name={
+                    item.isRead
+                      ? "checkmark-done"
+                      : "checkmark"
+                  }
+                  size={14}
+                  color={
+                    item.isRead
+                      ? COLORS.primary
+                      : COLORS.textLight
+                  }
+                  style={styles.readIcon}
+                />
+              )}
+            </View>
+          ) : null}
         </View>
       </View>
     );
@@ -2698,105 +3229,76 @@ export default function ChatDetailScreen() {
         keyboardVerticalOffset={0}
         style={styles.mobileWrapper}
       >
-        {isAuthLoading || isLoading || isResolvingRoute ? (
-          <View
-            style={
-              styles.loadingContainer
-            }
-          >
-            <ActivityIndicator
-              size="large"
-              color={COLORS.primary}
-            />
+        <>
+          {renderHeader()}
 
-            <Text
-              style={styles.loadingText}
-            >
-              Đang tải cuộc trò
-              chuyện...
-            </Text>
-          </View>
-        ) : loadError ||
-          !negotiationInfo ? (
-          <View
-            style={
-              styles.loadingContainer
-            }
-          >
-            {isWaitingForNetwork ? (
+          {isWaitingForNetwork ? (
+            <View style={styles.networkStatusBanner}>
+              <ActivityIndicator
+                size="small"
+                color={COLORS.primary}
+              />
+              <Text style={styles.networkStatusText}>
+                Đang chờ mạng…
+              </Text>
+            </View>
+          ) : null}
+
+          {negotiationInfo ? renderProductBanner() : null}
+
+          {isAuthLoading || isLoading || isResolvingRoute ? (
+            <View style={styles.loadingContainer}>
               <ActivityIndicator
                 size="large"
                 color={COLORS.primary}
               />
-            ) : (
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={42}
-                color={COLORS.textLight}
-              />
-            )}
+              <Text style={styles.loadingText}>
+                Đang tải tin nhắn...
+              </Text>
+            </View>
+          ) : loadError || !negotiationInfo ? (
+            <View style={styles.loadingContainer}>
+              {isWaitingForNetwork ? (
+                <ActivityIndicator
+                  size="large"
+                  color={COLORS.primary}
+                />
+              ) : (
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={42}
+                  color={COLORS.textLight}
+                />
+              )}
 
-            <Text
-              style={
-                styles.loadErrorText
-              }
-            >
-              {isWaitingForNetwork
-                ? "Đang chờ mạng…"
-                : loadError ||
-                  "Không thể tải cuộc trò chuyện."}
-            </Text>
+              <Text style={styles.loadErrorText}>
+                {isWaitingForNetwork
+                  ? "Đang chờ mạng…"
+                  : loadError ||
+                    "Không thể tải cuộc trò chuyện."}
+              </Text>
 
-            {negotiationId &&
-            currentUserId ? (
-              <TouchableOpacity
-                style={
-                  styles.retryButton
-                }
-                onPress={() =>
-                  void initialLoad()
-                }
-              >
-                <Text
-                  style={
-                    styles.retryButtonText
-                  }
+              {negotiationId && currentUserId ? (
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => void initialLoad()}
                 >
-                  Thử lại
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={
-                  styles.retryButton
-                }
-                onPress={() =>
-                  router.back()
-                }
-              >
-                <Text
-                  style={
-                    styles.retryButtonText
-                  }
+                  <Text style={styles.retryButtonText}>
+                    Thử lại
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => router.back()}
                 >
-                  Quay lại
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <>
-            {renderHeader()}
-
-            {isWaitingForNetwork ? (
-              <View style={styles.networkStatusBanner}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.networkStatusText}>Đang chờ mạng…</Text>
-              </View>
-            ) : null}
-
-            {renderProductBanner()}
-
+                  <Text style={styles.retryButtonText}>
+                    Quay lại
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
             <FlatList
               ref={messageListRef}
               style={styles.messageList}
@@ -2827,25 +3329,26 @@ export default function ChatDetailScreen() {
 
                 const distanceFromBottom =
                   contentSize.height -
-                  (contentOffset.y + layoutMeasurement.height);
+                  (contentOffset.y +
+                    layoutMeasurement.height);
 
                 isNearLatestRef.current =
                   distanceFromBottom <= 120;
               }}
               onScrollBeginDrag={() => {
-                if (shouldScrollToLatestRef.current) {
+                if (
+                  shouldScrollToLatestRef.current
+                ) {
                   clearScheduledScrolls();
-                  shouldScrollToLatestRef.current = false;
-                  animateNextScrollToLatestRef.current = false;
+                  shouldScrollToLatestRef.current =
+                    false;
+                  animateNextScrollToLatestRef.current =
+                    false;
                 }
               }}
               scrollEventThrottle={16}
               ListHeaderComponent={
-                <Text
-                  style={
-                    styles.dateSeparator
-                  }
-                >
+                <Text style={styles.dateSeparator}>
                   Giao dịch bắt đầu
                 </Text>
               }
@@ -2870,63 +3373,96 @@ export default function ChatDetailScreen() {
                 );
               }}
             />
+          )}
 
-            <View
+          <View
+            style={[
+              styles.inputContainer,
+              {
+                paddingBottom: composerBottomInset,
+              },
+            ]}
+          >
+            <TouchableOpacity
               style={[
-                styles.inputContainer,
-                {
-                  paddingBottom: composerBottomInset,
+                styles.attachBtn,
+                (!negotiationId ||
+                  isAuthLoading ||
+                  isResolvingRoute) && {
+                  opacity: 0.45,
                 },
               ]}
+              disabled={
+                !negotiationId ||
+                isAuthLoading ||
+                isResolvingRoute
+              }
+              onPress={() =>
+                setActionMenuVisible(true)
+              }
             >
-              <TouchableOpacity
-                style={styles.attachBtn}
-                onPress={() =>
-                  setActionMenuVisible(
-                    true,
-                  )
-                }
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={28}
-                  color={
-                    COLORS.primary
-                  }
-                />
-              </TouchableOpacity>
-
-              <TextInput
-                style={styles.textInput}
-                placeholder="Nhập tin nhắn..."
-                placeholderTextColor={
-                  COLORS.textLight
-                }
-                value={inputText}
-                onChangeText={
-                  setInputText
-                }
-                onSubmitEditing={() =>
-                  void handleSendMessage()
-                }
-                blurOnSubmit={false}
+              <Ionicons
+                name="add-circle-outline"
+                size={28}
+                color={COLORS.primary}
               />
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.sendBtn}
-                onPress={() =>
-                  void handleSendMessage()
-                }
-              >
-                <Ionicons
-                  name="send"
-                  size={18}
-                  color={COLORS.white}
-                />
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+            <TextInput
+              style={styles.textInput}
+              placeholder={
+                isAuthLoading ||
+                isResolvingRoute ||
+                !negotiationId
+                  ? "Đang kết nối cuộc trò chuyện..."
+                  : "Nhập tin nhắn..."
+              }
+              placeholderTextColor={
+                COLORS.textLight
+              }
+              value={inputText}
+              editable={
+                !isAuthLoading &&
+                !isResolvingRoute &&
+                Boolean(negotiationId)
+              }
+              onChangeText={setInputText}
+              onSubmitEditing={() =>
+                void handleSendMessage()
+              }
+              blurOnSubmit={false}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.sendBtn,
+                (!inputText.trim() ||
+                  !negotiationId ||
+                  isAuthLoading ||
+                  isResolvingRoute ||
+                  isWaitingForNetwork) && {
+                  opacity: 0.45,
+                },
+              ]}
+              disabled={
+                !inputText.trim() ||
+                !negotiationId ||
+                isAuthLoading ||
+                isResolvingRoute ||
+                isWaitingForNetwork
+              }
+              onPress={() =>
+                void handleSendMessage()
+              }
+            >
+              <Ionicons
+                name="send"
+                size={18}
+                color={COLORS.white}
+              />
+            </TouchableOpacity>
+          </View>
+        </>
       </KeyboardAvoidingView>
 
       <Modal
@@ -3009,6 +3545,24 @@ export default function ChatDetailScreen() {
                             ? ` • ${formatCurrency(Number(item.currentOfferPrice))}`
                             : ""}
                         </Text>
+
+                        {item?.lastMessageAt ? (
+                          <Text
+                            style={styles.negotiationPickerItemLastMessage}
+                          >
+                            Tin nhắn gần nhất:{" "}
+                            {new Date(item.lastMessageAt).toLocaleString(
+                              "vi-VN",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              },
+                            )}
+                          </Text>
+                        ) : null}
                       </View>
 
                       {unreadCount > 0 ? (
@@ -3098,31 +3652,30 @@ export default function ChatDetailScreen() {
               </>
             )}
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setActionMenuVisible(
-                  false,
-                );
-
-                handleCancelNegotiation();
-              }}
-            >
-              <Ionicons
-                name="close-circle-outline"
-                size={22}
-                color={COLORS.error}
-              />
-
-              <Text
-                style={[
-                  styles.menuItemText,
-                  styles.errorText,
-                ]}
+            {negotiationInfo?.negotiationStatus === "Open" ? (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setActionMenuVisible(false);
+                  handleCancelNegotiation();
+                }}
               >
-                Hủy giao dịch
-              </Text>
-            </TouchableOpacity>
+                <Ionicons
+                  name="close-circle-outline"
+                  size={22}
+                  color={COLORS.error}
+                />
+
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    styles.errorText,
+                  ]}
+                >
+                  Hủy phiên thương lượng
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             {agreementPreview?.canCreate &&
               !agreementPreview?.hasAgreement && (
@@ -3219,6 +3772,58 @@ export default function ChatDetailScreen() {
                     Xem chi tiết hợp đồng
                   </Text>
                 </TouchableOpacity>
+
+                {negotiationInfo?.isPaidAgreement === true &&
+                negotiationInfo?.orderId ? (
+                  <>
+                    <View style={styles.menuDivider} />
+                    <TouchableOpacity
+                      style={styles.menuItem}
+                      onPress={() => {
+                        setActionMenuVisible(false);
+                        router.push(
+                          `/orders/${String(negotiationInfo.orderId)}` as any,
+                        );
+                      }}
+                    >
+                      <Ionicons
+                        name="receipt-outline"
+                        size={22}
+                        color={COLORS.primary}
+                      />
+                      <Text style={styles.menuItemText}>
+                        Xem đơn hàng
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                {negotiationInfo?.isPaidAgreement === true &&
+                negotiationInfo?.appointmentId ? (
+                  <>
+                    <View style={styles.menuDivider} />
+                    <TouchableOpacity
+                      style={styles.menuItem}
+                      onPress={() => {
+                        setActionMenuVisible(false);
+                        router.push(
+                          `/appointments/${String(
+                            negotiationInfo.appointmentId,
+                          )}` as any,
+                        );
+                      }}
+                    >
+                      <Ionicons
+                        name="calendar-outline"
+                        size={22}
+                        color={COLORS.primary}
+                      />
+                      <Text style={styles.menuItemText}>
+                        Xem lịch hẹn
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
               </>
             )}
           </ModalSurface>
@@ -3555,6 +4160,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
+  negotiationPickerItemLastMessage: {
+    marginTop: 3,
+    color: COLORS.textLight,
+    fontSize: 10,
+    lineHeight: 14,
+  },
+
   negotiationUnreadBadge: {
     minWidth: 22,
     height: 22,
@@ -3598,10 +4210,32 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  productMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+
+  postTypeTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.14)",
+  },
+
+  postTypeTagText: {
+    color: COLORS.primary,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
   productSubText: {
+    flex: 1,
     fontSize: 12,
     color: COLORS.textLight,
-    marginTop: 2,
   },
 
   productPrice: {
@@ -3640,6 +4274,53 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
+  systemNoticeContainer: {
+    alignSelf: "center",
+    alignItems: "center",
+    maxWidth: "88%",
+    marginBottom: 16,
+  },
+
+  systemNoticeContainerGrouped: {
+    marginBottom: 5,
+  },
+
+  systemNoticePill: {
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+
+  systemNoticePillWithoutAvatar: {
+    paddingHorizontal: 14,
+  },
+
+  systemNoticeAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 7,
+  },
+
+  systemNoticeText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  systemNoticeTime: {
+    marginTop: 4,
+    color: COLORS.textLight,
+    fontSize: 10,
+    textAlign: "center",
+  },
+
   systemAgreedContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -3671,6 +4352,10 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 
+  messageWrapperGrouped: {
+    marginBottom: 4,
+  },
+
   messageWrapperMe: {
     justifyContent: "flex-end",
   },
@@ -3685,6 +4370,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginRight: 8,
     marginTop: 2,
+  },
+
+  chatAvatarSpacer: {
+    width: 36,
   },
 
   messageContentBlock: {},
@@ -3713,6 +4402,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D3DDDC",
     borderBottomLeftRadius: 4,
+  },
+
+  bubbleMeGroupedTop: {
+    borderTopRightRadius: 6,
+  },
+
+  bubbleMeGroupedBottom: {
+    borderBottomRightRadius: 6,
+  },
+
+  bubbleThemGroupedTop: {
+    borderTopLeftRadius: 6,
+  },
+
+  bubbleThemGroupedBottom: {
+    borderBottomLeftRadius: 6,
   },
 
   messageText: {
@@ -3774,7 +4479,7 @@ const styles = StyleSheet.create({
   },
 
   outdatedCard: {
-    opacity: 0.6,
+    opacity: 0.82,
   },
 
   offerHeader: {
@@ -3882,6 +4587,70 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: "center",
     marginTop: 8,
+  },
+
+  flowCard: {
+    padding: 14,
+  },
+
+  flowCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  flowCardTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  flowCardMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 9,
+    backgroundColor: "#F8F9FA",
+  },
+
+  flowCardPrice: {
+    color: COLORS.primary,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  flowCardQuantity: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  commerceShortcutColumn: {
+    marginTop: 8,
+    gap: 8,
+  },
+
+  commerceShortcutBtn: {
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.35)",
+    backgroundColor: "rgba(84, 123, 125, 0.06)",
+  },
+
+  commerceShortcutText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   statusBadgeError: {
