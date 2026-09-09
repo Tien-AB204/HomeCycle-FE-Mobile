@@ -39,6 +39,10 @@ const orderApi = {
     apiClient
       .get(`/orders/${orderId}/shipment-tracking`)
       .then((response) => response.data),
+  confirmSellerReady: (shipmentId: string) =>
+    apiClient
+      .post(`/shipments/${shipmentId}/seller-ready`)
+      .then((response) => response.data),
   confirmHandover: (orderId: string) =>
     apiClient
       .post(`/orders/${orderId}/confirm-handover`)
@@ -176,6 +180,7 @@ export default function OrderDetailScreen() {
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [isSellerReadyLoading, setIsSellerReadyLoading] = useState(false);
 
   const fetchOrderDetail = useCallback(async () => {
     if (!orderId) {
@@ -286,6 +291,50 @@ export default function OrderDetailScreen() {
       void fetchOrderDetail();
     }, [fetchOrderDetail]),
   );
+
+  const handleConfirmSellerReady = async () => {
+    if (isSellerReadyLoading) return;
+
+    if (!canConfirmSellerReady) {
+      setPageMessage({
+        type: "warning",
+        text: "Thao tác này hiện không khả dụng.",
+      });
+      return;
+    }
+
+    if (!shipmentId) {
+      setPageMessage({
+        type: "error",
+        text: "Chưa thể xác định thông tin vận chuyển để xác nhận.",
+      });
+      return;
+    }
+
+    try {
+      setIsSellerReadyLoading(true);
+      setPageMessage(null);
+
+      await orderApi.confirmSellerReady(shipmentId);
+
+      setPageMessage({
+        type: "success",
+        text: "Đã xác nhận hàng sẵn sàng để giao.",
+      });
+
+      await fetchOrderDetail();
+    } catch (error) {
+      setPageMessage({
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Chưa thể xác nhận hàng đã sẵn sàng lúc này.",
+        ),
+      });
+    } finally {
+      setIsSellerReadyLoading(false);
+    }
+  };
 
   const handleConfirmAction = async () => {
     if (!orderId || !pendingAction || isActionLoading) return;
@@ -459,6 +508,10 @@ export default function OrderDetailScreen() {
   const orderActions = data?.actions ?? order?.actions ?? {};
   const normalizedConfirmAction = normalizeStatus(orderActions.confirmAction);
   const canConfirmFromBackend = orderActions.canConfirm === true;
+  const canConfirmSellerReady = orderActions.canConfirmSellerReady === true;
+  const shipmentId = String(shipment?.shipmentId ?? "").trim();
+  const sellerReadyAt = shipment?.sellerReadyAt;
+  const pickedUpAt = shipment?.pickedUpAt;
 
   const sellerAlreadyConfirmed = Boolean(order.sellerHandoverConfirmedAt);
   const buyerAlreadyConfirmed = Boolean(order.buyerReceivedConfirmedAt);
@@ -497,6 +550,20 @@ export default function OrderDetailScreen() {
             value={translateDeliveryMethod(deliveryMethod)}
             bold
           />
+
+          {sellerReadyAt ? (
+            <InfoRow
+              label="Hàng sẵn sàng từ:"
+              value={formatDate(sellerReadyAt)}
+            />
+          ) : null}
+
+          {pickedUpAt ? (
+            <InfoRow
+              label="Đã lấy hàng lúc:"
+              value={formatDate(pickedUpAt)}
+            />
+          ) : null}
 
           {trackingError ? (
             <View style={styles.inlineTrackingWarning}>
@@ -790,6 +857,36 @@ export default function OrderDetailScreen() {
             <View style={styles.relatedDeliverySection}>
               {renderDeliveryInfo()}
             </View>
+          </View>
+        ) : null}
+
+        {canConfirmSellerReady ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
+            <Text style={styles.actionHint}>
+              Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao.
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isSellerReadyLoading ? { opacity: 0.65 } : undefined,
+              ]}
+              onPress={() => void handleConfirmSellerReady()}
+              disabled={isSellerReadyLoading}
+            >
+              {isSellerReadyLoading ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="cube-outline"
+                    size={20}
+                    color={COLORS.white}
+                  />
+                  <Text style={styles.actionButtonText}>Hàng đã sẵn sàng</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         ) : null}
 
