@@ -641,6 +641,35 @@ export default function PostDetailScreen() {
     return spaces[space] || "Không rõ";
   };
 
+  const translatePostDeliveryMethod = (value: unknown) => {
+    const normalized = String(value ?? "")
+      .trim()
+      .replace(/[\s_-]/g, "")
+      .toLowerCase();
+
+    switch (normalized) {
+      case "1":
+      case "ghndelivery":
+        return "Giao hàng GHN";
+
+      case "2":
+      case "sellerdelivers":
+        return "Người bán tự giao";
+
+      case "3":
+      case "buyerpickup":
+        return "Người mua tự lấy";
+
+      case "":
+      case "0":
+      case "unknown":
+        return "Chưa cập nhật";
+
+      default:
+        return "Chưa cập nhật";
+    }
+  };
+
   const getEavValue = (attribute: any) =>
     attribute.optionValue ||
     attribute.valueText ||
@@ -649,7 +678,7 @@ export default function PostDetailScreen() {
       ? attribute.valueBoolean
         ? "Có"
         : "Không"
-      : "N/A");
+      : "Chưa cập nhật");
 
   if (isLoading && !post) {
     return (
@@ -943,7 +972,7 @@ export default function PostDetailScreen() {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Vận chuyển:</Text>
             <Text style={styles.infoValue}>
-              {post.deliveryMethod || "Chưa cập nhật"}
+              {translatePostDeliveryMethod(post.deliveryMethod)}
             </Text>
           </View>
           <View style={styles.infoRow}>
