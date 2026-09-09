@@ -89,6 +89,30 @@ const translateRelatedAppointmentType = (value: unknown) => {
     : "Lịch kiểm định";
 };
 
+const HIDDEN_ORDER_TIMELINE_CODES = new Set([
+  "collectionschedule",
+  "inspectionscheduled",
+]);
+
+const filterOrderTimelineForDisplay = (steps: any[]): any[] =>
+  steps
+    .filter(
+      (step) =>
+        !HIDDEN_ORDER_TIMELINE_CODES.has(
+          normalizeStatus(step?.code),
+        ),
+    )
+    .map((step) => {
+      const subSteps = Array.isArray(step?.subSteps)
+        ? filterOrderTimelineForDisplay(step.subSteps)
+        : [];
+
+      return {
+        ...step,
+        subSteps,
+      };
+    });
+
 const translateRelatedAppointmentStatus = (value: unknown) => {
   switch (normalizeStatus(value)) {
     case "0":
@@ -549,11 +573,14 @@ export default function OrderDetailScreen() {
     currentStatusCode === 3 || normalizedOrderStatus === "cancelled";
   const isCompleted =
     currentStatusCode === 2 || normalizedOrderStatus === "completed";
-  const orderTimeline = Array.isArray(data?.timeline)
+  const rawOrderTimeline = Array.isArray(data?.timeline)
     ? data.timeline
     : Array.isArray(order?.timeline)
       ? order.timeline
       : [];
+
+  const orderTimeline =
+    filterOrderTimelineForDisplay(rawOrderTimeline);
 
   const hasActiveDispute = dispute?.hasActiveDispute === true;
   const latestDisputeId = dispute?.latestDisputeId;
