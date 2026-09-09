@@ -189,6 +189,7 @@ export default function OrderDetailScreen() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isSellerReadyLoading, setIsSellerReadyLoading] = useState(false);
+  const [isOrderTimelineExpanded, setOrderTimelineExpanded] = useState(true);
 
   const fetchOrderDetail = useCallback(async () => {
     if (!orderId) {
@@ -732,23 +733,45 @@ export default function OrderDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Tiến trình đơn hàng</Text>
-
-          {orderTimeline.length > 0 ? (
-            <View style={styles.timelineList}>
-              {orderTimeline.map((step: any, index: number) => (
-                <OrderTimelineItem
-                  key={`${String(step?.code ?? "step")}-${index}`}
-                  step={step}
-                  isLast={index === orderTimeline.length - 1}
-                />
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.timelineEmptyText}>
-              Tiến trình đơn hàng đang được cập nhật.
+          <TouchableOpacity
+            style={styles.timelineSectionHeader}
+            activeOpacity={0.7}
+            onPress={() =>
+              setOrderTimelineExpanded((previous) => !previous)
+            }
+          >
+            <Text style={styles.timelineSectionTitle}>
+              Tiến trình đơn hàng
             </Text>
-          )}
+
+            <Ionicons
+              name={
+                isOrderTimelineExpanded
+                  ? "chevron-up"
+                  : "chevron-down"
+              }
+              size={20}
+              color={COLORS.primary}
+            />
+          </TouchableOpacity>
+
+          {isOrderTimelineExpanded ? (
+            orderTimeline.length > 0 ? (
+              <View style={styles.timelineList}>
+                {orderTimeline.map((step: any, index: number) => (
+                  <OrderTimelineItem
+                    key={`${String(step?.code ?? "step")}-${index}`}
+                    step={step}
+                    isLast={index === orderTimeline.length - 1}
+                  />
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.timelineEmptyText}>
+                Tiến trình đơn hàng đang được cập nhật.
+              </Text>
+            )
+          ) : null}
         </View>
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thông tin Sản phẩm</Text>
@@ -1178,6 +1201,48 @@ function getTimelineVisual(status: unknown) {
   }
 }
 
+function isTimelineCompletedStatus(status: unknown) {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+
+  return normalized === "completed" || normalized === "2";
+}
+
+function isTimelineUpcomingStatus(status: unknown) {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+
+  return normalized === "upcoming" || normalized === "0";
+}
+
+function normalizeTimelineSubStepsForDisplay(subSteps: any[]) {
+  const buyerReceivedCompleted = subSteps.some(
+    (subStep) =>
+      normalizeStatus(subStep?.code) === "buyerreceived" &&
+      isTimelineCompletedStatus(subStep?.status),
+  );
+
+  if (!buyerReceivedCompleted) {
+    return subSteps;
+  }
+
+  return subSteps.map((subStep) => {
+    if (
+      normalizeStatus(subStep?.code) === "sellerhandover" &&
+      !isTimelineCompletedStatus(subStep?.status)
+    ) {
+      return {
+        ...subStep,
+        status: "Completed",
+      };
+    }
+
+    return subStep;
+  });
+}
+
 function OrderTimelineItem({
   step,
   isLast,
@@ -1189,9 +1254,34 @@ function OrderTimelineItem({
 }) {
   const visual = getTimelineVisual(step?.status);
   const title = sanitizeTimelineText(step?.title) || "Cập nhật đơn hàng";
-  const description = sanitizeTimelineText(step?.description);
   const occurredAt = formatTimelineDate(step?.occurredAt);
-  const subSteps = Array.isArray(step?.subSteps) ? step.subSteps : [];
+
+  const rawSubSteps = Array.isArray(step?.subSteps)
+    ? step.subSteps
+    : [];
+
+  const subSteps =
+    normalizeTimelineSubStepsForDisplay(rawSubSteps);
+
+  const hasSubSteps = subSteps.length > 0;
+  const isCompleted =
+    isTimelineCompletedStatus(step?.status);
+
+  const [isSubStepsExpanded, setSubStepsExpanded] =
+    useState(!isCompleted);
+
+  useEffect(() => {
+    if (!hasSubSteps) return;
+
+    // Khi parent chuyển sang Completed:
+    // tự thu gọn các bước con.
+    // Parent chưa xong thì mặc định mở.
+    setSubStepsExpanded(!isCompleted);
+  }, [
+    hasSubSteps,
+    isCompleted,
+    step?.code,
+  ]);
 
   return (
     <View
@@ -1207,7 +1297,7 @@ function OrderTimelineItem({
               name={visual.icon}
               size={12}
               color={
-                String(step?.status ?? "").toLowerCase() === "upcoming"
+                isTimelineUpcomingStatus(step?.status)
                   ? COLORS.textLight
                   : COLORS.white
               }
@@ -1218,21 +1308,44 @@ function OrderTimelineItem({
         </View>
 
         <View style={styles.timelineContent}>
-          <Text style={styles.timelineTitle}>{title}</Text>
+          <TouchableOpacity
+            style={styles.timelineTitleRow}
+            activeOpacity={hasSubSteps ? 0.7 : 1}
+            disabled={!hasSubSteps}
+            onPress={() =>
+              setSubStepsExpanded((previous) => !previous)
+            }
+          >
+            <Text style={styles.timelineTitle}>
+              {title}
+            </Text>
 
-          {description ? (
-            <Text style={styles.timelineDescription}>{description}</Text>
-          ) : null}
+            {hasSubSteps ? (
+              <Ionicons
+                name={
+                  isSubStepsExpanded
+                    ? "chevron-up"
+                    : "chevron-down"
+                }
+                size={17}
+                color={COLORS.textLight}
+              />
+            ) : null}
+          </TouchableOpacity>
 
           {occurredAt ? (
-            <Text style={styles.timelineTime}>{occurredAt}</Text>
+            <Text style={styles.timelineTime}>
+              {occurredAt}
+            </Text>
           ) : null}
 
-          {subSteps.length > 0 ? (
+          {hasSubSteps && isSubStepsExpanded ? (
             <View style={styles.timelineSubSteps}>
               {subSteps.map((subStep: any, index: number) => (
                 <OrderTimelineItem
-                  key={`${String(subStep?.code ?? "sub-step")}-${depth}-${index}`}
+                  key={`${String(
+                    subStep?.code ?? "sub-step",
+                  )}-${depth}-${index}`}
                   step={subStep}
                   isLast={index === subSteps.length - 1}
                   depth={depth + 1}
@@ -1340,6 +1453,24 @@ const styles = StyleSheet.create({
   warningMessageText: { color: "#9A6418" },
   infoMessageText: { color: "#2B5659" },
   successMessageText: { color: "#2F765D" },
+  timelineSectionHeader: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#BAC2C1",
+    paddingBottom: 8,
+  },
+
+  timelineSectionTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "bold",
+    color: COLORS.text,
+  },
+
   timelineList: {
     marginTop: 12,
   },
@@ -1396,7 +1527,16 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     paddingBottom: 14,
   },
+  timelineTitleRow: {
+    minHeight: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+
   timelineTitle: {
+    flex: 1,
     fontSize: 14,
     fontWeight: "700",
     color: COLORS.text,
