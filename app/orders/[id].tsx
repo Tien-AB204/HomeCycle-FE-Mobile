@@ -812,7 +812,7 @@ export default function OrderDetailScreen() {
 
             {hasActiveDispute ? (
               <Text style={styles.actionHintWarning}>
-                Đơn hàng đang có tranh chấp, FE tạm khóa thao tác xác nhận giao nhận.
+                Đơn hàng đang có tranh chấp nên tạm thời chưa thể xác nhận giao nhận.
               </Text>
             ) : null}
 
@@ -920,8 +920,7 @@ export default function OrderDetailScreen() {
             <View style={styles.disputeInfoContent}>
               <Text style={styles.disputeInfoTitle}>Đơn hàng đang có tranh chấp</Text>
               <Text style={styles.disputeInfoText}>
-                Trạng thái giao dịch đang được khóa ở phía FE để chờ xử lý tranh
-                chấp.
+                Giao dịch đang tạm khóa thao tác trong thời gian xử lý tranh chấp.
               </Text>
             </View>
           </View>
