@@ -100,6 +100,12 @@ const normalizeTargetType = (value: unknown) => {
     case "6":
     case "post":
       return "post";
+    case "7":
+    case "appointment":
+      return "appointment";
+    case "8":
+    case "withdrawal":
+      return "withdrawal";
     default:
       return "";
   }
@@ -368,6 +374,12 @@ export default function NotificationsScreen() {
       case "post":
         router.push(`/posts/${targetId}` as any);
         return;
+      case "appointment":
+        router.push(`/appointments/${targetId}` as any);
+        return;
+      case "withdrawal":
+        router.push("/wallet" as any);
+        return;
       case "agreement": {
         const response = await apiClient.get(`/agreements/${targetId}`);
         const agreement = unwrap(response.data);
@@ -477,6 +489,10 @@ export default function NotificationsScreen() {
         return "alert-circle-outline" as const;
       case "post":
         return "newspaper-outline" as const;
+      case "appointment":
+        return "calendar-outline" as const;
+      case "withdrawal":
+        return "wallet-outline" as const;
       default:
         return "notifications-outline" as const;
     }
