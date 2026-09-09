@@ -46,6 +46,10 @@ const statusLabels: Record<string, string> = {
   rejected: "Đã từ chối",
   "3": "Đã đóng",
   closed: "Đã đóng",
+  "4": "Đang xem xét",
+  underreview: "Đang xem xét",
+  "5": "Đang chờ hoàn trả",
+  awaitingreturn: "Đang chờ hoàn trả",
 };
 
 const getSingleParam = (value: string | string[] | undefined) =>
@@ -148,8 +152,8 @@ export default function DisputeDetailScreen() {
   const evidenceImages = Array.isArray(detail.evidenceImages) ? detail.evidenceImages : [];
   const statusKey = normalizeKey(detail.status);
   const categoryKey = normalizeKey(detail.category);
-  const statusLabel = statusLabels[statusKey] || String(detail.status ?? "Chưa rõ");
-  const categoryLabel = categoryLabels[categoryKey] || String(detail.category ?? "Chưa rõ");
+  const statusLabel = statusLabels[statusKey] || "Chưa rõ";
+  const categoryLabel = categoryLabels[categoryKey] || "Chưa rõ";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -185,7 +189,7 @@ export default function DisputeDetailScreen() {
           <InfoRow label="Thời hạn khiếu nại" value={formatDateTime(order.disputeDeadlineUtc)} />
           {order.disputeWindowHours ? (
             <Text style={styles.helperText}>
-              Cửa sổ khiếu nại do Backend xác định: {order.disputeWindowHours} giờ.
+              Thời hạn khiếu nại được áp dụng: {order.disputeWindowHours} giờ.
             </Text>
           ) : null}
 
@@ -243,12 +247,12 @@ export default function DisputeDetailScreen() {
           <Text style={styles.sectionTitle}>Kết quả xử lý</Text>
           {detail.moderatorNote ? (
             <>
-              <Text style={styles.descriptionLabel}>Ghi chú Moderator</Text>
+              <Text style={styles.descriptionLabel}>Ghi chú của kiểm duyệt viên</Text>
               <Text style={styles.descriptionText}>{detail.moderatorNote}</Text>
             </>
           ) : (
             <Text style={styles.emptyText}>
-              Moderator chưa có ghi chú hoặc kết quả xử lý cho tranh chấp này.
+              Kiểm duyệt viên chưa có ghi chú hoặc kết quả xử lý cho tranh chấp này.
             </Text>
           )}
         </View>
