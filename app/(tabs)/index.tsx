@@ -163,7 +163,7 @@ export default function HomeScreen() {
     }
 
     return {
-      uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=No+Image",
+      uri: "https://placehold.co/400x400/E2E8F0/94A3B8.png?text=Kh%C3%B4ng+c%C3%B3+%E1%BA%A3nh",
     };
   };
 

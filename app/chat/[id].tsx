@@ -2528,7 +2528,7 @@ export default function ChatDetailScreen() {
             {negotiationInfo?.productTypeName ||
               "Khác"}{" "}
             •{" "}
-            {negotiationInfo?.city || "N/A"}
+            {negotiationInfo?.city || "Chưa cập nhật"}
           </Text>
         </View>
 
