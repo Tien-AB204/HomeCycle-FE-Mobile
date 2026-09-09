@@ -487,7 +487,11 @@ export default function OrderDetailScreen() {
     currentStatusCode === 3 || normalizedOrderStatus === "cancelled";
   const isCompleted =
     currentStatusCode === 2 || normalizedOrderStatus === "completed";
-  const progressStep = isCancelled ? 2 : isCompleted ? 2 : isProcessing ? 1 : 0;
+  const orderTimeline = Array.isArray(data?.timeline)
+    ? data.timeline
+    : Array.isArray(order?.timeline)
+      ? order.timeline
+      : [];
 
   const hasActiveDispute = dispute?.hasActiveDispute === true;
   const latestDisputeId = dispute?.latestDisputeId;
@@ -668,56 +672,23 @@ export default function OrderDetailScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Tiến trình đơn hàng</Text>
-          <View style={styles.progressContainer}>
-            {[
-              "Chờ thanh toán",
-              "Đang xử lý",
-              isCancelled ? "Đã hủy" : "Hoàn thành",
-            ].map((label, index) => {
-              const isPassed = index < progressStep;
-              const isCurrent = index === progressStep;
-              return (
-                <View key={label} style={styles.progressStep}>
-                  <View
-                    style={[
-                      styles.circle,
-                      isPassed
-                        ? styles.circleCompleted
-                        : isCurrent
-                          ? styles.circleActive
-                          : styles.circlePending,
-                      isCancelled && index === 2
-                        ? styles.circleCancelled
-                        : undefined,
-                    ]}
-                  >
-                    {isPassed ? (
-                      <Ionicons name="checkmark" size={14} color={COLORS.white} />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.circleText,
-                          isCurrent ? styles.circleTextActive : undefined,
-                        ]}
-                      >
-                        {index + 1}
-                      </Text>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.progressLabel,
-                      isCurrent ? styles.progressLabelActive : undefined,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
 
+          {orderTimeline.length > 0 ? (
+            <View style={styles.timelineList}>
+              {orderTimeline.map((step: any, index: number) => (
+                <OrderTimelineItem
+                  key={`${String(step?.code ?? "step")}-${index}`}
+                  step={step}
+                  isLast={index === orderTimeline.length - 1}
+                />
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.timelineEmptyText}>
+              Tiến trình đơn hàng đang được cập nhật.
+            </Text>
+          )}
+        </View>
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thông tin Sản phẩm</Text>
           <TouchableOpacity
@@ -1087,6 +1058,133 @@ export default function OrderDetailScreen() {
   );
 }
 
+function sanitizeTimelineText(value: unknown) {
+  if (value === undefined || value === null) return "";
+
+  return String(value)
+    .replace(/\bBuyer\b/gi, "Người mua")
+    .replace(/\bSeller\b/gi, "Người bán");
+}
+
+function formatTimelineDate(value: unknown) {
+  if (!value) return null;
+
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function getTimelineVisual(status: unknown) {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+
+  switch (normalized) {
+    case "completed":
+      return {
+        icon: "checkmark" as const,
+        dotStyle: styles.timelineDotCompleted,
+      };
+    case "inprogress":
+      return {
+        icon: "time-outline" as const,
+        dotStyle: styles.timelineDotActive,
+      };
+    case "failed":
+      return {
+        icon: "close" as const,
+        dotStyle: styles.timelineDotFailed,
+      };
+    case "cancelled":
+    case "canceled":
+      return {
+        icon: "close" as const,
+        dotStyle: styles.timelineDotCancelled,
+      };
+    case "upcoming":
+    default:
+      return {
+        icon: "ellipse" as const,
+        dotStyle: styles.timelineDotUpcoming,
+      };
+  }
+}
+
+function OrderTimelineItem({
+  step,
+  isLast,
+  depth = 0,
+}: {
+  step: any;
+  isLast: boolean;
+  depth?: number;
+}) {
+  const visual = getTimelineVisual(step?.status);
+  const title = sanitizeTimelineText(step?.title) || "Cập nhật đơn hàng";
+  const description = sanitizeTimelineText(step?.description);
+  const occurredAt = formatTimelineDate(step?.occurredAt);
+  const subSteps = Array.isArray(step?.subSteps) ? step.subSteps : [];
+
+  return (
+    <View
+      style={[
+        styles.timelineItem,
+        depth > 0 ? styles.timelineSubItem : undefined,
+      ]}
+    >
+      <View style={styles.timelineMainRow}>
+        <View style={styles.timelineRail}>
+          <View style={[styles.timelineDot, visual.dotStyle]}>
+            <Ionicons
+              name={visual.icon}
+              size={12}
+              color={
+                String(step?.status ?? "").toLowerCase() === "upcoming"
+                  ? COLORS.textLight
+                  : COLORS.white
+              }
+            />
+          </View>
+
+          {!isLast ? <View style={styles.timelineConnector} /> : null}
+        </View>
+
+        <View style={styles.timelineContent}>
+          <Text style={styles.timelineTitle}>{title}</Text>
+
+          {description ? (
+            <Text style={styles.timelineDescription}>{description}</Text>
+          ) : null}
+
+          {occurredAt ? (
+            <Text style={styles.timelineTime}>{occurredAt}</Text>
+          ) : null}
+
+          {subSteps.length > 0 ? (
+            <View style={styles.timelineSubSteps}>
+              {subSteps.map((subStep: any, index: number) => (
+                <OrderTimelineItem
+                  key={`${String(subStep?.code ?? "sub-step")}-${depth}-${index}`}
+                  step={subStep}
+                  isLast={index === subSteps.length - 1}
+                  depth={depth + 1}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function InfoRow({
   label,
   value,
@@ -1181,39 +1279,87 @@ const styles = StyleSheet.create({
   warningMessageText: { color: "#9A6418" },
   infoMessageText: { color: "#2B5659" },
   successMessageText: { color: "#2F765D" },
-  progressContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    marginTop: 8,
+  timelineList: {
+    marginTop: 12,
   },
-  progressStep: { alignItems: "center", flex: 1 },
-  circle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: "center",
+  timelineItem: {
+    width: "100%",
+  },
+  timelineSubItem: {
+    marginTop: 6,
+  },
+  timelineMainRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  timelineRail: {
+    width: 28,
     alignItems: "center",
-    marginBottom: 6,
+  },
+  timelineDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1.5,
   },
-  circleCompleted: { backgroundColor: "#2F765D", borderColor: "#2F765D" },
-  circleActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  circlePending: { backgroundColor: "#F8F9FA", borderColor: "#BAC2C1" },
-  circleCancelled: { backgroundColor: "#7A1012", borderColor: "#7A1012" },
-  circleText: {
+  timelineDotCompleted: {
+    backgroundColor: "#2F765D",
+    borderColor: "#2F765D",
+  },
+  timelineDotActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  timelineDotUpcoming: {
+    backgroundColor: "#F8F9FA",
+    borderColor: "#BAC2C1",
+  },
+  timelineDotFailed: {
+    backgroundColor: "#7A1012",
+    borderColor: "#7A1012",
+  },
+  timelineDotCancelled: {
+    backgroundColor: "#7A1012",
+    borderColor: "#7A1012",
+  },
+  timelineConnector: {
+    width: 2,
+    flex: 1,
+    minHeight: 18,
+    backgroundColor: "#D7DDDC",
+  },
+  timelineContent: {
+    flex: 1,
+    paddingLeft: 8,
+    paddingBottom: 14,
+  },
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  timelineDescription: {
+    marginTop: 4,
     fontSize: 12,
-    fontWeight: "bold",
+    lineHeight: 18,
     color: COLORS.textLight,
   },
-  circleTextActive: { color: COLORS.white },
-  progressLabel: {
+  timelineTime: {
+    marginTop: 5,
     fontSize: 11,
     color: COLORS.textLight,
-    textAlign: "center",
   },
-  progressLabelActive: { color: COLORS.primary, fontWeight: "bold" },
+  timelineSubSteps: {
+    marginTop: 10,
+    marginLeft: 2,
+  },
+  timelineEmptyText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: COLORS.textLight,
+  },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
