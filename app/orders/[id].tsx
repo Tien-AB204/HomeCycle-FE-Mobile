@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import {
   ActivityIndicator,
   Image,
@@ -167,6 +168,12 @@ export default function OrderDetailScreen() {
   const orderId = Array.isArray(params.id) ? params.id[0] : params.id;
   const currentUserId = String(user?.userId || user?.id || "").toLowerCase();
 
+  const {
+    connection,
+    joinOrder,
+    leaveOrder,
+  } = useChatRealtime();
+
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [agreement, setAgreement] = useState<any>(null);
@@ -291,6 +298,53 @@ export default function OrderDetailScreen() {
       void fetchOrderDetail();
     }, [fetchOrderDetail]),
   );
+
+  useEffect(() => {
+    if (!connection || !orderId) return;
+
+    const currentOrderId = String(orderId).trim().toLowerCase();
+
+    const handleOrderTrackingUpdated = (payload: {
+      orderId?: string;
+      OrderId?: string;
+    }) => {
+      const eventOrderId = String(
+        payload?.orderId ?? payload?.OrderId ?? "",
+      )
+        .trim()
+        .toLowerCase();
+
+      if (!eventOrderId || eventOrderId !== currentOrderId) {
+        return;
+      }
+
+      void fetchOrderDetail();
+    };
+
+    connection.on(
+      "OrderTrackingUpdated",
+      handleOrderTrackingUpdated,
+    );
+
+    void joinOrder(String(orderId)).catch(() => {
+      // Order Detail vẫn dùng dữ liệu API nếu realtime tạm thời chưa join được.
+    });
+
+    return () => {
+      connection.off(
+        "OrderTrackingUpdated",
+        handleOrderTrackingUpdated,
+      );
+
+      void leaveOrder(String(orderId));
+    };
+  }, [
+    connection,
+    fetchOrderDetail,
+    joinOrder,
+    leaveOrder,
+    orderId,
+  ]);
 
   const handleConfirmSellerReady = async () => {
     if (isSellerReadyLoading) return;
