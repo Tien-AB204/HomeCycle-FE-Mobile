@@ -47,6 +47,8 @@ type ChatRealtimeContextValue = {
   leaveNegotiation: (negotiationId: string) => Promise<void>;
   joinConversation: (conversationId: string) => Promise<void>;
   leaveConversation: (conversationId: string) => Promise<void>;
+  joinOrder: (orderId: string) => Promise<void>;
+  leaveOrder: (orderId: string) => Promise<void>;
 };
 
 const ChatRealtimeContext =
@@ -117,6 +119,7 @@ export function ChatRealtimeProvider({
 
   const joinedNegotiationsRef = useRef<Set<string>>(new Set());
   const joinedConversationsRef = useRef<Set<string>>(new Set());
+  const joinedOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +131,7 @@ export function ChatRealtimeProvider({
     if (!userToken) {
       joinedNegotiationsRef.current.clear();
       joinedConversationsRef.current.clear();
+      joinedOrdersRef.current.clear();
       connectionRef.current = null;
       setConnection(null);
       setConnectionStatus("idle");
@@ -153,6 +157,9 @@ export function ChatRealtimeProvider({
       const joinedConversations = Array.from(
         joinedConversationsRef.current,
       );
+      const joinedOrders = Array.from(
+        joinedOrdersRef.current,
+      );
 
       await Promise.allSettled([
         ...joinedNegotiations.map((negotiationId) =>
@@ -165,6 +172,12 @@ export function ChatRealtimeProvider({
           hubConnection.invoke(
             "JoinConversation",
             conversationId,
+          ),
+        ),
+        ...joinedOrders.map((orderId) =>
+          hubConnection.invoke(
+            "JoinOrder",
+            orderId,
           ),
         ),
       ]);
@@ -376,6 +389,51 @@ export function ChatRealtimeProvider({
     [],
   );
 
+  const joinOrder = useCallback(
+    async (orderId: string) => {
+      if (!orderId) return;
+
+      joinedOrdersRef.current.add(orderId);
+
+      const currentConnection = connectionRef.current;
+
+      if (
+        currentConnection?.state ===
+        signalR.HubConnectionState.Connected
+      ) {
+        await currentConnection.invoke(
+          "JoinOrder",
+          orderId,
+        );
+      }
+    },
+    [],
+  );
+
+  const leaveOrder = useCallback(
+    async (orderId: string) => {
+      if (!orderId) return;
+
+      joinedOrdersRef.current.delete(orderId);
+
+      const currentConnection = connectionRef.current;
+
+      if (
+        currentConnection?.state ===
+        signalR.HubConnectionState.Connected
+      ) {
+        try {
+          await currentConnection.invoke(
+            "LeaveOrder",
+            orderId,
+          );
+        } catch {
+          // Connection có thể vừa bị ngắt.
+        }
+      }
+    },
+    [],
+  );
   return (
     <ChatRealtimeContext.Provider
       value={{
@@ -386,6 +444,8 @@ export function ChatRealtimeProvider({
         leaveNegotiation,
         joinConversation,
         leaveConversation,
+        joinOrder,
+        leaveOrder,
       }}
     >
       {children}
