@@ -14,6 +14,9 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import inspectionFormApi, {
+  type InspectionFormSummary,
+} from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 const appointmentApi = {
@@ -109,7 +112,10 @@ export default function AppointmentDetailScreen() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCollectingNow, setIsCollectingNow] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [inspectionForm, setInspectionForm] =
+    useState<InspectionFormSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
 
@@ -138,6 +144,45 @@ export default function AppointmentDetailScreen() {
                 }
               : rawAppointment;
         setData(normalizedData);
+
+        const normalizedAppointment =
+          normalizedData?.appointment;
+
+        const normalizedIsCollection =
+          isCollectionAppointmentType(
+            normalizedAppointment?.appointmentType,
+          ) ||
+          Boolean(
+            normalizedData?.collectionAppointment,
+          );
+
+        if (!normalizedIsCollection) {
+          try {
+            const form =
+              await inspectionFormApi.getByAppointment(
+                String(appointmentId),
+              );
+
+            setInspectionForm(form);
+          } catch (inspectionError: any) {
+            const inspectionStatus =
+              Number(
+                inspectionError?.response?.status ??
+                  0,
+              );
+
+            setInspectionForm(null);
+
+            if (inspectionStatus !== 404) {
+              setActionMessage({
+                type: "info",
+                text: "Chưa thể tải các thao tác sau kiểm định. Vui lòng mở lại lịch hẹn để thử lại.",
+              });
+            }
+          }
+        } else {
+          setInspectionForm(null);
+        }
       } catch (error) {
         setData(null);
         setLoadError(
@@ -200,6 +245,114 @@ export default function AppointmentDetailScreen() {
       });
     } finally {
       setIsCheckingIn(false);
+    }
+  };
+
+  const handleScheduleCollection = () => {
+    if (
+      !appointmentId ||
+      inspectionForm?.actions
+        ?.canScheduleCollection !== true
+    ) {
+      return;
+    }
+
+    router.push(
+      {
+        pathname:
+          "/inspections/collection",
+
+        params: {
+          appointmentId:
+            String(appointmentId),
+        },
+      } as any,
+    );
+  };
+
+  const handleCollectNow = async () => {
+    if (
+      !appointmentId ||
+      !inspectionForm ||
+      inspectionForm.actions
+        ?.canCollectNow !== true ||
+      isCollectingNow
+    ) {
+      return;
+    }
+
+    try {
+      setIsCollectingNow(true);
+      setActionMessage(null);
+
+      const result =
+        await inspectionFormApi.collectNow(
+          inspectionForm.inspectionFormId,
+          inspectionForm.revision,
+        );
+
+      const targetOrderId =
+        result?.orderId ||
+        inspectionForm.orderId ||
+        data?.order?.orderId;
+
+      if (targetOrderId) {
+        router.replace(
+          (
+            `/orders/${targetOrderId}`
+          ) as any,
+        );
+
+        return;
+      }
+
+      await fetchDetail(false);
+
+      setActionMessage({
+        type: "success",
+        text: "Đã xác nhận nhận hàng ngay.",
+      });
+    } catch (error: any) {
+      const code = String(
+        error?.response?.data?.code ||
+          error?.response?.data
+            ?.error?.code ||
+          "",
+      );
+
+      if (
+        code ===
+        "Inspection.RevisionMismatch"
+      ) {
+        try {
+          const latest =
+            await inspectionFormApi
+              .getByAppointment(
+                String(appointmentId),
+              );
+
+          setInspectionForm(latest);
+        } catch {
+          // Không retry thao tác với revision cũ.
+        }
+
+        setActionMessage({
+          type: "info",
+          text: "Kết quả kiểm định vừa được cập nhật. Vui lòng kiểm tra lại trước khi xác nhận nhận hàng.",
+        });
+
+        return;
+      }
+
+      setActionMessage({
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể xác nhận nhận hàng lúc này.",
+        ),
+      });
+    } finally {
+      setIsCollectingNow(false);
     }
   };
 
@@ -303,6 +456,20 @@ export default function AppointmentDetailScreen() {
     !Number.isNaN(checkInOpenDate.getTime()) &&
     Date.now() < checkInOpenDate.getTime();
   const relatedOrderId = data?.order?.orderId || null;
+
+  const canCollectNow =
+    !isCollection &&
+    inspectionForm?.actions
+      ?.canCollectNow === true;
+
+  const canScheduleCollection =
+    !isCollection &&
+    inspectionForm?.actions
+      ?.canScheduleCollection === true;
+
+  const hasPostInspectionActions =
+    canCollectNow ||
+    canScheduleCollection;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -522,7 +689,83 @@ export default function AppointmentDetailScreen() {
           </View>
         ) : null}
 
-        {!isCollection ? (
+        {!isCollection &&
+        hasPostInspectionActions ? (
+          <View
+            style={
+              styles.postInspectionActions
+            }
+          >
+            {canCollectNow ? (
+              <TouchableOpacity
+                style={[
+                  styles.secondaryActionButton,
+                  isCollectingNow
+                    ? styles.disabledButton
+                    : undefined,
+                ]}
+                disabled={isCollectingNow}
+                onPress={() =>
+                  void handleCollectNow()
+                }
+              >
+                {isCollectingNow ? (
+                  <ActivityIndicator
+                    color={COLORS.primary}
+                  />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="hand-left-outline"
+                      size={19}
+                      color={COLORS.primary}
+                    />
+
+                    <Text
+                      style={
+                        styles.secondaryActionButtonText
+                      }
+                    >
+                      Nhận hàng ngay
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
+
+            {canScheduleCollection ? (
+              <TouchableOpacity
+                style={[
+                  styles.primaryButton,
+                  isCollectingNow
+                    ? styles.disabledButton
+                    : undefined,
+                ]}
+                disabled={isCollectingNow}
+                onPress={
+                  handleScheduleCollection
+                }
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={19}
+                  color={COLORS.white}
+                />
+
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
+                  Đặt lịch giao nhận
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        {!isCollection &&
+        !hasPostInspectionActions ? (
           <>
             {isBeforeCheckInWindow && checkInOpenAt ? (
               <View style={styles.checkInWindowHint}>
@@ -796,6 +1039,28 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  postInspectionActions: {
+    gap: 10,
+  },
+
+  secondaryActionButton: {
+    minHeight: 52,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  secondaryActionButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
   primaryButton: {
     minHeight: 52,
     borderRadius: 11,
