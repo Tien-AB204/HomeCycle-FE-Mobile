@@ -170,6 +170,7 @@ export default function OrderDetailScreen() {
 
   const {
     connection,
+    reconnectVersion,
     joinOrder,
     leaveOrder,
   } = useChatRealtime();
@@ -345,6 +346,12 @@ export default function OrderDetailScreen() {
     leaveOrder,
     orderId,
   ]);
+
+  useEffect(() => {
+    if (!orderId || reconnectVersion <= 0) return;
+
+    void fetchOrderDetail();
+  }, [fetchOrderDetail, orderId, reconnectVersion]);
 
   const handleConfirmSellerReady = async () => {
     if (isSellerReadyLoading) return;
