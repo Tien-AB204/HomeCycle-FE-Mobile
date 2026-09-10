@@ -50,6 +50,21 @@ type ConfirmState = {
   resolve: (value: boolean) => void;
 } | null;
 
+type SellerMatchPost = {
+  postId?: string;
+  ownerId?: string;
+  productName?: string;
+  remainingQuantity?: number;
+  quantity?: number;
+  basePrice?: number | null;
+  status?: string | number;
+  postType?: string | number;
+};
+
+type BuyPostMatch = {
+  sellPost?: SellerMatchPost;
+};
+
 function useLocalFeedback() {
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
 
@@ -209,6 +224,29 @@ const postApi = {
     apiClient
       .patch(`/posts/${postId}/reactivate`)
       .then((response) => response.data),
+
+  getBuyPostMatches: (
+    buyPostId: string,
+    params: {
+      PageNumber: number;
+      PageSize: number;
+    },
+  ) =>
+    apiClient
+      .get(`/posts/buy/${buyPostId}/matches`, { params })
+      .then((response) => response.data),
+
+  createSellerRequest: (
+    buyPostId: string,
+    data: {
+      sellPostId: string;
+      offerPrice: number;
+      offerQuantity: number;
+    },
+  ) =>
+    apiClient
+      .post(`/posts/buy/${buyPostId}/seller-requests`, data)
+      .then((response) => response.data),
 };
 
 /**
@@ -260,6 +298,20 @@ export default function PostDetailScreen() {
     useState<"quantity" | "offerPrice" | null>(null);
   const [isSubmittingOffer, setIsSubmittingOffer] = useState(false);
 
+  const [showSellerRequestModal, setShowSellerRequestModal] = useState(false);
+  const [sellerMatches, setSellerMatches] = useState<BuyPostMatch[]>([]);
+  const [selectedSellPostId, setSelectedSellPostId] = useState<string | null>(
+    null,
+  );
+  const [sellerRequestQuantity, setSellerRequestQuantity] = useState("1");
+  const [sellerRequestPrice, setSellerRequestPrice] = useState("");
+  const [sellerFocusedField, setSellerFocusedField] = useState<
+    "quantity" | "price" | null
+  >(null);
+  const [isLoadingSellerMatches, setIsLoadingSellerMatches] = useState(false);
+  const [isSubmittingSellerRequest, setIsSubmittingSellerRequest] =
+    useState(false);
+
   const [showCartModal, setShowCartModal] = useState(false);
   const [cartQuantity, setCartQuantity] = useState("1");
   const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -276,6 +328,12 @@ export default function PostDetailScreen() {
     feedback: offerFeedback,
     clearFeedback: clearOfferFeedback,
     showError: showOfferError,
+  } = useLocalFeedback();
+
+  const {
+    feedback: sellerRequestFeedback,
+    clearFeedback: clearSellerRequestFeedback,
+    showError: showSellerRequestError,
   } = useLocalFeedback();
 
   const {
@@ -472,11 +530,9 @@ export default function PostDetailScreen() {
       return;
     }
 
-    // BE cũng chặn Business gửi Offer vào Buy Post của Business khác.
-    if (user.role === "business" && post?.postType === "Buy") {
-      showPageError(
-        "Tài khoản doanh nghiệp không thể tương tác với tin thu mua của doanh nghiệp khác.",
-      );
+    // Buy Post sử dụng seller-request riêng. Không gửi generic Offer vào Buy Post.
+    if (post?.postType === "Buy") {
+      showPageError("Tin thu mua sử dụng luồng chào bán sản phẩm.");
       return;
     }
 
@@ -494,6 +550,401 @@ export default function PostDetailScreen() {
     setOfferPrice("");
     setShowOfferModal(true);
   };
+
+  const getSellerRequestMaxQuantity = (sellPost?: SellerMatchPost) => {
+    const buyRemaining = Number(
+      post?.remainingQuantity ?? post?.quantity ?? 0,
+    );
+    const sellRemaining = Number(
+      sellPost?.remainingQuantity ?? sellPost?.quantity ?? 0,
+    );
+
+    if (
+      !Number.isFinite(buyRemaining) ||
+      !Number.isFinite(sellRemaining) ||
+      buyRemaining <= 0 ||
+      sellRemaining <= 0
+    ) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Math.min(
+        Math.floor(buyRemaining),
+        Math.floor(sellRemaining),
+      ),
+    );
+  };
+
+  const loadOwnSellMatches = async (
+    buyPostId: string,
+  ): Promise<BuyPostMatch[]> => {
+    const pageSize = 100;
+    let pageNumber = 1;
+    const allMatches: BuyPostMatch[] = [];
+
+    while (true) {
+      const response =
+        await postApi.getBuyPostMatches(
+          buyPostId,
+          {
+            PageNumber: pageNumber,
+            PageSize: pageSize,
+          },
+        );
+
+      const page = response?.data || response;
+      const items: BuyPostMatch[] =
+        Array.isArray(page?.items)
+          ? page.items
+          : [];
+
+      allMatches.push(...items);
+
+      const totalPages = Number(
+        page?.totalPages ?? 0,
+      );
+
+      const hasNextPage =
+        typeof page?.hasNextPage === "boolean"
+          ? page.hasNextPage
+          : Number.isFinite(totalPages) &&
+              totalPages > 0
+            ? pageNumber < totalPages
+            : items.length === pageSize;
+
+      if (!hasNextPage) {
+        break;
+      }
+
+      pageNumber += 1;
+
+      if (pageNumber > 1000) {
+        throw new Error(
+          "Không thể tải đầy đủ danh sách tin bán phù hợp.",
+        );
+      }
+    }
+
+    const ownMatches =
+      allMatches.filter((match) => {
+        const sellPost = match?.sellPost;
+
+        if (
+          !sellPost?.postId ||
+          !currentUserId
+        ) {
+          return false;
+        }
+
+        const isMine =
+          String(sellPost.ownerId || "") ===
+          String(currentUserId);
+
+        const normalizedType =
+          String(sellPost.postType ?? "")
+            .trim()
+            .toLowerCase();
+
+        const normalizedStatus =
+          String(sellPost.status ?? "")
+            .trim()
+            .toLowerCase();
+
+        const isSell =
+          normalizedType === "sell" ||
+          normalizedType === "1";
+
+        const isActive =
+          normalizedStatus === "active" ||
+          normalizedStatus === "1";
+
+        const hasRemainingQuantity =
+          Number(
+            sellPost.remainingQuantity ?? 0,
+          ) > 0;
+
+        return (
+          isMine &&
+          isSell &&
+          isActive &&
+          hasRemainingQuantity
+        );
+      });
+
+    const seenPostIds = new Set<string>();
+
+    return ownMatches.filter((match) => {
+      const sellPostId = String(
+        match.sellPost?.postId || "",
+      );
+
+      if (
+        !sellPostId ||
+        seenPostIds.has(sellPostId)
+      ) {
+        return false;
+      }
+
+      seenPostIds.add(sellPostId);
+      return true;
+    });
+  };
+
+  const handleSelectSellerMatch = (
+    sellPost: SellerMatchPost,
+  ) => {
+    if (!sellPost.postId) return;
+
+    setSelectedSellPostId(
+      String(sellPost.postId),
+    );
+    setSellerRequestQuantity("1");
+
+    const listedPrice = Number(
+      sellPost.basePrice ?? 0,
+    );
+
+    setSellerRequestPrice(
+      Number.isFinite(listedPrice) &&
+        listedPrice > 0
+        ? String(Math.trunc(listedPrice))
+        : "",
+    );
+
+    clearSellerRequestFeedback();
+  };
+
+  const handleOpenSellerRequest = async () => {
+    const targetBuyPostId = String(
+      post?.postId ||
+        (Array.isArray(id) ? id[0] : id) ||
+        "",
+    );
+
+    if (!user) {
+      router.push({
+        pathname: "/(auth)/login",
+        params: {
+          returnUrl:
+            `/posts/${targetBuyPostId}`,
+        },
+      });
+      return;
+    }
+
+    if (
+      String(user?.role || "")
+        .trim()
+        .toLowerCase() !== "personal"
+    ) {
+      showPageError(
+        "Chỉ tài khoản cá nhân mới có thể chào bán sản phẩm cho tin thu mua.",
+      );
+      return;
+    }
+
+    if (post?.postType !== "Buy") {
+      showPageError(
+        "Chức năng chào bán chỉ áp dụng cho tin thu mua.",
+      );
+      return;
+    }
+
+    if (existingOfferId) {
+      clearPageFeedback();
+      router.push({
+        pathname: "/offers/[id]",
+        params: { id: existingOfferId },
+      });
+      return;
+    }
+
+    if (!targetBuyPostId) {
+      showPageError(
+        "Không tìm thấy tin thu mua.",
+      );
+      return;
+    }
+
+    clearPageFeedback();
+    clearSellerRequestFeedback();
+
+    setSellerMatches([]);
+    setSelectedSellPostId(null);
+    setSellerRequestQuantity("1");
+    setSellerRequestPrice("");
+    setShowSellerRequestModal(true);
+    setIsLoadingSellerMatches(true);
+
+    try {
+      const ownMatches =
+        await loadOwnSellMatches(
+          targetBuyPostId,
+        );
+
+      setSellerMatches(ownMatches);
+
+      if (ownMatches.length === 1) {
+        const onlySellPost =
+          ownMatches[0]?.sellPost;
+
+        if (onlySellPost?.postId) {
+          handleSelectSellerMatch(
+            onlySellPost,
+          );
+        }
+      }
+    } catch (error) {
+      showSellerRequestError(
+        getApiErrorMessage(
+          error,
+          "Không thể tải các tin bán phù hợp của bạn.",
+        ),
+      );
+    } finally {
+      setIsLoadingSellerMatches(false);
+    }
+  };
+
+  const handleCreateSellerRequest =
+    async () => {
+      const selectedMatch =
+        sellerMatches.find(
+          (match) =>
+            String(
+              match.sellPost?.postId || "",
+            ) ===
+            String(
+              selectedSellPostId || "",
+            ),
+        );
+
+      const selectedSellPost =
+        selectedMatch?.sellPost;
+
+      if (!selectedSellPost?.postId) {
+        showSellerRequestError(
+          "Vui lòng chọn một tin bán của bạn.",
+        );
+        return;
+      }
+
+      const quantity = Number(
+        sellerRequestQuantity,
+      );
+      const price = Number(
+        sellerRequestPrice,
+      );
+
+      const maxQuantity =
+        getSellerRequestMaxQuantity(
+          selectedSellPost,
+        );
+
+      if (
+        !Number.isInteger(quantity) ||
+        quantity <= 0
+      ) {
+        showSellerRequestError(
+          "Số lượng phải là số nguyên lớn hơn 0.",
+        );
+        return;
+      }
+
+      if (
+        maxQuantity <= 0 ||
+        quantity > maxQuantity
+      ) {
+        showSellerRequestError(
+          `Số lượng tối đa có thể chào bán là ${maxQuantity}.`,
+        );
+        return;
+      }
+
+      if (
+        !Number.isFinite(price) ||
+        price <= 0
+      ) {
+        showSellerRequestError(
+          "Giá chào bán phải lớn hơn 0.",
+        );
+        return;
+      }
+
+      const targetBuyPostId = String(
+        post?.postId ||
+          (Array.isArray(id)
+            ? id[0]
+            : id) ||
+          "",
+      );
+
+      if (!targetBuyPostId) {
+        showSellerRequestError(
+          "Không tìm thấy tin thu mua.",
+        );
+        return;
+      }
+
+      try {
+        setIsSubmittingSellerRequest(true);
+        clearSellerRequestFeedback();
+
+        const response =
+          await postApi.createSellerRequest(
+            targetBuyPostId,
+            {
+              sellPostId:
+                String(
+                  selectedSellPost.postId,
+                ),
+              offerPrice: price,
+              offerQuantity: quantity,
+            },
+          );
+
+        if (
+          response?.isSuccess === false
+        ) {
+          throw response;
+        }
+
+        const createdOfferId =
+          response?.data?.offerId ||
+          response?.offerId ||
+          null;
+
+        setShowSellerRequestModal(false);
+
+        if (createdOfferId) {
+          setExistingOfferId(
+            String(createdOfferId),
+          );
+        }
+
+        showPageSuccess(
+          getApiSuccessMessage(
+            response,
+            "Đã gửi chào bán sản phẩm.",
+          ),
+        );
+
+        await fetchPostData();
+      } catch (error) {
+        showSellerRequestError(
+          getApiErrorMessage(
+            error,
+            "Không thể gửi chào bán sản phẩm.",
+          ),
+        );
+      } finally {
+        setIsSubmittingSellerRequest(
+          false,
+        );
+      }
+    };
 
   const validateOfferForm = () => {
     const quantity = parseInt(offerQuantity, 10);
@@ -518,9 +969,9 @@ export default function PostDetailScreen() {
   };
 
   const handleCreateOffer = async () => {
-    if (user?.role === "business" && post?.postType === "Buy") {
+    if (post?.postType === "Buy") {
       showOfferError(
-        "Tài khoản doanh nghiệp không thể gửi đề nghị tới tin thu mua của doanh nghiệp khác.",
+        "Tin thu mua sử dụng luồng chào bán sản phẩm.",
       );
       return;
     }
@@ -884,6 +1335,25 @@ export default function PostDetailScreen() {
   const ownerRatingLabel = hasRating
     ? `${averageRating.toFixed(1)} (${totalReviews} đánh giá)`
     : "Chưa có đánh giá";
+
+  const selectedSellerMatch =
+    sellerMatches.find(
+      (match) =>
+        String(
+          match.sellPost?.postId || "",
+        ) ===
+        String(
+          selectedSellPostId || "",
+        ),
+    );
+
+  const selectedSellerPost =
+    selectedSellerMatch?.sellPost;
+
+  const sellerRequestMaxQuantity =
+    getSellerRequestMaxQuantity(
+      selectedSellerPost,
+    );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1291,19 +1761,29 @@ export default function PostDetailScreen() {
                   styles.negotiateBtn,
                   existingOfferId ? styles.sentOfferBtn : undefined,
                 ]}
-                onPress={handleOpenOffer}
+                onPress={
+                  post.postType === "Buy"
+                    ? handleOpenSellerRequest
+                    : handleOpenOffer
+                }
               >
                 <Ionicons
                   name={
                     existingOfferId
                       ? "document-text-outline"
-                      : "chatbubbles"
+                      : post.postType === "Buy"
+                        ? "pricetag-outline"
+                        : "chatbubbles"
                   }
                   size={20}
                   color={COLORS.white}
                 />
                 <Text style={styles.negotiateBtnText}>
-                  {existingOfferId ? "Xem đề nghị đã gửi" : "Thương lượng"}
+                  {existingOfferId
+                    ? "Xem đề nghị đã gửi"
+                    : post.postType === "Buy"
+                      ? "Chào bán sản phẩm"
+                      : "Thương lượng"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1437,6 +1917,512 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal
+        visible={showSellerRequestModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!isSubmittingSellerRequest) {
+            setShowSellerRequestModal(false);
+          }
+        }}
+      >
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          disabled={isSubmittingSellerRequest}
+          onPress={() =>
+            setShowSellerRequestModal(false)
+          }
+        >
+          <KeyboardAvoidingView
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : "height"
+            }
+          >
+            <ModalSurface
+              style={[
+                styles.modalContent,
+                styles.sellerRequestModalContent,
+              ]}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Chào bán sản phẩm
+                </Text>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    setShowSellerRequestModal(
+                      false,
+                    )
+                  }
+                  disabled={
+                    isSubmittingSellerRequest
+                  }
+                >
+                  <Ionicons
+                    name="close"
+                    size={24}
+                    color={COLORS.text}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalBody}>
+                {sellerRequestFeedback ? (
+                  <InlineFeedback
+                    feedback={
+                      sellerRequestFeedback
+                    }
+                    onDismiss={
+                      clearSellerRequestFeedback
+                    }
+                  />
+                ) : null}
+
+                <View
+                  style={
+                    styles.inputGroup
+                  }
+                >
+                  <Text
+                    style={
+                      styles.inputLabel
+                    }
+                  >
+                    Mức giá doanh nghiệp mong muốn
+                  </Text>
+
+                  <View
+                    style={
+                      styles.readOnlyInput
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.readOnlyText
+                      }
+                    >
+                      {formatBuyPriceRange(
+                        post.priceFrom,
+                        post.priceTo ??
+                          post.basePrice,
+                      )}
+                    </Text>
+                  </View>
+                </View>
+
+                {isLoadingSellerMatches ? (
+                  <View
+                    style={
+                      styles.sellerLoadingState
+                    }
+                  >
+                    <ActivityIndicator
+                      color={COLORS.primary}
+                    />
+                    <Text
+                      style={
+                        styles.sellerEmptyText
+                      }
+                    >
+                      Đang tìm các tin bán phù hợp của bạn...
+                    </Text>
+                  </View>
+                ) : sellerMatches.length ===
+                  0 ? (
+                  <View
+                    style={
+                      styles.sellerEmptyState
+                    }
+                  >
+                    <Ionicons
+                      name="cube-outline"
+                      size={38}
+                      color={
+                        COLORS.textLight
+                      }
+                    />
+
+                    <Text
+                      style={
+                        styles.sellerEmptyTitle
+                      }
+                    >
+                      Chưa có tin bán phù hợp
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.sellerEmptyText
+                      }
+                    >
+                      Bạn cần có một tin bán đang hoạt động và phù hợp với nhu cầu thu mua này trước khi gửi chào bán.
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.primaryBtn,
+                        styles.modalSubmitBtn,
+                      ]}
+                      onPress={() => {
+                        setShowSellerRequestModal(false);
+                        router.push({
+                          pathname: "/posts/post-form",
+                          params: {
+                            postType: "Sell",
+                          },
+                        });
+                      }}
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={20}
+                        color={COLORS.white}
+                      />
+                      <Text
+                        style={styles.primaryBtnText}
+                      >
+                        Đăng tin bán
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <View
+                      style={
+                        styles.inputGroup
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.inputLabel
+                        }
+                      >
+                        Chọn tin bán của bạn{" "}
+                        <Text
+                          style={{
+                            color:
+                              COLORS.error,
+                          }}
+                        >
+                          *
+                        </Text>
+                      </Text>
+
+                      <ScrollView
+                        style={
+                          styles.sellerMatchList
+                        }
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator
+                      >
+                        {sellerMatches.map(
+                          (match) => {
+                            const sellPost =
+                              match.sellPost;
+
+                            if (
+                              !sellPost?.postId
+                            ) {
+                              return null;
+                            }
+
+                            const selected =
+                              String(
+                                sellPost.postId,
+                              ) ===
+                              String(
+                                selectedSellPostId ||
+                                  "",
+                              );
+
+                            return (
+                              <TouchableOpacity
+                                key={
+                                  sellPost.postId
+                                }
+                                style={[
+                                  styles.sellerMatchCard,
+                                  selected
+                                    ? styles.sellerMatchCardSelected
+                                    : undefined,
+                                ]}
+                                activeOpacity={
+                                  0.8
+                                }
+                                onPress={() =>
+                                  handleSelectSellerMatch(
+                                    sellPost,
+                                  )
+                                }
+                              >
+                                <View
+                                  style={
+                                    styles.sellerMatchContent
+                                  }
+                                >
+                                  <Text
+                                    style={
+                                      styles.sellerMatchTitle
+                                    }
+                                    numberOfLines={
+                                      2
+                                    }
+                                  >
+                                    {sellPost.productName ||
+                                      "Tin bán"}
+                                  </Text>
+
+                                  <Text
+                                    style={
+                                      styles.sellerMatchMeta
+                                    }
+                                  >
+                                    Giá tin bán:{" "}
+                                    {formatPrice(
+                                      sellPost.basePrice,
+                                    )}
+                                  </Text>
+
+                                  <Text
+                                    style={
+                                      styles.sellerMatchMeta
+                                    }
+                                  >
+                                    Còn{" "}
+                                    {Number(
+                                      sellPost.remainingQuantity ??
+                                        0,
+                                    )}{" "}
+                                    sản phẩm
+                                  </Text>
+                                </View>
+
+                                <Ionicons
+                                  name={
+                                    selected
+                                      ? "checkmark-circle"
+                                      : "ellipse-outline"
+                                  }
+                                  size={22}
+                                  color={
+                                    selected
+                                      ? COLORS.primary
+                                      : COLORS.border
+                                  }
+                                />
+                              </TouchableOpacity>
+                            );
+                          },
+                        )}
+                      </ScrollView>
+                    </View>
+
+                    {selectedSellerPost ? (
+                      <>
+                        <View
+                          style={
+                            styles.inputGroup
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.inputLabel
+                            }
+                          >
+                            Số lượng (Tối đa:{" "}
+                            {
+                              sellerRequestMaxQuantity
+                            }
+                            ){" "}
+                            <Text
+                              style={{
+                                color:
+                                  COLORS.error,
+                              }}
+                            >
+                              *
+                            </Text>
+                          </Text>
+
+                          <TextInput
+                            style={[
+                              styles.input,
+                              Platform.OS ===
+                              "web"
+                                ? ({
+                                    outlineStyle:
+                                      "none",
+                                  } as any)
+                                : undefined,
+                            ]}
+                            keyboardType="number-pad"
+                            value={
+                              sellerRequestQuantity
+                            }
+                            onChangeText={(
+                              value,
+                            ) => {
+                              setSellerRequestQuantity(
+                                value.replace(
+                                  /[^0-9]/g,
+                                  "",
+                                ),
+                              );
+                              clearSellerRequestFeedback();
+                            }}
+                            placeholder={
+                              sellerFocusedField ===
+                              "quantity"
+                                ? ""
+                                : "Nhập số lượng..."
+                            }
+                            placeholderTextColor="#A5B2B3"
+                            onFocus={() =>
+                              setSellerFocusedField(
+                                "quantity",
+                              )
+                            }
+                            onBlur={() =>
+                              setSellerFocusedField(
+                                null,
+                              )
+                            }
+                            editable={
+                              !isSubmittingSellerRequest
+                            }
+                          />
+                        </View>
+
+                        <View
+                          style={
+                            styles.inputGroup
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.inputLabel
+                            }
+                          >
+                            Giá chào bán (VNĐ){" "}
+                            <Text
+                              style={{
+                                color:
+                                  COLORS.error,
+                              }}
+                            >
+                              *
+                            </Text>
+                          </Text>
+
+                          <TextInput
+                            style={[
+                              styles.input,
+                              Platform.OS ===
+                              "web"
+                                ? ({
+                                    outlineStyle:
+                                      "none",
+                                  } as any)
+                                : undefined,
+                            ]}
+                            keyboardType="number-pad"
+                            value={
+                              sellerRequestPrice
+                            }
+                            onChangeText={(
+                              value,
+                            ) => {
+                              setSellerRequestPrice(
+                                value.replace(
+                                  /[^0-9]/g,
+                                  "",
+                                ),
+                              );
+                              clearSellerRequestFeedback();
+                            }}
+                            placeholder={
+                              sellerFocusedField ===
+                              "price"
+                                ? ""
+                                : "Nhập giá bạn muốn chào..."
+                            }
+                            placeholderTextColor="#A5B2B3"
+                            onFocus={() =>
+                              setSellerFocusedField(
+                                "price",
+                              )
+                            }
+                            onBlur={() =>
+                              setSellerFocusedField(
+                                null,
+                              )
+                            }
+                            editable={
+                              !isSubmittingSellerRequest
+                            }
+                          />
+                        </View>
+
+                        <View
+                          style={
+                            styles.offerActions
+                          }
+                        >
+                          <TouchableOpacity
+                            style={[
+                              styles.primaryBtn,
+                              styles.modalSubmitBtn,
+                              isSubmittingSellerRequest
+                                ? styles.disabledButton
+                                : undefined,
+                            ]}
+                            onPress={() =>
+                              void handleCreateSellerRequest()
+                            }
+                            disabled={
+                              isSubmittingSellerRequest
+                            }
+                          >
+                            {isSubmittingSellerRequest ? (
+                              <ActivityIndicator
+                                color={
+                                  COLORS.white
+                                }
+                              />
+                            ) : (
+                              <>
+                                <Ionicons
+                                  name="paper-plane-outline"
+                                  size={20}
+                                  color={
+                                    COLORS.white
+                                  }
+                                />
+                                <Text
+                                  style={
+                                    styles.primaryBtnText
+                                  }
+                                >
+                                  Gửi chào bán
+                                </Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </View>
             </ModalSurface>
           </KeyboardAvoidingView>
         </ModalBackdrop>
@@ -2063,5 +3049,69 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8F9FA",
   },
   readOnlyText: { fontSize: 15, color: COLORS.textLight, fontWeight: "bold" },
+
+  sellerRequestModalContent: {
+    maxHeight: "88%",
+  },
+  sellerLoadingState: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 28,
+  },
+  sellerEmptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 24,
+  },
+  sellerEmptyTitle: {
+    marginTop: 10,
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  sellerEmptyText: {
+    marginTop: 6,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  sellerMatchList: {
+    maxHeight: 230,
+    marginTop: 8,
+  },
+  sellerMatchCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+  },
+  sellerMatchCardSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(43, 86, 89, 0.06)",
+  },
+  sellerMatchContent: {
+    flex: 1,
+  },
+  sellerMatchTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  sellerMatchMeta: {
+    marginTop: 3,
+    color: COLORS.textLight,
+    fontSize: 12,
+  },
+
   offerActions: { marginTop: 16 },
 });
