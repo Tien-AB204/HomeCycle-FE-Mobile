@@ -13,15 +13,23 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
 import Header from "../../src/components/shared/Header";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
@@ -58,6 +66,38 @@ const offerApi = {
     apiClient
       .get("/offers/received", { params })
       .then((response) => response.data),
+
+  getOfferById: (offerId: string) =>
+    apiClient
+      .get(`/offers/${offerId}`)
+      .then((response) => response.data),
+
+  acceptOffer: (
+    offerId: string,
+    version: number,
+  ) =>
+    apiClient
+      .patch(`/offers/${offerId}/accept`, {
+        version,
+      })
+      .then((response) => response.data),
+
+  rejectOffer: (offerId: string) =>
+    apiClient
+      .post(`/offers/${offerId}/reject`)
+      .then((response) => response.data),
+
+  counterOffer: (
+    offerId: string,
+    data: {
+      offerPrice: number;
+      offerQuantity: number;
+      version: number;
+    },
+  ) =>
+    apiClient
+      .patch(`/offers/${offerId}/counter`, data)
+      .then((response) => response.data),
 };
 
 const unwrapPage = (response: any) =>
@@ -88,6 +128,23 @@ const normalizeStatus = (value: unknown) =>
     .trim()
     .replace(/[\s_-]/g, "")
     .toLowerCase();
+
+const isPendingOffer = (value: unknown) => {
+  const status = normalizeStatus(value);
+
+  return status === "0" || status === "pending";
+};
+
+const getOfferErrorCode = (error: any) =>
+  String(
+    error?.response?.data?.error?.code ??
+      error?.response?.data?.code ??
+      error?.error?.code ??
+      error?.code ??
+      "",
+  )
+    .trim()
+    .toUpperCase();
 
 const getStatusLabel = (value: unknown) => {
   switch (normalizeStatus(value)) {
@@ -235,6 +292,29 @@ export default function OffersByPostScreen() {
   const [errorText, setErrorText] =
     useState<string | null>(null);
 
+  const [actionMode, setActionMode] =
+    useState<
+      "accept" | "reject" | "counter" | null
+    >(null);
+
+  const [selectedOffer, setSelectedOffer] =
+    useState<any>(null);
+
+  const [counterPrice, setCounterPrice] =
+    useState("");
+
+  const [counterQuantity, setCounterQuantity] =
+    useState("");
+
+  const [isProcessingAction, setIsProcessingAction] =
+    useState(false);
+
+  const [actionFeedback, setActionFeedback] =
+    useState<{
+      type: "success" | "error";
+      text: string;
+    } | null>(null);
+
   const loadOffers = useCallback(
     async (refreshing = false) => {
       if (!postId) {
@@ -344,6 +424,299 @@ export default function OffersByPostScreen() {
     offers[0]?.productName ||
     offers[0]?.postTitle ||
     "Bài đăng hiện tại";
+
+  const closeOfferAction = () => {
+    if (isProcessingAction) return;
+
+    setActionMode(null);
+    setSelectedOffer(null);
+    setCounterPrice("");
+    setCounterQuantity("");
+    setActionFeedback(null);
+  };
+
+  const handleOpenOfferAction = async (
+    mode: "accept" | "reject" | "counter",
+    listOffer: ReceivedOfferItem,
+  ) => {
+    const offerId = String(
+      listOffer.offerId ?? "",
+    ).trim();
+
+    if (!offerId) {
+      setActionFeedback({
+        type: "error",
+        text: "Không xác định được đề nghị.",
+      });
+      return;
+    }
+
+    if (!isPendingOffer(listOffer.offerStatus)) {
+      setActionFeedback({
+        type: "error",
+        text: "Đề nghị này không còn ở trạng thái chờ phản hồi.",
+      });
+      await loadOffers(true);
+      return;
+    }
+
+    try {
+      setIsProcessingAction(true);
+      setActionFeedback(null);
+
+      const response =
+        await offerApi.getOfferById(offerId);
+
+      const detail = unwrapPage(response);
+
+      const currentStatus =
+        detail?.offerStatus ??
+        detail?.OfferStatus ??
+        listOffer.offerStatus;
+
+      if (!isPendingOffer(currentStatus)) {
+        await loadOffers(true);
+
+        setActionFeedback({
+          type: "error",
+          text: "Đề nghị vừa thay đổi trạng thái. Danh sách đã được làm mới.",
+        });
+        return;
+      }
+
+      const canAccept =
+        detail?.canAccept ??
+        detail?.CanAccept;
+
+      const canReject =
+        detail?.canReject ??
+        detail?.CanReject;
+
+      if (
+        mode === "accept" &&
+        canAccept !== true
+      ) {
+        await loadOffers(true);
+
+        setActionFeedback({
+          type: "error",
+          text: "Đề nghị này hiện không thể được chấp nhận.",
+        });
+        return;
+      }
+
+      if (
+        mode === "reject" &&
+        canReject !== true
+      ) {
+        await loadOffers(true);
+
+        setActionFeedback({
+          type: "error",
+          text: "Đề nghị này hiện không thể bị từ chối.",
+        });
+        return;
+      }
+
+      const hydratedOffer = {
+        ...listOffer,
+        ...detail,
+        offerId:
+          detail?.offerId ??
+          detail?.OfferId ??
+          offerId,
+        offerStatus: currentStatus,
+        version:
+          detail?.version ??
+          detail?.Version ??
+          listOffer.version,
+      };
+
+      setSelectedOffer(hydratedOffer);
+
+      if (mode === "counter") {
+        setCounterPrice(
+          String(
+            hydratedOffer.offerPrice ??
+              hydratedOffer.OfferPrice ??
+              "",
+          ),
+        );
+
+        setCounterQuantity(
+          String(
+            hydratedOffer.offerQuantity ??
+              hydratedOffer.OfferQuantity ??
+              1,
+          ),
+        );
+      }
+
+      setActionMode(mode);
+    } catch (error) {
+      setActionFeedback({
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể tải trạng thái mới nhất của đề nghị.",
+        ),
+      });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleSubmitOfferAction = async () => {
+    if (!selectedOffer || !actionMode) {
+      return;
+    }
+
+    const offerId = String(
+      selectedOffer.offerId ??
+        selectedOffer.OfferId ??
+        "",
+    ).trim();
+
+    const version = Number(
+      selectedOffer.version ??
+        selectedOffer.Version,
+    );
+
+    if (!offerId) {
+      setActionFeedback({
+        type: "error",
+        text: "Không xác định được đề nghị.",
+      });
+      return;
+    }
+
+    if (
+      (actionMode === "accept" ||
+        actionMode === "counter") &&
+      (
+        !Number.isInteger(version) ||
+        version < 0
+      )
+    ) {
+      setActionMode(null);
+      setSelectedOffer(null);
+
+      await loadOffers(true);
+
+      setActionFeedback({
+        type: "error",
+        text: "Không xác định được phiên bản hiện tại của đề nghị. Danh sách đã được làm mới.",
+      });
+      return;
+    }
+
+    const price = Number(
+      counterPrice.trim(),
+    );
+
+    const quantity = Number(
+      counterQuantity.trim(),
+    );
+
+    if (
+      actionMode === "counter" &&
+      (
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        !Number.isInteger(quantity) ||
+        quantity <= 0
+      )
+    ) {
+      setActionFeedback({
+        type: "error",
+        text: "Vui lòng nhập giá và số lượng hợp lệ.",
+      });
+      return;
+    }
+
+    try {
+      setIsProcessingAction(true);
+      setActionFeedback(null);
+
+      let response: any;
+
+      if (actionMode === "accept") {
+        response =
+          await offerApi.acceptOffer(
+            offerId,
+            version,
+          );
+      } else if (actionMode === "reject") {
+        response =
+          await offerApi.rejectOffer(
+            offerId,
+          );
+      } else {
+        response =
+          await offerApi.counterOffer(
+            offerId,
+            {
+              offerPrice: price,
+              offerQuantity: quantity,
+              version,
+            },
+          );
+      }
+
+      if (response?.isSuccess === false) {
+        throw response;
+      }
+
+      const completedMode = actionMode;
+
+      setActionMode(null);
+      setSelectedOffer(null);
+      setCounterPrice("");
+      setCounterQuantity("");
+
+      await loadOffers(true);
+
+      setActionFeedback({
+        type: "success",
+        text:
+          completedMode === "accept"
+            ? "Đã chấp nhận thương lượng. Phòng chat đã được mở."
+            : completedMode === "reject"
+              ? "Đã từ chối đề nghị."
+              : "Đã gửi đề xuất giá mới.",
+      });
+    } catch (error) {
+      const code =
+        getOfferErrorCode(error);
+
+      setActionMode(null);
+      setSelectedOffer(null);
+      setCounterPrice("");
+      setCounterQuantity("");
+
+      await loadOffers(true);
+
+      if (
+        code === "OFFER_TERMS_CHANGED"
+      ) {
+        setActionFeedback({
+          type: "error",
+          text: "Đề nghị vừa được cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.",
+        });
+        return;
+      }
+
+      setActionFeedback({
+        type: "error",
+        text: getApiErrorMessage(
+          error,
+          "Không thể xử lý đề nghị lúc này.",
+        ),
+      });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
 
   const openOfferDetail = (
     offerId: unknown,
@@ -462,6 +835,45 @@ export default function OffersByPostScreen() {
               </Text>
             </View>
 
+            {actionFeedback && !actionMode ? (
+              <View
+                style={[
+                  styles.actionFeedbackBox,
+                  actionFeedback.type === "error"
+                    ? styles.actionFeedbackError
+                    : styles.actionFeedbackSuccess,
+                ]}
+              >
+                <Ionicons
+                  name={
+                    actionFeedback.type === "error"
+                      ? "alert-circle-outline"
+                      : "checkmark-circle-outline"
+                  }
+                  size={19}
+                  color={
+                    actionFeedback.type === "error"
+                      ? COLORS.error
+                      : COLORS.success
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.actionFeedbackText,
+                    {
+                      color:
+                        actionFeedback.type === "error"
+                          ? COLORS.error
+                          : COLORS.success,
+                    },
+                  ]}
+                >
+                  {actionFeedback.text}
+                </Text>
+              </View>
+            ) : null}
+
             {errorText ? (
               <View style={styles.errorBox}>
                 <Ionicons
@@ -564,6 +976,60 @@ export default function OffersByPostScreen() {
                     />
                   </View>
                 </View>
+
+                {isPendingOffer(
+                  item.offerStatus,
+                ) ? (
+                  <View style={styles.offerActionRow}>
+                    <TouchableOpacity
+                      style={styles.rejectActionButton}
+                      disabled={isProcessingAction}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleOpenOfferAction(
+                          "reject",
+                          item,
+                        );
+                      }}
+                    >
+                      <Text style={styles.rejectActionText}>
+                        Từ chối
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.counterActionButton}
+                      disabled={isProcessingAction}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleOpenOfferAction(
+                          "counter",
+                          item,
+                        );
+                      }}
+                    >
+                      <Text style={styles.counterActionText}>
+                        Trao đổi
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.acceptActionButton}
+                      disabled={isProcessingAction}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleOpenOfferAction(
+                          "accept",
+                          item,
+                        );
+                      }}
+                    >
+                      <Text style={styles.acceptActionText}>
+                        Đồng ý
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
             </TouchableOpacity>
           );
@@ -588,6 +1054,155 @@ export default function OffersByPostScreen() {
           ) : null
         }
       />
+
+      <Modal
+        visible={actionMode !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeOfferAction}
+      >
+        <ModalBackdrop
+          style={styles.modalBackdrop}
+          disabled={isProcessingAction}
+          onPress={closeOfferAction}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalKeyboard}
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : "height"
+            }
+          >
+            <ModalSurface style={styles.actionModal}>
+              <View style={styles.actionModalHeader}>
+                <Text style={styles.actionModalTitle}>
+                  {actionMode === "accept"
+                    ? "Đồng ý đề nghị"
+                    : actionMode === "reject"
+                      ? "Từ chối đề nghị"
+                      : "Trao đổi đề nghị"}
+                </Text>
+
+                <TouchableOpacity
+                  disabled={isProcessingAction}
+                  onPress={closeOfferAction}
+                >
+                  <Ionicons
+                    name="close"
+                    size={23}
+                    color={COLORS.text}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {actionMode === "counter" ? (
+                <>
+                  <Text style={styles.actionInputLabel}>
+                    Giá đề xuất mới (VNĐ)
+                  </Text>
+
+                  <TextInput
+                    style={styles.actionInput}
+                    value={counterPrice}
+                    keyboardType="number-pad"
+                    editable={!isProcessingAction}
+                    onChangeText={(value) => {
+                      setCounterPrice(
+                        value.replace(
+                          /[^0-9]/g,
+                          "",
+                        ),
+                      );
+                      setActionFeedback(null);
+                    }}
+                    placeholder="Nhập giá mới"
+                    placeholderTextColor={
+                      COLORS.textLight
+                    }
+                  />
+
+                  <Text style={styles.actionInputLabel}>
+                    Số lượng
+                  </Text>
+
+                  <TextInput
+                    style={styles.actionInput}
+                    value={counterQuantity}
+                    keyboardType="number-pad"
+                    editable={!isProcessingAction}
+                    onChangeText={(value) => {
+                      setCounterQuantity(
+                        value.replace(
+                          /[^0-9]/g,
+                          "",
+                        ),
+                      );
+                      setActionFeedback(null);
+                    }}
+                    placeholder="Nhập số lượng"
+                    placeholderTextColor={
+                      COLORS.textLight
+                    }
+                  />
+                </>
+              ) : (
+                <Text style={styles.actionModalMessage}>
+                  {actionMode === "accept"
+                    ? "Bạn có muốn đồng ý với đề nghị này và mở phiên thương lượng?"
+                    : "Bạn có chắc muốn từ chối đề nghị này?"}
+                </Text>
+              )}
+
+              {actionFeedback?.type === "error" ? (
+                <Text style={styles.actionModalError}>
+                  {actionFeedback.text}
+                </Text>
+              ) : null}
+
+              <View style={styles.actionModalButtons}>
+                <TouchableOpacity
+                  style={styles.actionCancelButton}
+                  disabled={isProcessingAction}
+                  onPress={closeOfferAction}
+                >
+                  <Text style={styles.actionCancelText}>
+                    Quay lại
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.actionSubmitButton,
+                    actionMode === "reject"
+                      ? styles.actionRejectSubmitButton
+                      : undefined,
+                  ]}
+                  disabled={isProcessingAction}
+                  onPress={() =>
+                    void handleSubmitOfferAction()
+                  }
+                >
+                  {isProcessingAction ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={COLORS.white}
+                    />
+                  ) : (
+                    <Text style={styles.actionSubmitText}>
+                      {actionMode === "accept"
+                        ? "Đồng ý"
+                        : actionMode === "reject"
+                          ? "Từ chối"
+                          : "Gửi đề xuất"}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -691,6 +1306,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
+  actionFeedbackBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 11,
+    borderWidth: 1,
+    borderRadius: 9,
+  },
+  actionFeedbackError: {
+    borderColor:
+      "rgba(122, 16, 18, 0.22)",
+    backgroundColor:
+      "rgba(122, 16, 18, 0.07)",
+  },
+  actionFeedbackSuccess: {
+    borderColor:
+      "rgba(47, 118, 93, 0.24)",
+    backgroundColor:
+      "rgba(47, 118, 93, 0.08)",
+  },
+  actionFeedbackText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   offerCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -784,6 +1424,144 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 11,
     fontWeight: "700",
+  },
+  offerActionRow: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 12,
+  },
+  rejectActionButton: {
+    flex: 1,
+    minHeight: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+  },
+  rejectActionText: {
+    color: COLORS.error,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  counterActionButton: {
+    flex: 1,
+    minHeight: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+  },
+  counterActionText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  acceptActionButton: {
+    flex: 1,
+    minHeight: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  acceptActionText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalKeyboard: {
+    width: "100%",
+    alignItems: "center",
+  },
+  actionModal: {
+    width: "100%",
+    maxWidth: 420,
+    padding: 18,
+    borderRadius: 14,
+    backgroundColor: COLORS.white,
+  },
+  actionModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  actionModalTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  actionModalMessage: {
+    marginTop: 12,
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  actionInputLabel: {
+    marginTop: 15,
+    marginBottom: 7,
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  actionInput: {
+    minHeight: 46,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 9,
+    color: COLORS.text,
+    backgroundColor: COLORS.white,
+  },
+  actionModalError: {
+    marginTop: 12,
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  actionModalButtons: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
+  actionCancelButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 9,
+  },
+  actionCancelText: {
+    color: COLORS.text,
+    fontWeight: "700",
+  },
+  actionSubmitButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+  },
+  actionRejectSubmitButton: {
+    backgroundColor: COLORS.error,
+  },
+  actionSubmitText: {
+    color: COLORS.white,
+    fontWeight: "800",
   },
   emptyState: {
     alignItems: "center",
