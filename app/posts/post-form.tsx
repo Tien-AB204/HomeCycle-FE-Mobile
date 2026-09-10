@@ -104,6 +104,71 @@ const PRIORITY_OPTIONS = [
 const MAX_IMAGES = 5;
 type InlineMessage = { type: "error" | "info"; text: string } | null;
 
+type EavValueField =
+  | "selectedOptionId"
+  | "valueBoolean"
+  | "valueText"
+  | "valueNumber";
+
+type AttributeDataType =
+  | "Text"
+  | "Number"
+  | "Boolean";
+
+type AttributeInputMode =
+  | "OptionOnly"
+  | "CustomOnly"
+  | "OptionOrCustom";
+
+const EAV_CLEAR_OPTION = "__homecycle_eav_clear__";
+
+const normalizeAttributeDataType = (
+  value: unknown,
+): AttributeDataType | null => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "1" || normalized === "text") {
+    return "Text";
+  }
+
+  if (normalized === "2" || normalized === "number") {
+    return "Number";
+  }
+
+  if (normalized === "3" || normalized === "boolean") {
+    return "Boolean";
+  }
+
+  return null;
+};
+
+const normalizeAttributeInputMode = (
+  value: unknown,
+): AttributeInputMode | null => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "1" || normalized === "optiononly") {
+    return "OptionOnly";
+  }
+
+  if (normalized === "2" || normalized === "customonly") {
+    return "CustomOnly";
+  }
+
+  if (
+    normalized === "3" ||
+    normalized === "optionorcustom"
+  ) {
+    return "OptionOrCustom";
+  }
+
+  return null;
+};
+
 export default function PostFormScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -321,12 +386,70 @@ export default function PostFormScreen() {
             const oldValue = oldEavData.find(
               (item) => item.attributeId === attribute.attributeId,
             );
+            const inputMode =
+              normalizeAttributeInputMode(
+                attribute.inputMode,
+              );
+
+            const dataType =
+              normalizeAttributeDataType(
+                attribute.dataType,
+              );
+
+            const optionAllowed =
+              inputMode === "OptionOnly" ||
+              inputMode === "OptionOrCustom";
+
+            const customAllowed =
+              inputMode === "CustomOnly" ||
+              inputMode === "OptionOrCustom";
+
+            const validOptionIds = new Set(
+              (Array.isArray(attribute.options)
+                ? attribute.options
+                : []
+              ).map((option: any) =>
+                String(option.optionId || ""),
+              ),
+            );
+
+            const oldOptionId = String(
+              oldValue?.optionId || "",
+            );
+
+            const selectedOptionId =
+              optionAllowed &&
+              oldOptionId &&
+              validOptionIds.has(oldOptionId)
+                ? oldOptionId
+                : "";
+
+            const hasOption =
+              Boolean(selectedOptionId);
+
             return {
               ...attribute,
-              selectedOptionId: oldValue?.optionId || "",
-              valueBoolean: oldValue?.valueBoolean ?? null,
-              valueText: oldValue?.valueText || "",
-              valueNumber: oldValue?.valueNumber?.toString() || "",
+              selectedOptionId,
+              valueBoolean:
+                customAllowed &&
+                !hasOption &&
+                dataType === "Boolean"
+                  ? oldValue?.valueBoolean ?? null
+                  : null,
+              valueText:
+                customAllowed &&
+                !hasOption &&
+                dataType === "Text"
+                  ? oldValue?.valueText || ""
+                  : "",
+              valueNumber:
+                customAllowed &&
+                !hasOption &&
+                dataType === "Number" &&
+                oldValue?.valueNumber !== null &&
+                oldValue?.valueNumber !== undefined
+                  ? String(oldValue.valueNumber)
+                  : "",
             };
           })
           .sort((a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0));
@@ -372,12 +495,27 @@ export default function PostFormScreen() {
     }
   };
 
-  const updateEavValue = (index: number, field: string, value: any) => {
-    setEavAttributes((current) => {
-      const next = [...current];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
+  const updateEavValue = (
+    index: number,
+    field: EavValueField,
+    value: string | boolean | null,
+  ) => {
+    setEavAttributes((current) =>
+      current.map((attribute, itemIndex) => {
+        if (itemIndex !== index) {
+          return attribute;
+        }
+
+        return {
+          ...attribute,
+          selectedOptionId: "",
+          valueBoolean: null,
+          valueText: "",
+          valueNumber: "",
+          [field]: value,
+        };
+      }),
+    );
   };
 
   const handlePublish = async () => {
@@ -438,34 +576,173 @@ export default function PostFormScreen() {
       return;
     }
 
-    const attributeValues = eavAttributes.flatMap(
-      (attribute) => {
-        const item: any = {
-          attributeId: attribute.attributeId,
-        };
+    const attributeValues: Array<
+      Record<string, unknown>
+    > = [];
 
-        if (attribute.selectedOptionId) {
-          item.optionId =
-            attribute.selectedOptionId;
-        } else if (
+    for (const attribute of eavAttributes) {
+      const attributeName =
+        String(attribute.attributeName || "Thông số");
+
+      const inputMode =
+        normalizeAttributeInputMode(
+          attribute.inputMode,
+        );
+
+      const dataType =
+        normalizeAttributeDataType(
+          attribute.dataType,
+        );
+
+      if (!inputMode) {
+        const hasConfiguredInputMode =
+          attribute.inputMode !== null &&
+          attribute.inputMode !== undefined;
+
+        if (
+          hasConfiguredInputMode ||
+          (!isBuyPost && attribute.isRequired)
+        ) {
+          setFormMessage({
+            type: "error",
+            text:
+              `Cấu hình nhập của thông số "${attributeName}" ` +
+              "không hợp lệ.",
+          });
+          return;
+        }
+
+        // Attribute optional chưa được cấu hình InputMode:
+        // bỏ qua thay vì chặn toàn bộ bài đăng.
+        continue;
+      }
+
+      const optionAllowed =
+        inputMode === "OptionOnly" ||
+        inputMode === "OptionOrCustom";
+
+      const customAllowed =
+        inputMode === "CustomOnly" ||
+        inputMode === "OptionOrCustom";
+
+      const selectedOptionId =
+        String(
+          attribute.selectedOptionId || "",
+        ).trim();
+
+      let item:
+        | Record<string, unknown>
+        | null = null;
+
+      if (
+        optionAllowed &&
+        selectedOptionId
+      ) {
+        item = {
+          attributeId: attribute.attributeId,
+          optionId: selectedOptionId,
+        };
+      } else if (customAllowed) {
+        if (!dataType) {
+          const hasConfiguredDataType =
+            attribute.dataType !== null &&
+            attribute.dataType !== undefined;
+
+          if (
+            hasConfiguredDataType ||
+            (!isBuyPost && attribute.isRequired)
+          ) {
+            setFormMessage({
+              type: "error",
+              text:
+                `Kiểu dữ liệu của thông số "${attributeName}" ` +
+                "không hợp lệ.",
+            });
+            return;
+          }
+
+          // Attribute optional chưa được cấu hình DataType:
+          // không tạo EAV value và không block submit.
+          continue;
+        }
+
+        if (dataType === "Text") {
+          const valueText =
+            String(
+              attribute.valueText ?? "",
+            ).trim();
+
+          if (valueText) {
+            item = {
+              attributeId:
+                attribute.attributeId,
+              valueText,
+            };
+          }
+        }
+
+        if (dataType === "Number") {
+          const rawNumber =
+            String(
+              attribute.valueNumber ?? "",
+            ).trim();
+
+          if (rawNumber) {
+            const valueNumber =
+              Number(rawNumber);
+
+            if (
+              !Number.isFinite(valueNumber)
+            ) {
+              setFormMessage({
+                type: "error",
+                text:
+                  `Thông số "${attributeName}" ` +
+                  "phải là một số hợp lệ.",
+              });
+              return;
+            }
+
+            item = {
+              attributeId:
+                attribute.attributeId,
+              valueNumber,
+            };
+          }
+        }
+
+        if (
+          dataType === "Boolean" &&
           attribute.valueBoolean !== null &&
           attribute.valueBoolean !== undefined
         ) {
-          item.valueBoolean =
-            attribute.valueBoolean;
-        } else if (attribute.valueNumber) {
-          item.valueNumber =
-            Number(attribute.valueNumber);
-        } else if (attribute.valueText) {
-          item.valueText =
-            attribute.valueText;
-        } else {
-          return [];
+          item = {
+            attributeId:
+              attribute.attributeId,
+            valueBoolean:
+              attribute.valueBoolean,
+          };
         }
+      }
 
-        return [item];
-      },
-    );
+      if (
+        !item &&
+        !isBuyPost &&
+        attribute.isRequired
+      ) {
+        setFormMessage({
+          type: "error",
+          text:
+            `Vui lòng nhập thông số bắt buộc ` +
+            `"${attributeName}".`,
+        });
+        return;
+      }
+
+      if (item) {
+        attributeValues.push(item);
+      }
+    }
 
     try {
       setIsLoading(true);
@@ -970,6 +1247,11 @@ export default function PostFormScreen() {
                 value={selectedCategory}
                 options={categories}
                 onChange={(value) => {
+                  if (value !== selectedCategory) {
+                    setOldEavData([]);
+                    setEavAttributes([]);
+                  }
+
                   setSelectedCategory(value);
                   setSelectedProductType("");
                 }}
@@ -979,7 +1261,14 @@ export default function PostFormScreen() {
                 required
                 value={selectedProductType}
                 options={filteredProductTypes}
-                onChange={setSelectedProductType}
+                onChange={(value) => {
+                  if (value !== selectedProductType) {
+                    setOldEavData([]);
+                    setEavAttributes([]);
+                  }
+
+                  setSelectedProductType(value);
+                }}
               />
             </View>
             <View style={styles.row}>
@@ -1024,16 +1313,37 @@ export default function PostFormScreen() {
               ) : null}
               {eavAttributes.map((attribute, index) => {
                 if (attribute.inputMode === null || attribute.inputMode === undefined) return null;
-                const mode = attribute.inputMode;
+                const inputMode =
+                  normalizeAttributeInputMode(
+                    attribute.inputMode,
+                  );
+
+                const dataType =
+                  normalizeAttributeDataType(
+                    attribute.dataType,
+                  );
+
                 const isOptionAllowed =
-                  mode === 1 || mode === "OptionOnly" || mode === 3 || mode === "OptionOrCustom";
+                  inputMode === "OptionOnly" ||
+                  inputMode === "OptionOrCustom";
+
                 const isCustomAllowed =
-                  mode === 2 || mode === "CustomOnly" || mode === 3 || mode === "OptionOrCustom";
+                  inputMode === "CustomOnly" ||
+                  inputMode === "OptionOrCustom";
+
                 const optionList =
                   attribute.options?.map((option: any) => ({
                     label: option.optionValue,
                     value: option.optionId,
                   })) || [];
+
+                const selectableOptionList = [
+                  {
+                    label: "Bỏ chọn",
+                    value: EAV_CLEAR_OPTION,
+                  },
+                  ...optionList,
+                ];
                 const displayUnit =
                   typeof attribute.unit === "string" &&
                   attribute.unit &&
@@ -1045,14 +1355,25 @@ export default function PostFormScreen() {
                     <Text style={styles.rawLabel}>
                       {attribute.attributeName}
                       {displayUnit}
-                      {attribute.isRequired ? <Text style={styles.required}> *</Text> : null}
+                      {!isBuyPost && attribute.isRequired ? (
+                        <Text style={styles.required}> *</Text>
+                      ) : null}
                     </Text>
                     {isOptionAllowed ? (
                       <TouchableOpacity
                         style={styles.rawDropdownContainer}
                         onPress={() =>
-                          openSelect(`Chọn ${attribute.attributeName}`, optionList, (value) =>
-                            updateEavValue(index, "selectedOptionId", value),
+                          openSelect(
+                            `Chọn ${attribute.attributeName}`,
+                            selectableOptionList,
+                            (value) =>
+                              updateEavValue(
+                                index,
+                                "selectedOptionId",
+                                value === EAV_CLEAR_OPTION
+                                  ? ""
+                                  : value,
+                              ),
                           )
                         }
                       >
@@ -1067,61 +1388,118 @@ export default function PostFormScreen() {
                         <Ionicons name="chevron-down" size={20} color="#547B7D" />
                       </TouchableOpacity>
                     ) : null}
-                    {isCustomAllowed ? (
+                    {isCustomAllowed &&
+                    dataType === "Boolean" ? (
                       <View style={styles.customAttributeGroup}>
                         <View style={styles.row}>
                           <TouchableOpacity
                             style={[
                               styles.boolBtn,
-                              attribute.valueBoolean === true ? styles.boolBtnActive : undefined,
+                              attribute.valueBoolean === true
+                                ? styles.boolBtnActive
+                                : undefined,
                             ]}
-                            onPress={() => updateEavValue(index, "valueBoolean", true)}
+                            onPress={() =>
+                              updateEavValue(
+                                index,
+                                "valueBoolean",
+                                true,
+                              )
+                            }
                           >
                             <Text
                               style={[
                                 styles.boolBtnText,
-                                attribute.valueBoolean === true ? styles.boolBtnTextActive : undefined,
+                                attribute.valueBoolean === true
+                                  ? styles.boolBtnTextActive
+                                  : undefined,
                               ]}
                             >
                               Có / Bật
                             </Text>
                           </TouchableOpacity>
+
                           <TouchableOpacity
                             style={[
                               styles.boolBtn,
-                              attribute.valueBoolean === false ? styles.boolBtnActiveRed : undefined,
+                              attribute.valueBoolean === false
+                                ? styles.boolBtnActiveRed
+                                : undefined,
                             ]}
-                            onPress={() => updateEavValue(index, "valueBoolean", false)}
+                            onPress={() =>
+                              updateEavValue(
+                                index,
+                                "valueBoolean",
+                                false,
+                              )
+                            }
                           >
                             <Text
                               style={[
                                 styles.boolBtnText,
-                                attribute.valueBoolean === false ? styles.boolBtnTextActive : undefined,
+                                attribute.valueBoolean === false
+                                  ? styles.boolBtnTextActive
+                                  : undefined,
                               ]}
                             >
                               Không / Tắt
                             </Text>
                           </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.boolBtn}
+                            onPress={() =>
+                              updateEavValue(
+                                index,
+                                "valueBoolean",
+                                null,
+                              )
+                            }
+                          >
+                            <Text style={styles.boolBtnText}>
+                              Bỏ chọn
+                            </Text>
+                          </TouchableOpacity>
                         </View>
-                        <View style={styles.rawInputContainer}>
-                          <TextInput
-                            style={styles.rawInput}
-                            placeholder="Nhập chữ tự do..."
-                            placeholderTextColor="#547B7D"
-                            value={attribute.valueText}
-                            onChangeText={(text) => updateEavValue(index, "valueText", text)}
-                          />
-                        </View>
-                        <View style={styles.rawInputContainer}>
-                          <TextInput
-                            style={styles.rawInput}
-                            placeholder="Nhập số..."
-                            placeholderTextColor="#547B7D"
-                            keyboardType="numeric"
-                            value={attribute.valueNumber}
-                            onChangeText={(text) => updateEavValue(index, "valueNumber", text)}
-                          />
-                        </View>
+                      </View>
+                    ) : null}
+
+                    {isCustomAllowed &&
+                    dataType === "Text" ? (
+                      <View style={styles.rawInputContainer}>
+                        <TextInput
+                          style={styles.rawInput}
+                          placeholder="Nhập nội dung..."
+                          placeholderTextColor="#547B7D"
+                          value={attribute.valueText}
+                          onChangeText={(text) =>
+                            updateEavValue(
+                              index,
+                              "valueText",
+                              text,
+                            )
+                          }
+                        />
+                      </View>
+                    ) : null}
+
+                    {isCustomAllowed &&
+                    dataType === "Number" ? (
+                      <View style={styles.rawInputContainer}>
+                        <TextInput
+                          style={styles.rawInput}
+                          placeholder="Nhập số..."
+                          placeholderTextColor="#547B7D"
+                          keyboardType="numeric"
+                          value={attribute.valueNumber}
+                          onChangeText={(text) =>
+                            updateEavValue(
+                              index,
+                              "valueNumber",
+                              text,
+                            )
+                          }
+                        />
                       </View>
                     ) : null}
                   </View>
