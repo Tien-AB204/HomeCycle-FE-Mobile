@@ -53,14 +53,15 @@ const postApi = {
       headers: { "Content-Type": "multipart/form-data" },
       timeout: 30000,
     }),
-  createBuyPost: (formData: FormData) =>
-    apiClient.post("/posts/create/buy", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+  createBuyPost: (data: Record<string, unknown>) =>
+    apiClient.post("/posts/create/buy", data, {
       timeout: 30000,
     }),
-  updateBuyPost: (postId: string, formData: FormData) =>
-    apiClient.patch(`/posts/update/buy/${postId}`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+  updateBuyPost: (
+    postId: string,
+    data: Record<string, unknown>,
+  ) =>
+    apiClient.patch(`/posts/update/buy/${postId}`, data, {
       timeout: 30000,
     }),
 };
@@ -153,6 +154,7 @@ export default function PostFormScreen() {
   const [usageDuration, setUsageDuration] = useState("");
   const [damageLevel, setDamageLevel] = useState("");
   const [spaceUsage, setSpaceUsage] = useState("");
+  const [priceFrom, setPriceFrom] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -244,8 +246,14 @@ export default function PostFormScreen() {
         if (rawPostType === "sell") setEditPostType("Sell");
         setProductName(data.productName || product.productName || "");
         setDescription(data.description || "");
+        setPriceFrom(
+          data.priceFrom?.toString() ||
+            data.minExpectedPrice?.toString() ||
+            "",
+        );
         setBasePrice(
-          data.basePrice?.toString() ||
+          data.priceTo?.toString() ||
+            data.basePrice?.toString() ||
             data.expectedPrice?.toString() ||
             product.expectedPrice?.toString() ||
             "",
@@ -375,100 +383,407 @@ export default function PostFormScreen() {
   const handlePublish = async () => {
     setFormMessage(null);
     setAddressError("");
-    if (!productName.trim() || !basePrice.trim() || images.length === 0) {
-      if (images.length === 0) setImageError("Vui lòng chọn ít nhất 1 ảnh.");
+    setImageError("");
+
+    const parsedQuantity = Number(quantity);
+
+    if (
+      !Number.isInteger(parsedQuantity) ||
+      parsedQuantity <= 0
+    ) {
       setFormMessage({
         type: "error",
-        text: "Vui lòng nhập tên sản phẩm, giá và ít nhất 1 ảnh trước khi đăng.",
+        text: "Số lượng phải là số nguyên lớn hơn 0.",
       });
-      return;
-    }
-    if (!city.trim() || !ward.trim() || !streetAddress.trim()) {
-      setAddressError("Vui lòng chọn đầy đủ địa chỉ bài đăng.");
       return;
     }
 
+    if (!productName.trim()) {
+      setFormMessage({
+        type: "error",
+        text: "Vui lòng nhập tên sản phẩm.",
+      });
+      return;
+    }
+
+    if (isBuyPost && !description.trim()) {
+      setFormMessage({
+        type: "error",
+        text: "Vui lòng nhập mô tả cho tin thu mua.",
+      });
+      return;
+    }
+
+    if (
+      !isBuyPost &&
+      (!basePrice.trim() || images.length === 0)
+    ) {
+      if (images.length === 0) {
+        setImageError(
+          "Vui lòng chọn ít nhất 1 ảnh.",
+        );
+      }
+
+      setFormMessage({
+        type: "error",
+        text: "Vui lòng nhập giá và ít nhất 1 ảnh trước khi đăng.",
+      });
+      return;
+    }
+
+    if (!city.trim() || !ward.trim() || !streetAddress.trim()) {
+      setAddressError(
+        "Vui lòng chọn đầy đủ địa chỉ bài đăng.",
+      );
+      return;
+    }
+
+    const attributeValues = eavAttributes.flatMap(
+      (attribute) => {
+        const item: any = {
+          attributeId: attribute.attributeId,
+        };
+
+        if (attribute.selectedOptionId) {
+          item.optionId =
+            attribute.selectedOptionId;
+        } else if (
+          attribute.valueBoolean !== null &&
+          attribute.valueBoolean !== undefined
+        ) {
+          item.valueBoolean =
+            attribute.valueBoolean;
+        } else if (attribute.valueNumber) {
+          item.valueNumber =
+            Number(attribute.valueNumber);
+        } else if (attribute.valueText) {
+          item.valueText =
+            attribute.valueText;
+        } else {
+          return [];
+        }
+
+        return [item];
+      },
+    );
+
     try {
       setIsLoading(true);
+
+      if (isBuyPost) {
+        const parsedPriceFrom =
+          priceFrom.trim()
+            ? Number(priceFrom)
+            : null;
+
+        const parsedPriceTo =
+          basePrice.trim()
+            ? Number(basePrice)
+            : null;
+
+        if (
+          (
+            parsedPriceFrom !== null &&
+            (
+              !Number.isFinite(parsedPriceFrom) ||
+              parsedPriceFrom < 0
+            )
+          ) ||
+          (
+            parsedPriceTo !== null &&
+            (
+              !Number.isFinite(parsedPriceTo) ||
+              parsedPriceTo < 0
+            )
+          )
+        ) {
+          setFormMessage({
+            type: "error",
+            text: "Mức giá thu mua không hợp lệ.",
+          });
+          return;
+        }
+
+        if (
+          parsedPriceFrom !== null &&
+          parsedPriceTo !== null &&
+          parsedPriceFrom > parsedPriceTo
+        ) {
+          setFormMessage({
+            type: "error",
+            text: "Giá từ không được lớn hơn giá đến.",
+          });
+          return;
+        }
+
+        const buyPayload: Record<string, unknown> = {
+          title: productName.trim(),
+          description: description.trim(),
+          categoryId:
+            selectedCategory || null,
+          productTypeId:
+            selectedProductType || null,
+          brandId: brandId || null,
+          functionalityStatus:
+            functionalityStatus || null,
+          usageDuration:
+            usageDuration.trim()
+              ? Number(usageDuration)
+              : null,
+          damageLevel:
+            damageLevel || null,
+          attributeValues,
+          streetAddress:
+            streetAddress.trim() || null,
+          ward: ward.trim() || null,
+          city: city.trim() || null,
+          priorityLevel:
+            priorityLevel || null,
+          priceFrom: parsedPriceFrom,
+          priceTo: parsedPriceTo,
+          quantity: parsedQuantity,
+        };
+
+        if (isEditMode) {
+          await postApi.updateBuyPost(
+            editId as string,
+            buyPayload,
+          );
+        } else {
+          await postApi.createBuyPost(
+            buyPayload,
+          );
+        }
+
+        router.back();
+        return;
+      }
+
       const formData = new FormData();
-      formData.append("Quantity", quantity);
-      if (description) formData.append("Description", description);
+
+      formData.append(
+        "Quantity",
+        String(parsedQuantity),
+      );
+
+      if (description) {
+        formData.append(
+          "Description",
+          description,
+        );
+      }
+
       formData.append("City", city);
       formData.append("Ward", ward);
-      formData.append("StreetAddress", streetAddress);
-      if (deliveryMethod) formData.append("DeliveryMethod", deliveryMethod);
-      if (priorityLevel) formData.append("PriorityLevel", priorityLevel);
-      const prefix = isBuyPost ? "Requirement" : "Product";
-      if (isBuyPost) {
-        formData.append("ExpectedPrice", basePrice);
-        formData.append(`${prefix}.ExpectedPrice`, basePrice);
-      } else {
-        formData.append("BasePrice", basePrice);
-      }
-      formData.append(`${prefix}.ProductName`, productName.trim());
-      if (selectedCategory) formData.append(`${prefix}.CategoryId`, selectedCategory);
-      if (selectedProductType)
-        formData.append(`${prefix}.ProductTypeId`, selectedProductType);
-      if (brandId) formData.append(`${prefix}.BrandId`, brandId);
-      if (spaceUsage) formData.append(`${prefix}.SpaceUsage`, spaceUsage);
-      if (functionalityStatus)
-        formData.append(`${prefix}.FunctionalityStatus`, functionalityStatus);
-      if (usageDuration) formData.append(`${prefix}.UsageDuration`, usageDuration);
-      if (damageLevel) formData.append(`${prefix}.DamageLevel`, damageLevel);
-      if (!isBuyPost) {
-        if (modelNumber) formData.append(`${prefix}.ModelNumber`, modelNumber);
-        if (originalPrice) formData.append(`${prefix}.OriginalPrice`, originalPrice);
-        if (detailDescription)
-          formData.append(`${prefix}.DetailDescription`, detailDescription);
-        if (weight) formData.append(`${prefix}.Weight`, weight);
-        if (length) formData.append(`${prefix}.Length`, length);
-        if (width) formData.append(`${prefix}.Width`, width);
-        if (height) formData.append(`${prefix}.Height`, height);
-      }
-      eavAttributes.forEach((attribute) => {
-        const item: any = { attributeId: attribute.attributeId };
-        if (attribute.selectedOptionId) item.optionId = attribute.selectedOptionId;
-        else if (attribute.valueBoolean !== null)
-          item.valueBoolean = attribute.valueBoolean;
-        else if (attribute.valueNumber)
-          item.valueNumber = Number(attribute.valueNumber);
-        else if (attribute.valueText) item.valueText = attribute.valueText;
-        else return;
-        formData.append(`${prefix}.AttributeValues`, JSON.stringify(item));
-      });
-      await Promise.all(
-        images.map(async (imageUri, index) => {
-          if (imageUri.startsWith("http")) return;
-          if (Platform.OS === "web") {
-            const response = await fetch(imageUri);
-            const blob = await response.blob();
-            const extension = blob.type.split("/")[1] || "jpg";
-            formData.append("Medias", blob, `image_${index}.${extension}`);
-          } else {
-            let filename =
-              imageUri.split("/").pop()?.split("?")[0] || `image_${index}.jpg`;
-            if (!filename.includes(".")) filename = `${filename}.jpg`;
-            formData.append("Medias", {
-              uri: imageUri.replace("file://", ""),
-              name: filename,
-              type: "image/jpeg",
-            } as any);
-          }
-        }),
+      formData.append(
+        "StreetAddress",
+        streetAddress,
       );
-      if (isEditMode) {
-        if (isBuyPost) await postApi.updateBuyPost(editId as string, formData);
-        else await postApi.updateSellPost(editId as string, formData);
-      } else if (isBuyPost) {
-        await postApi.createBuyPost(formData);
-      } else {
-        await postApi.createSellPost(formData);
+
+      if (deliveryMethod) {
+        formData.append(
+          "DeliveryMethod",
+          deliveryMethod,
+        );
       }
+
+      if (priorityLevel) {
+        formData.append(
+          "PriorityLevel",
+          priorityLevel,
+        );
+      }
+
+      formData.append(
+        "BasePrice",
+        basePrice,
+      );
+
+      const prefix = "Product";
+
+      formData.append(
+        `${prefix}.ProductName`,
+        productName.trim(),
+      );
+
+      if (selectedCategory) {
+        formData.append(
+          `${prefix}.CategoryId`,
+          selectedCategory,
+        );
+      }
+
+      if (selectedProductType) {
+        formData.append(
+          `${prefix}.ProductTypeId`,
+          selectedProductType,
+        );
+      }
+
+      if (brandId) {
+        formData.append(
+          `${prefix}.BrandId`,
+          brandId,
+        );
+      }
+
+      if (spaceUsage) {
+        formData.append(
+          `${prefix}.SpaceUsage`,
+          spaceUsage,
+        );
+      }
+
+      if (functionalityStatus) {
+        formData.append(
+          `${prefix}.FunctionalityStatus`,
+          functionalityStatus,
+        );
+      }
+
+      if (usageDuration) {
+        formData.append(
+          `${prefix}.UsageDuration`,
+          usageDuration,
+        );
+      }
+
+      if (damageLevel) {
+        formData.append(
+          `${prefix}.DamageLevel`,
+          damageLevel,
+        );
+      }
+
+      if (modelNumber) {
+        formData.append(
+          `${prefix}.ModelNumber`,
+          modelNumber,
+        );
+      }
+
+      if (originalPrice) {
+        formData.append(
+          `${prefix}.OriginalPrice`,
+          originalPrice,
+        );
+      }
+
+      if (detailDescription) {
+        formData.append(
+          `${prefix}.DetailDescription`,
+          detailDescription,
+        );
+      }
+
+      if (weight) {
+        formData.append(
+          `${prefix}.Weight`,
+          weight,
+        );
+      }
+
+      if (length) {
+        formData.append(
+          `${prefix}.Length`,
+          length,
+        );
+      }
+
+      if (width) {
+        formData.append(
+          `${prefix}.Width`,
+          width,
+        );
+      }
+
+      if (height) {
+        formData.append(
+          `${prefix}.Height`,
+          height,
+        );
+      }
+
+      attributeValues.forEach((item) => {
+        formData.append(
+          `${prefix}.AttributeValues`,
+          JSON.stringify(item),
+        );
+      });
+
+      await Promise.all(
+        images.map(
+          async (imageUri, index) => {
+            if (imageUri.startsWith("http")) {
+              return;
+            }
+
+            if (Platform.OS === "web") {
+              const response =
+                await fetch(imageUri);
+
+              const blob =
+                await response.blob();
+
+              const extension =
+                blob.type.split("/")[1] ||
+                "jpg";
+
+              formData.append(
+                "Medias",
+                blob,
+                `image_${index}.${extension}`,
+              );
+
+              return;
+            }
+
+            let filename =
+              imageUri
+                .split("/")
+                .pop()
+                ?.split("?")[0] ||
+              `image_${index}.jpg`;
+
+            if (!filename.includes(".")) {
+              filename =
+                `${filename}.jpg`;
+            }
+
+            formData.append(
+              "Medias",
+              {
+                uri: imageUri.replace(
+                  "file://",
+                  "",
+                ),
+                name: filename,
+                type: "image/jpeg",
+              } as any,
+            );
+          },
+        ),
+      );
+
+      if (isEditMode) {
+        await postApi.updateSellPost(
+          editId as string,
+          formData,
+        );
+      } else {
+        await postApi.createSellPost(
+          formData,
+        );
+      }
+
       router.back();
     } catch (error) {
       setFormMessage({
         type: "error",
-        text: getApiErrorMessage(error, "Không thể lưu bài đăng lúc này."),
+        text: getApiErrorMessage(
+          error,
+          "Không thể lưu bài đăng lúc này.",
+        ),
       });
     } finally {
       setIsLoading(false);
@@ -582,6 +897,8 @@ export default function PostFormScreen() {
             </View>
           ) : null}
 
+          {!isBuyPost ? (
+            <>
           <View style={styles.cardSection}>
             <Text style={styles.label}>
               {isBuyPost ? "Hình ảnh minh họa yêu cầu" : "Hình ảnh sản phẩm"}{" "}
@@ -610,6 +927,9 @@ export default function PostFormScreen() {
             {imageError ? <Text style={styles.fieldError}>{imageError}</Text> : null}
           </View>
 
+            </>
+          ) : null}
+
           <View style={styles.cardSection}>
             <SectionTitle title="THÔNG TIN CƠ BẢN" />
             <Text style={styles.label}>
@@ -627,7 +947,12 @@ export default function PostFormScreen() {
                 }}
               />
             </View>
-            <Text style={styles.label}>Mô tả bài đăng (Ngắn gọn)</Text>
+            <Text style={styles.label}>
+              Mô tả bài đăng (Ngắn gọn)
+              {isBuyPost ? (
+                <Text style={styles.required}> *</Text>
+              ) : null}
+            </Text>
             <View style={[styles.inputContainer, styles.shortDescription]}>
               <TextInput
                 style={styles.input}
@@ -827,8 +1152,20 @@ export default function PostFormScreen() {
               </View>
             ) : null}
             <View style={styles.row}>
-              <SelectBox label="Không gian dùng" value={spaceUsage} options={SPACE_USAGE_OPTIONS} onChange={setSpaceUsage} />
-              <SelectBox label="Mức độ hư hại" value={damageLevel} options={DAMAGE_LEVEL_OPTIONS} onChange={setDamageLevel} />
+              {!isBuyPost ? (
+                <SelectBox
+                  label="Không gian dùng"
+                  value={spaceUsage}
+                  options={SPACE_USAGE_OPTIONS}
+                  onChange={setSpaceUsage}
+                />
+              ) : null}
+              <SelectBox
+                label="Mức độ hư hại"
+                value={damageLevel}
+                options={DAMAGE_LEVEL_OPTIONS}
+                onChange={setDamageLevel}
+              />
             </View>
             <View style={styles.row}>
               <SelectBox label="Tình trạng HĐ" required value={functionalityStatus} options={FUNC_STATUS_OPTIONS} onChange={setFunctionalityStatus} />
@@ -843,36 +1180,121 @@ export default function PostFormScreen() {
 
           <View style={styles.cardSection}>
             <SectionTitle title="GIAO DỊCH & MỨC GIÁ" />
-            <View style={styles.row}>
-              <View style={styles.flex}>
-                <Text style={styles.label}>
-                  {isBuyPost ? "Giá thu mua dự kiến" : "Giá mong muốn"}{" "}
-                  <Text style={styles.required}>*</Text>
-                </Text>
-                <View style={styles.inputContainer}>
-                  <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#547B7D" value={basePrice} onChangeText={(value) => { setBasePrice(value); setFormMessage(null); }} />
-                </View>
-              </View>
-              {!isBuyPost ? (
+
+            {isBuyPost ? (
+              <View style={styles.row}>
                 <View style={styles.flex}>
-                  <Text style={styles.label}>Giá lúc mua</Text>
+                  <Text style={styles.label}>
+                    Giá từ (VNĐ)
+                  </Text>
                   <View style={styles.inputContainer}>
-                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VNĐ" placeholderTextColor="#547B7D" value={originalPrice} onChangeText={setOriginalPrice} />
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="Giá tối thiểu"
+                      placeholderTextColor="#547B7D"
+                      value={priceFrom}
+                      onChangeText={(value) => {
+                        setPriceFrom(
+                          value.replace(/[^0-9]/g, ""),
+                        );
+                        setFormMessage(null);
+                      }}
+                    />
                   </View>
                 </View>
-              ) : null}
-            </View>
+
+                <View style={styles.flex}>
+                  <Text style={styles.label}>
+                    Giá đến (VNĐ)
+                  </Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="Giá tối đa"
+                      placeholderTextColor="#547B7D"
+                      value={basePrice}
+                      onChangeText={(value) => {
+                        setBasePrice(
+                          value.replace(/[^0-9]/g, ""),
+                        );
+                        setFormMessage(null);
+                      }}
+                    />
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.row}>
+                <View style={styles.flex}>
+                  <Text style={styles.label}>
+                    Giá mong muốn{" "}
+                    <Text style={styles.required}>*</Text>
+                  </Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="VNĐ"
+                      placeholderTextColor="#547B7D"
+                      value={basePrice}
+                      onChangeText={(value) => {
+                        setBasePrice(value);
+                        setFormMessage(null);
+                      }}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.flex}>
+                  <Text style={styles.label}>
+                    Giá lúc mua
+                  </Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="VNĐ"
+                      placeholderTextColor="#547B7D"
+                      value={originalPrice}
+                      onChangeText={setOriginalPrice}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+
             <Text style={styles.label}>Số lượng *</Text>
             <View style={styles.inputContainer}>
-              <TextInput style={styles.input} keyboardType="numeric" placeholder="Nhập SL..." placeholderTextColor="#547B7D" value={quantity} onChangeText={setQuantity} />
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="Nhập SL..."
+                placeholderTextColor="#547B7D"
+                value={quantity}
+                onChangeText={setQuantity}
+              />
             </View>
           </View>
 
           <View style={styles.cardSection}>
             <SectionTitle title="VẬN CHUYỂN & VỊ TRÍ" />
             <View style={styles.row}>
-              <SelectBox label="Vận chuyển" value={deliveryMethod} options={DELIVERY_OPTIONS} onChange={setDeliveryMethod} />
-              <SelectBox label="Ưu tiên" value={priorityLevel} options={PRIORITY_OPTIONS} onChange={setPriorityLevel} />
+              {!isBuyPost ? (
+                <SelectBox
+                  label="Vận chuyển"
+                  value={deliveryMethod}
+                  options={DELIVERY_OPTIONS}
+                  onChange={setDeliveryMethod}
+                />
+              ) : null}
+              <SelectBox
+                label="Ưu tiên"
+                value={priorityLevel}
+                options={PRIORITY_OPTIONS}
+                onChange={setPriorityLevel}
+              />
             </View>
             <Text style={styles.label}>
               Địa chỉ bài đăng <Text style={styles.required}>*</Text>

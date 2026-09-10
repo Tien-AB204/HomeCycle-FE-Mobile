@@ -222,8 +222,16 @@ const offerApi = {
     offerQuantity: number;
   }) => apiClient.post("/offers", data).then((response) => response.data),
 
-  getSentOffers: (params?: { PageNumber?: number; PageSize?: number }) =>
-    apiClient.get("/offers/sent", { params }).then((response) => response.data),
+  getSentOffers: (params?: {
+    PageNumber?: number;
+    PageSize?: number;
+    PostId?: string;
+    BuyPostId?: string;
+    Status?: string | number;
+  }) =>
+    apiClient
+      .get("/offers/sent", { params })
+      .then((response) => response.data),
 };
 
 const cartApi = {
@@ -298,17 +306,47 @@ export default function PostDetailScreen() {
         postData?.ownerId !== currentUserId &&
         !isForeignBusinessBuy
       ) {
-        const resOffers = await offerApi.getSentOffers({
-          PageSize: 50,
-          PageNumber: 1,
-        });
-        const items = resOffers?.data?.items || [];
+        const isBuyTarget =
+          postData?.postType === "Buy";
+
+        const targetId = String(
+          Array.isArray(id) ? id[0] : id,
+        );
+
+        const resOffers =
+          await offerApi.getSentOffers({
+            PageSize: 50,
+            PageNumber: 1,
+            ...(isBuyTarget
+              ? { BuyPostId: targetId }
+              : { PostId: targetId }),
+          });
+
+        const items =
+          resOffers?.data?.items ||
+          resOffers?.items ||
+          [];
+
         const pendingOffer = items.find(
-          (offer: any) =>
-            offer.postId === id &&
-            (offer.offerStatus === 0 ||
-              offer.offerStatus === "Pending" ||
-              offer.offerStatus === "pending"),
+          (offer: any) => {
+            const matchesTarget =
+              isBuyTarget
+                ? String(
+                    offer?.buyPostId ?? "",
+                  ) === targetId
+                : String(
+                    offer?.postId ?? "",
+                  ) === targetId;
+
+            return (
+              matchesTarget &&
+              (
+                offer.offerStatus === 0 ||
+                offer.offerStatus === "Pending" ||
+                offer.offerStatus === "pending"
+              )
+            );
+          },
         );
         setExistingOfferId(pendingOffer?.offerId || null);
       } else {
@@ -358,6 +396,9 @@ export default function PostDetailScreen() {
           post?.product?.productName ||
             post?.productName ||
             "",
+        ),
+        postType: String(
+          post?.postType || "",
         ),
       },
     });
@@ -621,8 +662,83 @@ export default function PostDetailScreen() {
     }
   };
 
-  const formatPrice = (price: number) =>
-    price ? `${Number(price).toLocaleString("vi-VN")} đ` : "0 đ";
+  const formatPrice = (price: unknown) => {
+    const value = Number(price);
+
+    return Number.isFinite(value)
+      ? `${value.toLocaleString("vi-VN")} đ`
+      : "Chưa cập nhật";
+  };
+
+  const formatBuyPriceRange = (
+    from: unknown,
+    to: unknown,
+  ) => {
+    const fromNumber =
+      from === null ||
+      from === undefined ||
+      from === ""
+        ? null
+        : Number(from);
+
+    const toNumber =
+      to === null ||
+      to === undefined ||
+      to === ""
+        ? null
+        : Number(to);
+
+    const hasFrom =
+      fromNumber !== null &&
+      Number.isFinite(fromNumber);
+
+    const hasTo =
+      toNumber !== null &&
+      Number.isFinite(toNumber);
+
+    if (hasFrom && hasTo) {
+      return `${Number(fromNumber).toLocaleString("vi-VN")} - ${Number(toNumber).toLocaleString("vi-VN")} đ`;
+    }
+
+    if (hasFrom) {
+      return `Từ ${Number(fromNumber).toLocaleString("vi-VN")} đ`;
+    }
+
+    if (hasTo) {
+      return `Tối đa ${Number(toNumber).toLocaleString("vi-VN")} đ`;
+    }
+
+    return "Giá thỏa thuận";
+  };
+
+  const translatePriorityLevel = (
+    value: unknown,
+  ) => {
+    switch (
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+    ) {
+      case "0":
+      case "low":
+        return "Thấp";
+
+      case "1":
+      case "medium":
+        return "Bình thường";
+
+      case "2":
+      case "high":
+        return "Cao";
+
+      case "3":
+      case "urgent":
+        return "Khẩn cấp";
+
+      default:
+        return "Chưa cập nhật";
+    }
+  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "Chưa có";
@@ -780,6 +896,8 @@ export default function PostDetailScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+        {post.postType !== "Buy" ? (
+          <>
         <View style={styles.imageContainer}>
           {post.medias && post.medias.length > 0 ? (
             <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
@@ -806,6 +924,9 @@ export default function PostDetailScreen() {
           ) : null}
         </View>
 
+          </>
+        ) : null}
+
         <View style={styles.section}>
           <Text style={styles.productName}>
             {product.productName ||
@@ -813,7 +934,17 @@ export default function PostDetailScreen() {
               "Sản phẩm chưa cập nhật tên"}
           </Text>
           <View style={styles.priceRow}>
-            <Text style={styles.price}>{formatPrice(post.basePrice)}</Text>
+            <Text style={styles.price}>
+              {post.postType === "Buy"
+                ? formatBuyPriceRange(
+                    post.priceFrom,
+                    post.priceTo ??
+                      post.basePrice,
+                  )
+                : formatPrice(
+                    post.basePrice,
+                  )}
+            </Text>
             {product.originalPrice ? (
               <Text style={styles.originalPrice}>
                 {formatPrice(product.originalPrice)}
@@ -1034,12 +1165,29 @@ export default function PostDetailScreen() {
               {post.remainingQuantity} / {post.quantity}
             </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Vận chuyển:</Text>
-            <Text style={styles.infoValue}>
-              {translatePostDeliveryMethod(post.deliveryMethod)}
-            </Text>
-          </View>
+          {post.postType !== "Buy" ? (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>
+                Vận chuyển:
+              </Text>
+              <Text style={styles.infoValue}>
+                {translatePostDeliveryMethod(
+                  post.deliveryMethod,
+                )}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>
+                Mức ưu tiên:
+              </Text>
+              <Text style={styles.infoValue}>
+                {translatePriorityLevel(
+                  post.priorityLevel,
+                )}
+              </Text>
+            </View>
+          )}
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Địa chỉ:</Text>
             <Text style={styles.infoValue}>{address || "Chưa cập nhật"}</Text>

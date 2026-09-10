@@ -38,6 +38,7 @@ import { getAvatarSource } from "../../src/utils/avatar";
 type ReceivedOfferItem = {
   offerId?: string;
   postId?: string;
+  buyPostId?: string | null;
 
   productName?: string;
   postTitle?: string;
@@ -62,6 +63,8 @@ const offerApi = {
   getReceivedOffers: (params: {
     PageNumber: number;
     PageSize: number;
+    PostId?: string;
+    BuyPostId?: string;
   }) =>
     apiClient
       .get("/offers/received", { params })
@@ -228,7 +231,12 @@ const formatDate = (value: unknown) => {
 };
 
 const fetchAllReceivedOffers =
-  async (): Promise<ReceivedOfferItem[]> => {
+  async (
+    filter: {
+      PostId?: string;
+      BuyPostId?: string;
+    },
+  ): Promise<ReceivedOfferItem[]> => {
     const result: ReceivedOfferItem[] = [];
 
     let pageNumber = 1;
@@ -238,6 +246,7 @@ const fetchAllReceivedOffers =
         await offerApi.getReceivedOffers({
           PageNumber: pageNumber,
           PageSize: PAGE_SIZE,
+          ...filter,
         });
 
       const page = unwrapPage(response);
@@ -297,6 +306,17 @@ export default function OffersByPostScreen() {
     ? params.postTitle[0]
     : params.postTitle;
 
+  const postTypeParam = Array.isArray(
+    params.postType,
+  )
+    ? params.postType[0]
+    : params.postType;
+
+  const isBuyPost =
+    String(postTypeParam || "")
+      .trim()
+      .toLowerCase() === "buy";
+
   const [offers, setOffers] = useState<
     ReceivedOfferItem[]
   >([]);
@@ -353,20 +373,36 @@ export default function OffersByPostScreen() {
 
         setErrorText(null);
 
-        const allReceivedOffers =
-          await fetchAllReceivedOffers();
-
         const targetPostId =
           normalizeId(postId);
 
+        const allReceivedOffers =
+          await fetchAllReceivedOffers(
+            isBuyPost
+              ? {
+                  BuyPostId:
+                    String(postId),
+                }
+              : {
+                  PostId:
+                    String(postId),
+                },
+          );
+
         const filtered =
           allReceivedOffers
-            .filter(
-              (offer) =>
+            .filter((offer) => {
+              const offerTargetId =
+                isBuyPost
+                  ? offer?.buyPostId
+                  : offer?.postId;
+
+              return (
                 normalizeId(
-                  offer?.postId,
-                ) === targetPostId,
-            )
+                  offerTargetId,
+                ) === targetPostId
+              );
+            })
             .sort((first, second) => {
               const priceDifference =
                 Number(
@@ -412,7 +448,7 @@ export default function OffersByPostScreen() {
         setIsRefreshing(false);
       }
     },
-    [postId],
+    [isBuyPost, postId],
   );
 
   useFocusEffect(
