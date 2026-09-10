@@ -338,6 +338,31 @@ export default function PostDetailScreen() {
   const isBusinessViewingForeignBuy =
     user?.role === "business" && post?.postType === "Buy" && !isMyPost;
 
+  const handleOpenReceivedOffers = () => {
+    const targetPostId =
+      post?.postId ||
+      (Array.isArray(id) ? id[0] : id);
+
+    if (!targetPostId) {
+      showPageError(
+        "Không tìm thấy bài đăng để xem đề nghị.",
+      );
+      return;
+    }
+
+    router.push({
+      pathname: "/offers/by-post" as any,
+      params: {
+        postId: String(targetPostId),
+        postTitle: String(
+          post?.product?.productName ||
+            post?.productName ||
+            "",
+        ),
+      },
+    });
+  };
+
   const handleClosePost = async () => {
     const targetPostId = post?.postId;
     if (!targetPostId) {
@@ -852,6 +877,46 @@ export default function PostDetailScreen() {
             </View>
           </View>
         </View>
+
+        {isMyPost ? (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.receivedOffersCard}
+              onPress={handleOpenReceivedOffers}
+              activeOpacity={0.82}
+            >
+              <View style={styles.receivedOffersIcon}>
+                <Ionicons
+                  name="people-outline"
+                  size={25}
+                  color={COLORS.primary}
+                />
+              </View>
+
+              <View style={styles.receivedOffersContent}>
+                <Text style={styles.receivedOffersTitle}>
+                  Đề nghị đã nhận
+                </Text>
+
+                <Text style={styles.receivedOffersSubtitle}>
+                  Xem tất cả đề nghị cho bài đăng này
+                </Text>
+              </View>
+
+              <View style={styles.receivedOffersAction}>
+                <Text style={styles.receivedOffersActionText}>
+                  Xem tất cả
+                </Text>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={17}
+                  color={COLORS.primary}
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Mô tả chung</Text>
@@ -1600,6 +1665,56 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 12,
     fontWeight: "600",
+  },
+  receivedOffersCard: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(47, 118, 93, 0.30)",
+    borderRadius: 12,
+    backgroundColor: "rgba(47, 118, 93, 0.05)",
+  },
+  receivedOffersIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(43, 86, 89, 0.09)",
+  },
+  receivedOffersContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  receivedOffersTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  receivedOffersSubtitle: {
+    marginTop: 4,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  receivedOffersAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+  },
+  receivedOffersActionText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "700",
   },
   specGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -8 },
   specItem: {
