@@ -55,6 +55,15 @@ interface AddressPickerFieldProps {
     selection: AddressSelection,
   ) => void;
 
+  initialSelection?: Pick<
+    AddressSelection,
+    | "provinceName"
+    | "wardName"
+    | "streetAddress"
+  >;
+
+  onClear?: () => void;
+
   placeholder?: string;
   disabled?: boolean;
   hasError?: boolean;
@@ -82,6 +91,8 @@ const AddressPickerField = forwardRef<
   {
     value,
     onChange,
+    initialSelection,
+    onClear,
     placeholder = "Chọn địa chỉ",
     disabled = false,
     hasError = false,
@@ -89,6 +100,20 @@ const AddressPickerField = forwardRef<
   ref,
 ) {
   const insets = useSafeAreaInsets();
+
+  const hasInitialSelection =
+    initialSelection !== undefined;
+
+  const initialProvinceName =
+    initialSelection?.provinceName?.trim() ||
+    "";
+
+  const initialWardName =
+    initialSelection?.wardName?.trim() ||
+    "";
+
+  const initialStreetAddress =
+    initialSelection?.streetAddress || "";
 
   const wardInputRef =
     useRef<TextInput | null>(null);
@@ -98,6 +123,9 @@ const AddressPickerField = forwardRef<
 
   const provinceLoadAttemptedRef =
     useRef(false);
+
+  const wardLoadVersionRef =
+    useRef(0);
 
   const [visible, setVisible] =
     useState(false);
@@ -159,15 +187,39 @@ const AddressPickerField = forwardRef<
   ] = useState(0);
 
   const closeModal = () => {
+    wardLoadVersionRef.current += 1;
+
     setVisible(false);
     setShowProvinceOptions(false);
     setShowWardOptions(false);
+    setIsLoadingWards(false);
     setFormError("");
   };
 
   const open = () => {
     if (disabled) {
       return;
+    }
+
+    if (hasInitialSelection) {
+      setProvinceQuery(
+        initialProvinceName,
+      );
+
+      setSelectedProvinceCode("");
+
+      setWardQuery(
+        initialWardName,
+      );
+
+      setSelectedWard("");
+
+      setStreetAddress(
+        initialStreetAddress,
+      );
+
+      setWards([]);
+      setLoadError("");
     }
 
     setVisible(true);
@@ -179,7 +231,13 @@ const AddressPickerField = forwardRef<
     () => ({
       open,
     }),
-    [disabled],
+    [
+      disabled,
+      hasInitialSelection,
+      initialProvinceName,
+      initialWardName,
+      initialStreetAddress,
+    ],
   );
 
   useEffect(() => {
@@ -260,6 +318,156 @@ const AddressPickerField = forwardRef<
     provinceLoadRequest,
   ]);
 
+  useEffect(() => {
+    if (
+      !visible ||
+      !hasInitialSelection ||
+      !initialProvinceName ||
+      provinces.length === 0
+    ) {
+      return;
+    }
+
+    const matchedProvince =
+      provinces.find(
+        (item) =>
+          normalize(item.label) ===
+          normalize(
+            initialProvinceName,
+          ),
+      );
+
+    if (!matchedProvince) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrateExistingAddress =
+      async () => {
+        const wardLoadVersion =
+          ++wardLoadVersionRef.current;
+
+        setSelectedProvinceCode(
+          matchedProvince.value,
+        );
+
+        setIsLoadingWards(true);
+        setLoadError("");
+
+        try {
+          const response =
+            await fetch(
+              `https://34tinhthanh.com/api/wards?province_code=${encodeURIComponent(
+                matchedProvince.value,
+              )}`,
+            );
+
+          if (!response.ok) {
+            throw Object.assign(
+              new Error(
+                "Ward API error",
+              ),
+              {
+                status:
+                  response.status,
+              },
+            );
+          }
+
+          const data =
+            await response.json();
+
+          const wardNames =
+            Array.isArray(data)
+              ? data
+                  .map(
+                    (item) =>
+                      item?.ward_name,
+                  )
+                  .filter(
+                    (
+                      name,
+                    ): name is string =>
+                      Boolean(name),
+                  )
+              : [];
+
+          const uniqueWardNames =
+            Array.from(
+              new Set(wardNames),
+            );
+
+          const nextWards =
+            uniqueWardNames.map(
+              (name) => ({
+                label: name,
+                value: name,
+              }),
+            );
+
+          if (
+            cancelled ||
+            wardLoadVersionRef.current !==
+              wardLoadVersion
+          ) {
+            return;
+          }
+
+          setWards(nextWards);
+
+          const matchedWard =
+            nextWards.find(
+              (item) =>
+                normalize(
+                  item.label,
+                ) ===
+                normalize(
+                  initialWardName,
+                ),
+            );
+
+          setSelectedWard(
+            matchedWard?.value || "",
+          );
+        } catch (error: any) {
+          if (
+            !cancelled &&
+            wardLoadVersionRef.current ===
+              wardLoadVersion
+          ) {
+            setLoadError(
+              getFetchErrorMessage(
+                error?.status,
+              ),
+            );
+          }
+        } finally {
+          if (
+            !cancelled &&
+            wardLoadVersionRef.current ===
+              wardLoadVersion
+          ) {
+            setIsLoadingWards(
+              false,
+            );
+          }
+        }
+      };
+
+    void hydrateExistingAddress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    visible,
+    hasInitialSelection,
+    initialProvinceName,
+    initialWardName,
+    provinces,
+  ]);
+
   const filteredProvinces =
     useMemo(() => {
       const query = normalize(
@@ -302,6 +510,9 @@ const AddressPickerField = forwardRef<
   const selectProvince = async (
     province: ProvinceOption,
   ) => {
+    const wardLoadVersion =
+      ++wardLoadVersionRef.current;
+
     setProvinceQuery(
       province.label,
     );
@@ -333,9 +544,12 @@ const AddressPickerField = forwardRef<
 
       if (!response.ok) {
         throw Object.assign(
-          new Error("Ward API error"),
+          new Error(
+            "Ward API error",
+          ),
           {
-            status: response.status,
+            status:
+              response.status,
           },
         );
       }
@@ -363,6 +577,13 @@ const AddressPickerField = forwardRef<
           new Set(wardNames),
         );
 
+      if (
+        wardLoadVersionRef.current !==
+        wardLoadVersion
+      ) {
+        return;
+      }
+
       setWards(
         uniqueWardNames.map(
           (name) => ({
@@ -374,17 +595,32 @@ const AddressPickerField = forwardRef<
 
       requestAnimationFrame(
         () => {
-          wardInputRef.current?.focus();
+          if (
+            wardLoadVersionRef.current ===
+            wardLoadVersion
+          ) {
+            wardInputRef.current?.focus();
+          }
         },
       );
     } catch (error: any) {
-      setLoadError(
-        getFetchErrorMessage(
-          error?.status,
-        ),
-      );
+      if (
+        wardLoadVersionRef.current ===
+        wardLoadVersion
+      ) {
+        setLoadError(
+          getFetchErrorMessage(
+            error?.status,
+          ),
+        );
+      }
     } finally {
-      setIsLoadingWards(false);
+      if (
+        wardLoadVersionRef.current ===
+        wardLoadVersion
+      ) {
+        setIsLoadingWards(false);
+      }
     }
   };
 
@@ -513,6 +749,27 @@ const AddressPickerField = forwardRef<
       formattedAddress,
     });
 
+    closeModal();
+  };
+
+  const clearAddress = () => {
+    if (disabled || !onClear) {
+      return;
+    }
+
+    setProvinceQuery("");
+    setSelectedProvinceCode("");
+
+    setWardQuery("");
+    setSelectedWard("");
+
+    setStreetAddress("");
+    setWards([]);
+
+    setLoadError("");
+    setFormError("");
+
+    onClear();
     closeModal();
   };
 
@@ -1010,6 +1267,25 @@ const AddressPickerField = forwardRef<
                   </Text>
                 ) : null}
 
+                {onClear && value ? (
+                  <TouchableOpacity
+                    style={
+                      styles.clearButton
+                    }
+                    onPress={
+                      clearAddress
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.clearButtonText
+                      }
+                    >
+                      Xóa địa chỉ
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
                 <TouchableOpacity
                   style={
                     styles.saveButton
@@ -1220,6 +1496,23 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: COLORS.primary,
     fontSize: 12,
+    fontWeight: "700",
+  },
+
+  clearButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+  },
+
+  clearButtonText: {
+    color: COLORS.error,
+    fontSize: 14,
     fontWeight: "700",
   },
 

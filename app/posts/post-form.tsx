@@ -586,13 +586,6 @@ export default function PostFormScreen() {
       return;
     }
 
-    if (!city.trim() || !ward.trim() || !streetAddress.trim()) {
-      setAddressError(
-        "Vui lòng chọn đầy đủ địa chỉ bài đăng.",
-      );
-      return;
-    }
-
     const attributeValues: Array<
       Record<string, unknown>
     > = [];
@@ -867,12 +860,29 @@ export default function PostFormScreen() {
         );
       }
 
-      formData.append("City", city);
-      formData.append("Ward", ward);
-      formData.append(
-        "StreetAddress",
-        streetAddress,
-      );
+      if (isEditMode || city.trim()) {
+        formData.append(
+          "City",
+          city.trim(),
+        );
+      }
+
+      if (isEditMode || ward.trim()) {
+        formData.append(
+          "Ward",
+          ward.trim(),
+        );
+      }
+
+      if (
+        isEditMode ||
+        streetAddress.trim()
+      ) {
+        formData.append(
+          "StreetAddress",
+          streetAddress.trim(),
+        );
+      }
 
       if (deliveryMethod) {
         formData.append(
@@ -1758,16 +1768,31 @@ export default function PostFormScreen() {
               />
             </View>
             <Text style={styles.label}>
-              Địa chỉ bài đăng <Text style={styles.required}>*</Text>
+              Địa chỉ bài đăng
             </Text>
             <AddressPickerField
               value={postAddress}
+              initialSelection={{
+                provinceName: city,
+                wardName: ward,
+                streetAddress,
+              }}
               onChange={(_value, selection) => {
                 setCity(selection.provinceName);
                 setWard(selection.wardName);
                 setStreetAddress(selection.streetAddress);
                 setAddressError("");
               }}
+              onClear={
+                isBuyPost || !isEditMode
+                  ? () => {
+                      setCity("");
+                      setWard("");
+                      setStreetAddress("");
+                      setAddressError("");
+                    }
+                  : undefined
+              }
               placeholder="Chọn Tỉnh/Thành, Phường/Xã và số nhà/tên đường"
               disabled={isLoading}
               hasError={Boolean(addressError)}
