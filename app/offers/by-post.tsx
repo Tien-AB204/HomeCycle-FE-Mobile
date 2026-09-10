@@ -165,6 +165,18 @@ const getStatusLabel = (value: unknown) => {
     case "canceled":
       return "Đã hủy";
 
+    case "4":
+    case "completed":
+      return "Đã hoàn tất";
+
+    case "5":
+    case "closed":
+      return "Đã đóng";
+
+    case "6":
+    case "expired":
+      return "Đã hết hạn";
+
     default:
       return "Chưa xác định";
   }
@@ -174,6 +186,8 @@ const getStatusStyle = (value: unknown) => {
   switch (normalizeStatus(value)) {
     case "1":
     case "accepted":
+    case "4":
+    case "completed":
       return styles.statusAccepted;
 
     case "2":
@@ -181,6 +195,10 @@ const getStatusStyle = (value: unknown) => {
     case "3":
     case "cancelled":
     case "canceled":
+    case "5":
+    case "closed":
+    case "6":
+    case "expired":
       return styles.statusRejected;
 
     default:
