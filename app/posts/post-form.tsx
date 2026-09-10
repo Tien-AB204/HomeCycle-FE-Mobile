@@ -121,6 +121,7 @@ type AttributeInputMode =
   | "OptionOrCustom";
 
 const EAV_CLEAR_OPTION = "__homecycle_eav_clear__";
+const SELECT_CLEAR_OPTION = "__homecycle_select_clear__";
 
 const normalizeAttributeDataType = (
   value: unknown,
@@ -548,6 +549,22 @@ export default function PostFormScreen() {
       setFormMessage({
         type: "error",
         text: "Vui lòng nhập mô tả cho tin thu mua.",
+      });
+      return;
+    }
+
+    if (!isBuyPost && !selectedCategory.trim()) {
+      setFormMessage({
+        type: "error",
+        text: "Vui lòng chọn phân loại sản phẩm.",
+      });
+      return;
+    }
+
+    if (!isBuyPost && !selectedProductType.trim()) {
+      setFormMessage({
+        type: "error",
+        text: "Vui lòng chọn loại sản phẩm.",
       });
       return;
     }
@@ -1077,6 +1094,7 @@ export default function PostFormScreen() {
   const SelectBox = ({
     label,
     required = false,
+    clearable = false,
     value,
     placeholder = "Chọn...",
     options,
@@ -1084,26 +1102,74 @@ export default function PostFormScreen() {
   }: {
     label: string;
     required?: boolean;
+    clearable?: boolean;
     value: string;
     placeholder?: string;
     options: { label: string; value: string }[];
     onChange: (value: string) => void;
-  }) => (
-    <View style={styles.flex}>
-      <Text style={styles.label}>
-        {label} {required ? <Text style={styles.required}>*</Text> : null}
-      </Text>
-      <TouchableOpacity
-        style={styles.inputContainer}
-        onPress={() => openSelect(`Chọn ${label}`, options, onChange)}
-      >
-        <Text style={value ? styles.inputText : styles.placeholderText} numberOfLines={1}>
-          {value ? getLabel(value, options) : placeholder}
+  }) => {
+    const selectOptions =
+      clearable && value
+        ? [
+            {
+              label: "Bỏ chọn",
+              value: SELECT_CLEAR_OPTION,
+            },
+            ...options,
+          ]
+        : options;
+
+    const handleChange = (nextValue: string) => {
+      onChange(
+        nextValue === SELECT_CLEAR_OPTION
+          ? ""
+          : nextValue,
+      );
+      setFormMessage(null);
+    };
+
+    return (
+      <View style={styles.flex}>
+        <Text style={styles.label}>
+          {label}{" "}
+          {required ? (
+            <Text style={styles.required}>*</Text>
+          ) : null}
         </Text>
-        <Ionicons name="chevron-down" size={20} color="#547B7D" />
-      </TouchableOpacity>
-    </View>
-  );
+
+        <TouchableOpacity
+          style={styles.inputContainer}
+          onPress={() =>
+            openSelect(
+              `Chọn ${label}`,
+              selectOptions,
+              handleChange,
+            )
+          }
+        >
+          <Text
+            style={
+              value
+                ? styles.inputText
+                : styles.placeholderText
+            }
+            numberOfLines={1}
+          >
+            {value
+              ? getLabel(value, options)
+              : placeholder}
+          </Text>
+
+          <Ionicons
+            name="chevron-down"
+            size={20}
+            color="#547B7D"
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
 
   if (isFetchingOldData) {
     return (
@@ -1243,7 +1309,8 @@ export default function PostFormScreen() {
             <View style={styles.row}>
               <SelectBox
                 label="Phân loại"
-                required
+                required={!isBuyPost}
+                clearable
                 value={selectedCategory}
                 options={categories}
                 onChange={(value) => {
@@ -1258,7 +1325,8 @@ export default function PostFormScreen() {
               />
               <SelectBox
                 label="Loại sản phẩm"
-                required
+                required={!isBuyPost}
+                clearable
                 value={selectedProductType}
                 options={filteredProductTypes}
                 onChange={(value) => {
@@ -1272,7 +1340,13 @@ export default function PostFormScreen() {
               />
             </View>
             <View style={styles.row}>
-              <SelectBox label="Thương hiệu" required value={brandId} options={brands} onChange={setBrandId} />
+              <SelectBox
+                label="Thương hiệu"
+                clearable
+                value={brandId}
+                options={brands}
+                onChange={setBrandId}
+              />
               {!isBuyPost ? (
                 <View style={styles.flex}>
                   <Text style={styles.label}>Mã Model</Text>
@@ -1533,6 +1607,7 @@ export default function PostFormScreen() {
               {!isBuyPost ? (
                 <SelectBox
                   label="Không gian dùng"
+                  clearable
                   value={spaceUsage}
                   options={SPACE_USAGE_OPTIONS}
                   onChange={setSpaceUsage}
@@ -1540,13 +1615,20 @@ export default function PostFormScreen() {
               ) : null}
               <SelectBox
                 label="Mức độ hư hại"
+                clearable
                 value={damageLevel}
                 options={DAMAGE_LEVEL_OPTIONS}
                 onChange={setDamageLevel}
               />
             </View>
             <View style={styles.row}>
-              <SelectBox label="Tình trạng HĐ" required value={functionalityStatus} options={FUNC_STATUS_OPTIONS} onChange={setFunctionalityStatus} />
+              <SelectBox
+                label="Tình trạng HĐ"
+                clearable
+                value={functionalityStatus}
+                options={FUNC_STATUS_OPTIONS}
+                onChange={setFunctionalityStatus}
+              />
               <View style={styles.flex}>
                 <Text style={styles.label}>Thời gian SD (Năm)</Text>
                 <View style={styles.inputContainer}>
@@ -1669,6 +1751,7 @@ export default function PostFormScreen() {
               ) : null}
               <SelectBox
                 label="Ưu tiên"
+                clearable={isBuyPost || !isEditMode}
                 value={priorityLevel}
                 options={PRIORITY_OPTIONS}
                 onChange={setPriorityLevel}
