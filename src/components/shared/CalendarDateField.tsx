@@ -27,6 +27,7 @@ interface CalendarDateFieldProps {
   placeholder?: string;
   disabled?: boolean;
   hasError?: boolean;
+  clearable?: boolean;
   defaultViewDate?: string;
   maximumDate?: Date;
 }
@@ -75,6 +76,7 @@ const CalendarDateField = forwardRef<
     placeholder = "Chọn ngày",
     disabled = false,
     hasError = false,
+    clearable = false,
     defaultViewDate = "2000-01-01",
     maximumDate,
   },
@@ -177,6 +179,19 @@ const CalendarDateField = forwardRef<
     }
 
     onChange(formatApiDate(selectedDate));
+    setVisible(false);
+  };
+
+  const clearDate = () => {
+    if (
+      disabled ||
+      !clearable ||
+      !value
+    ) {
+      return;
+    }
+
+    onChange("");
     setVisible(false);
   };
 
@@ -385,6 +400,22 @@ const CalendarDateField = forwardRef<
                 },
               )}
             </View>
+
+            {clearable && value ? (
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={clearDate}
+              >
+                <Text
+                  style={[
+                    styles.closeButtonText,
+                    { color: COLORS.error },
+                  ]}
+                >
+                  Bỏ chọn ngày
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               style={styles.closeButton}
