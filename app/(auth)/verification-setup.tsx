@@ -723,6 +723,7 @@ export default function VerificationSetupScreen() {
             disabled={isLoading}
             hasError={Boolean(errors.repDob)}
             maximumDate={new Date()}
+            clearable
           />
           {errors.repDob ? <Text style={styles.fieldError}>{errors.repDob}</Text> : null}
 
@@ -731,6 +732,10 @@ export default function VerificationSetupScreen() {
             value={repAddress}
             onChange={(value) => {
               setRepAddress(value);
+              clearError("repAddress");
+            }}
+            onClear={() => {
+              setRepAddress("");
               clearError("repAddress");
             }}
             placeholder="Chọn địa chỉ theo CCCD"

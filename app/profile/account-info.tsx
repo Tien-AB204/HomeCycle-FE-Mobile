@@ -860,6 +860,7 @@ export default function AccountInfoScreen() {
             placeholder="Chưa có"
             defaultViewDate="2000-01-01"
             maximumDate={new Date()}
+            clearable
             disabled={editingSection !== "identity" || isSaving}
           />
 
@@ -868,6 +869,10 @@ export default function AccountInfoScreen() {
             value={repAddress}
             onChange={(value) => {
               setRepAddress(value);
+              setSaveMessage(null);
+            }}
+            onClear={() => {
+              setRepAddress("");
               setSaveMessage(null);
             }}
             placeholder="Chưa có"

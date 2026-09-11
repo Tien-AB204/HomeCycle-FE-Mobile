@@ -1083,6 +1083,12 @@ export default function BusinessSetupScreen() {
                   setBusinessWard(selection.wardName);
                   setBusinessAddressError("");
                 }}
+                onClear={() => {
+                  setBusinessAddress("");
+                  setBusinessCity("");
+                  setBusinessWard("");
+                  setBusinessAddressError("");
+                }}
                 placeholder="Chọn địa chỉ trụ sở / cơ sở kinh doanh"
                 disabled={isLoading}
                 hasError={Boolean(businessAddressError)}
@@ -1122,6 +1128,11 @@ export default function BusinessSetupScreen() {
                     onChange={(nextAddress, selection) => {
                       setWarehouseAddress(nextAddress);
                       setWarehouseAddressSelection(selection);
+                      setServiceAreaError("");
+                    }}
+                    onClear={() => {
+                      setWarehouseAddress("");
+                      setWarehouseAddressSelection(null);
                       setServiceAreaError("");
                     }}
                     placeholder="Chọn địa chỉ kho tập kết hàng hóa"
@@ -1212,13 +1223,17 @@ export default function BusinessSetupScreen() {
                 onChange={(value) => {
                   setIdentityDob(value);
                   setIdentityDobError("");
-                  requestAnimationFrame(() => {
-                    identityAddressPickerRef.current?.open();
-                  });
+
+                  if (value) {
+                    requestAnimationFrame(() => {
+                      identityAddressPickerRef.current?.open();
+                    });
+                  }
                 }}
                 placeholder="Chọn ngày sinh"
                 defaultViewDate="2000-01-01"
                 maximumDate={new Date()}
+                clearable
                 disabled={isLoading}
                 hasError={Boolean(identityDobError)}
               />
@@ -1232,6 +1247,10 @@ export default function BusinessSetupScreen() {
                 value={identityAddress}
                 onChange={(nextAddress) => {
                   setIdentityAddress(nextAddress);
+                  setIdentityAddressError("");
+                }}
+                onClear={() => {
+                  setIdentityAddress("");
                   setIdentityAddressError("");
                 }}
                 placeholder="Chọn địa chỉ thường trú"
