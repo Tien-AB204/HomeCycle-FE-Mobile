@@ -56,6 +56,14 @@ type SellerMatchPost = {
   postId?: string;
   ownerId?: string;
   productName?: string;
+  categoryName?: string | null;
+  productTypeName?: string | null;
+  product?: {
+    categoryId?: string | null;
+    productTypeId?: string | null;
+    categoryName?: string | null;
+    productTypeName?: string | null;
+  };
   remainingQuantity?: number;
   quantity?: number;
   basePrice?: number | null;
@@ -86,6 +94,21 @@ type BuyPostMatch = {
 };
 
 const normalizePostId = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+const hasVerifiedTypeMismatch = (buyPost: SellerMatchPost, sellPost: SellerMatchPost) =>
+  (["category", "productType"] as const).some((field) => {
+    const idKey = `${field}Id` as const;
+    const buyId = normalizePostId(buyPost.product?.[idKey]);
+    const sellId = normalizePostId(sellPost.product?.[idKey]);
+    if (buyId && sellId) return buyId !== sellId;
+
+    // List responses expose catalog names; detail responses also expose IDs.
+    const nameKey = `${field}Name` as const;
+    const buyName = buyPost.product?.[nameKey] ?? buyPost[nameKey];
+    const sellName = sellPost.product?.[nameKey] ?? sellPost[nameKey];
+    return typeof buyName === "string" && typeof sellName === "string" &&
+      buyName.trim().length > 0 && sellName.trim().length > 0 && buyName !== sellName;
+  });
 
 const isUsableOwnSell = (post: SellerMatchPost, userId: unknown) => {
   const type = String(post.postType ?? "").toLowerCase();
@@ -2363,10 +2386,10 @@ export default function PostDetailScreen() {
                                   </Text>
                                   <Text style={styles.sellerMatchMeta}>
                                     {match.matchSummary
-                                      ? match.matchSummary.evaluatedCriteriaCount > 0
-                                        ? `${match.matchSummary.matchedCriteriaCount}/${match.matchSummary.evaluatedCriteriaCount} tiêu chí phù hợp`
-                                        : "Chưa có tiêu chí đủ dữ liệu để so sánh"
-                                      : "Chưa có dữ liệu so sánh"}
+                                      ? `Phù hợp ${match.matchSummary.matchedCriteriaCount}/${match.matchSummary.evaluatedCriteriaCount} tiêu chí`
+                                      : hasVerifiedTypeMismatch(post, sellPost)
+                                        ? "Khác loại sản phẩm yêu cầu"
+                                        : "Chưa có dữ liệu so sánh"}
                                   </Text>
                                 </View>
 
