@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused, usePreventRemove } from "@react-navigation/native";
 import {
   useFocusEffect,
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Dimensions,
@@ -59,11 +61,60 @@ type SellerMatchPost = {
   basePrice?: number | null;
   status?: string | number;
   postType?: string | number;
+  expiryDate?: string | null;
+  isExpired?: boolean;
+};
+
+type MatchState = "Matched" | "NotMatched" | "NotSpecified" | "Unknown";
+type MatchSummary = {
+  category: MatchState;
+  productType: MatchState;
+  brand: MatchState;
+  functionality: MatchState;
+  usageDuration: MatchState;
+  damageLevel: MatchState;
+  price: MatchState;
+  city: MatchState;
+  attributes: Record<string, MatchState>;
+  matchedCriteriaCount: number;
+  evaluatedCriteriaCount: number;
 };
 
 type BuyPostMatch = {
   sellPost?: SellerMatchPost;
+  matchSummary?: MatchSummary;
 };
+
+const normalizePostId = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+const isUsableOwnSell = (post: SellerMatchPost, userId: unknown) => {
+  const type = String(post.postType ?? "").toLowerCase();
+  const status = String(post.status ?? "").toLowerCase();
+  const remaining = Number(post.remainingQuantity);
+  const expiry = post.expiryDate == null ? null : Date.parse(post.expiryDate);
+  return Boolean(post.postId && userId) &&
+    normalizePostId(post.ownerId) === normalizePostId(userId) &&
+    (type === "sell" || type === "1") &&
+    (status === "active" || status === "1") &&
+    post.isExpired !== true &&
+    (expiry === null || (Number.isFinite(expiry) && expiry > Date.now())) &&
+    Number.isFinite(remaining) && remaining > 0;
+};
+
+async function loadSellerPages<T>(loadPage: (page: number) => Promise<any>): Promise<T[]> {
+  const result: T[] = [];
+  for (let pageNumber = 1; pageNumber <= 1000; pageNumber += 1) {
+    const response = await loadPage(pageNumber);
+    if (response?.isSuccess === false) throw response;
+    const page = response?.data ?? response;
+    if (!Array.isArray(page?.items) || typeof page.hasNextPage !== "boolean") {
+      throw new Error("Không thể tải đầy đủ danh sách. Vui lòng thử lại.");
+    }
+    result.push(...page.items);
+    if (!page.hasNextPage) return result;
+  }
+  throw new Error("Danh sách quá lớn. Vui lòng thử lại sau.");
+}
 
 function useLocalFeedback() {
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
@@ -214,6 +265,10 @@ function useLocalConfirm() {
 }
 
 const postApi = {
+  getPostsByUser: (userId: string, pageNumber: number) =>
+    apiClient.get(`/posts/get-all/by-user/${encodeURIComponent(userId)}`, {
+      params: { PageNumber: pageNumber, PageSize: 100 },
+    }).then((response) => response.data),
   getPostById: (postId: string) =>
     apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
 
@@ -272,6 +327,28 @@ const offerApi = {
       .then((response) => response.data),
 };
 
+const isPendingSellerOffer = (item: any, buyPostId: string, senderId: unknown, receiverId: unknown) =>
+  Boolean(item?.offerId && item?.postId && senderId && receiverId) &&
+  normalizePostId(item.buyPostId) === normalizePostId(buyPostId) &&
+  normalizePostId(item.senderId ?? item.sender?.userId) === normalizePostId(senderId) &&
+  normalizePostId(item.receiverId ?? item.receiver?.userId) === normalizePostId(receiverId) &&
+  ["pending", "0"].includes(String(item.offerStatus).toLowerCase());
+
+async function loadPendingSellerOffers(
+  buyPostId: string, senderId: unknown, receiverId: unknown, isCurrent: () => boolean,
+): Promise<Record<string, string>> {
+  const items = await loadSellerPages<any>((page) => isCurrent()
+    ? offerApi.getSentOffers({ PageNumber: page, PageSize: 100, BuyPostId: buyPostId, Status: "Pending" })
+    : Promise.reject(new Error("Đã dừng tải chào bán.")));
+  const pending: Record<string, string> = {};
+  for (const item of items) {
+    if (isPendingSellerOffer(item, buyPostId, senderId, receiverId)) {
+      pending[normalizePostId(item.postId)] = String(item.offerId);
+    }
+  }
+  return pending;
+}
+
 const cartApi = {
   addToCart: (postId: string, quantity: number) =>
     apiClient.post(`/cart/${postId}`, { quantity }).then((response) => response.data),
@@ -280,9 +357,11 @@ const cartApi = {
 const { width } = Dimensions.get("window");
 
 export default function PostDetailScreen() {
-  const { id, viewOnly } = useLocalSearchParams();
+  const { id, viewOnly, sellerRequestSellPostId, resumeSellerRequest } = useLocalSearchParams();
   const isViewOnly = viewOnly === "true";
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
 
   const { user } = useAuth();
   const currentUserId = user?.userId || user?.id;
@@ -311,6 +390,20 @@ export default function PostDetailScreen() {
   const [isLoadingSellerMatches, setIsLoadingSellerMatches] = useState(false);
   const [isSubmittingSellerRequest, setIsSubmittingSellerRequest] =
     useState(false);
+  const sellerSubmitLock = useRef(false);
+  const sellerLoadVersion = useRef(0);
+  const sellerLoadLock = useRef(false);
+  const sellerNavigationLock = useRef(false);
+  const handledContinuation = useRef("");
+  const preferredSellerId = useRef<string | undefined>(undefined);
+  const sellerContextVersion = useRef(0);
+  const postLoadVersion = useRef(0);
+  const [sellerLoadError, setSellerLoadError] = useState(false);
+  const [pendingSellerOffers, setPendingSellerOffers] = useState<Record<string, string>>({});
+  const pendingSellerVersion = useRef(0);
+  const pendingSellerOfferId = pendingSellerOffers[normalizePostId(selectedSellPostId)] || null;
+  const hasPendingSellerOffers = Object.keys(pendingSellerOffers).length > 0;
+  usePreventRemove(isSubmittingSellerRequest, () => {});
 
   const [showCartModal, setShowCartModal] = useState(false);
   const [cartQuantity, setCartQuantity] = useState("1");
@@ -345,12 +438,26 @@ export default function PostDetailScreen() {
 
   const { confirm, confirmationModal } = useLocalConfirm();
 
-  const fetchPostData = async () => {
+  const rememberPendingSellerOffer = useCallback((sellPostId: string, offerId: string) => {
+    pendingSellerVersion.current += 1;
+    setPendingSellerOffers((current) => ({ ...current, [normalizePostId(sellPostId)]: offerId }));
+  }, []);
+
+  const openSellerOffer = useCallback((offerId: string) => {
+    if (!offerId || sellerSubmitLock.current || sellerNavigationLock.current) return;
+    sellerNavigationLock.current = true;
+    setShowSellerRequestModal(false);
+    router.push({ pathname: "/offers/[id]", params: { id: offerId } });
+  }, [router]);
+
+  const fetchPostData = useCallback(async () => {
     if (!id) return;
+    const version = ++postLoadVersion.current;
 
     try {
       setIsLoading(true);
       const resPost = await postApi.getPostById(id as string);
+      if (postLoadVersion.current !== version) return;
       const postData = resPost?.data || resPost;
       setPost(postData);
 
@@ -362,6 +469,7 @@ export default function PostDetailScreen() {
       if (
         user &&
         postData?.ownerId !== currentUserId &&
+        postData?.postType !== "Buy" &&
         !isForeignBusinessBuy
       ) {
         const isBuyTarget =
@@ -379,6 +487,7 @@ export default function PostDetailScreen() {
               ? { BuyPostId: targetId }
               : { PostId: targetId }),
           });
+        if (postLoadVersion.current !== version) return;
 
         const items =
           resOffers?.data?.items ||
@@ -410,19 +519,37 @@ export default function PostDetailScreen() {
       } else {
         setExistingOfferId(null);
       }
+      if (postData?.postType === "Buy" && currentUserId &&
+        String(user?.role).toLowerCase() === "personal" &&
+        normalizePostId(postData.ownerId) !== normalizePostId(currentUserId)) {
+        const pendingVersion = ++pendingSellerVersion.current;
+        try {
+          const pending = await loadPendingSellerOffers(String(postData.postId), currentUserId,
+            postData.ownerId, () => postLoadVersion.current === version);
+          if (postLoadVersion.current === version && pendingSellerVersion.current === pendingVersion) {
+            setPendingSellerOffers(pending);
+          }
+        } catch (error) {
+          if (postLoadVersion.current === version && pendingSellerVersion.current === pendingVersion) {
+            showPageError(getApiErrorMessage(error, "Chưa cập nhật được các chào bán đã gửi. Vui lòng thử lại."));
+          }
+        }
+      }
     } catch (error) {
+      if (postLoadVersion.current !== version) return;
       showPageError(
         getApiErrorMessage(error, "Không thể tải thông tin bài đăng."),
       );
     } finally {
-      setIsLoading(false);
+      if (postLoadVersion.current === version) setIsLoading(false);
     }
-  };
+  }, [id, user, currentUserId, showPageError]);
 
   useFocusEffect(
     useCallback(() => {
       void fetchPostData();
-    }, [id, user]),
+      return () => { postLoadVersion.current += 1; };
+    }, [fetchPostData]),
   );
 
   const isMyPost = Boolean(
@@ -577,125 +704,77 @@ export default function PostDetailScreen() {
     );
   };
 
-  const loadOwnSellMatches = async (
-    buyPostId: string,
-  ): Promise<BuyPostMatch[]> => {
-    const pageSize = 100;
-    let pageNumber = 1;
-    const allMatches: BuyPostMatch[] = [];
-
-    while (true) {
-      const response =
-        await postApi.getBuyPostMatches(
-          buyPostId,
-          {
-            PageNumber: pageNumber,
-            PageSize: pageSize,
-          },
-        );
-
-      const page = response?.data || response;
-      const items: BuyPostMatch[] =
-        Array.isArray(page?.items)
-          ? page.items
-          : [];
-
-      allMatches.push(...items);
-
-      const totalPages = Number(
-        page?.totalPages ?? 0,
-      );
-
-      const hasNextPage =
-        typeof page?.hasNextPage === "boolean"
-          ? page.hasNextPage
-          : Number.isFinite(totalPages) &&
-              totalPages > 0
-            ? pageNumber < totalPages
-            : items.length === pageSize;
-
-      if (!hasNextPage) {
-        break;
-      }
-
-      pageNumber += 1;
-
-      if (pageNumber > 1000) {
-        throw new Error(
-          "Không thể tải đầy đủ danh sách tin bán phù hợp.",
-        );
+  const loadOwnSellPosts = useCallback(async (preferredId: string | undefined, version: number): Promise<BuyPostMatch[]> => {
+    const ownPosts = await loadSellerPages<SellerMatchPost>((page) =>
+      sellerLoadVersion.current === version
+        ? postApi.getPostsByUser(String(currentUserId), page)
+        : Promise.reject(new Error("Đã dừng tải danh sách.")),
+    );
+    if (sellerLoadVersion.current !== version) return [];
+    // A just-created post can fall outside a changing paginated snapshot.
+    if (preferredId && !ownPosts.some((item) =>
+      normalizePostId(item.postId) === normalizePostId(preferredId))) {
+      try {
+        const response = await postApi.getPostById(preferredId);
+        ownPosts.push(response?.data ?? response);
+      } catch {
+        // An unavailable previous selection must not hide the rest of the inventory.
       }
     }
-
-    const ownMatches =
-      allMatches.filter((match) => {
-        const sellPost = match?.sellPost;
-
-        if (
-          !sellPost?.postId ||
-          !currentUserId
-        ) {
-          return false;
-        }
-
-        const isMine =
-          String(sellPost.ownerId || "") ===
-          String(currentUserId);
-
-        const normalizedType =
-          String(sellPost.postType ?? "")
-            .trim()
-            .toLowerCase();
-
-        const normalizedStatus =
-          String(sellPost.status ?? "")
-            .trim()
-            .toLowerCase();
-
-        const isSell =
-          normalizedType === "sell" ||
-          normalizedType === "1";
-
-        const isActive =
-          normalizedStatus === "active" ||
-          normalizedStatus === "1";
-
-        const hasRemainingQuantity =
-          Number(
-            sellPost.remainingQuantity ?? 0,
-          ) > 0;
-
-        return (
-          isMine &&
-          isSell &&
-          isActive &&
-          hasRemainingQuantity
-        );
-      });
-
-    const seenPostIds = new Set<string>();
-
-    return ownMatches.filter((match) => {
-      const sellPostId = String(
-        match.sellPost?.postId || "",
-      );
-
-      if (
-        !sellPostId ||
-        seenPostIds.has(sellPostId)
-      ) {
-        return false;
+    const unique = new Map<string, BuyPostMatch>();
+    for (const sellPost of ownPosts) {
+      if (sellPost && isUsableOwnSell(sellPost, currentUserId)) {
+        unique.set(normalizePostId(sellPost.postId), { sellPost });
       }
+    }
+    return [...unique.values()];
+  }, [currentUserId]);
 
-      seenPostIds.add(sellPostId);
-      return true;
-    });
+  const loadSellerComparisons = useCallback(async (buyPostId: string, version: number) => {
+    // One batch supplements the inventory; missing comparisons never remove a post.
+    try {
+      const response = await postApi.getBuyPostMatches(buyPostId, { PageNumber: 1, PageSize: 100 });
+      if (response?.isSuccess === false) return;
+      const page = response?.data ?? response;
+      if (!Array.isArray(page?.items) || sellerLoadVersion.current !== version) return;
+      const summaries = new Map<string, MatchSummary>();
+      for (const item of page.items as BuyPostMatch[]) {
+        if (item.sellPost?.postId && item.matchSummary) {
+          summaries.set(normalizePostId(item.sellPost.postId), item.matchSummary);
+        }
+      }
+      setSellerMatches((current) => sellerLoadVersion.current !== version ? current : current.map((item) => ({
+        ...item,
+        matchSummary: summaries.get(normalizePostId(item.sellPost?.postId)),
+      })));
+    } catch {
+      // Inventory and terms remain usable without comparison data.
+    }
+  }, []);
+
+  const findPendingSellerOffer = async (buyPostId: string, sellPostId: string) => {
+    const contextVersion = sellerContextVersion.current;
+    const items = await loadSellerPages<any>((page) =>
+      sellerContextVersion.current === contextVersion
+        ? offerApi.getSentOffers({
+          PageNumber: page, PageSize: 100, BuyPostId: buyPostId,
+          PostId: sellPostId, Status: "Pending",
+        })
+        : Promise.reject(new Error("Đã dừng kiểm tra chào bán.")),
+    );
+    return items.find((item) =>
+      isPendingSellerOffer(item, buyPostId, currentUserId, post?.ownerId) &&
+      normalizePostId(item.postId) === normalizePostId(sellPostId) &&
+      item.offerId,
+    );
   };
 
-  const handleSelectSellerMatch = (
+  const handleSelectSellerMatch = useCallback((
     sellPost: SellerMatchPost,
   ) => {
-    if (!sellPost.postId) return;
+    if (!sellPost.postId || sellerSubmitLock.current) return;
+    preferredSellerId.current = String(sellPost.postId);
+    if (normalizePostId(sellPost.postId) === normalizePostId(selectedSellPostId)) return;
 
     setSelectedSellPostId(
       String(sellPost.postId),
@@ -714,9 +793,10 @@ export default function PostDetailScreen() {
     );
 
     clearSellerRequestFeedback();
-  };
+  }, [selectedSellPostId, clearSellerRequestFeedback]);
 
-  const handleOpenSellerRequest = async () => {
+  const handleOpenSellerRequest = useCallback(async (preferredId?: string) => {
+    if (sellerSubmitLock.current || sellerLoadLock.current || sellerNavigationLock.current) return;
     const targetBuyPostId = String(
       post?.postId ||
         (Array.isArray(id) ? id[0] : id) ||
@@ -745,19 +825,11 @@ export default function PostDetailScreen() {
       return;
     }
 
-    if (post?.postType !== "Buy") {
+    if (post?.postType !== "Buy" || isViewOnly || !currentUserId ||
+      normalizePostId(post.ownerId) === normalizePostId(currentUserId)) {
       showPageError(
         "Chức năng chào bán chỉ áp dụng cho tin thu mua.",
       );
-      return;
-    }
-
-    if (existingOfferId) {
-      clearPageFeedback();
-      router.push({
-        pathname: "/offers/[id]",
-        params: { id: existingOfferId },
-      });
       return;
     }
 
@@ -770,46 +842,122 @@ export default function PostDetailScreen() {
 
     clearPageFeedback();
     clearSellerRequestFeedback();
-
-    setSellerMatches([]);
-    setSelectedSellPostId(null);
-    setSellerRequestQuantity("1");
-    setSellerRequestPrice("");
+    setSellerLoadError(false);
     setShowSellerRequestModal(true);
     setIsLoadingSellerMatches(true);
+    sellerLoadLock.current = true;
+    const version = ++sellerLoadVersion.current;
+    const pendingVersion = ++pendingSellerVersion.current;
+    const requestedId = preferredId || preferredSellerId.current || selectedSellPostId || undefined;
+    preferredSellerId.current = requestedId;
 
     try {
-      const ownMatches =
-        await loadOwnSellMatches(
-          targetBuyPostId,
-        );
+      const [ownMatches, pending] = await Promise.all([
+        loadOwnSellPosts(requestedId, version),
+        loadPendingSellerOffers(targetBuyPostId, currentUserId, post.ownerId,
+          () => sellerLoadVersion.current === version),
+      ]);
+      if (sellerLoadVersion.current !== version) return;
 
       setSellerMatches(ownMatches);
-
-      if (ownMatches.length === 1) {
-        const onlySellPost =
-          ownMatches[0]?.sellPost;
-
-        if (onlySellPost?.postId) {
-          handleSelectSellerMatch(
-            onlySellPost,
-          );
-        }
+      if (pendingSellerVersion.current === pendingVersion) setPendingSellerOffers(pending);
+      const preferred = ownMatches.find((item) =>
+        normalizePostId(item.sellPost?.postId) === normalizePostId(requestedId));
+      const selection = preferred?.sellPost || (!requestedId && ownMatches.length === 1
+        ? ownMatches[0].sellPost : undefined);
+      if (selection) {
+        handleSelectSellerMatch(selection);
+      } else if (requestedId) {
+        showSellerRequestError("Tin bán đã chọn hiện không thể chào bán. Vui lòng kiểm tra hoặc chọn tin khác.");
       }
+      void loadSellerComparisons(targetBuyPostId, version);
     } catch (error) {
+      if (sellerLoadVersion.current !== version) return;
+      setSellerLoadError(true);
       showSellerRequestError(
         getApiErrorMessage(
           error,
-          "Không thể tải các tin bán phù hợp của bạn.",
+          "Không thể tải các tin bán của bạn. Vui lòng thử lại.",
         ),
       );
     } finally {
-      setIsLoadingSellerMatches(false);
+      if (sellerLoadVersion.current === version) {
+        setIsLoadingSellerMatches(false);
+        sellerLoadLock.current = false;
+      }
     }
+  }, [post, id, user, currentUserId, isViewOnly, router, selectedSellPostId,
+    clearPageFeedback, clearSellerRequestFeedback, showPageError, showSellerRequestError,
+    loadOwnSellPosts, loadSellerComparisons, handleSelectSellerMatch]);
+
+  useEffect(() => {
+    sellerLoadVersion.current += 1;
+    sellerContextVersion.current += 1;
+    sellerLoadLock.current = false;
+    sellerSubmitLock.current = false;
+    setIsSubmittingSellerRequest(false);
+    setShowSellerRequestModal(false);
+    setSellerMatches([]);
+    setSelectedSellPostId(null);
+    setSellerRequestPrice("");
+    setSellerRequestQuantity("1");
+    pendingSellerVersion.current += 1;
+    setPendingSellerOffers({});
+    setSellerLoadError(false);
+    setIsLoadingSellerMatches(false);
+    handledContinuation.current = "";
+    preferredSellerId.current = undefined;
+    return () => {
+      sellerLoadVersion.current += 1;
+      sellerContextVersion.current += 1;
+    };
+  }, [id, currentUserId]);
+
+  useFocusEffect(useCallback(() => {
+    sellerNavigationLock.current = false;
+    sellerLoadLock.current = false;
+    setIsLoadingSellerMatches(false);
+    setShowSellerRequestModal(false);
+    return () => { sellerLoadVersion.current += 1; };
+  }, []));
+
+  useEffect(() => {
+    const preferredId = Array.isArray(sellerRequestSellPostId)
+      ? sellerRequestSellPostId[0] : sellerRequestSellPostId;
+    const resume = resumeSellerRequest === "true";
+    if (!preferredId && !resume) {
+      handledContinuation.current = "";
+      return;
+    }
+    if (!isFocused || isLoading || !post || !currentUserId || isViewOnly) return;
+    if (sellerLoadLock.current || sellerSubmitLock.current) return;
+    if (normalizePostId(post.postId) !== normalizePostId(Array.isArray(id) ? id[0] : id)) return;
+    const key = `${post.postId}:${preferredId || "resume"}:${currentUserId}`;
+    if (handledContinuation.current === key) return;
+    handledContinuation.current = key;
+    preferredSellerId.current = preferredId || undefined;
+    router.setParams({ sellerRequestSellPostId: "", resumeSellerRequest: "false" });
+    void handleOpenSellerRequest(preferredId);
+  }, [id, post, isLoading, currentUserId, sellerRequestSellPostId, resumeSellerRequest,
+    isViewOnly, isFocused, isLoadingSellerMatches, isSubmittingSellerRequest, router, handleOpenSellerRequest]);
+
+  const handleCreateSellForBuy = () => {
+    if (sellerSubmitLock.current || sellerLoadLock.current || sellerNavigationLock.current) return;
+    sellerNavigationLock.current = true;
+    setShowSellerRequestModal(false);
+    router.push({
+      pathname: "/posts/post-form",
+      params: { postType: "Sell", buyPostId: String(post.postId) },
+    });
   };
 
   const handleCreateSellerRequest =
     async () => {
+      if (sellerSubmitLock.current || sellerLoadLock.current || sellerNavigationLock.current || sellerLoadError) return;
+      if (pendingSellerOfferId) {
+        openSellerOffer(pendingSellerOfferId);
+        return;
+      }
       const selectedMatch =
         sellerMatches.find(
           (match) =>
@@ -824,7 +972,7 @@ export default function PostDetailScreen() {
       const selectedSellPost =
         selectedMatch?.sellPost;
 
-      if (!selectedSellPost?.postId) {
+      if (!selectedSellPost?.postId || !isUsableOwnSell(selectedSellPost, currentUserId)) {
         showSellerRequestError(
           "Vui lòng chọn một tin bán của bạn.",
         );
@@ -888,9 +1036,19 @@ export default function PostDetailScreen() {
         return;
       }
 
+      const contextVersion = sellerContextVersion.current;
       try {
+        sellerSubmitLock.current = true;
         setIsSubmittingSellerRequest(true);
         clearSellerRequestFeedback();
+
+        const pending = await findPendingSellerOffer(targetBuyPostId, String(selectedSellPost.postId));
+        if (sellerContextVersion.current !== contextVersion) return;
+        if (pending) {
+          rememberPendingSellerOffer(String(selectedSellPost.postId), String(pending.offerId));
+          showSellerRequestError("Tin bán này đã có chào bán đang chờ phản hồi cho tin thu mua này.");
+          return;
+        }
 
         const response =
           await postApi.createSellerRequest(
@@ -904,25 +1062,16 @@ export default function PostDetailScreen() {
               offerQuantity: quantity,
             },
           );
+        if (sellerContextVersion.current !== contextVersion) return;
 
         if (
-          response?.isSuccess === false
+          response?.isSuccess !== true || !response?.data?.offerId
         ) {
           throw response;
         }
 
-        const createdOfferId =
-          response?.data?.offerId ||
-          response?.offerId ||
-          null;
-
+        rememberPendingSellerOffer(String(selectedSellPost.postId), String(response.data.offerId));
         setShowSellerRequestModal(false);
-
-        if (createdOfferId) {
-          setExistingOfferId(
-            String(createdOfferId),
-          );
-        }
 
         showPageSuccess(
           getApiSuccessMessage(
@@ -931,8 +1080,21 @@ export default function PostDetailScreen() {
           ),
         );
 
-        await fetchPostData();
+        // Pending does not change post capacity; retain the authoritative write result immediately.
       } catch (error) {
+        if (sellerContextVersion.current !== contextVersion) return;
+        const response = (error as { response?: { data?: any } })?.response?.data;
+        const code = response?.code ?? response?.error?.code;
+        if (code === "OFFER_DUPLICATE_PENDING") {
+          try {
+            const pending = await findPendingSellerOffer(targetBuyPostId, String(selectedSellPost.postId));
+            if (sellerContextVersion.current !== contextVersion) return;
+            if (pending) rememberPendingSellerOffer(String(selectedSellPost.postId), String(pending.offerId));
+          } catch {
+            // Keep the failed request and terms available for a later server check.
+          }
+        }
+        if (sellerContextVersion.current !== contextVersion) return;
         showSellerRequestError(
           getApiErrorMessage(
             error,
@@ -940,9 +1102,10 @@ export default function PostDetailScreen() {
           ),
         );
       } finally {
-        setIsSubmittingSellerRequest(
-          false,
-        );
+        if (sellerContextVersion.current === contextVersion) {
+          sellerSubmitLock.current = false;
+          setIsSubmittingSellerRequest(false);
+        }
       }
     };
 
@@ -1694,7 +1857,7 @@ export default function PostDetailScreen() {
         </Text>
       ) : null}
 
-      {!isViewOnly && post.status !== "Deleted" ? (
+      {!isViewOnly && post.status !== "Deleted" && !showSellerRequestModal ? (
         <View style={styles.bottomBar}>
           {isMyPost ? (
             <>
@@ -1763,13 +1926,13 @@ export default function PostDetailScreen() {
                 ]}
                 onPress={
                   post.postType === "Buy"
-                    ? handleOpenSellerRequest
+                    ? () => void handleOpenSellerRequest()
                     : handleOpenOffer
                 }
               >
                 <Ionicons
                   name={
-                    existingOfferId
+                    existingOfferId || (post.postType === "Buy" && hasPendingSellerOffers)
                       ? "document-text-outline"
                       : post.postType === "Buy"
                         ? "pricetag-outline"
@@ -1782,7 +1945,7 @@ export default function PostDetailScreen() {
                   {existingOfferId
                     ? "Xem đề nghị đã gửi"
                     : post.postType === "Buy"
-                      ? "Chào bán sản phẩm"
+                      ? hasPendingSellerOffers ? "Xem chào bán đã gửi" : "Chào bán sản phẩm"
                       : "Thương lượng"}
                 </Text>
               </TouchableOpacity>
@@ -1927,7 +2090,7 @@ export default function PostDetailScreen() {
         transparent
         animationType="slide"
         onRequestClose={() => {
-          if (!isSubmittingSellerRequest) {
+          if (!sellerSubmitLock.current) {
             setShowSellerRequestModal(false);
           }
         }}
@@ -1935,15 +2098,17 @@ export default function PostDetailScreen() {
         <ModalBackdrop
           style={styles.modalOverlay}
           disabled={isSubmittingSellerRequest}
-          onPress={() =>
-            setShowSellerRequestModal(false)
-          }
+          onPress={() => {
+            if (!sellerSubmitLock.current) setShowSellerRequestModal(false);
+          }}
         >
           <KeyboardAvoidingView
+            style={[styles.sellerKeyboardContainer, { paddingTop: insets.top }]}
+            pointerEvents="box-none"
             behavior={
               Platform.OS === "ios"
                 ? "padding"
-                : "height"
+                : Platform.OS === "android" ? "height" : undefined
             }
           >
             <ModalSurface
@@ -1952,17 +2117,15 @@ export default function PostDetailScreen() {
                 styles.sellerRequestModalContent,
               ]}
             >
-              <View style={styles.modalHeader}>
+              <View style={[styles.modalHeader, styles.sellerModalHeader]}>
                 <Text style={styles.modalTitle}>
                   Chào bán sản phẩm
                 </Text>
 
                 <TouchableOpacity
-                  onPress={() =>
-                    setShowSellerRequestModal(
-                      false,
-                    )
-                  }
+                  onPress={() => {
+                    if (!sellerSubmitLock.current) setShowSellerRequestModal(false);
+                  }}
                   disabled={
                     isSubmittingSellerRequest
                   }
@@ -1975,7 +2138,12 @@ export default function PostDetailScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.modalBody}>
+              <ScrollView
+                style={styles.sellerModalScroll}
+                contentContainerStyle={styles.sellerModalBody}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
                 {sellerRequestFeedback ? (
                   <InlineFeedback
                     feedback={
@@ -1986,6 +2154,15 @@ export default function PostDetailScreen() {
                     }
                   />
                 ) : null}
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, styles.modalSubmitBtn, styles.sellerModalButton]}
+                  disabled={isSubmittingSellerRequest || isLoadingSellerMatches}
+                  onPress={handleCreateSellForBuy}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color={COLORS.white} />
+                  <Text style={styles.primaryBtnText}>Tạo sản phẩm mới</Text>
+                </TouchableOpacity>
 
                 <View
                   style={
@@ -2033,9 +2210,13 @@ export default function PostDetailScreen() {
                         styles.sellerEmptyText
                       }
                     >
-                      Đang tìm các tin bán phù hợp của bạn...
+                      Đang tải các tin bán của bạn...
                     </Text>
                   </View>
+                ) : sellerLoadError ? (
+                  <TouchableOpacity onPress={() => void handleOpenSellerRequest()}>
+                    <Text style={styles.sellerEmptyText}>Thử tải lại danh sách tin bán</Text>
+                  </TouchableOpacity>
                 ) : sellerMatches.length ===
                   0 ? (
                   <View
@@ -2056,7 +2237,7 @@ export default function PostDetailScreen() {
                         styles.sellerEmptyTitle
                       }
                     >
-                      Chưa có tin bán phù hợp
+                      Chưa có tin bán có thể chào hàng
                     </Text>
 
                     <Text
@@ -2064,35 +2245,9 @@ export default function PostDetailScreen() {
                         styles.sellerEmptyText
                       }
                     >
-                      Bạn cần có một tin bán đang hoạt động và phù hợp với nhu cầu thu mua này trước khi gửi chào bán.
+                      Bạn cần có tin bán đang hoạt động, chưa hết hạn và còn sản phẩm để gửi chào bán.
                     </Text>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.primaryBtn,
-                        styles.modalSubmitBtn,
-                      ]}
-                      onPress={() => {
-                        setShowSellerRequestModal(false);
-                        router.push({
-                          pathname: "/posts/post-form",
-                          params: {
-                            postType: "Sell",
-                          },
-                        });
-                      }}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={20}
-                        color={COLORS.white}
-                      />
-                      <Text
-                        style={styles.primaryBtnText}
-                      >
-                        Đăng tin bán
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 ) : (
                   <>
@@ -2143,6 +2298,7 @@ export default function PostDetailScreen() {
                                 selectedSellPostId ||
                                   "",
                               );
+                            const sentOfferId = pendingSellerOffers[normalizePostId(sellPost.postId)];
 
                             return (
                               <TouchableOpacity
@@ -2158,11 +2314,9 @@ export default function PostDetailScreen() {
                                 activeOpacity={
                                   0.8
                                 }
-                                onPress={() =>
-                                  handleSelectSellerMatch(
-                                    sellPost,
-                                  )
-                                }
+                                disabled={isSubmittingSellerRequest}
+                                onPress={() => sentOfferId
+                                  ? openSellerOffer(sentOfferId) : handleSelectSellerMatch(sellPost)}
                               >
                                 <View
                                   style={
@@ -2180,6 +2334,9 @@ export default function PostDetailScreen() {
                                     {sellPost.productName ||
                                       "Tin bán"}
                                   </Text>
+                                  {sentOfferId ? (
+                                    <Text style={styles.sellerPendingText}>Đã chào bán · Xem chào bán</Text>
+                                  ) : null}
 
                                   <Text
                                     style={
@@ -2204,11 +2361,18 @@ export default function PostDetailScreen() {
                                     )}{" "}
                                     sản phẩm
                                   </Text>
+                                  <Text style={styles.sellerMatchMeta}>
+                                    {match.matchSummary
+                                      ? match.matchSummary.evaluatedCriteriaCount > 0
+                                        ? `${match.matchSummary.matchedCriteriaCount}/${match.matchSummary.evaluatedCriteriaCount} tiêu chí phù hợp`
+                                        : "Chưa có tiêu chí đủ dữ liệu để so sánh"
+                                      : "Chưa có dữ liệu so sánh"}
+                                  </Text>
                                 </View>
 
                                 <Ionicons
                                   name={
-                                    selected
+                                    sentOfferId ? "document-text-outline" : selected
                                       ? "checkmark-circle"
                                       : "ellipse-outline"
                                   }
@@ -2226,7 +2390,7 @@ export default function PostDetailScreen() {
                       </ScrollView>
                     </View>
 
-                    {selectedSellerPost ? (
+                    {selectedSellerPost && !pendingSellerOfferId ? (
                       <>
                         <View
                           style={
@@ -2372,57 +2536,35 @@ export default function PostDetailScreen() {
                           />
                         </View>
 
-                        <View
-                          style={
-                            styles.offerActions
-                          }
-                        >
-                          <TouchableOpacity
-                            style={[
-                              styles.primaryBtn,
-                              styles.modalSubmitBtn,
-                              isSubmittingSellerRequest
-                                ? styles.disabledButton
-                                : undefined,
-                            ]}
-                            onPress={() =>
-                              void handleCreateSellerRequest()
-                            }
-                            disabled={
-                              isSubmittingSellerRequest
-                            }
-                          >
-                            {isSubmittingSellerRequest ? (
-                              <ActivityIndicator
-                                color={
-                                  COLORS.white
-                                }
-                              />
-                            ) : (
-                              <>
-                                <Ionicons
-                                  name="paper-plane-outline"
-                                  size={20}
-                                  color={
-                                    COLORS.white
-                                  }
-                                />
-                                <Text
-                                  style={
-                                    styles.primaryBtnText
-                                  }
-                                >
-                                  Gửi chào bán
-                                </Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        </View>
                       </>
                     ) : null}
                   </>
                 )}
-              </View>
+              </ScrollView>
+              {!isLoadingSellerMatches && !sellerLoadError && (pendingSellerOfferId || selectedSellerPost) ? (
+                <View style={[styles.sellerModalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                  {pendingSellerOfferId ? (
+                    <Text style={styles.sellerPendingText}>Đã chào bán · Đang chờ phản hồi</Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, styles.modalSubmitBtn, styles.sellerModalButton,
+                      isSubmittingSellerRequest ? styles.disabledButton : undefined]}
+                    disabled={isSubmittingSellerRequest}
+                    onPress={() => pendingSellerOfferId
+                      ? openSellerOffer(pendingSellerOfferId) : void handleCreateSellerRequest()}
+                  >
+                    {isSubmittingSellerRequest ? <ActivityIndicator color={COLORS.white} /> : (
+                      <>
+                        <Ionicons name={pendingSellerOfferId ? "document-text-outline" : "paper-plane-outline"}
+                          size={20} color={COLORS.white} />
+                        <Text style={styles.primaryBtnText}>
+                          {pendingSellerOfferId ? "Xem chào bán đã gửi" : "Gửi chào bán"}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </ModalSurface>
           </KeyboardAvoidingView>
         </ModalBackdrop>
@@ -3052,6 +3194,40 @@ const styles = StyleSheet.create({
 
   sellerRequestModalContent: {
     maxHeight: "88%",
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    padding: 0,
+    paddingBottom: 0,
+    overflow: "hidden",
+  },
+  sellerKeyboardContainer: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "flex-end",
+  },
+  sellerModalHeader: {
+    flexShrink: 0,
+    padding: 24,
+    marginBottom: 0,
+  },
+  sellerModalScroll: { flexShrink: 1, minHeight: 0 },
+  sellerModalBody: { gap: 16, paddingHorizontal: 24, paddingBottom: 24 },
+  sellerModalFooter: {
+    flexShrink: 0,
+    gap: 10,
+    paddingTop: 16,
+    paddingHorizontal: 24,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: "center",
+  },
+  sellerModalButton: { width: "100%", minWidth: 0 },
+  sellerPendingText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   sellerLoadingState: {
     alignItems: "center",

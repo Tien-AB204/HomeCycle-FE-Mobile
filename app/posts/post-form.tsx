@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { usePreventRemove } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -17,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -172,9 +174,10 @@ const normalizeAttributeInputMode = (
 
 export default function PostFormScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const userRole = user?.role?.toLowerCase() || "personal";
-  const { editId, postType: urlPostType } = useLocalSearchParams();
+  const { editId, postType: urlPostType, buyPostId } = useLocalSearchParams();
   const isEditMode = Boolean(editId);
   const rawUrlPostType = Array.isArray(urlPostType) ? urlPostType[0] : urlPostType;
   const normalizedUrlPostType =
@@ -190,8 +193,25 @@ export default function PostFormScreen() {
   const [editPostType, setEditPostType] = useState<"Buy" | "Sell" | null>(null);
   const effectivePostType = isEditMode ? editPostType ?? fallbackPostType : fallbackPostType;
   const isBuyPost = effectivePostType === "Buy";
+  const procurementBuyPostId = !isEditMode && !isBuyPost && userRole === "personal"
+    ? (Array.isArray(buyPostId) ? buyPostId[0] : buyPostId) : undefined;
+  const publishLock = useRef(false);
+  const createdSellId = useRef<string | null>(null);
+  const uncertainSellCreate = useRef(false);
+  const [sellCreateNeedsRecovery, setSellCreateNeedsRecovery] = useState(false);
+  const [sellContinuationPending, setSellContinuationPending] = useState(false);
+  const formMounted = useRef(false);
+  const sellNavigationLock = useRef(false);
 
   const [isLoading, setIsLoading] = useState(false);
+  usePreventRemove(!isEditMode && !isBuyPost && isLoading, () => {});
+  useEffect(() => {
+    formMounted.current = true;
+    return () => { formMounted.current = false; };
+  }, []);
+  useFocusEffect(useCallback(() => {
+    sellNavigationLock.current = false;
+  }, []));
   const [isFetchingOldData, setIsFetchingOldData] = useState(isEditMode);
   const [formMessage, setFormMessage] = useState<InlineMessage>(null);
   const [imageError, setImageError] = useState("");
@@ -519,7 +539,37 @@ export default function PostFormScreen() {
     );
   };
 
+  const continueAfterSellCreate = useCallback(() => {
+    if (!formMounted.current || sellNavigationLock.current) return;
+    sellNavigationLock.current = true;
+    try {
+      if (procurementBuyPostId && createdSellId.current) {
+        router.dismissTo({
+          pathname: "/posts/[id]",
+          params: { id: procurementBuyPostId, sellerRequestSellPostId: createdSellId.current, resumeSellerRequest: "false" },
+        });
+      } else {
+        router.back();
+      }
+    } catch {
+      sellNavigationLock.current = false;
+      setFormMessage({ type: "error", text: "Tin bán đã được tạo. Vui lòng bấm Tiếp tục để quay lại." });
+    }
+  }, [procurementBuyPostId, router]);
+
+  useEffect(() => {
+    if (!sellContinuationPending || isLoading) return;
+    // Release the write navigation guard before returning to the Buy Post.
+    setSellContinuationPending(false);
+    continueAfterSellCreate();
+  }, [sellContinuationPending, isLoading, continueAfterSellCreate]);
+
   const handlePublish = async () => {
+    if (publishLock.current || uncertainSellCreate.current) return;
+    if (createdSellId.current) {
+      continueAfterSellCreate();
+      return;
+    }
     setFormMessage(null);
     setAddressError("");
     setImageError("");
@@ -754,7 +804,9 @@ export default function PostFormScreen() {
       }
     }
 
+    let sellCreateStarted = false;
     try {
+      publishLock.current = true;
       setIsLoading(true);
 
       if (isBuyPost) {
@@ -1069,19 +1121,46 @@ export default function PostFormScreen() {
         ),
       );
 
+      if (!formMounted.current) return;
       if (isEditMode) {
         await postApi.updateSellPost(
           editId as string,
           formData,
         );
       } else {
-        await postApi.createSellPost(
+        sellCreateStarted = true;
+        const response = await postApi.createSellPost(
           formData,
         );
+        const postId = response.data?.postId;
+        if (typeof postId !== "string" || !postId.trim()) {
+          uncertainSellCreate.current = true;
+          if (!formMounted.current) return;
+          setSellCreateNeedsRecovery(true);
+          setFormMessage({
+            type: "error",
+            text: "Chưa xác nhận được tin vừa tạo. Hãy kiểm tra tin bán của bạn trước khi đăng thêm.",
+          });
+          return;
+        }
+        createdSellId.current = postId;
+        if (formMounted.current) setSellContinuationPending(true);
+        return;
       }
 
       router.back();
     } catch (error) {
+      if (!formMounted.current) return;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (sellCreateStarted && !createdSellId.current && (!status || status >= 500 || status === 408)) {
+        uncertainSellCreate.current = true;
+        setSellCreateNeedsRecovery(true);
+        setFormMessage({
+          type: "error",
+          text: "Chưa xác nhận được kết quả đăng tin. Tin bán có thể đã được tạo; hãy kiểm tra danh sách trước khi đăng thêm.",
+        });
+        return;
+      }
       setFormMessage({
         type: "error",
         text: getApiErrorMessage(
@@ -1090,7 +1169,8 @@ export default function PostFormScreen() {
         ),
       });
     } finally {
-      setIsLoading(false);
+      publishLock.current = false;
+      if (formMounted.current) setIsLoading(false);
     }
   };
 
@@ -1199,17 +1279,17 @@ export default function PostFormScreen() {
         style={styles.flex}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => { if (!publishLock.current) router.back(); }} disabled={isLoading} style={styles.backButton}>
             <Ionicons name="close" size={28} color={COLORS.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {isEditMode ? "Sửa tin đăng" : isBuyPost ? "Đăng tin thu mua" : "Đăng tin mới"}
           </Text>
-          <TouchableOpacity onPress={() => void handlePublish()} disabled={isLoading}>
+          <TouchableOpacity onPress={() => void handlePublish()} disabled={isLoading || sellCreateNeedsRecovery}>
             {isLoading ? (
               <ActivityIndicator color={COLORS.primary} />
             ) : (
-              <Text style={styles.publishButtonText}>{isEditMode ? "Cập nhật" : "Đăng"}</Text>
+              <Text style={styles.publishButtonText}>{createdSellId.current ? "Tiếp tục" : isEditMode ? "Cập nhật" : "Đăng"}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -1219,6 +1299,25 @@ export default function PostFormScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {sellCreateNeedsRecovery ? (
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => {
+                if (publishLock.current || sellNavigationLock.current) return;
+                sellNavigationLock.current = true;
+                if (procurementBuyPostId) {
+                  router.dismissTo({
+                    pathname: "/posts/[id]",
+                    params: { id: procurementBuyPostId, sellerRequestSellPostId: "", resumeSellerRequest: "true" },
+                  });
+                } else {
+                  router.replace("/(tabs)/posts");
+                }
+              }}
+            >
+              <Text style={styles.primaryButtonText}>Kiểm tra tin bán của tôi</Text>
+            </TouchableOpacity>
+          ) : null}
           {formMessage ? (
             <View
               style={[
@@ -1804,14 +1903,24 @@ export default function PostFormScreen() {
 
       <Modal visible={showDimensionsModal} animationType="slide" transparent onRequestClose={() => setShowDimensionsModal(false)}>
         <ModalBackdrop style={styles.modalOverlay} onPress={() => setShowDimensionsModal(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <KeyboardAvoidingView
+            style={[styles.dimensionKeyboardContainer, { paddingTop: insets.top }]}
+            pointerEvents="box-none"
+            behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
+          >
             <ModalSurface style={[styles.modalContent, styles.dimensionModal]}>
-              <View style={styles.modalHeader}>
+              <View style={[styles.modalHeader, styles.dimensionHeader]}>
                 <Text style={styles.modalTitle}>Chi tiết Kích thước</Text>
                 <TouchableOpacity onPress={() => setShowDimensionsModal(false)}>
                   <Ionicons name="close" size={24} color={COLORS.text} />
                 </TouchableOpacity>
               </View>
+              <ScrollView
+                style={styles.dimensionScroll}
+                contentContainerStyle={styles.dimensionBody}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
               {[
                 ["Chiều dài (cm)", length, setLength, "VD: 120"],
                 ["Chiều rộng (cm)", width, setWidth, "VD: 60"],
@@ -1831,9 +1940,12 @@ export default function PostFormScreen() {
                   </View>
                 </View>
               ))}
-              <TouchableOpacity style={styles.primaryButton} onPress={() => setShowDimensionsModal(false)}>
-                <Text style={styles.primaryButtonText}>Đóng</Text>
-              </TouchableOpacity>
+              </ScrollView>
+              <View style={[styles.dimensionFooter, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+                <TouchableOpacity style={[styles.primaryButton, styles.dimensionCloseButton]} onPress={() => setShowDimensionsModal(false)}>
+                  <Text style={styles.primaryButtonText}>Đóng</Text>
+                </TouchableOpacity>
+              </View>
             </ModalSurface>
           </KeyboardAvoidingView>
         </ModalBackdrop>
@@ -1916,7 +2028,13 @@ const styles = StyleSheet.create({
   boolBtnTextActive: { color: COLORS.white },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "70%" },
-  dimensionModal: { maxHeight: "90%" },
+  dimensionModal: { maxHeight: "90%", width: "100%", padding: 0, overflow: "hidden" },
+  dimensionKeyboardContainer: { flex: 1, width: "100%", justifyContent: "flex-end" },
+  dimensionHeader: { flexShrink: 0, paddingTop: 20, paddingHorizontal: 20 },
+  dimensionScroll: { flexShrink: 1, minHeight: 0 },
+  dimensionBody: { paddingHorizontal: 20, paddingBottom: 4 },
+  dimensionFooter: { flexShrink: 0, paddingTop: 12, paddingHorizontal: 20, backgroundColor: COLORS.white },
+  dimensionCloseButton: { flexShrink: 0, marginTop: 0, marginBottom: 0 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#BAC2C1" },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
   modalOptionBtn: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F8F9FA" },
