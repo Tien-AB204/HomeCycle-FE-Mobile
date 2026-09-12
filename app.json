@@ -25,6 +25,7 @@
     "plugins": [
       "expo-router",
       "@react-native-google-signin/google-signin",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {

@@ -24,17 +24,13 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import {
+  navigateToNotificationTarget,
+  normalizeNotificationItem,
+  normalizeTargetType,
+  type NotificationItem,
+} from "../../src/services/notifications/notificationTargets";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-
-type NotificationItem = {
-  notificationId: string;
-  title: string;
-  message: string;
-  targetType: string | null;
-  targetId: string | null;
-  isRead: boolean;
-  createdAt: string;
-};
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -46,69 +42,6 @@ const unwrap = (value: any) => value?.data ?? value;
 const notificationApi = {
   getNotifications: (params?: any) =>
     apiClient.get("/notifications", { params }).then((res) => res.data),
-};
-
-const normalizeNotificationItem = (value: any): NotificationItem | null => {
-  const notificationId = String(
-    value?.notificationId ?? value?.NotificationId ?? "",
-  ).trim();
-
-  if (!notificationId) return null;
-
-  const targetIdRaw = value?.targetId ?? value?.TargetId;
-
-  return {
-    notificationId,
-    title: String(value?.title ?? value?.Title ?? "Thông báo"),
-    message: String(value?.message ?? value?.Message ?? ""),
-    targetType:
-      value?.targetType !== undefined && value?.targetType !== null
-        ? String(value.targetType)
-        : value?.TargetType !== undefined && value?.TargetType !== null
-          ? String(value.TargetType)
-          : null,
-    targetId:
-      targetIdRaw !== undefined && targetIdRaw !== null
-        ? String(targetIdRaw)
-        : null,
-    isRead: Boolean(value?.isRead ?? value?.IsRead ?? false),
-    createdAt: String(value?.createdAt ?? value?.CreatedAt ?? ""),
-  };
-};
-
-const normalizeTargetType = (value: unknown) => {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase();
-
-  switch (normalized) {
-    case "1":
-    case "offer":
-      return "offer";
-    case "2":
-    case "negotiation":
-      return "negotiation";
-    case "3":
-    case "agreement":
-      return "agreement";
-    case "4":
-    case "order":
-      return "order";
-    case "5":
-    case "dispute":
-      return "dispute";
-    case "6":
-    case "post":
-      return "post";
-    case "7":
-    case "appointment":
-      return "appointment";
-    case "8":
-    case "withdrawal":
-      return "withdrawal";
-    default:
-      return "";
-  }
 };
 
 export default function NotificationsScreen() {
@@ -294,118 +227,15 @@ export default function NotificationsScreen() {
     }
   };
 
-  const navigateToNotificationTarget = async (
-    item: NotificationItem,
-  ) => {
-    const targetType = normalizeTargetType(item.targetType);
-    const targetId = item.targetId;
+  const openNotificationTarget = async (item: NotificationItem) => {
+    const currentUserId = String(user?.userId ?? user?.id ?? "") || null;
+    const navigated = await navigateToNotificationTarget(item, currentUserId);
 
-    if (!targetType || !targetId) {
+    if (!navigated) {
       setMessage({
         type: "info",
         text: "Thông báo này chưa có khu vực chi tiết để mở.",
       });
-      return;
-    }
-
-    switch (targetType) {
-      case "offer": {
-        const response = await apiClient.get(`/offers/${targetId}`);
-        const offer = unwrap(response.data);
-
-        const negotiationId = String(
-          offer?.negotiationId ??
-            offer?.NegotiationId ??
-            "",
-        ).trim();
-
-        if (negotiationId) {
-          router.push(`/chat/${negotiationId}` as any);
-          return;
-        }
-
-        const offerStatus = String(
-          offer?.offerStatus ??
-            offer?.OfferStatus ??
-            "",
-        )
-          .trim()
-          .toLowerCase();
-
-        const isPending =
-          offerStatus === "pending" || offerStatus === "0";
-
-        if (isPending) {
-          const myUserId = String(
-            user?.userId ?? user?.id ?? "",
-          ).toLowerCase();
-          const receiverId = String(
-            offer?.receiver?.userId ??
-              offer?.receiver?.UserId ??
-              offer?.receiverId ??
-              offer?.ReceiverId ??
-              "",
-          ).toLowerCase();
-
-          router.push({
-            pathname: "/chat" as any,
-            params: {
-              tab:
-                receiverId && receiverId === myUserId
-                  ? "received"
-                  : "sent",
-            },
-          });
-          return;
-        }
-
-        router.push(`/offers/${targetId}` as any);
-        return;
-      }
-      case "negotiation":
-        router.push(`/chat/${targetId}` as any);
-        return;
-      case "order":
-        router.push(`/orders/${targetId}` as any);
-        return;
-      case "dispute":
-        router.push(`/disputes/${targetId}` as any);
-        return;
-      case "post":
-        router.push(`/posts/${targetId}` as any);
-        return;
-      case "appointment":
-        router.push(`/appointments/${targetId}` as any);
-        return;
-      case "withdrawal":
-        router.push("/wallet" as any);
-        return;
-      case "agreement": {
-        const response = await apiClient.get(`/agreements/${targetId}`);
-        const agreement = unwrap(response.data);
-        const negotiationId = String(
-          agreement?.negotiationId ??
-            agreement?.NegotiationId ??
-            "",
-        ).trim();
-
-        if (!negotiationId) {
-          throw new Error(
-            "Không tìm thấy phiên thương lượng của hợp đồng này.",
-          );
-        }
-
-        router.push({
-          pathname: "/agreements/preview" as any,
-          params: {
-            agreementId: targetId,
-            negotiationId,
-          },
-        });
-        return;
-      }
-      default:
-        return;
     }
   };
 
@@ -439,7 +269,7 @@ export default function NotificationsScreen() {
     }
 
     try {
-      await navigateToNotificationTarget(item);
+      await openNotificationTarget(item);
     } catch (error: unknown) {
       setMessage({
         type: "error",
