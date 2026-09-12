@@ -33,6 +33,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import conversationApi from "../../src/services/apis/conversationApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { isBuyPostType } from "../../src/utils/postType";
 
 
 const agreementApi = {
@@ -194,6 +195,23 @@ const getPostTypeLabel = (value: unknown) => {
   }
 
   return "";
+};
+
+const getTransactionRoleLabels = (userId: unknown, context: any) => {
+  const normalizedUserId = String(userId ?? "").trim().toLowerCase();
+  if (!normalizedUserId) return [];
+
+  return [
+    normalizedUserId === String(context?.sellerId ?? "").trim().toLowerCase()
+      ? "Người bán"
+      : null,
+    normalizedUserId === String(context?.buyerId ?? "").trim().toLowerCase()
+      ? "Người mua"
+      : null,
+    normalizedUserId === String(context?.postOwnerId ?? "").trim().toLowerCase()
+      ? "Người đăng bài"
+      : null,
+  ].filter((label): label is string => Boolean(label));
 };
 
 const normalizeAgreementUiText = (
@@ -855,6 +873,11 @@ export default function ChatDetailScreen() {
           user?.username ||
           "Bạn",
         myAvatar: user?.avatarUrl || user?.avatar,
+        myUserId: currentUserId,
+        partnerUserId: null,
+        sellerId: null,
+        buyerId: null,
+        postOwnerId: null,
       };
 
       if (info?.offerId) {
@@ -882,6 +905,21 @@ export default function ChatDetailScreen() {
               isCurrentUserSender
                 ? offer.receiver
                 : offer.sender;
+
+            productDetails.myUserId =
+              currentUserData?.userId || currentUserId;
+            productDetails.partnerUserId =
+              partnerData?.userId || null;
+            productDetails.sellerId =
+              offer?.seller?.userId || offer?.Seller?.UserId || null;
+            productDetails.buyerId =
+              offer?.buyer?.userId || offer?.Buyer?.UserId || null;
+            productDetails.postOwnerId =
+              offer?.buyPost?.ownerId ||
+              offer?.BuyPost?.OwnerId ||
+              offer?.sellPost?.ownerId ||
+              offer?.SellPost?.OwnerId ||
+              null;
 
             productDetails.myName =
               currentUserData?.displayName ||
@@ -936,7 +974,11 @@ export default function ChatDetailScreen() {
             productDetails.postType =
               post?.postType ?? null;
 
+            productDetails.postOwnerId =
+              post?.ownerId || productDetails.postOwnerId;
+
             if (
+              !isBuyPostType(post?.postType) &&
               Array.isArray(post?.medias) &&
               post.medias.length > 0
             ) {
@@ -962,10 +1004,9 @@ export default function ChatDetailScreen() {
         ...productDetails,
       };
 
-      if (
-        info?.negotiationStatus === "Agreed" ||
-        info?.negotiationStatus === "Accepted"
-      ) {
+      // Agreement existence is decided by the preview endpoint (hasAgreement),
+      // never by negotiationStatus (AgreementPending/Completed must still render).
+      {
         try {
           const previewResponse =
             await agreementApi.getPreview(
@@ -1293,8 +1334,6 @@ export default function ChatDetailScreen() {
         );
 
         const formattedMessages: any[] = [];
-        
-        let lastAgreementCardIndex = -1;
 
         sortedMessages.forEach(
           (message, index) => {
@@ -1362,7 +1401,6 @@ export default function ChatDetailScreen() {
               // System event trước -> resource card ngay sau.
               formattedMessages.push(agreementSystemMessage);
               formattedMessages.push(agreementCardMessage);
-              lastAgreementCardIndex = formattedMessages.length - 1;
 
               return;
             }
@@ -1518,17 +1556,26 @@ export default function ChatDetailScreen() {
           },
         );
 
-        if (lastAgreementCardIndex !== -1) {
-          const latestAgreementCard =
-            formattedMessages[lastAgreementCardIndex];
-
-          // Agreement event cuối vẫn là mốc "đã xác nhận".
-          // Mốc "đã thanh toán" được tạo riêng từ System payment message phía sau.
-          latestAgreementCard.isLatestAgreement = true;
-          latestAgreementCard.isPaidAgreement = false;
-          latestAgreementCard.orderId = null;
-          latestAgreementCard.appointmentId = null;
-        }
+        // Latestness is computed ONCE, in a single pass over the complete,
+        // already-chronological Agreement-card list — every variant
+        // (created/updated/confirmed event cards AND the separately
+        // constructed paid-state card) is a candidate. Whichever card ends
+        // up last in that list is THE canonical latest card; every other
+        // Agreement card (however it set isLatestAgreement when it was first
+        // pushed above) is forced back to false here. This replaces the old
+        // two-writer pattern (event-card pass + hard-coded paid-card flag)
+        // that could leave two cards both marked latest.
+        const agreementCardIndexes = formattedMessages.reduce<number[]>(
+          (indexes, entry, index) => {
+            if (entry.type === "agreement_card") indexes.push(index);
+            return indexes;
+          },
+          [],
+        );
+        agreementCardIndexes.forEach((messageIndex, position) => {
+          formattedMessages[messageIndex].isLatestAgreement =
+            position === agreementCardIndexes.length - 1;
+        });
 
         setMessages(applyTimelineGrouping(formattedMessages));
       } catch (error) {
@@ -2479,7 +2526,17 @@ export default function ChatDetailScreen() {
     });
   };
 
-  const renderProductBanner = () => (
+  const renderProductBanner = () => {
+    const myRoles = getTransactionRoleLabels(
+      negotiationInfo?.myUserId || currentUserId,
+      negotiationInfo,
+    );
+    const partnerRoles = getTransactionRoleLabels(
+      negotiationInfo?.partnerUserId,
+      negotiationInfo,
+    );
+
+    return (
     <TouchableOpacity
       style={styles.productBanner}
       activeOpacity={0.7}
@@ -2495,14 +2552,16 @@ export default function ChatDetailScreen() {
         }
       }}
     >
-      <Image
-        source={{
-          uri:
-            negotiationInfo?.image ||
-            "https://placehold.co/100x100/png",
-        }}
-        style={styles.productImg}
-      />
+      {!isBuyPostType(negotiationInfo?.postType) ? (
+        <Image
+          source={{
+            uri:
+              negotiationInfo?.image ||
+              "https://placehold.co/100x100/png",
+          }}
+          style={styles.productImg}
+        />
+      ) : null}
 
       <View style={styles.productInfo}>
         <Text
@@ -2540,6 +2599,17 @@ export default function ChatDetailScreen() {
             )}
           </Text>
         </Text>
+
+        {myRoles.length > 0 ? (
+          <Text style={styles.participantRoleText} numberOfLines={1}>
+            {negotiationInfo?.myName || "Bạn"} · {myRoles.join(" · ")}
+          </Text>
+        ) : null}
+        {partnerRoles.length > 0 ? (
+          <Text style={styles.participantRoleText} numberOfLines={1}>
+            {negotiationInfo?.partnerName || "Đối tác"} · {partnerRoles.join(" · ")}
+          </Text>
+        ) : null}
       </View>
 
       <Ionicons
@@ -2548,7 +2618,8 @@ export default function ChatDetailScreen() {
         color={COLORS.textLight}
       />
     </TouchableOpacity>
-  );
+    );
+  };
 
   const renderHeader = () => {
     const partnerName =
@@ -2558,6 +2629,10 @@ export default function ChatDetailScreen() {
     const avatarUri = getRobustAvatar(
       negotiationInfo?.partnerAvatar,
       partnerName,
+    );
+    const partnerRoles = getTransactionRoleLabels(
+      negotiationInfo?.partnerUserId,
+      negotiationInfo,
     );
 
     const centerContent = (
@@ -2574,6 +2649,11 @@ export default function ChatDetailScreen() {
           >
             {partnerName}
           </Text>
+          {partnerRoles.length > 0 ? (
+            <Text style={styles.headerRoleText} numberOfLines={1}>
+              {partnerRoles.join(" · ")}
+            </Text>
+          ) : null}
         </View>
       </View>
     );
@@ -4043,6 +4123,13 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  headerRoleText: {
+    marginTop: 2,
+    color: COLORS.textLight,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
@@ -4243,6 +4330,12 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontWeight: "600",
     marginTop: 4,
+  },
+  participantRoleText: {
+    marginTop: 3,
+    color: COLORS.textLight,
+    fontSize: 10,
+    lineHeight: 14,
   },
 
   boldText: {
