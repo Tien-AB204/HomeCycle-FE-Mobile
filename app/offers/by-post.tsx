@@ -6,7 +6,9 @@ import {
 } from "expo-router";
 import React, {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -31,6 +33,8 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
@@ -56,8 +60,48 @@ type ReceivedOfferItem = {
   createdAt?: string | null;
 };
 
+type ComparisonProduct = {
+  categoryId?: string | null;
+  productTypeId?: string | null;
+  categoryName?: string | null;
+  productTypeName?: string | null;
+  productName?: string | null;
+};
+
+type ComparisonPost = {
+  postId?: string;
+  productName?: string | null;
+  categoryName?: string | null;
+  productTypeName?: string | null;
+  product?: ComparisonProduct | null;
+};
+
+type PostContext = ComparisonPost & {
+  postId: string;
+  postType: "Buy" | "Sell";
+};
+
+type BuyPostMatch = {
+  sellPost?: ComparisonPost;
+  matchSummary?: {
+    matchedCriteriaCount: number;
+    evaluatedCriteriaCount: number;
+  } | null;
+};
+
 const PAGE_SIZE = 100;
 const MAX_PAGE_GUARD = 1000;
+const MAX_MATCH_PAGES = 10;
+const REALTIME_DEBOUNCE_MS = 350;
+
+const postApi = {
+  getPostById: (postId: string) =>
+    apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
+  getBuyPostMatches: (buyPostId: string, pageNumber: number) =>
+    apiClient.get(`/posts/buy/${buyPostId}/matches`, {
+      params: { PageNumber: pageNumber, PageSize: PAGE_SIZE },
+    }).then((response) => response.data),
+};
 
 const offerApi = {
   getReceivedOffers: (params: {
@@ -125,6 +169,123 @@ const normalizeId = (value: unknown) =>
   String(value ?? "")
     .trim()
     .toLowerCase();
+
+const getPostType = (value: unknown): PostContext["postType"] | null => {
+  const type = String(value ?? "").toLowerCase();
+  if (type === "buy" || type === "2") return "Buy";
+  if (type === "sell" || type === "1") return "Sell";
+  return null;
+};
+
+const hasVerifiedTypeMismatch = (buy: ComparisonPost, sell: ComparisonPost) =>
+  (["category", "productType"] as const).some((field) => {
+    const idKey = `${field}Id` as const;
+    const buyId = normalizeId(buy.product?.[idKey]);
+    const sellId = normalizeId(sell.product?.[idKey]);
+    if (buyId && sellId) return buyId !== sellId;
+
+    // Post lists expose catalog names; product details also expose IDs.
+    const nameKey = `${field}Name` as const;
+    const buyName = buy.product?.[nameKey] ?? buy[nameKey];
+    const sellName = sell.product?.[nameKey] ?? sell[nameKey];
+    return typeof buyName === "string" && typeof sellName === "string" &&
+      buyName.trim().length > 0 && sellName.trim().length > 0 && buyName !== sellName;
+  });
+
+const getSuitabilityCopy = (
+  buy: ComparisonPost,
+  match?: BuyPostMatch,
+  reviewedSell?: ComparisonPost,
+) => {
+  if (match?.matchSummary) {
+    return `Phù hợp ${match.matchSummary.matchedCriteriaCount}/${match.matchSummary.evaluatedCriteriaCount} tiêu chí`;
+  }
+  const sell = reviewedSell ?? match?.sellPost;
+  return sell && hasVerifiedTypeMismatch(buy, sell)
+    ? "Khác loại sản phẩm yêu cầu"
+    : "Chưa có dữ liệu so sánh";
+};
+
+const hasMorePages = (page: any, pageNumber: number, itemCount: number) => {
+  const hasNext = page?.hasNextPage ?? page?.HasNextPage;
+  if (typeof hasNext === "boolean") return hasNext;
+  const totalPages = Number(page?.totalPages ?? page?.TotalPages);
+  return Number.isInteger(totalPages) && totalPages >= 0
+    ? pageNumber < totalPages
+    : itemCount === PAGE_SIZE;
+};
+
+// Real, user-selectable sort — replaces the old fixed price-desc/newest-only
+// ordering. `offers` here is always the FULL deduped set for this exact Post
+// (see fetchAllReceivedOffers's bounded pagination loop below), so sorting
+// client-side is a genuine global sort, never a page-local one.
+type OfferSortOption = "newest" | "oldest" | "priceDesc" | "priceAsc";
+
+const OFFER_SORT_OPTIONS: Array<{ key: OfferSortOption; label: string }> = [
+  { key: "newest", label: "Mới nhất" },
+  { key: "oldest", label: "Cũ nhất" },
+  { key: "priceDesc", label: "Giá cao → thấp" },
+  { key: "priceAsc", label: "Giá thấp → cao" },
+];
+
+const getOfferSortLabel = (option: OfferSortOption) =>
+  OFFER_SORT_OPTIONS.find((entry) => entry.key === option)?.label ?? "Mới nhất";
+
+const sortReceivedOffers = (
+  offers: ReceivedOfferItem[],
+  sortOption: OfferSortOption,
+) =>
+  [...offers].sort((first, second) => {
+    const firstTime = Date.parse(first.createdAt ?? "") || 0;
+    const secondTime = Date.parse(second.createdAt ?? "") || 0;
+
+    switch (sortOption) {
+      case "oldest":
+        return firstTime - secondTime;
+      case "priceDesc": {
+        const diff = Number(second.offerPrice ?? 0) - Number(first.offerPrice ?? 0);
+        return diff !== 0 ? diff : secondTime - firstTime;
+      }
+      case "priceAsc": {
+        const diff = Number(first.offerPrice ?? 0) - Number(second.offerPrice ?? 0);
+        return diff !== 0 ? diff : secondTime - firstTime;
+      }
+      case "newest":
+      default:
+        return secondTime - firstTime;
+    }
+  });
+
+const fetchBuyComparisons = async (
+  buyPostId: string,
+  offers: ReceivedOfferItem[],
+  isCurrent: () => boolean,
+): Promise<Record<string, BuyPostMatch>> => {
+  const neededIds = new Set(offers.map((offer) => normalizeId(offer.postId)).filter(Boolean));
+  const matches: Record<string, BuyPostMatch> = {};
+  // Comparisons never determine which canonical Offers appear in the list.
+  for (let pageNumber = 1; pageNumber <= MAX_MATCH_PAGES && neededIds.size > 0; pageNumber += 1) {
+    if (!isCurrent()) return {};
+    try {
+      const response = await postApi.getBuyPostMatches(buyPostId, pageNumber);
+      if (!isCurrent()) return {};
+      if (response?.isSuccess === false) break;
+      const page = unwrapPage(response);
+      if (!Array.isArray(page?.items)) break;
+      for (const match of page.items as BuyPostMatch[]) {
+        const sellId = normalizeId(match.sellPost?.postId);
+        if (!neededIds.has(sellId)) continue;
+        matches[sellId] = match;
+        if (match.matchSummary) neededIds.delete(sellId);
+      }
+      if (!hasMorePages(page, pageNumber, page.items.length)) break;
+    } catch {
+      // Keep real summaries from successful pages; unavailable comparisons remain neutral.
+      break;
+    }
+  }
+  return matches;
+};
 
 const normalizeStatus = (value: unknown) =>
   String(value ?? "")
@@ -236,12 +397,16 @@ const fetchAllReceivedOffers =
       PostId?: string;
       BuyPostId?: string;
     },
+    isCurrent: () => boolean,
   ): Promise<ReceivedOfferItem[]> => {
     const result: ReceivedOfferItem[] = [];
+    // Newest-first pages shift when an Offer arrives mid-scan; never surface a row twice.
+    const seenOfferIds = new Set<string>();
 
     let pageNumber = 1;
 
     while (pageNumber <= MAX_PAGE_GUARD) {
+      if (!isCurrent()) return [];
       const response =
         await offerApi.getReceivedOffers({
           PageNumber: pageNumber,
@@ -249,52 +414,35 @@ const fetchAllReceivedOffers =
           ...filter,
         });
 
+      if (!isCurrent()) return [];
+      if (response?.isSuccess === false) throw response;
       const page = unwrapPage(response);
+      if (!Array.isArray(page?.items ?? page?.Items)) {
+        throw new Error("Không thể tải đầy đủ danh sách. Vui lòng thử lại.");
+      }
       const items = getPageItems(response);
 
-      result.push(...items);
-
-      const rawTotalPages = Number(
-        page?.totalPages ??
-          page?.TotalPages,
-      );
-
-      const hasTotalPages =
-        Number.isInteger(rawTotalPages) &&
-        rawTotalPages > 0;
-
-      const rawHasNext =
-        page?.hasNextPage ??
-        page?.HasNextPage;
-
-      const hasNextKnown =
-        typeof rawHasNext === "boolean";
-
-      const shouldContinue =
-        rawHasNext === true ||
-        (
-          hasTotalPages &&
-          pageNumber < rawTotalPages
-        ) ||
-        (
-          !hasNextKnown &&
-          !hasTotalPages &&
-          items.length === PAGE_SIZE
-        );
-
-      if (!shouldContinue) {
-        break;
+      for (const item of items) {
+        const offerId = normalizeId(item?.offerId ?? (item as any)?.OfferId);
+        if (offerId && seenOfferIds.has(offerId)) continue;
+        if (offerId) seenOfferIds.add(offerId);
+        result.push(item);
       }
+
+      if (!hasMorePages(page, pageNumber, items.length)) return result;
 
       pageNumber += 1;
     }
 
-    return result;
+    throw new Error("Danh sách quá lớn. Vui lòng thử lại sau.");
   };
 
 export default function OffersByPostScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
+  const { connection, reconnectVersion } = useChatRealtime();
+  const currentUserId = user?.userId || user?.id;
 
   const postId = Array.isArray(params.postId)
     ? params.postId[0]
@@ -306,20 +454,30 @@ export default function OffersByPostScreen() {
     ? params.postTitle[0]
     : params.postTitle;
 
-  const postTypeParam = Array.isArray(
-    params.postType,
-  )
-    ? params.postType[0]
-    : params.postType;
-
-  const isBuyPost =
-    String(postTypeParam || "")
-      .trim()
-      .toLowerCase() === "buy";
+  const contextKey = `${normalizeId(currentUserId)}:${normalizeId(postId)}`;
+  const [postContext, setPostContext] = useState<PostContext | null>(null);
+  const isBuyPost = postContext?.postType === "Buy";
+  const [comparisons, setComparisons] = useState<Record<string, BuyPostMatch>>({});
+  const [reviewedSells, setReviewedSells] = useState<Record<string, ComparisonPost>>({});
+  const contextRequest = useRef<{ key: string; promise: Promise<PostContext> } | null>(null);
+  const loadGeneration = useRef(0);
+  const comparisonGeneration = useRef(0);
+  const actionGeneration = useRef(0);
+  const actionLock = useRef(false);
+  const focused = useRef(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledReconnect = useRef(reconnectVersion);
 
   const [offers, setOffers] = useState<
     ReceivedOfferItem[]
   >([]);
+
+  // Default stays "newest" for both Buy and Sell context — the Buy
+  // procurement default must never be highest-price-first, and there is no
+  // authoritative reason for Sell to default differently.
+  const [sortOption, setSortOption] =
+    useState<OfferSortOption>("newest");
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -353,108 +511,142 @@ export default function OffersByPostScreen() {
       text: string;
     } | null>(null);
 
-  const loadOffers = useCallback(
-    async (refreshing = false) => {
-      if (!postId) {
-        setOffers([]);
-        setErrorText(
-          "Không tìm thấy bài đăng để tải đề nghị.",
-        );
-        setIsLoading(false);
-        return;
+  const resolvePostContext = useCallback((): Promise<PostContext> => {
+    if (contextRequest.current?.key === contextKey) return contextRequest.current.promise;
+    const promise = (async () => {
+      if (!postId) throw new Error("Không tìm thấy bài đăng. Vui lòng mở lại từ bài đăng.");
+      const response = await postApi.getPostById(String(postId));
+      if (response?.isSuccess === false) throw response;
+      const detail = unwrapPage(response);
+      const postType = getPostType(detail?.postType);
+      if (!postType || normalizeId(detail?.postId) !== normalizeId(postId)) {
+        throw new Error("Chưa xác định được loại bài đăng. Vui lòng thử lại.");
       }
+      return { ...detail, postType } as PostContext;
+    })();
+    const request = { key: contextKey, promise };
+    contextRequest.current = request;
+    void promise.catch(() => {
+      if (contextRequest.current === request) contextRequest.current = null;
+    });
+    return promise;
+  }, [contextKey, postId]);
 
-      try {
-        if (refreshing) {
-          setIsRefreshing(true);
-        } else {
-          setIsLoading(true);
-        }
+  const cancelScheduledRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) clearTimeout(refreshTimer.current);
+    refreshTimer.current = null;
+  }, []);
 
-        setErrorText(null);
-
-        const targetPostId =
-          normalizeId(postId);
-
-        const allReceivedOffers =
-          await fetchAllReceivedOffers(
-            isBuyPost
-              ? {
-                  BuyPostId:
-                    String(postId),
-                }
-              : {
-                  PostId:
-                    String(postId),
-                },
-          );
-
-        const filtered =
-          allReceivedOffers
-            .filter((offer) => {
-              const offerTargetId =
-                isBuyPost
-                  ? offer?.buyPostId
-                  : offer?.postId;
-
-              return (
-                normalizeId(
-                  offerTargetId,
-                ) === targetPostId
-              );
-            })
-            .sort((first, second) => {
-              const priceDifference =
-                Number(
-                  second?.offerPrice ?? 0,
-                ) -
-                Number(
-                  first?.offerPrice ?? 0,
-                );
-
-              if (priceDifference !== 0) {
-                return priceDifference;
-              }
-
-              const secondTime =
-                new Date(
-                  String(
-                    second?.createdAt ?? "",
-                  ),
-                ).getTime() || 0;
-
-              const firstTime =
-                new Date(
-                  String(
-                    first?.createdAt ?? "",
-                  ),
-                ).getTime() || 0;
-
-              return secondTime - firstTime;
-            });
-
-        setOffers(filtered);
-      } catch (error) {
-        setOffers([]);
-
-        setErrorText(
-          getApiErrorMessage(
-            error,
-            "Không thể tải các đề nghị của bài đăng.",
-          ),
-        );
-      } finally {
+  const loadOffers = useCallback(async (refreshing = false) => {
+    if (!focused.current) return;
+    cancelScheduledRefresh();
+    const generation = ++loadGeneration.current;
+    const comparisonVersion = ++comparisonGeneration.current;
+    const isCurrent = () => focused.current && loadGeneration.current === generation;
+    setIsRefreshing(refreshing);
+    if (!refreshing) setIsLoading(true);
+    setErrorText(null);
+    setComparisons({});
+    setReviewedSells({});
+    try {
+      // Resolve once per focus, sharing an in-flight request across refreshes.
+      const context = await resolvePostContext();
+      if (!isCurrent()) return;
+      setPostContext(context);
+      const isBuy = context.postType === "Buy";
+      const received = await fetchAllReceivedOffers(
+        isBuy ? { BuyPostId: context.postId } : { PostId: context.postId },
+        isCurrent,
+      );
+      if (!isCurrent()) return;
+      // The server filter owns list membership; matching only enriches these
+      // rows. Display order is applied separately (see `sortedOffers`) so the
+      // user's chosen sort survives a background refetch/realtime refresh.
+      setOffers(received);
+      if (isBuy) {
+        const isComparisonCurrent = () => isCurrent() && comparisonGeneration.current === comparisonVersion;
+        void fetchBuyComparisons(context.postId, received, isComparisonCurrent).then((matches) => {
+          if (isComparisonCurrent()) setComparisons(matches);
+        });
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      setErrorText(getApiErrorMessage(error, "Không thể tải danh sách đã nhận. Vui lòng thử lại."));
+    } finally {
+      if (isCurrent()) {
         setIsLoading(false);
         setIsRefreshing(false);
       }
-    },
-    [isBuyPost, postId],
-  );
+    }
+  }, [cancelScheduledRefresh, resolvePostContext]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadOffers();
-    }, [loadOffers]),
+  const scheduleRefresh = useCallback(() => {
+    if (!focused.current) return;
+    // Invalidate immediately, including requests completing during the debounce window.
+    loadGeneration.current += 1;
+    comparisonGeneration.current += 1;
+    setComparisons({});
+    setReviewedSells({});
+    cancelScheduledRefresh();
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      void loadOffers(true);
+    }, REALTIME_DEBOUNCE_MS);
+  }, [cancelScheduledRefresh, loadOffers]);
+
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    contextRequest.current = null;
+    setPostContext(null);
+    setOffers([]);
+    setActionFeedback(null);
+    void loadOffers();
+    return () => {
+      focused.current = false;
+      cancelScheduledRefresh();
+      loadGeneration.current += 1;
+      comparisonGeneration.current += 1;
+      actionGeneration.current += 1;
+      actionLock.current = false;
+      setActionMode(null);
+      setSelectedOffer(null);
+      setCounterPrice("");
+      setCounterQuantity("");
+      setIsProcessingAction(false);
+    };
+  }, [cancelScheduledRefresh, loadOffers]));
+
+  useFocusEffect(useCallback(() => {
+    if (!connection) return;
+    const handleOfferChanged = (payload: any) => {
+      const event = payload?.data ?? payload;
+      const receiverId = normalizeId(event?.receiver?.userId ?? event?.Receiver?.UserId);
+      if (receiverId && currentUserId && receiverId !== normalizeId(currentUserId)) return;
+      const buyId = normalizeId(event?.buyPostId ?? event?.BuyPostId);
+      const sellId = normalizeId(event?.postId ?? event?.PostId);
+      const targetId = normalizeId(postId);
+      if (postContext?.postType === "Buy" && buyId && buyId !== targetId) return;
+      if (postContext?.postType === "Sell" && sellId && sellId !== targetId) return;
+      // Missing identifiers cannot safely exclude an event. Refetch canonical data.
+      scheduleRefresh();
+    };
+    connection.on("OfferCreated", handleOfferChanged);
+    connection.on("OfferUpdated", handleOfferChanged);
+    return () => {
+      connection.off("OfferCreated", handleOfferChanged);
+      connection.off("OfferUpdated", handleOfferChanged);
+    };
+  }, [connection, currentUserId, postContext?.postType, postId, scheduleRefresh]));
+
+  useEffect(() => {
+    if (handledReconnect.current === reconnectVersion) return;
+    handledReconnect.current = reconnectVersion;
+    scheduleRefresh();
+  }, [reconnectVersion, scheduleRefresh]);
+
+  const sortedOffers = useMemo(
+    () => sortReceivedOffers(offers, sortOption),
+    [offers, sortOption],
   );
 
   const highestPrice = useMemo(() => {
@@ -474,14 +666,18 @@ export default function OffersByPostScreen() {
   }, [offers]);
 
   const productName =
+    postContext?.product?.productName || postContext?.productName ||
     String(postTitleParam || "").trim() ||
-    offers[0]?.productName ||
-    offers[0]?.postTitle ||
+    (!isBuyPost && (offers[0]?.productName || offers[0]?.postTitle)) ||
     "Bài đăng hiện tại";
 
-  const closeOfferAction = () => {
-    if (isProcessingAction) return;
+  const offerNoun = isBuyPost ? "chào bán" : "đề nghị";
+  const headerTitle = isBuyPost ? "Chào bán đã nhận" : postContext ? "Đề nghị cho bài đăng" : "Danh sách đã nhận";
 
+  const closeOfferAction = () => {
+    if (actionLock.current) return;
+
+    actionGeneration.current += 1;
     setActionMode(null);
     setSelectedOffer(null);
     setCounterPrice("");
@@ -493,6 +689,10 @@ export default function OffersByPostScreen() {
     mode: "accept" | "reject" | "counter",
     listOffer: ReceivedOfferItem,
   ) => {
+    if (actionLock.current || !focused.current) return;
+    const generation = ++actionGeneration.current;
+    const comparisonVersion = comparisonGeneration.current;
+    const isCurrentAction = () => focused.current && actionGeneration.current === generation;
     const offerId = String(
       listOffer.offerId ?? "",
     ).trim();
@@ -500,7 +700,7 @@ export default function OffersByPostScreen() {
     if (!offerId) {
       setActionFeedback({
         type: "error",
-        text: "Không xác định được đề nghị.",
+        text: `Không xác định được ${offerNoun}.`,
       });
       return;
     }
@@ -508,32 +708,48 @@ export default function OffersByPostScreen() {
     if (!isPendingOffer(listOffer.offerStatus)) {
       setActionFeedback({
         type: "error",
-        text: "Đề nghị này không còn ở trạng thái chờ phản hồi.",
+        text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này không còn ở trạng thái chờ phản hồi.`,
       });
       await loadOffers(true);
       return;
     }
 
     try {
+      actionLock.current = true;
       setIsProcessingAction(true);
       setActionFeedback(null);
 
       const response =
         await offerApi.getOfferById(offerId);
 
+      if (!isCurrentAction()) return;
+      if (response?.isSuccess === false) throw response;
       const detail = unwrapPage(response);
+      if (normalizeId(detail?.offerId ?? detail?.OfferId) !== normalizeId(offerId)) {
+        throw new Error(`Không xác định được ${offerNoun}. Vui lòng thử lại.`);
+      }
+
+      if (isBuyPost && comparisonGeneration.current === comparisonVersion &&
+        normalizeId(detail?.buyPostId) === normalizeId(postId) &&
+        normalizeId(detail?.sellPost?.postId) === normalizeId(listOffer.postId)) {
+        // Reuse the detail already needed for actions; never fetch details per card.
+        setReviewedSells((current) => ({
+          ...current,
+          [normalizeId(listOffer.postId)]: { ...detail.sellPost, product: detail.product },
+        }));
+      }
 
       const currentStatus =
         detail?.offerStatus ??
-        detail?.OfferStatus ??
-        listOffer.offerStatus;
+        detail?.OfferStatus;
 
       if (!isPendingOffer(currentStatus)) {
         await loadOffers(true);
+        if (!isCurrentAction()) return;
 
         setActionFeedback({
           type: "error",
-          text: "Đề nghị vừa thay đổi trạng thái. Danh sách đã được làm mới.",
+          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} vừa thay đổi trạng thái. Danh sách đã được làm mới.`,
         });
         return;
       }
@@ -551,10 +767,11 @@ export default function OffersByPostScreen() {
         canAccept !== true
       ) {
         await loadOffers(true);
+        if (!isCurrentAction()) return;
 
         setActionFeedback({
           type: "error",
-          text: "Đề nghị này hiện không thể được chấp nhận.",
+          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này hiện không thể được chấp nhận.`,
         });
         return;
       }
@@ -564,10 +781,11 @@ export default function OffersByPostScreen() {
         canReject !== true
       ) {
         await loadOffers(true);
+        if (!isCurrentAction()) return;
 
         setActionFeedback({
           type: "error",
-          text: "Đề nghị này hiện không thể bị từ chối.",
+          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này hiện không thể bị từ chối.`,
         });
         return;
       }
@@ -580,10 +798,11 @@ export default function OffersByPostScreen() {
           detail?.OfferId ??
           offerId,
         offerStatus: currentStatus,
+        offerPrice: detail?.offerPrice ?? detail?.OfferPrice,
+        offerQuantity: detail?.offerQuantity ?? detail?.OfferQuantity,
         version:
           detail?.version ??
-          detail?.Version ??
-          listOffer.version,
+          detail?.Version,
       };
 
       setSelectedOffer(hydratedOffer);
@@ -608,22 +827,28 @@ export default function OffersByPostScreen() {
 
       setActionMode(mode);
     } catch (error) {
+      if (!isCurrentAction()) return;
       setActionFeedback({
         type: "error",
         text: getApiErrorMessage(
           error,
-          "Không thể tải trạng thái mới nhất của đề nghị.",
+          `Không thể tải trạng thái mới nhất của ${offerNoun}.`,
         ),
       });
     } finally {
-      setIsProcessingAction(false);
+      if (isCurrentAction()) {
+        actionLock.current = false;
+        setIsProcessingAction(false);
+      }
     }
   };
 
   const handleSubmitOfferAction = async () => {
-    if (!selectedOffer || !actionMode) {
+    if (!selectedOffer || !actionMode || actionLock.current || !focused.current) {
       return;
     }
+    const generation = ++actionGeneration.current;
+    const isCurrentAction = () => focused.current && actionGeneration.current === generation;
 
     const offerId = String(
       selectedOffer.offerId ??
@@ -631,15 +856,13 @@ export default function OffersByPostScreen() {
         "",
     ).trim();
 
-    const version = Number(
-      selectedOffer.version ??
-        selectedOffer.Version,
-    );
+    const rawVersion = selectedOffer.version ?? selectedOffer.Version;
+    const version = rawVersion == null ? NaN : Number(rawVersion);
 
     if (!offerId) {
       setActionFeedback({
         type: "error",
-        text: "Không xác định được đề nghị.",
+        text: `Không xác định được ${offerNoun}.`,
       });
       return;
     }
@@ -656,10 +879,11 @@ export default function OffersByPostScreen() {
       setSelectedOffer(null);
 
       await loadOffers(true);
+      if (!isCurrentAction()) return;
 
       setActionFeedback({
         type: "error",
-        text: "Không xác định được phiên bản hiện tại của đề nghị. Danh sách đã được làm mới.",
+        text: `Chưa cập nhật được ${offerNoun}. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.`,
       });
       return;
     }
@@ -689,6 +913,7 @@ export default function OffersByPostScreen() {
     }
 
     try {
+      actionLock.current = true;
       setIsProcessingAction(true);
       setActionFeedback(null);
 
@@ -717,6 +942,7 @@ export default function OffersByPostScreen() {
           );
       }
 
+      if (!isCurrentAction()) return;
       if (response?.isSuccess === false) {
         throw response;
       }
@@ -729,17 +955,21 @@ export default function OffersByPostScreen() {
       setCounterQuantity("");
 
       await loadOffers(true);
+      if (!isCurrentAction()) return;
 
       setActionFeedback({
         type: "success",
         text:
           completedMode === "accept"
-            ? "Đã chấp nhận thương lượng. Phòng chat đã được mở."
+            ? isBuyPost
+              ? "Đã chấp nhận chào bán. Phòng chat đã được mở."
+              : "Đã chấp nhận thương lượng. Phòng chat đã được mở."
             : completedMode === "reject"
-              ? "Đã từ chối đề nghị."
+              ? `Đã từ chối ${offerNoun}.`
               : "Đã gửi đề xuất giá mới.",
       });
     } catch (error) {
+      if (!isCurrentAction()) return;
       const code =
         getOfferErrorCode(error);
 
@@ -749,13 +979,14 @@ export default function OffersByPostScreen() {
       setCounterQuantity("");
 
       await loadOffers(true);
+      if (!isCurrentAction()) return;
 
       if (
         code === "OFFER_TERMS_CHANGED"
       ) {
         setActionFeedback({
           type: "error",
-          text: "Đề nghị vừa được cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.",
+          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} vừa được cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.`,
         });
         return;
       }
@@ -764,11 +995,14 @@ export default function OffersByPostScreen() {
         type: "error",
         text: getApiErrorMessage(
           error,
-          "Không thể xử lý đề nghị lúc này.",
+          `Không thể xử lý ${offerNoun} lúc này.`,
         ),
       });
     } finally {
-      setIsProcessingAction(false);
+      if (isCurrentAction()) {
+        actionLock.current = false;
+        setIsProcessingAction(false);
+      }
     }
   };
 
@@ -792,7 +1026,7 @@ export default function OffersByPostScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Header
-          title="Đề nghị cho bài đăng"
+          title={headerTitle}
           showBack
         />
 
@@ -803,7 +1037,7 @@ export default function OffersByPostScreen() {
           />
 
           <Text style={styles.loadingText}>
-            Đang tải đề nghị...
+            {isBuyPost ? "Đang tải chào bán..." : "Đang tải danh sách..."}
           </Text>
         </View>
       </SafeAreaView>
@@ -813,12 +1047,12 @@ export default function OffersByPostScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Header
-        title="Đề nghị cho bài đăng"
+        title={headerTitle}
         showBack
       />
 
       <FlatList
-        data={offers}
+        data={sortedOffers}
         keyExtractor={(item, index) =>
           String(
             item.offerId ||
@@ -852,32 +1086,28 @@ export default function OffersByPostScreen() {
                 </Text>
 
                 <Text style={styles.summaryLabel}>
-                  Lời đề nghị
+                  {isBuyPost ? "Chào bán đã nhận" : "Lời đề nghị"}
                 </Text>
               </View>
 
-              <View
-                style={styles.summaryDivider}
-              />
-
-              <View style={styles.summaryItem}>
-                <Text
-                  style={styles.summaryPrice}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  {highestPrice
-                    ? formatPrice(highestPrice)
-                    : "Chưa có"}
-                </Text>
-
-                <Text style={styles.summaryLabel}>
-                  Giá cao nhất
-                </Text>
-              </View>
+              {!isBuyPost && postContext ? (
+                <>
+                  <View style={styles.summaryDivider} />
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryPrice} numberOfLines={1} adjustsFontSizeToFit>
+                      {highestPrice ? formatPrice(highestPrice) : "Chưa có"}
+                    </Text>
+                    <Text style={styles.summaryLabel}>Giá cao nhất</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
 
-            <View style={styles.sortBadge}>
+            <TouchableOpacity
+              style={styles.sortBadge}
+              onPress={() => setShowSortMenu(true)}
+              disabled={!postContext}
+            >
               <Ionicons
                 name="swap-vertical-outline"
                 size={15}
@@ -885,9 +1115,19 @@ export default function OffersByPostScreen() {
               />
 
               <Text style={styles.sortText}>
-                Giá cao nhất trước
+                {postContext
+                  ? getOfferSortLabel(sortOption)
+                  : "Đang xác định bài đăng"}
               </Text>
-            </View>
+
+              {postContext ? (
+                <Ionicons
+                  name="chevron-down"
+                  size={13}
+                  color={COLORS.primary}
+                />
+              ) : null}
+            </TouchableOpacity>
 
             {actionFeedback && !actionMode ? (
               <View
@@ -939,6 +1179,9 @@ export default function OffersByPostScreen() {
                 <Text style={styles.errorText}>
                   {errorText}
                 </Text>
+                <TouchableOpacity onPress={() => void loadOffers(true)} disabled={isRefreshing}>
+                  <Text style={styles.detailLinkText}>Thử lại</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
           </View>
@@ -947,7 +1190,13 @@ export default function OffersByPostScreen() {
           const senderName =
             String(
               item.senderName || "",
-            ).trim() || "Người gửi";
+            ).trim() || (isBuyPost ? "Người bán" : "Người gửi");
+          const sellId = normalizeId(item.postId);
+          const comparison = comparisons[sellId];
+          const reviewedSell = reviewedSells[sellId];
+          const sellProductName = item.productName || item.postTitle ||
+            reviewedSell?.product?.productName || reviewedSell?.productName ||
+            comparison?.sellPost?.productName || "Tin bán";
 
           return (
             <TouchableOpacity
@@ -968,6 +1217,11 @@ export default function OffersByPostScreen() {
               />
 
               <View style={styles.offerContent}>
+                {isBuyPost ? (
+                  <Text style={styles.sellProductName} numberOfLines={2}>
+                    {sellProductName}
+                  </Text>
+                ) : null}
                 <View style={styles.offerTopRow}>
                   <Text
                     style={styles.senderName}
@@ -981,6 +1235,27 @@ export default function OffersByPostScreen() {
                       item.offerPrice,
                     )}
                   </Text>
+
+                  {isPendingOffer(item.offerStatus) ? (
+                    <TouchableOpacity
+                      style={styles.rejectIconButton}
+                      hitSlop={8}
+                      disabled={isProcessingAction}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleOpenOfferAction(
+                          "reject",
+                          item,
+                        );
+                      }}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={14}
+                        color={COLORS.error}
+                      />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
 
                 <View style={styles.offerMetaRow}>
@@ -997,6 +1272,12 @@ export default function OffersByPostScreen() {
                     )}
                   </Text>
                 </View>
+
+                {isBuyPost && postContext ? (
+                  <Text style={styles.suitabilityText}>
+                    {getSuitabilityCopy(postContext, comparison, reviewedSell)}
+                  </Text>
+                ) : null}
 
                 <View style={styles.offerBottomRow}>
                   <View
@@ -1035,22 +1316,6 @@ export default function OffersByPostScreen() {
                   item.offerStatus,
                 ) ? (
                   <View style={styles.offerActionRow}>
-                    <TouchableOpacity
-                      style={styles.rejectActionButton}
-                      disabled={isProcessingAction}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        void handleOpenOfferAction(
-                          "reject",
-                          item,
-                        );
-                      }}
-                    >
-                      <Text style={styles.rejectActionText}>
-                        Từ chối
-                      </Text>
-                    </TouchableOpacity>
-
                     <TouchableOpacity
                       style={styles.counterActionButton}
                       disabled={isProcessingAction}
@@ -1098,11 +1363,13 @@ export default function OffersByPostScreen() {
               />
 
               <Text style={styles.emptyTitle}>
-                Chưa có đề nghị
+                {isBuyPost ? "Chưa có chào bán" : "Chưa có đề nghị"}
               </Text>
 
               <Text style={styles.emptyText}>
-                Bài đăng này chưa nhận được đề nghị thương lượng nào.
+                {isBuyPost
+                  ? "Tin thu mua này chưa nhận được chào bán nào từ người bán."
+                  : "Bài đăng này chưa nhận được đề nghị thương lượng nào."}
               </Text>
             </View>
           ) : null
@@ -1132,10 +1399,10 @@ export default function OffersByPostScreen() {
               <View style={styles.actionModalHeader}>
                 <Text style={styles.actionModalTitle}>
                   {actionMode === "accept"
-                    ? "Đồng ý đề nghị"
+                    ? `Đồng ý ${offerNoun}`
                     : actionMode === "reject"
-                      ? "Từ chối đề nghị"
-                      : "Trao đổi đề nghị"}
+                      ? `Từ chối ${offerNoun}`
+                      : `Trao đổi ${offerNoun}`}
                 </Text>
 
                 <TouchableOpacity
@@ -1203,8 +1470,8 @@ export default function OffersByPostScreen() {
               ) : (
                 <Text style={styles.actionModalMessage}>
                   {actionMode === "accept"
-                    ? "Bạn có muốn đồng ý với đề nghị này và mở phiên thương lượng?"
-                    : "Bạn có chắc muốn từ chối đề nghị này?"}
+                    ? `Bạn có muốn đồng ý với ${offerNoun} này và mở phiên thương lượng?`
+                    : `Bạn có chắc muốn từ chối ${offerNoun} này?`}
                 </Text>
               )}
 
@@ -1255,6 +1522,53 @@ export default function OffersByPostScreen() {
               </View>
             </ModalSurface>
           </KeyboardAvoidingView>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal
+        visible={showSortMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSortMenu(false)}
+      >
+        <ModalBackdrop
+          style={styles.sortMenuBackdrop}
+          onPress={() => setShowSortMenu(false)}
+        >
+          <ModalSurface style={styles.sortMenuCard}>
+            <Text style={styles.sortMenuTitle}>Sắp xếp theo</Text>
+
+            {OFFER_SORT_OPTIONS.map((option) => {
+              const selected = option.key === sortOption;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={styles.sortMenuOption}
+                  onPress={() => {
+                    setSortOption(option.key);
+                    setShowSortMenu(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.sortMenuOptionText,
+                      selected ? styles.sortMenuOptionTextActive : undefined,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark"
+                      size={18}
+                      color={COLORS.primary}
+                    />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </ModalSurface>
         </ModalBackdrop>
       </Modal>
     </SafeAreaView>
@@ -1342,6 +1656,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  sortMenuBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  sortMenuCard: {
+    width: "100%",
+    maxWidth: 360,
+    alignSelf: "center",
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: COLORS.white,
+  },
+  sortMenuTitle: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  sortMenuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  sortMenuOptionText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  sortMenuOptionTextActive: {
+    color: COLORS.primary,
+    fontWeight: "800",
+  },
   errorBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1396,6 +1749,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: COLORS.white,
   },
+  rejectIconButton: {
+    width: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
+  },
   avatar: {
     width: 44,
     height: 44,
@@ -1406,6 +1767,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  sellProductName: {
+    marginBottom: 8,
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 21,
+  },
+  suitabilityText: {
+    marginTop: 8,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   offerTopRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1413,7 +1787,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   senderName: {
-    flex: 1,
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "800",
@@ -1483,21 +1856,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 7,
     marginTop: 12,
-  },
-  rejectActionButton: {
-    flex: 1,
-    minHeight: 38,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-  },
-  rejectActionText: {
-    color: COLORS.error,
-    fontSize: 11,
-    fontWeight: "700",
   },
   counterActionButton: {
     flex: 1,
