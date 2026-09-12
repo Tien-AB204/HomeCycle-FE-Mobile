@@ -3,15 +3,22 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
+import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import Header from "../../src/components/shared/Header";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import inspectionFormApi, {
@@ -29,12 +36,36 @@ const appointmentApi = {
     apiClient
       .post(`/appointments/${appointmentId}/check-in`)
       .then((response) => response.data),
+
+  requestReschedule: (appointmentId: string, proposedAt: string) =>
+    apiClient
+      .post(`/appointments/${appointmentId}/reschedule`, { proposedAt })
+      .then((response) => response.data),
+
+  acceptReschedule: (proposalAppointmentId: string) =>
+    apiClient
+      .post(`/appointments/${proposalAppointmentId}/reschedule/accept`)
+      .then((response) => response.data),
+
+  rejectReschedule: (proposalAppointmentId: string, reason: string) =>
+    apiClient
+      .post(`/appointments/${proposalAppointmentId}/reschedule/reject`, {
+        reason: reason || undefined,
+      })
+      .then((response) => response.data),
+
+  cancelAppointment: (appointmentId: string, reason: string) =>
+    apiClient
+      .post(`/appointments/${appointmentId}/cancel`, { reason })
+      .then((response) => response.data),
 };
 
 type InlineMessage = {
   type: "error" | "success" | "info";
   text: string;
 } | null;
+
+type PendingLifecycleAction = "accept" | "reject" | "cancel" | null;
 
 const unwrap = (value: any) => value?.data ?? value;
 
@@ -89,6 +120,24 @@ const isCollectionAppointmentType = (type: unknown) => {
 const translateAppointmentType = (type: number | string) =>
   isCollectionAppointmentType(type) ? "Lịch thu gom" : "Lịch kiểm định";
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const formatDateInput = (date: Date) =>
+  [date.getFullYear(), pad2(date.getMonth() + 1), pad2(date.getDate())].join(
+    "-",
+  );
+
+const defaultReschedulePartsFrom = () => {
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  next.setHours(9, 0, 0, 0);
+
+  return {
+    date: formatDateInput(next),
+    time: "09:00",
+  };
+};
+
 const translateDeliveryMethod = (value: unknown) => {
   switch (String(value || "").toLowerCase()) {
     case "ghndelivery":
@@ -118,6 +167,22 @@ export default function AppointmentDetailScreen() {
     useState<InspectionFormSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
+
+  const [isRescheduleModalVisible, setIsRescheduleModalVisible] =
+    useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [isReschedulingSubmitting, setIsReschedulingSubmitting] =
+    useState(false);
+  const [rescheduleFormError, setRescheduleFormError] = useState<
+    string | null
+  >(null);
+
+  const [pendingLifecycleAction, setPendingLifecycleAction] =
+    useState<PendingLifecycleAction>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [isLifecycleSubmitting, setIsLifecycleSubmitting] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   const fetchDetail = useCallback(
     async (showLoading = true) => {
@@ -245,6 +310,150 @@ export default function AppointmentDetailScreen() {
       });
     } finally {
       setIsCheckingIn(false);
+    }
+  };
+
+  const openRescheduleModal = () => {
+    const defaults = defaultReschedulePartsFrom();
+    setRescheduleDate(defaults.date);
+    setRescheduleTime(defaults.time);
+    setRescheduleFormError(null);
+    setIsRescheduleModalVisible(true);
+  };
+
+  const closeRescheduleModal = () => {
+    if (isReschedulingSubmitting) return;
+    setIsRescheduleModalVisible(false);
+  };
+
+  const handleSubmitReschedule = async () => {
+    if (!appointmentId || isReschedulingSubmitting) return;
+
+    if (!rescheduleDate || !/^\d{2}:\d{2}$/.test(rescheduleTime)) {
+      setRescheduleFormError(
+        "Vui lòng chọn ngày và nhập giờ hẹn mới theo dạng HH:mm.",
+      );
+      return;
+    }
+
+    const proposedDate = new Date(`${rescheduleDate}T${rescheduleTime}:00`);
+
+    if (
+      Number.isNaN(proposedDate.getTime()) ||
+      proposedDate.getTime() <= Date.now()
+    ) {
+      setRescheduleFormError("Thời gian đề xuất phải ở tương lai.");
+      return;
+    }
+
+    try {
+      setIsReschedulingSubmitting(true);
+      setRescheduleFormError(null);
+
+      await appointmentApi.requestReschedule(
+        String(appointmentId),
+        proposedDate.toISOString(),
+      );
+
+      setIsRescheduleModalVisible(false);
+      await fetchDetail(false);
+
+      setActionMessage({
+        type: "success",
+        text: "Đã gửi yêu cầu đổi lịch hẹn.",
+      });
+    } catch (error) {
+      setRescheduleFormError(
+        getApiErrorMessage(error, "Không thể gửi yêu cầu đổi lịch."),
+      );
+    } finally {
+      setIsReschedulingSubmitting(false);
+    }
+  };
+
+  const openLifecycleAction = (action: PendingLifecycleAction) => {
+    if (isLifecycleSubmitting) return;
+    setLifecycleReason("");
+    setLifecycleError(null);
+    setPendingLifecycleAction(action);
+  };
+
+  const closeLifecycleAction = () => {
+    if (isLifecycleSubmitting) return;
+    setPendingLifecycleAction(null);
+    setLifecycleReason("");
+    setLifecycleError(null);
+  };
+
+  const handleSubmitLifecycleAction = async () => {
+    if (!appointmentId || !pendingLifecycleAction || isLifecycleSubmitting) {
+      return;
+    }
+
+    if (pendingLifecycleAction === "cancel" && !lifecycleReason.trim()) {
+      setLifecycleError("Vui lòng nhập lý do hủy lịch hẹn.");
+      return;
+    }
+
+    const reschedule = data?.reschedule;
+    const proposalId = reschedule?.proposalAppointmentId
+      ? String(reschedule.proposalAppointmentId)
+      : null;
+
+    if (
+      (pendingLifecycleAction === "accept" ||
+        pendingLifecycleAction === "reject") &&
+      !proposalId
+    ) {
+      setLifecycleError("Không tìm thấy đề xuất đổi lịch để xử lý.");
+      return;
+    }
+
+    try {
+      setIsLifecycleSubmitting(true);
+      setLifecycleError(null);
+
+      if (pendingLifecycleAction === "accept") {
+        await appointmentApi.acceptReschedule(proposalId!);
+      } else if (pendingLifecycleAction === "reject") {
+        await appointmentApi.rejectReschedule(
+          proposalId!,
+          lifecycleReason.trim(),
+        );
+      } else {
+        await appointmentApi.cancelAppointment(
+          String(appointmentId),
+          lifecycleReason.trim(),
+        );
+      }
+
+      const completedAction = pendingLifecycleAction;
+      setPendingLifecycleAction(null);
+      setLifecycleReason("");
+      await fetchDetail(false);
+
+      setActionMessage({
+        type: "success",
+        text:
+          completedAction === "accept"
+            ? "Đã xác nhận lịch hẹn mới."
+            : completedAction === "reject"
+              ? "Đã từ chối lịch hẹn mới."
+              : "Đã hủy lịch hẹn.",
+      });
+    } catch (error) {
+      setLifecycleError(
+        getApiErrorMessage(
+          error,
+          pendingLifecycleAction === "accept"
+            ? "Không thể xác nhận lịch mới."
+            : pendingLifecycleAction === "reject"
+              ? "Không thể từ chối lịch mới."
+              : "Không thể hủy lịch hẹn.",
+        ),
+      );
+    } finally {
+      setIsLifecycleSubmitting(false);
     }
   };
 
@@ -471,6 +680,13 @@ export default function AppointmentDetailScreen() {
     canCollectNow ||
     canScheduleCollection;
 
+  const appointmentActions = appt.actions || {};
+  const canRequestReschedule = appointmentActions.canRequestReschedule === true;
+  const canAcceptReschedule = appointmentActions.canAcceptReschedule === true;
+  const canRejectReschedule = appointmentActions.canRejectReschedule === true;
+  const canCancelAppointment = appointmentActions.canCancel === true;
+  const activeReschedule = data?.reschedule || null;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Chi tiết Lịch hẹn" showBack />
@@ -649,6 +865,74 @@ export default function AppointmentDetailScreen() {
           </View>
         ) : null}
 
+        {activeReschedule ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Đề xuất đổi lịch hẹn</Text>
+            <InfoRow
+              label="Thời gian đề xuất"
+              value={formatDateTime(activeReschedule.proposedAt)}
+            />
+            <Text style={styles.rescheduleNote}>
+              {activeReschedule.isCurrentUserRequester
+                ? "Bạn đã gửi đề xuất này. Đang chờ đối tác phản hồi."
+                : "Đối tác đã đề xuất lịch hẹn mới. Vui lòng phản hồi."}
+            </Text>
+
+            {canAcceptReschedule || canRejectReschedule ? (
+              <View style={styles.rescheduleActionsRow}>
+                {canAcceptReschedule ? (
+                  <TouchableOpacity
+                    style={styles.primarySmallButtonFlex}
+                    onPress={() => openLifecycleAction("accept")}
+                  >
+                    <Text style={styles.primarySmallButtonText}>
+                      Chấp nhận lịch mới
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                {canRejectReschedule ? (
+                  <TouchableOpacity
+                    style={styles.secondaryButtonFlex}
+                    onPress={() => openLifecycleAction("reject")}
+                  >
+                    <Text style={styles.secondaryButtonText}>Từ chối</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        ) : canRequestReschedule ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Đổi lịch hẹn</Text>
+            <Text style={styles.actionHintText}>
+              Bạn có thể đề xuất một thời gian hẹn khác cho lịch hẹn này.
+            </Text>
+            <TouchableOpacity
+              style={styles.primarySmallButtonFlex}
+              onPress={openRescheduleModal}
+            >
+              <Text style={styles.primarySmallButtonText}>
+                Yêu cầu đổi lịch hẹn
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {canCancelAppointment ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Hủy lịch hẹn</Text>
+            <Text style={styles.actionHintDangerText}>
+              Thao tác này sẽ hủy lịch hẹn và không thể hoàn tác.
+            </Text>
+            <TouchableOpacity
+              style={styles.outlineBtnDanger}
+              onPress={() => openLifecycleAction("cancel")}
+            >
+              <Text style={styles.outlineBtnDangerText}>Hủy lịch hẹn</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thông tin hệ thống</Text>
           <InfoRow
@@ -814,6 +1098,164 @@ export default function AppointmentDetailScreen() {
           </>
         ) : null}
       </View>
+
+      <Modal
+        visible={isRescheduleModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeRescheduleModal}
+      >
+        <ModalBackdrop
+          style={styles.lifecycleModalBackdrop}
+          onPress={closeRescheduleModal}
+        >
+          <ModalSurface style={styles.lifecycleModalCard}>
+            <Text style={styles.lifecycleModalTitle}>Đề xuất lịch hẹn mới</Text>
+
+            <Text style={styles.label}>Ngày *</Text>
+            <CalendarDateField
+              value={rescheduleDate}
+              onChange={setRescheduleDate}
+              placeholder="Chọn ngày hẹn mới"
+              defaultViewDate={rescheduleDate || undefined}
+              disabled={isReschedulingSubmitting}
+            />
+
+            <Text style={styles.label}>Giờ *</Text>
+            <TextInput
+              value={rescheduleTime}
+              onChangeText={(text) =>
+                setRescheduleTime(text.replace(/[^0-9:]/g, "").slice(0, 5))
+              }
+              placeholder="09:00"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="numbers-and-punctuation"
+              editable={!isReschedulingSubmitting}
+              style={styles.textInput}
+            />
+            <Text style={styles.helperText}>Nhập theo dạng HH:mm.</Text>
+
+            {rescheduleFormError ? (
+              <Text style={styles.lifecycleModalError}>
+                {rescheduleFormError}
+              </Text>
+            ) : null}
+
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity
+                style={styles.secondaryButtonFlex}
+                onPress={closeRescheduleModal}
+                disabled={isReschedulingSubmitting}
+              >
+                <Text style={styles.secondaryButtonText}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primarySmallButtonFlex}
+                onPress={() => void handleSubmitReschedule()}
+                disabled={isReschedulingSubmitting}
+              >
+                {isReschedulingSubmitting ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primarySmallButtonText}>Gửi đề xuất</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal
+        visible={pendingLifecycleAction !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeLifecycleAction}
+      >
+        <ModalBackdrop
+          style={styles.lifecycleModalBackdrop}
+          onPress={closeLifecycleAction}
+        >
+          <ModalSurface style={styles.lifecycleModalCard}>
+            <Text style={styles.lifecycleModalTitle}>
+              {pendingLifecycleAction === "accept"
+                ? "Chấp nhận lịch hẹn mới?"
+                : pendingLifecycleAction === "reject"
+                  ? "Từ chối lịch hẹn mới?"
+                  : "Hủy lịch hẹn?"}
+            </Text>
+
+            {pendingLifecycleAction === "cancel" ? (
+              <>
+                <Text style={styles.label}>Lý do hủy *</Text>
+                <TextInput
+                  value={lifecycleReason}
+                  onChangeText={setLifecycleReason}
+                  placeholder="Nhập lý do hủy lịch hẹn"
+                  placeholderTextColor={COLORS.textLight}
+                  multiline
+                  editable={!isLifecycleSubmitting}
+                  style={[styles.textInput, styles.multilineInput]}
+                />
+              </>
+            ) : pendingLifecycleAction === "reject" ? (
+              <>
+                <Text style={styles.label}>Lý do từ chối (không bắt buộc)</Text>
+                <TextInput
+                  value={lifecycleReason}
+                  onChangeText={setLifecycleReason}
+                  placeholder="Nhập lý do từ chối"
+                  placeholderTextColor={COLORS.textLight}
+                  multiline
+                  editable={!isLifecycleSubmitting}
+                  style={[styles.textInput, styles.multilineInput]}
+                />
+              </>
+            ) : (
+              <Text style={styles.lifecycleModalText}>
+                Xác nhận lịch hẹn mới sẽ thay thế lịch hẹn hiện tại.
+              </Text>
+            )}
+
+            {lifecycleError ? (
+              <Text style={styles.lifecycleModalError}>{lifecycleError}</Text>
+            ) : null}
+
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity
+                style={styles.secondaryButtonFlex}
+                onPress={closeLifecycleAction}
+                disabled={isLifecycleSubmitting}
+              >
+                <Text style={styles.secondaryButtonText}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primarySmallButtonFlex,
+                  pendingLifecycleAction === "cancel"
+                    ? styles.primaryButtonDanger
+                    : undefined,
+                  pendingLifecycleAction === "cancel" &&
+                  !lifecycleReason.trim()
+                    ? styles.disabledButton
+                    : undefined,
+                ]}
+                onPress={() => void handleSubmitLifecycleAction()}
+                disabled={
+                  isLifecycleSubmitting ||
+                  (pendingLifecycleAction === "cancel" &&
+                    !lifecycleReason.trim())
+                }
+              >
+                {isLifecycleSubmitting ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primarySmallButtonText}>Xác nhận</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1076,4 +1518,118 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   disabledButton: { opacity: 0.55 },
+  actionHintText: {
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  actionHintDangerText: {
+    color: COLORS.error,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  rescheduleNote: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  rescheduleActionsRow: { flexDirection: "row", gap: 10 },
+  primarySmallButtonFlex: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryButtonFlex: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
+  primaryButtonDanger: { backgroundColor: COLORS.error },
+  outlineBtnDanger: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    backgroundColor: "rgba(122, 16, 18, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  outlineBtnDangerText: {
+    color: COLORS.error,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  label: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 7,
+  },
+  textInput: {
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#BAC2C1",
+    borderRadius: 9,
+    backgroundColor: COLORS.white,
+    color: COLORS.text,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  multilineInput: {
+    minHeight: 80,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  helperText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 8,
+  },
+  lifecycleModalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "rgba(23, 40, 48, 0.48)",
+  },
+  lifecycleModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+  },
+  lifecycleModalTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+  lifecycleModalText: {
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  lifecycleModalError: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  lifecycleModalActions: { flexDirection: "row", gap: 10, marginTop: 4 },
 });
