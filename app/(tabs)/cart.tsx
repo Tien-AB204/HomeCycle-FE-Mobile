@@ -22,6 +22,7 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+import { isBuyPostType } from "../../src/utils/postType";
 
 type CartPost = {
   postId: string;
@@ -77,6 +78,7 @@ const formatCurrency = (value: number | null | undefined) =>
   `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 
 const getPostImage = (post?: CartPost) => {
+  if (isBuyPostType(post?.postType)) return null;
   if (!Array.isArray(post?.medias) || post.medias.length === 0) return null;
 
   return [...post.medias]
@@ -195,6 +197,7 @@ export default function CartScreen() {
 
   const renderCartItem = ({ item }: { item: CartItem }) => {
     const post = item.post || ({} as CartPost);
+    const isBuyPost = isBuyPostType(post.postType);
     const imageUrl = getPostImage(post);
     const remainingQuantity = Number(post.remainingQuantity || 0);
     const isUnavailable = post.status !== "Active" || remainingQuantity <= 0;
@@ -208,6 +211,7 @@ export default function CartScreen() {
         <TouchableOpacity
           style={[
             styles.cartItem,
+            isBuyPost ? styles.textOnlyCartItem : undefined,
             isUnavailable ? styles.unavailableItem : undefined,
           ]}
           activeOpacity={0.8}
@@ -218,18 +222,20 @@ export default function CartScreen() {
             })
           }
         >
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={[styles.image, isUnavailable ? styles.faded : undefined]}
-            />
-          ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <Ionicons name="image-outline" size={28} color="#547B7D" />
-            </View>
-          )}
+          {!isBuyPost ? (
+            imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={[styles.image, isUnavailable ? styles.faded : undefined]}
+              />
+            ) : (
+              <View style={[styles.image, styles.imagePlaceholder]}>
+                <Ionicons name="image-outline" size={28} color="#547B7D" />
+              </View>
+            )
+          ) : null}
 
-          <View style={styles.info}>
+          <View style={[styles.info, isBuyPost ? styles.textOnlyInfo : undefined]}>
             <Text style={styles.metaText} numberOfLines={1}>
               {[post.categoryName, post.brandName].filter(Boolean).join(" • ") ||
                 post.productTypeName ||
@@ -345,17 +351,19 @@ export default function CartScreen() {
     }
 
     if (!user) {
+      // Matches the shared logged-out/auth-required pattern used by
+      // Appointments/Posts/Orders (bare icon, same title, same CTA shape) —
+      // a dedicated block so the other Cart states below (load error, truly
+      // empty cart) keep their own existing look untouched.
       return (
-        <View style={styles.centerState}>
-          <View style={styles.stateIcon}>
-            <Ionicons name="lock-closed-outline" size={34} color={COLORS.primary} />
-          </View>
-          <Text style={styles.stateTitle}>Bạn cần đăng nhập</Text>
-          <Text style={styles.stateDescription}>
-            Đăng nhập để xem và quản lý các sản phẩm trong giỏ hàng.
+        <View style={styles.unauthContainer}>
+          <Ionicons name="cart-outline" size={80} color={COLORS.border} />
+          <Text style={styles.unauthTitle}>Bạn chưa đăng nhập</Text>
+          <Text style={styles.unauthDesc}>
+            Vui lòng đăng nhập để xem và quản lý giỏ hàng của bạn.
           </Text>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={styles.loginBtn}
             onPress={() =>
               router.push({
                 pathname: "/(auth)/login",
@@ -363,7 +371,7 @@ export default function CartScreen() {
               })
             }
           >
-            <Text style={styles.primaryButtonText}>Đăng nhập</Text>
+            <Text style={styles.loginBtnText}>Đăng nhập ngay</Text>
           </TouchableOpacity>
         </View>
       );
@@ -480,6 +488,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
+  textOnlyCartItem: { minHeight: 0, alignItems: "flex-start" },
   unavailableItem: { backgroundColor: "#F8F9FA" },
   image: {
     width: 82,
@@ -490,6 +499,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: { alignItems: "center", justifyContent: "center" },
   faded: { opacity: 0.5 },
   info: { flex: 1, minWidth: 0, marginLeft: 12 },
+  textOnlyInfo: { marginLeft: 0 },
   metaText: { marginBottom: 4, color: COLORS.textLight, fontSize: 11 },
   productName: {
     marginBottom: 7,
@@ -596,6 +606,35 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   primaryButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "700" },
+  // Logged-out state family — same values as Appointments/Posts/Orders.
+  unauthContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: COLORS.white,
+  },
+  unauthTitle: {
+    marginTop: 16,
+    marginBottom: 12,
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  unauthDesc: {
+    marginBottom: 32,
+    color: COLORS.textLight,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  loginBtn: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  loginBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
   footer: {
     flexDirection: "row",
     alignItems: "center",
