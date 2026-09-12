@@ -5,6 +5,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -13,10 +14,15 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { isBuyPostType } from "../../src/utils/postType";
 
 type InlineMessage = {
   type: "error" | "warning" | "info" | "success";
@@ -25,6 +31,7 @@ type InlineMessage = {
 
 type TransactionRole = "buyer" | "seller" | null;
 type PendingAction = "handover" | "received" | null;
+type LifecycleAction = "cancel" | "confirmReturn" | "confirmReturnReceived" | null;
 type DeliveryMethod =
   | "GhnDelivery"
   | "SellerDelivers"
@@ -36,6 +43,8 @@ const orderApi = {
     apiClient.get(`/orders/${orderId}`).then((response) => response.data),
   getAgreement: (agreementId: string) =>
     apiClient.get(`/agreements/${agreementId}`).then((response) => response.data),
+  getPost: (postId: string) =>
+    apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
   getShipmentTracking: (orderId: string) =>
     apiClient
       .get(`/orders/${orderId}/shipment-tracking`)
@@ -51,6 +60,18 @@ const orderApi = {
   confirmReceived: (orderId: string) =>
     apiClient
       .post(`/orders/${orderId}/confirm-received`)
+      .then((response) => response.data),
+  cancelOrder: (orderId: string) =>
+    apiClient
+      .post(`/orders/${orderId}/cancel`)
+      .then((response) => response.data),
+  confirmReturn: (orderId: string) =>
+    apiClient
+      .post(`/orders/${orderId}/confirm-return`)
+      .then((response) => response.data),
+  confirmReturnReceived: (orderId: string) =>
+    apiClient
+      .post(`/orders/${orderId}/confirm-return-received`)
       .then((response) => response.data),
 };
 
@@ -202,6 +223,7 @@ export default function OrderDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [agreement, setAgreement] = useState<any>(null);
+  const [postContext, setPostContext] = useState<any>(null);
   const [deliveryMethod, setDeliveryMethod] =
     useState<DeliveryMethod>("Unknown");
   const [transactionRole, setTransactionRole] =
@@ -214,6 +236,9 @@ export default function OrderDetailScreen() {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isSellerReadyLoading, setIsSellerReadyLoading] = useState(false);
   const [isOrderTimelineExpanded, setOrderTimelineExpanded] = useState(true);
+  const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction>(null);
+  const [isLifecycleActionLoading, setIsLifecycleActionLoading] = useState(false);
+  const [lifecycleActionError, setLifecycleActionError] = useState<string | null>(null);
 
   const fetchOrderDetail = useCallback(async () => {
     if (!orderId) {
@@ -246,6 +271,17 @@ export default function OrderDetailScreen() {
       setData(responseData);
 
       const order = responseData?.order;
+
+      if (order?.postId) {
+        try {
+          const postResponse = await orderApi.getPost(String(order.postId));
+          setPostContext(unwrap(postResponse));
+        } catch {
+          setPostContext(null);
+        }
+      } else {
+        setPostContext(null);
+      }
       let nextAgreement: any = null;
       let nextDeliveryMethod: DeliveryMethod = "Unknown";
       let nextRole: TransactionRole = null;
@@ -312,6 +348,7 @@ export default function OrderDetailScreen() {
       });
       setData(null);
       setAgreement(null);
+      setPostContext(null);
       setDeliveryMethod("Unknown");
       setTransactionRole(null);
     } finally {
@@ -460,6 +497,61 @@ export default function OrderDetailScreen() {
     }
   };
 
+  const openLifecycleAction = (action: LifecycleAction) => {
+    if (isLifecycleActionLoading) return;
+    setLifecycleActionError(null);
+    setLifecycleAction(action);
+  };
+
+  const closeLifecycleAction = () => {
+    if (isLifecycleActionLoading) return;
+    setLifecycleAction(null);
+    setLifecycleActionError(null);
+  };
+
+  const handleLifecycleAction = async () => {
+    if (!orderId || !lifecycleAction || isLifecycleActionLoading) return;
+
+    try {
+      setIsLifecycleActionLoading(true);
+      setLifecycleActionError(null);
+
+      if (lifecycleAction === "cancel") {
+        await orderApi.cancelOrder(orderId);
+      } else if (lifecycleAction === "confirmReturn") {
+        await orderApi.confirmReturn(orderId);
+      } else {
+        await orderApi.confirmReturnReceived(orderId);
+      }
+
+      setLifecycleAction(null);
+      await fetchOrderDetail();
+
+      setPageMessage({
+        type: "success",
+        text:
+          lifecycleAction === "cancel"
+            ? "Đã hủy đơn hàng."
+            : lifecycleAction === "confirmReturn"
+              ? "Đã xác nhận trả hàng."
+              : "Đã xác nhận nhận lại hàng trả về.",
+      });
+    } catch (error) {
+      setLifecycleActionError(
+        getApiErrorMessage(
+          error,
+          lifecycleAction === "cancel"
+            ? "Không thể hủy đơn hàng lúc này."
+            : lifecycleAction === "confirmReturn"
+              ? "Không thể xác nhận đã trả hàng lúc này."
+              : "Không thể xác nhận đã nhận lại hàng lúc này.",
+        ),
+      );
+    } finally {
+      setIsLifecycleActionLoading(false);
+    }
+  };
+
   const formatCurrency = (value: number) =>
     value !== undefined && value !== null
       ? new Intl.NumberFormat("vi-VN", {
@@ -548,6 +640,7 @@ export default function OrderDetailScreen() {
   const counterpartyName = data.counterpartyName || "Đối tác";
   const negotiationId = data.negotiationId;
   const postId = order.postId;
+  const isBuyPost = isBuyPostType(postContext?.postType);
   const shipment = data.shipment;
   const dispute = data.dispute || {};
   const relatedAppointments = Array.isArray(order.appointments)
@@ -602,6 +695,11 @@ export default function OrderDetailScreen() {
   const normalizedConfirmAction = normalizeStatus(orderActions.confirmAction);
   const canConfirmFromBackend = orderActions.canConfirm === true;
   const canConfirmSellerReady = orderActions.canConfirmSellerReady === true;
+  const canCancelOrder = orderActions.canCancel === true;
+  const canConfirmReturn = orderActions.canConfirmReturn === true;
+  const canConfirmReturnReceived = orderActions.canConfirmReturnReceived === true;
+  const showLifecycleActionsCard =
+    canCancelOrder || canConfirmReturn || canConfirmReturnReceived;
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
@@ -634,6 +732,23 @@ export default function OrderDetailScreen() {
       hasActiveDispute ||
       (isGhn && transactionRole === "seller" && isProcessing)
     );
+  const postOwnerId = String(postContext?.ownerId || "").trim().toLowerCase();
+  const counterpartyId = String(data?.counterparty?.userId || "").trim().toLowerCase();
+  const currentUserName = String(
+    user?.name || user?.displayName || user?.username || "Bạn",
+  ).trim();
+  const currentPartyRoles = transactionRole
+    ? [
+        transactionRole === "seller" ? "Người bán" : "Người mua",
+        currentUserId && currentUserId === postOwnerId ? "Người đăng bài" : null,
+      ].filter(Boolean)
+    : [];
+  const counterpartyRoles = transactionRole
+    ? [
+        transactionRole === "seller" ? "Người mua" : "Người bán",
+        counterpartyId && counterpartyId === postOwnerId ? "Người đăng bài" : null,
+      ].filter(Boolean)
+    : [];
 
   const renderDeliveryInfo = () => (
     <>
@@ -814,13 +929,15 @@ export default function OrderDetailScreen() {
               }
             }}
           >
-            {thumbnailUrl ? (
-              <Image source={{ uri: thumbnailUrl }} style={styles.productImg} />
-            ) : (
-              <View style={styles.productImgPlaceholder}>
-                <Ionicons name="image-outline" size={24} color="#547B7D" />
-              </View>
-            )}
+            {!isBuyPost ? (
+              thumbnailUrl ? (
+                <Image source={{ uri: thumbnailUrl }} style={styles.productImg} />
+              ) : (
+                <View style={styles.productImgPlaceholder}>
+                  <Ionicons name="image-outline" size={24} color="#547B7D" />
+                </View>
+              )
+            ) : null}
             <View style={styles.productInfo}>
               <Text style={styles.productName} numberOfLines={2}>
                 {productName}
@@ -979,7 +1096,7 @@ export default function OrderDetailScreen() {
             {sellerAlreadyConfirmed ? (
               <StatusLine
                 icon="checkmark-circle"
-                text={`Seller đã xác nhận bàn giao${
+                text={`Người bán đã xác nhận bàn giao${
                   order.sellerHandoverConfirmedAt
                     ? ` lúc ${formatDate(order.sellerHandoverConfirmedAt)}`
                     : ""
@@ -989,7 +1106,7 @@ export default function OrderDetailScreen() {
             {buyerAlreadyConfirmed ? (
               <StatusLine
                 icon="checkmark-circle"
-                text={`Buyer đã xác nhận nhận hàng${
+                text={`Người mua đã xác nhận nhận hàng${
                   order.buyerReceivedConfirmedAt
                     ? ` lúc ${formatDate(order.buyerReceivedConfirmedAt)}`
                     : ""
@@ -1005,7 +1122,7 @@ export default function OrderDetailScreen() {
 
             {isGhn && transactionRole === "seller" && isProcessing ? (
               <Text style={styles.actionHint}>
-                Đơn GHN không cần Seller xác nhận bàn giao. GHN Delivered là bằng
+                Đơn GHN không cần Người bán xác nhận bàn giao. Trạng thái giao thành công của GHN là bằng
                 chứng giao hàng.
               </Text>
             ) : null}
@@ -1014,7 +1131,7 @@ export default function OrderDetailScreen() {
               <View style={styles.inlineConfirmBox}>
                 <Text style={styles.inlineConfirmTitle}>
                   {pendingAction === "handover"
-                    ? "Xác nhận bạn đã bàn giao hàng cho Buyer?"
+                    ? "Xác nhận bạn đã bàn giao hàng cho Người mua?"
                     : "Xác nhận bạn đã thực sự nhận hàng? Thao tác này sẽ hoàn thành đơn hàng."}
                 </Text>
                 <View style={styles.inlineConfirmActions}>
@@ -1068,9 +1185,82 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
+        {showLifecycleActionsCard ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Thao tác đơn hàng</Text>
+
+            {canConfirmReturn ? (
+              <TouchableOpacity
+                style={styles.secondaryOutlineBtn}
+                onPress={() => openLifecycleAction("confirmReturn")}
+              >
+                <Ionicons
+                  name="return-up-back-outline"
+                  size={19}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.secondaryOutlineBtnText}>
+                  Xác nhận đã trả hàng
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canConfirmReturnReceived ? (
+              <TouchableOpacity
+                style={[
+                  styles.secondaryOutlineBtn,
+                  canConfirmReturn ? styles.actionSpacingTop : undefined,
+                ]}
+                onPress={() => openLifecycleAction("confirmReturnReceived")}
+              >
+                <Ionicons
+                  name="checkmark-done-outline"
+                  size={19}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.secondaryOutlineBtnText}>
+                  Xác nhận đã nhận lại hàng
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canCancelOrder ? (
+              <TouchableOpacity
+                style={[
+                  styles.outlineBtnDanger,
+                  (canConfirmReturn || canConfirmReturnReceived)
+                    ? styles.actionSpacingTop
+                    : undefined,
+                ]}
+                onPress={() => openLifecycleAction("cancel")}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={19}
+                  color={COLORS.error}
+                />
+                <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Đối tác giao dịch</Text>
-          <InfoRow label="Đối tác:" value={counterpartyName} bold />
+          {transactionRole ? (
+            <View style={styles.participantList}>
+              <View style={styles.participantRow}>
+                <Text style={styles.participantName} numberOfLines={1}>{currentUserName}</Text>
+                <Text style={styles.participantRoles}>{currentPartyRoles.join(" · ")}</Text>
+              </View>
+              <View style={styles.participantRow}>
+                <Text style={styles.participantName} numberOfLines={1}>{counterpartyName}</Text>
+                <Text style={styles.participantRoles}>{counterpartyRoles.join(" · ")}</Text>
+              </View>
+            </View>
+          ) : (
+            <InfoRow label="Đối tác:" value={counterpartyName} bold />
+          )}
           {negotiationId ? (
             <TouchableOpacity
               style={styles.chatButton}
@@ -1165,6 +1355,67 @@ export default function OrderDetailScreen() {
           )}
         </View>
       ) : null}
+
+      <Modal
+        visible={lifecycleAction !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeLifecycleAction}
+      >
+        <ModalBackdrop
+          style={styles.lifecycleModalBackdrop}
+          onPress={closeLifecycleAction}
+        >
+          <ModalSurface style={styles.lifecycleModalCard}>
+            <Text style={styles.lifecycleModalTitle}>
+              {lifecycleAction === "cancel"
+                ? "Hủy đơn hàng?"
+                : lifecycleAction === "confirmReturn"
+                  ? "Xác nhận đã trả hàng?"
+                  : "Xác nhận đã nhận lại hàng trả về?"}
+            </Text>
+            <Text style={styles.lifecycleModalText}>
+              {lifecycleAction === "cancel"
+                ? "Thao tác này sẽ hủy đơn hàng và không thể hoàn tác."
+                : lifecycleAction === "confirmReturn"
+                  ? "Xác nhận bạn đã gửi trả sản phẩm cho người bán."
+                  : "Xác nhận bạn đã nhận lại sản phẩm trả về. Hệ thống sẽ hoàn tất hoàn tiền còn giữ cho đơn hàng."}
+            </Text>
+
+            {lifecycleActionError ? (
+              <Text style={styles.lifecycleModalError}>
+                {lifecycleActionError}
+              </Text>
+            ) : null}
+
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity
+                style={styles.cancelConfirmBtn}
+                onPress={closeLifecycleAction}
+                disabled={isLifecycleActionLoading}
+              >
+                <Text style={styles.cancelConfirmText}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primaryConfirmBtn,
+                  lifecycleAction === "cancel"
+                    ? styles.primaryConfirmBtnDanger
+                    : undefined,
+                ]}
+                onPress={() => void handleLifecycleAction()}
+                disabled={isLifecycleActionLoading}
+              >
+                {isLifecycleActionLoading ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primaryConfirmText}>Xác nhận</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1244,30 +1495,21 @@ function isTimelineUpcomingStatus(status: unknown) {
   return normalized === "upcoming" || normalized === "0";
 }
 
-function normalizeTimelineSubStepsForDisplay(subSteps: any[]) {
-  const buyerReceivedCompleted = subSteps.some(
-    (subStep) =>
-      normalizeStatus(subStep?.code) === "buyerreceived" &&
-      isTimelineCompletedStatus(subStep?.status),
+function shouldShowTimelineDescription(status: unknown) {
+  // Chỉ bước đang xử lý hoặc gặp sự cố mới cần mô tả; bước đã xong giữ gọn.
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalized === "inprogress" ||
+    normalized === "1" ||
+    normalized === "failed" ||
+    normalized === "3" ||
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
+    normalized === "4"
   );
-
-  if (!buyerReceivedCompleted) {
-    return subSteps;
-  }
-
-  return subSteps.map((subStep) => {
-    if (
-      normalizeStatus(subStep?.code) === "sellerhandover" &&
-      !isTimelineCompletedStatus(subStep?.status)
-    ) {
-      return {
-        ...subStep,
-        status: "Completed",
-      };
-    }
-
-    return subStep;
-  });
 }
 
 function OrderTimelineItem({
@@ -1283,12 +1525,14 @@ function OrderTimelineItem({
   const title = sanitizeTimelineText(step?.title) || "Cập nhật đơn hàng";
   const occurredAt = formatTimelineDate(step?.occurredAt);
 
-  const rawSubSteps = Array.isArray(step?.subSteps)
+  // Không tự suy diễn trạng thái bước con (vd. bàn giao) từ bước khác;
+  // hiển thị đúng dữ liệu Backend trả về.
+  const subSteps = Array.isArray(step?.subSteps)
     ? step.subSteps
     : [];
-
-  const subSteps =
-    normalizeTimelineSubStepsForDisplay(rawSubSteps);
+  const description = shouldShowTimelineDescription(step?.status)
+    ? sanitizeTimelineText(step?.description)
+    : "";
 
   const hasSubSteps = subSteps.length > 0;
   const isCompleted =
@@ -1359,6 +1603,12 @@ function OrderTimelineItem({
               />
             ) : null}
           </TouchableOpacity>
+
+          {description ? (
+            <Text style={styles.timelineDescription}>
+              {description}
+            </Text>
+          ) : null}
 
           {occurredAt ? (
             <Text style={styles.timelineTime}>
@@ -1647,6 +1897,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   productInfo: { flex: 1, justifyContent: "center" },
+  participantList: { gap: 8, marginBottom: 12 },
+  participantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: 10,
+    borderRadius: 9,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  participantName: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  participantRoles: {
+    flexShrink: 1,
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+  },
   productName: {
     fontSize: 14,
     fontWeight: "600",
@@ -1814,7 +2087,74 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: COLORS.primary,
   },
+  primaryConfirmBtnDanger: { backgroundColor: COLORS.error },
   primaryConfirmText: { color: COLORS.white, fontWeight: "800" },
+  secondaryOutlineBtn: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(43, 86, 89, 0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  secondaryOutlineBtnText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  outlineBtnDanger: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    backgroundColor: "rgba(122, 16, 18, 0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  outlineBtnDangerText: {
+    color: COLORS.error,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  actionSpacingTop: { marginTop: 10 },
+  lifecycleModalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "rgba(23, 40, 48, 0.48)",
+  },
+  lifecycleModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+  },
+  lifecycleModalTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+  lifecycleModalText: {
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  lifecycleModalError: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  lifecycleModalActions: { flexDirection: "row", gap: 10 },
   chatButton: {
     flexDirection: "row",
     alignItems: "center",
