@@ -587,6 +587,25 @@ export default function PostFormScreen() {
       return;
     }
 
+    // Early UX warning only — Agreement/Backend keep the authoritative GHN
+    // check. product.Weight (kg, per unit) * quantity mirrors the same
+    // aggregate-shipment formula the Backend GHN preview flow uses. Skipped
+    // when weight is blank: this Post field is optional, so there is not
+    // always enough data to compute an aggregate safely.
+    if (!isBuyPost && deliveryMethod === "GhnDelivery") {
+      const parsedWeightKg = Number(weight);
+      if (Number.isFinite(parsedWeightKg) && parsedWeightKg > 0) {
+        const totalWeightGram = parsedWeightKg * 1000 * parsedQuantity;
+        if (totalWeightGram > 50000) {
+          setFormMessage({
+            type: "error",
+            text: "Giao hàng nhanh chỉ hỗ trợ tổng khối lượng đơn hàng tối đa 50 kg. Vui lòng điều chỉnh số lượng, khối lượng hoặc chọn phương thức giao hàng khác.",
+          });
+          return;
+        }
+      }
+    }
+
     if (!productName.trim()) {
       setFormMessage({
         type: "error",
