@@ -4,6 +4,7 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -15,14 +16,29 @@ import {
   View,
 } from "react-native";
 
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
-type OrderTab = "processing" | "history" | "complaint";
-type SubFilter = "all" | "buyer" | "seller";
+// Primary structural perspective: which side of the transaction.
+type OrderTypeTab = "all" | "buyer" | "seller";
+// Secondary status filter: processing state within that perspective.
+type OrderStatusFilter = "all" | "processing" | "history" | "complaint";
+
+// Same 4 options/labels/business mapping as before — only the container
+// (funnel modal instead of a permanent chip row) changed.
+const ORDER_STATUS_FILTER_OPTIONS: Array<{
+  key: OrderStatusFilter;
+  label: string;
+}> = [
+  { key: "all", label: "Tất cả trạng thái" },
+  { key: "processing", label: "Đang xử lý" },
+  { key: "history", label: "Lịch sử" },
+  { key: "complaint", label: "Khiếu nại" },
+];
 
 type OrderItem = {
   id: string;
@@ -92,8 +108,14 @@ export default function OrdersScreen() {
   const { user } = useAuth();
   const currentUserId = user?.userId || user?.id;
 
-  const [activeTab, setActiveTab] = useState<OrderTab>("processing");
-  const [subFilter, setSubFilter] = useState<SubFilter>("all");
+  const [typeTab, setTypeTab] = useState<OrderTypeTab>("all");
+  // Applied secondary status filter — the single source of truth the list
+  // actually filters by. The funnel modal edits a separate draft copy so
+  // "Đặt lại"/"Áp dụng" can be cancelled by tapping the backdrop.
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("all");
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [draftStatusFilter, setDraftStatusFilter] =
+    useState<OrderStatusFilter>("all");
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -214,6 +236,24 @@ export default function OrdersScreen() {
     void fetchOrders(true);
   };
 
+  const openFilterModal = () => {
+    setDraftStatusFilter(statusFilter);
+    setShowFilterModal(true);
+  };
+
+  const closeFilterModal = () => setShowFilterModal(false);
+
+  const handleResetFilter = () => {
+    setDraftStatusFilter("all");
+    setStatusFilter("all");
+    setShowFilterModal(false);
+  };
+
+  const handleApplyFilter = () => {
+    setStatusFilter(draftStatusFilter);
+    setShowFilterModal(false);
+  };
+
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("vi-VN", {
       style: "currency",
@@ -257,16 +297,18 @@ export default function OrdersScreen() {
   }
 
   const filteredOrders = orders.filter((order) => {
-    const matchesTab =
-      activeTab === "processing"
-        ? [0, 1].includes(order.statusCode)
-        : activeTab === "history"
-          ? [2, 3].includes(order.statusCode)
-          : order.statusCode === 4;
+    const matchesStatus =
+      statusFilter === "all"
+        ? true
+        : statusFilter === "processing"
+          ? [0, 1].includes(order.statusCode)
+          : statusFilter === "history"
+            ? [2, 3].includes(order.statusCode)
+            : order.statusCode === 4;
 
-    if (!matchesTab) return false;
-    if (subFilter === "buyer") return order.roleKey === "buyer";
-    if (subFilter === "seller") return order.roleKey === "seller";
+    if (!matchesStatus) return false;
+    if (typeTab === "buyer") return order.roleKey === "buyer";
+    if (typeTab === "seller") return order.roleKey === "seller";
     return true;
   });
 
@@ -275,63 +317,46 @@ export default function OrdersScreen() {
       <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
         <MainHeader title="Quản lý Đơn hàng" />
 
-        <View style={styles.tabContainer}>
-          {(
-            [
-              ["processing", "Đang xử lý"],
-              ["history", "Lịch sử"],
-              ["complaint", "Khiếu nại"],
-            ] as Array<[OrderTab, string]>
-          ).map(([value, label]) => (
-            <TouchableOpacity
-              key={value}
-              style={[
-                styles.tabBtn,
-                activeTab === value ? styles.tabBtnActive : undefined,
-              ]}
-              onPress={() => {
-                setPageError(null);
-                setActiveTab(value);
-              }}
-            >
-              <Text
+        <View style={styles.tabRow}>
+          <View style={styles.tabContainer}>
+            {(
+              [
+                ["all", "Tất cả"],
+                ["buyer", "Đơn mua"],
+                ["seller", "Đơn bán"],
+              ] as Array<[OrderTypeTab, string]>
+            ).map(([value, label]) => (
+              <TouchableOpacity
+                key={value}
                 style={[
-                  styles.tabText,
-                  activeTab === value ? styles.tabTextActive : undefined,
+                  styles.tabBtn,
+                  typeTab === value ? styles.tabBtnActive : undefined,
                 ]}
+                onPress={() => {
+                  setPageError(null);
+                  setTypeTab(value);
+                }}
               >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                <Text
+                  style={[
+                    styles.tabText,
+                    typeTab === value ? styles.tabTextActive : undefined,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        <View style={styles.filterContainer}>
-          {(
-            [
-              ["all", "Tất cả"],
-              ["buyer", "Đơn mua"],
-              ["seller", "Đơn bán"],
-            ] as Array<[SubFilter, string]>
-          ).map(([value, label]) => (
-            <TouchableOpacity
-              key={value}
-              style={[
-                styles.filterChip,
-                subFilter === value ? styles.filterChipActive : undefined,
-              ]}
-              onPress={() => setSubFilter(value)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  subFilter === value ? styles.filterChipTextActive : undefined,
-                ]}
-              >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          <TouchableOpacity
+            style={styles.filterIconBtn}
+            onPress={openFilterModal}
+            hitSlop={8}
+          >
+            <Ionicons name="filter-outline" size={20} color={COLORS.text} />
+            {statusFilter !== "all" ? <View style={styles.filterActiveDot} /> : null}
+          </TouchableOpacity>
         </View>
 
         {pageError ? (
@@ -419,6 +444,62 @@ export default function OrdersScreen() {
           </ScrollView>
         )}
       </View>
+
+      <Modal
+        visible={showFilterModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeFilterModal}
+      >
+        <ModalBackdrop style={styles.filterModalBackdrop} onPress={closeFilterModal}>
+          <ModalSurface style={styles.filterModalCard}>
+            <Text style={styles.filterModalTitle}>Bộ lọc đơn hàng</Text>
+
+            <View style={styles.filterOptionList}>
+              {ORDER_STATUS_FILTER_OPTIONS.map((option) => {
+                const selected = draftStatusFilter === option.key;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[
+                      styles.filterOptionRow,
+                      selected ? styles.filterOptionRowActive : undefined,
+                    ]}
+                    onPress={() => setDraftStatusFilter(option.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterOptionText,
+                        selected ? styles.filterOptionTextActive : undefined,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {selected ? (
+                      <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.filterModalActions}>
+              <TouchableOpacity
+                style={styles.filterResetButton}
+                onPress={handleResetFilter}
+              >
+                <Text style={styles.filterResetButtonText}>Đặt lại</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.filterApplyButton}
+                onPress={handleApplyFilter}
+              >
+                <Text style={styles.filterApplyButtonText}>Áp dụng</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -455,11 +536,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   loginBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
-  tabContainer: {
+  tabRow: {
     flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     backgroundColor: COLORS.white,
+  },
+  tabContainer: {
+    flex: 1,
+    flexDirection: "row",
   },
   tabBtn: {
     flex: 1,
@@ -471,26 +557,77 @@ const styles = StyleSheet.create({
   tabBtnActive: { borderBottomColor: COLORS.primary },
   tabText: { color: COLORS.textLight, fontSize: 14, fontWeight: "600" },
   tabTextActive: { color: COLORS.primary },
-  filterContainer: {
-    flexDirection: "row",
+  filterIconBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterActiveDot: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+  },
+  filterModalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  filterModalCard: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: Platform.OS === "ios" ? 36 : 22,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     backgroundColor: COLORS.white,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#BAC2C1",
   },
-  filterChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    backgroundColor: "#F8F9FA",
+  filterModalTitle: {
+    marginBottom: 14,
+    color: COLORS.text,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  filterOptionList: { gap: 2 },
+  filterOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 46,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+  },
+  filterOptionRowActive: { backgroundColor: "rgba(43, 86, 89, 0.06)" },
+  filterOptionText: { color: COLORS.text, fontSize: 15, fontWeight: "600" },
+  filterOptionTextActive: { color: COLORS.primary, fontWeight: "800" },
+  filterModalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
+  filterResetButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 46,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: "#BAC2C1",
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
-  filterChipActive: { backgroundColor: "#172830", borderColor: "#172830" },
-  filterChipText: { fontSize: 13, color: "#547B7D", fontWeight: "600" },
-  filterChipTextActive: { color: COLORS.white },
+  filterResetButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
+  filterApplyButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 46,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+  },
+  filterApplyButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "800" },
   errorBox: {
     flexDirection: "row",
     alignItems: "flex-start",
