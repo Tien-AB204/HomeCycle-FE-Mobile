@@ -4,6 +4,7 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,9 +13,18 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+
+type InlineMessage = {
+  type: "error" | "success";
+  text: string;
+} | null;
 
 const categoryLabels: Record<string, string> = {
   "1": "Không xuất hiện / bùng hẹn",
@@ -29,6 +39,8 @@ const categoryLabels: Record<string, string> = {
   itemnotreceived: "Không nhận được hàng",
   "6": "Gian lận / lừa đảo",
   fraudorscam: "Gian lận / lừa đảo",
+  "7": "Đánh giá có nội dung không phù hợp",
+  abusivereview: "Đánh giá có nội dung không phù hợp",
   "8": "Không thanh toán theo thỏa thuận",
   paymentnotcompleted: "Không thanh toán theo thỏa thuận",
   "9": "Vi phạm cam kết giao dịch",
@@ -86,6 +98,10 @@ export default function DisputeDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [detail, setDetail] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
+  const [isCloseModalVisible, setIsCloseModalVisible] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const loadDetail = useCallback(async () => {
     if (!disputeId) {
@@ -114,9 +130,41 @@ export default function DisputeDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setActionMessage(null);
       void loadDetail();
     }, [loadDetail]),
   );
+
+  const openCloseModal = () => {
+    if (isClosing) return;
+    setCloseError(null);
+    setIsCloseModalVisible(true);
+  };
+
+  const closeCloseModal = () => {
+    if (isClosing) return;
+    setIsCloseModalVisible(false);
+  };
+
+  const handleCloseDispute = async () => {
+    if (!disputeId || isClosing) return;
+
+    try {
+      setIsClosing(true);
+      setCloseError(null);
+      await apiClient.post(`/disputes/${disputeId}/close`);
+
+      setIsCloseModalVisible(false);
+      setActionMessage({ type: "success", text: "Đã đóng tranh chấp." });
+      await loadDetail();
+    } catch (error) {
+      setCloseError(
+        getApiErrorMessage(error, "Không thể đóng tranh chấp lúc này."),
+      );
+    } finally {
+      setIsClosing(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -154,6 +202,7 @@ export default function DisputeDetailScreen() {
   const categoryKey = normalizeKey(detail.category);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
   const categoryLabel = categoryLabels[categoryKey] || "Chưa rõ";
+  const canCloseDispute = detail.actions?.canCloseDispute === true;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -177,6 +226,28 @@ export default function DisputeDetailScreen() {
         {errorMessage ? (
           <View style={styles.inlineErrorBox}>
             <Text style={styles.inlineErrorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        {actionMessage ? (
+          <View
+            style={[
+              styles.inlineErrorBox,
+              actionMessage.type === "success"
+                ? styles.inlineSuccessBox
+                : undefined,
+            ]}
+          >
+            <Text
+              style={[
+                styles.inlineErrorText,
+                actionMessage.type === "success"
+                  ? styles.inlineSuccessText
+                  : undefined,
+              ]}
+            >
+              {actionMessage.text}
+            </Text>
           </View>
         ) : null}
 
@@ -256,7 +327,73 @@ export default function DisputeDetailScreen() {
             </Text>
           )}
         </View>
+
+        {canCloseDispute ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Thao tác</Text>
+            <Text style={styles.helperText}>
+              Chỉ nên đóng khi bạn không còn muốn tiếp tục yêu cầu xử lý tranh
+              chấp này.
+            </Text>
+            <TouchableOpacity
+              style={styles.closeDisputeButton}
+              onPress={openCloseModal}
+            >
+              <Ionicons name="close-circle-outline" size={19} color="#7A1012" />
+              <Text style={styles.closeDisputeButtonText}>Đóng tranh chấp</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
+
+      <Modal
+        visible={isCloseModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeCloseModal}
+      >
+        <ModalBackdrop
+          style={styles.closeModalBackdrop}
+          onPress={closeCloseModal}
+          disabled={isClosing}
+        >
+          <ModalSurface style={styles.closeModalCard}>
+            <Text style={styles.closeModalTitle}>Đóng tranh chấp?</Text>
+            <Text style={styles.closeModalText}>
+              Yêu cầu xử lý sẽ dừng lại và không còn được tiếp tục xem xét.
+              Chỉ thực hiện thao tác này khi bạn chủ động muốn rút lại tranh
+              chấp.
+            </Text>
+
+            {closeError ? (
+              <Text style={styles.closeModalError}>{closeError}</Text>
+            ) : null}
+
+            <View style={styles.closeModalActions}>
+              <TouchableOpacity
+                style={styles.closeModalBackButton}
+                onPress={closeCloseModal}
+                disabled={isClosing}
+              >
+                <Text style={styles.closeModalBackButtonText}>Quay lại</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.closeModalConfirmButton}
+                onPress={() => void handleCloseDispute()}
+                disabled={isClosing}
+              >
+                {isClosing ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.closeModalConfirmButtonText}>
+                    Đóng tranh chấp
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -409,4 +546,78 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8F9FA",
   },
   emptyText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18 },
+  inlineSuccessBox: {
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
+    borderColor: "rgba(47, 118, 93, 0.24)",
+  },
+  inlineSuccessText: { color: "#2F765D" },
+  closeDisputeButton: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#7A1012",
+    backgroundColor: "rgba(122, 16, 18, 0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  closeDisputeButtonText: {
+    color: "#7A1012",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  closeModalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "rgba(23, 40, 48, 0.48)",
+  },
+  closeModalCard: {
+    width: "100%",
+    maxWidth: 380,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+  },
+  closeModalTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+  closeModalText: {
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  closeModalError: {
+    color: "#7A1012",
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  closeModalActions: { flexDirection: "row", gap: 10 },
+  closeModalBackButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
+  closeModalBackButtonText: { color: COLORS.text, fontWeight: "700" },
+  closeModalConfirmButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#7A1012",
+  },
+  closeModalConfirmButtonText: { color: COLORS.white, fontWeight: "800" },
 });

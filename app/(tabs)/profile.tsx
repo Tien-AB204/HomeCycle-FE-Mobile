@@ -283,6 +283,11 @@ export default function ProfileScreen() {
             route: "/payments/history",
           },
           {
+            icon: "alert-circle-outline",
+            title: "Tranh chấp của tôi",
+            route: "/disputes",
+          },
+          {
             icon: "book-outline",
             title: "Quy định & Chính sách",
             route: "/policy",
@@ -303,6 +308,11 @@ export default function ProfileScreen() {
             icon: "receipt-outline",
             title: "Lịch sử thanh toán",
             route: "/payments/history",
+          },
+          {
+            icon: "alert-circle-outline",
+            title: "Tranh chấp của tôi",
+            route: "/disputes",
           },
           {
             icon: "book-outline",
