@@ -1,119 +1,48 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { SafeAreaView, StyleSheet, Switch, Text, View } from "react-native";
 import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
+import { useNotifications } from "../src/contexts/NotificationContext";
 
 export default function SettingsScreen() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
-
-  // Load trạng thái theme từ LocalStorage khi mở màn hình
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const savedTheme = await AsyncStorage.getItem("theme");
-        if (savedTheme === "dark") {
-          setIsDarkMode(true);
-        }
-      } catch (error) {
-        console.log("Lỗi tải cài đặt:", error);
-      }
-    };
-    loadSettings();
-  }, []);
-
-  // Hàm xử lý khi gạt nút Sáng/Tối
-  const toggleTheme = async (value: boolean) => {
-    setIsDarkMode(value);
-    try {
-      await AsyncStorage.setItem("theme", value ? "dark" : "light");
-      // Ghi chú cho Dev:
-      // Để toàn bộ App đổi màu ngay lập tức khi gạt nút này,
-      // sau này ông cần bọc App bằng một cái <ThemeProvider> (Context) nhé.
-      // Hiện tại nó đã lưu trạng thái vào máy thành công!
-    } catch (error) {
-      console.log("Lỗi lưu cài đặt theme:", error);
-    }
-  };
-
-  const toggleNotifications = (value: boolean) => {
-    setIsNotificationsEnabled(value);
-  };
+  const {
+    systemNotificationsEnabled,
+    isSystemNotificationPreferenceLoaded,
+    setSystemNotificationsEnabled,
+  } = useNotifications();
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Thiết lập ứng dụng" showBack={true} />
 
       <View style={styles.container}>
-        <Text style={styles.sectionTitle}>Giao diện & Hiển thị</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <View style={styles.iconTextWrap}>
-              <View
-                style={[
-                  styles.iconBox,
-                  { backgroundColor: isDarkMode ? "#172830" : COLORS.background },
-                ]}
-              >
-                <Ionicons
-                  name={isDarkMode ? "moon" : "sunny"}
-                  size={20}
-                  color={isDarkMode ? "#FBBF24" : "#9A6418"}
-                />
-              </View>
-              <Text style={styles.settingText}>Giao diện tối (Dark Mode)</Text>
-            </View>
-            <Switch
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={"#ffffff"}
-              ios_backgroundColor={COLORS.border}
-              onValueChange={toggleTheme}
-              value={isDarkMode}
-            />
-          </View>
-        </View>
-
         <Text style={styles.sectionTitle}>Thông báo</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.iconTextWrap}>
-              <View style={[styles.iconBox, { backgroundColor: "rgba(84, 123, 125, 0.10)" }]}>
+              <View style={styles.iconBox}>
                 <Ionicons name="notifications" size={20} color="#2B5659" />
               </View>
-              <Text style={styles.settingText}>Nhận thông báo đẩy (Push)</Text>
-            </View>
-            <Switch
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={"#ffffff"}
-              ios_backgroundColor={COLORS.border}
-              onValueChange={toggleNotifications}
-              value={isNotificationsEnabled}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.row}>
-            <View style={styles.iconTextWrap}>
-              <View style={[styles.iconBox, { backgroundColor: "rgba(154, 100, 24, 0.10)" }]}>
-                <Ionicons name="mail" size={20} color="#9A6418" />
+              <View style={styles.flex}>
+                <Text style={styles.settingText}>Thông báo trên thiết bị</Text>
+                <Text style={styles.settingDescription}>
+                  Hiển thị thông báo trên thiết bị khi HomeCycle đang hoạt động.
+                </Text>
               </View>
-              <Text style={styles.settingText}>Nhận email tin tức</Text>
             </View>
             <Switch
               trackColor={{ false: COLORS.border, true: COLORS.primary }}
               thumbColor={"#ffffff"}
               ios_backgroundColor={COLORS.border}
-              onValueChange={() => {}}
-              value={false}
+              onValueChange={setSystemNotificationsEnabled}
+              value={systemNotificationsEnabled}
+              disabled={!isSystemNotificationPreferenceLoaded}
             />
           </View>
         </View>
 
         <View style={styles.footerInfo}>
-          <Text style={styles.versionText}>Phiên bản hiện tại: 1.0.0</Text>
           <Text style={styles.companyText}>© 2026 HomeCycle VN</Text>
         </View>
       </View>
@@ -124,6 +53,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   container: { flex: 1, padding: 16 },
+  flex: { flex: 1 },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "bold",
@@ -159,15 +89,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   settingText: { fontSize: 16, color: COLORS.text, fontWeight: "500" },
-  divider: {
-    height: 1,
-    backgroundColor: "#F8F9FA",
-    marginVertical: 12,
-    marginLeft: 48,
+  settingDescription: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textLight,
   },
   footerInfo: { marginTop: 40, alignItems: "center" },
-  versionText: { fontSize: 13, color: COLORS.textLight, marginBottom: 4 },
   companyText: { fontSize: 12, color: "#547B7D" },
 });

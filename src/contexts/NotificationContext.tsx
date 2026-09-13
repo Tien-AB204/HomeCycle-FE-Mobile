@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -28,10 +29,19 @@ type NotificationContextValue = {
   refreshUnreadCount: () => Promise<number>;
   markNotificationAsRead: (notificationId: string) => Promise<any>;
   markAllNotificationsAsRead: () => Promise<any>;
+  systemNotificationsEnabled: boolean;
+  isSystemNotificationPreferenceLoaded: boolean;
+  setSystemNotificationsEnabled: (enabled: boolean) => void;
 };
 
 const NotificationContext =
   createContext<NotificationContextValue | undefined>(undefined);
+
+// Người dùng bật/tắt việc hiển thị thông báo hệ thống trên chính thiết bị này.
+// Đây KHÔNG phải là push token/remote push — chỉ điều khiển hành vi hiển thị
+// FE-local khi app đang hoạt động.
+const SYSTEM_NOTIFICATIONS_PREFERENCE_KEY =
+  "homecycle.systemNotificationsEnabled.v1";
 
 const unwrapApiData = (value: any) => value?.data ?? value;
 
@@ -57,13 +67,51 @@ export function NotificationProvider({
   const { connection, reconnectVersion } = useChatRealtime();
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [systemNotificationsEnabled, setSystemNotificationsEnabledState] =
+    useState(true);
+  const [
+    isSystemNotificationPreferenceLoaded,
+    setIsSystemNotificationPreferenceLoaded,
+  ] = useState(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const handledReconnectVersionRef = useRef(0);
   const currentUserIdRef = useRef<string | null>(null);
-  const permissionRequestedForTokenRef = useRef<string | null>(null);
+  const systemNotificationsEnabledRef = useRef(true);
 
   currentUserIdRef.current = String(user?.userId ?? user?.id ?? "") || null;
+  systemNotificationsEnabledRef.current = systemNotificationsEnabled;
   const processedCreatedNotificationIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let isMounted = true;
+
+    AsyncStorage.getItem(SYSTEM_NOTIFICATIONS_PREFERENCE_KEY)
+      .then((stored) => {
+        if (!isMounted) return;
+        // Không có giá trị đã lưu -> giữ hành vi mặc định trước đây (bật).
+        setSystemNotificationsEnabledState(stored !== "false");
+      })
+      .catch(() => {
+        // Đọc thất bại: an toàn với mặc định bật, không chặn phần còn lại.
+      })
+      .finally(() => {
+        if (isMounted) setIsSystemNotificationPreferenceLoaded(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const setSystemNotificationsEnabled = useCallback((enabled: boolean) => {
+    setSystemNotificationsEnabledState(enabled);
+    void AsyncStorage.setItem(
+      SYSTEM_NOTIFICATIONS_PREFERENCE_KEY,
+      enabled ? "true" : "false",
+    ).catch(() => {
+      // Giữ nguyên lựa chọn trong phiên hiện tại dù lưu thất bại.
+    });
+  }, []);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!userToken) {
@@ -125,15 +173,25 @@ export function NotificationProvider({
     }
 
     void refreshUnreadCount();
-
-    // Once per authenticated session — not on every reconnect/render, and
-    // never while logged out. A denial here fails safe: unreadCount and the
-    // in-app Notification screen keep working regardless of the outcome.
-    if (permissionRequestedForTokenRef.current !== userToken) {
-      permissionRequestedForTokenRef.current = userToken;
-      void ensureNotificationPermissionAsync();
-    }
   }, [refreshUnreadCount, userToken]);
+
+  // Requests/checks OS notification permission only once the user is
+  // authenticated, the persisted preference has finished loading, and that
+  // preference is enabled — never merely because the user logged in, and
+  // never while the preference is off. Re-runs (safely; the underlying call
+  // is idempotent) if the user flips the Settings switch on during an
+  // authenticated session.
+  useEffect(() => {
+    if (
+      !userToken ||
+      !isSystemNotificationPreferenceLoaded ||
+      !systemNotificationsEnabled
+    ) {
+      return;
+    }
+
+    void ensureNotificationPermissionAsync();
+  }, [userToken, isSystemNotificationPreferenceLoaded, systemNotificationsEnabled]);
 
   useEffect(() => {
     if (!connection || !userToken) return;
@@ -186,10 +244,12 @@ export function NotificationProvider({
 
       // One authoritative NotificationCreated -> at most one native system
       // notification, gated on it being both genuinely new (per the dedupe
-      // set above, keyed by canonical notificationId) and unread — a
-      // reconnect replay of an already-processed id, or an already-read
-      // catch-up item, must never re-surface here.
-      if (item && !isRead) {
+      // set above, keyed by canonical notificationId), unread, and the user
+      // having the device notification preference enabled — a reconnect
+      // replay of an already-processed id, an already-read catch-up item,
+      // or the preference being off, must never surface a system
+      // notification. The in-app unread count above is never gated by this.
+      if (item && !isRead && systemNotificationsEnabledRef.current) {
         void presentLocalNotificationAsync({
           notificationId: item.notificationId,
           title: item.title,
@@ -315,6 +375,9 @@ export function NotificationProvider({
         refreshUnreadCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        systemNotificationsEnabled,
+        isSystemNotificationPreferenceLoaded,
+        setSystemNotificationsEnabled,
       }}
     >
       {children}
