@@ -23,6 +23,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "../../src/constants/theme";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   FULL_NAME_MAX_LENGTH,
@@ -86,7 +87,17 @@ export default function ProfileSetupScreen() {
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setAvatarUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        const validation = await validateNewLocalFiles("Avatar", [
+          { fileName: asset.fileName, uri: asset.uri, fileSize: asset.fileSize },
+        ]);
+
+        if (!validation.valid) {
+          setAvatarError(validation.message);
+          return;
+        }
+
+        setAvatarUri(asset.uri);
         setAvatarError("");
       }
     } catch (error: unknown) {

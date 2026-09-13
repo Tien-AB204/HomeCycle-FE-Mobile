@@ -33,6 +33,7 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   FULL_NAME_MAX_LENGTH,
@@ -322,11 +323,31 @@ export default function BusinessSetupScreen() {
         quality: 0.8,
       });
       if (result.canceled) return;
-      const selectedUri = result.assets?.[0]?.uri;
-      if (!selectedUri) {
+      const selectedAsset = result.assets?.[0];
+      if (!selectedAsset?.uri) {
         setUploadError(type, "Không thể đọc hình ảnh vừa chọn.");
         return;
       }
+
+      const context =
+        type === "license" || type === "authorization"
+          ? "BusinessDocument"
+          : "IdentityDocument";
+
+      const validation = await validateNewLocalFiles(context, [
+        {
+          fileName: selectedAsset.fileName,
+          uri: selectedAsset.uri,
+          fileSize: selectedAsset.fileSize,
+        },
+      ]);
+
+      if (!validation.valid) {
+        setUploadError(type, validation.message);
+        return;
+      }
+
+      const selectedUri = selectedAsset.uri;
 
       if (type === "license") setBusinessLicense(selectedUri);
       if (type === "front") setFrontImage(selectedUri);
@@ -495,6 +516,34 @@ export default function BusinessSetupScreen() {
     );
 
     if (hasFieldError) return;
+
+    const identityFiles = [frontImage, backImage].filter(
+      (uri): uri is string => Boolean(uri) && !uri!.startsWith("http"),
+    );
+    if (identityFiles.length > 0) {
+      const identityValidation = await validateNewLocalFiles(
+        "IdentityDocument",
+        identityFiles.map((uri) => ({ uri })),
+      );
+      if (!identityValidation.valid) {
+        setSubmitError(identityValidation.message);
+        return;
+      }
+    }
+
+    const businessDocumentFiles = [businessLicense, authorizationLetter].filter(
+      (uri): uri is string => Boolean(uri) && !uri!.startsWith("http"),
+    );
+    if (businessDocumentFiles.length > 0) {
+      const businessDocumentValidation = await validateNewLocalFiles(
+        "BusinessDocument",
+        businessDocumentFiles.map((uri) => ({ uri })),
+      );
+      if (!businessDocumentValidation.valid) {
+        setSubmitError(businessDocumentValidation.message);
+        return;
+      }
+    }
 
     try {
       setIsLoading(true);

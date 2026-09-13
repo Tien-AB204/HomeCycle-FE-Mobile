@@ -30,6 +30,10 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import {
+  validateNewLocalFiles,
+  type FileUploadContext,
+} from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   FULL_NAME_MAX_LENGTH,
@@ -155,13 +159,27 @@ const appendAssetToForm = async (
     type: asset.mimeType || "image/jpeg",
   } as any);
 };
-const pickSingleImage = async () => {
+const pickSingleImage = async (
+  context: FileUploadContext,
+): Promise<{ asset: ImagePicker.ImagePickerAsset | null; error?: string }> => {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     allowsEditing: false,
     quality: 0.8,
   });
-  return result.canceled ? null : result.assets[0];
+
+  if (result.canceled) return { asset: null };
+
+  const asset = result.assets[0];
+  const validation = await validateNewLocalFiles(context, [
+    { fileName: asset.fileName, uri: asset.uri, fileSize: asset.fileSize },
+  ]);
+
+  if (!validation.valid) {
+    return { asset: null, error: validation.message };
+  }
+
+  return { asset };
 };
 
 function InlineMessage({ message }: { message: MessageState }) {
@@ -450,7 +468,11 @@ export default function BusinessAccountInfoScreen() {
       cancelEdit(editingSection);
     }
 
-    const asset = await pickSingleImage();
+    const { asset, error } = await pickSingleImage("Avatar");
+    if (error) {
+      setSectionMessage("avatar", { type: "error", text: error });
+      return;
+    }
     if (!asset) return;
 
     if (editingSection !== "avatar") {
@@ -552,6 +574,23 @@ export default function BusinessAccountInfoScreen() {
       }));
       return;
     }
+
+    const avatarValidation = await validateNewLocalFiles("Avatar", [
+      {
+        fileName: avatarAsset.fileName,
+        uri: avatarAsset.uri,
+        fileSize: avatarAsset.fileSize,
+      },
+    ]);
+
+    if (!avatarValidation.valid) {
+      setErrors((current) => ({
+        ...current,
+        avatar: avatarValidation.message,
+      }));
+      return;
+    }
+
     try {
       setSavingSection("avatar");
       setSectionMessage("avatar", null);
@@ -591,6 +630,26 @@ export default function BusinessAccountInfoScreen() {
         "Vui lòng tải lại giấy đăng ký kinh doanh khi cập nhật thông tin này.";
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
+
+    const registrationValidation = await validateNewLocalFiles(
+      "BusinessDocument",
+      [
+        {
+          fileName: registrationCertificate!.fileName,
+          uri: registrationCertificate!.uri,
+          fileSize: registrationCertificate!.fileSize,
+        },
+      ],
+    );
+
+    if (!registrationValidation.valid) {
+      setErrors((current) => ({
+        ...current,
+        registrationCertificate: registrationValidation.message,
+      }));
+      return;
+    }
+
     try {
       setSavingSection("registration");
       setSectionMessage("registration", null);
@@ -659,6 +718,24 @@ export default function BusinessAccountInfoScreen() {
       nextErrors.cccdBack = "BE yêu cầu tải lại mặt sau CCCD mỗi lần cập nhật.";
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
+
+    const identityValidation = await validateNewLocalFiles(
+      "IdentityDocument",
+      [cccdFront!, cccdBack!].map((asset) => ({
+        fileName: asset.fileName,
+        uri: asset.uri,
+        fileSize: asset.fileSize,
+      })),
+    );
+
+    if (!identityValidation.valid) {
+      setErrors((current) => ({
+        ...current,
+        cccdFront: identityValidation.message,
+      }));
+      return;
+    }
+
     try {
       setSavingSection("identity");
       setSectionMessage("identity", null);
@@ -1151,7 +1228,16 @@ export default function BusinessAccountInfoScreen() {
                   }
                   hasFile={Boolean(registrationCertificate)}
                   onPress={async () => {
-                    const asset = await pickSingleImage();
+                    const { asset, error } = await pickSingleImage(
+                      "BusinessDocument",
+                    );
+                    if (error) {
+                      setErrors((current) => ({
+                        ...current,
+                        registrationCertificate: error,
+                      }));
+                      return;
+                    }
                     if (asset) {
                       setRegistrationCertificate(asset);
                       clearFieldError(
@@ -1289,7 +1375,16 @@ export default function BusinessAccountInfoScreen() {
                   label={cccdFront?.fileName || "Chọn ảnh mặt trước mới"}
                   hasFile={Boolean(cccdFront)}
                   onPress={async () => {
-                    const asset = await pickSingleImage();
+                    const { asset, error } = await pickSingleImage(
+                      "IdentityDocument",
+                    );
+                    if (error) {
+                      setErrors((current) => ({
+                        ...current,
+                        cccdFront: error,
+                      }));
+                      return;
+                    }
                     if (asset) {
                       setCccdFront(asset);
                       clearFieldError("cccdFront", "identity");
@@ -1312,7 +1407,16 @@ export default function BusinessAccountInfoScreen() {
                   label={cccdBack?.fileName || "Chọn ảnh mặt sau mới"}
                   hasFile={Boolean(cccdBack)}
                   onPress={async () => {
-                    const asset = await pickSingleImage();
+                    const { asset, error } = await pickSingleImage(
+                      "IdentityDocument",
+                    );
+                    if (error) {
+                      setErrors((current) => ({
+                        ...current,
+                        cccdBack: error,
+                      }));
+                      return;
+                    }
                     if (asset) {
                       setCccdBack(asset);
                       clearFieldError("cccdBack", "identity");

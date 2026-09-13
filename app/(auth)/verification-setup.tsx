@@ -27,6 +27,7 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 
@@ -229,8 +230,8 @@ export default function VerificationSetupScreen() {
       });
       if (result.canceled) return;
 
-      const selectedUri = result.assets?.[0]?.uri;
-      if (!selectedUri) {
+      const selectedAsset = result.assets?.[0];
+      if (!selectedAsset?.uri) {
         setErrors((current) => ({
           ...current,
           identityImages: "Không thể đọc ảnh đã chọn.",
@@ -238,8 +239,24 @@ export default function VerificationSetupScreen() {
         return;
       }
 
-      if (side === "front") setFrontImage(selectedUri);
-      else setBackImage(selectedUri);
+      const validation = await validateNewLocalFiles("IdentityDocument", [
+        {
+          fileName: selectedAsset.fileName,
+          uri: selectedAsset.uri,
+          fileSize: selectedAsset.fileSize,
+        },
+      ]);
+
+      if (!validation.valid) {
+        setErrors((current) => ({
+          ...current,
+          identityImages: validation.message,
+        }));
+        return;
+      }
+
+      if (side === "front") setFrontImage(selectedAsset.uri);
+      else setBackImage(selectedAsset.uri);
       clearError("identityImages");
     } catch (error) {
       setErrors((current) => ({
@@ -319,6 +336,37 @@ export default function VerificationSetupScreen() {
       });
 
       return;
+    }
+
+    const hasAvatarToValidate =
+      avatarUri &&
+      avatarUri !== "undefined" &&
+      avatarUri !== "null" &&
+      String(avatarUri).trim() !== "";
+
+    if (hasAvatarToValidate) {
+      const avatarValidation = await validateNewLocalFiles("Avatar", [
+        { uri: String(avatarUri) },
+      ]);
+
+      if (!avatarValidation.valid) {
+        setMessage({ type: "error", text: avatarValidation.message });
+        return;
+      }
+    }
+
+    if (includeVerification && (frontImage || backImage)) {
+      const identityValidation = await validateNewLocalFiles(
+        "IdentityDocument",
+        [frontImage, backImage]
+          .filter((uri): uri is string => Boolean(uri))
+          .map((uri) => ({ uri })),
+      );
+
+      if (!identityValidation.valid) {
+        setMessage({ type: "error", text: identityValidation.message });
+        return;
+      }
     }
 
     try {

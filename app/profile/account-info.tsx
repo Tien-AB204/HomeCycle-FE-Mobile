@@ -28,6 +28,7 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   FULL_NAME_MAX_LENGTH,
@@ -239,8 +240,18 @@ export default function AccountInfoScreen() {
       });
 
       if (!result.canceled) {
-        setSaveMessage(null);
         const asset = result.assets[0];
+        const context = type === "avatar" ? "Avatar" : "IdentityDocument";
+        const validation = await validateNewLocalFiles(context, [
+          { fileName: asset.fileName, uri: asset.uri, fileSize: asset.fileSize },
+        ]);
+
+        if (!validation.valid) {
+          setSaveMessage({ type: "error", text: validation.message });
+          return;
+        }
+
+        setSaveMessage(null);
         if (type === "avatar") setNewAvatarFile(asset);
         if (type === "front") setFrontImage(asset);
         if (type === "back") setBackImage(asset);
@@ -283,12 +294,22 @@ export default function AccountInfoScreen() {
 
     if (result.canceled) return;
 
+    const asset = result.assets[0];
+    const validation = await validateNewLocalFiles("Avatar", [
+      { fileName: asset.fileName, uri: asset.uri, fileSize: asset.fileSize },
+    ]);
+
+    if (!validation.valid) {
+      setSaveMessage({ type: "error", text: validation.message });
+      return;
+    }
+
     if (editingSection !== "profile") {
       beginEdit("profile");
     }
 
     setSaveMessage(null);
-    setNewAvatarFile(result.assets[0]);
+    setNewAvatarFile(asset);
   };
 
   const handleSaveChanges = async (section: PersonalSection) => {
@@ -340,6 +361,19 @@ export default function AccountInfoScreen() {
         }
 
         if (newAvatarFile) {
+          const avatarValidation = await validateNewLocalFiles("Avatar", [
+            {
+              fileName: newAvatarFile.fileName,
+              uri: newAvatarFile.uri,
+              fileSize: newAvatarFile.fileSize,
+            },
+          ]);
+
+          if (!avatarValidation.valid) {
+            setSaveMessage({ type: "error", text: avatarValidation.message });
+            return;
+          }
+
           const formData = new FormData();
           await appendFileToForm(formData, "AvatarUrl", newAvatarFile, "avatar.jpg");
           apiTasks.push(
@@ -361,6 +395,29 @@ export default function AccountInfoScreen() {
           backImage !== null;
 
         if (identityChanged) {
+          const identityFiles = [frontImage, backImage].filter(
+            (asset): asset is NonNullable<typeof asset> => Boolean(asset),
+          );
+
+          if (identityFiles.length > 0) {
+            const identityValidation = await validateNewLocalFiles(
+              "IdentityDocument",
+              identityFiles.map((asset) => ({
+                fileName: asset.fileName,
+                uri: asset.uri,
+                fileSize: asset.fileSize,
+              })),
+            );
+
+            if (!identityValidation.valid) {
+              setSaveMessage({
+                type: "error",
+                text: identityValidation.message,
+              });
+              return;
+            }
+          }
+
           const formData = new FormData();
           formData.append("RepresentativeCode", repCode || "");
           formData.append("RepresentativeName", toUppercaseText(repName));

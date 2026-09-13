@@ -18,6 +18,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 
 const disputeCategories = [
@@ -49,9 +50,6 @@ const normalizeAllowedDisputeCategory = (value: unknown): number | null => {
   );
 };
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-
 type InlineMessage = {
   type: "error" | "warning" | "info";
   text: string;
@@ -67,17 +65,6 @@ const getErrorCode = (error: any) =>
       error?.code ||
       "",
   );
-
-const isSupportedImage = (asset: ImagePicker.ImagePickerAsset) => {
-  const fileName = String(asset.fileName || "").toLowerCase();
-  const mimeType = String(asset.mimeType || "").toLowerCase();
-
-  if (fileName) {
-    return allowedExtensions.some((extension) => fileName.endsWith(extension));
-  }
-
-  return ["image/jpeg", "image/png", "image/webp"].includes(mimeType);
-};
 
 const appendEvidenceImage = async (
   formData: FormData,
@@ -278,20 +265,6 @@ export default function CreateDisputeScreen() {
     if (images.length < 2 || images.length > 5) {
       setImageError("Cần cung cấp từ 2 đến 5 ảnh bằng chứng.");
       valid = false;
-    } else {
-      const unsupported = images.find((asset) => !isSupportedImage(asset));
-      if (unsupported) {
-        setImageError("Chỉ chấp nhận ảnh JPG, JPEG, PNG hoặc WEBP.");
-        valid = false;
-      }
-
-      const oversized = images.find(
-        (asset) => Number((asset as any).fileSize || 0) > MAX_IMAGE_SIZE,
-      );
-      if (oversized) {
-        setImageError("Dung lượng mỗi ảnh không được vượt quá 5MB.");
-        valid = false;
-      }
     }
 
     return valid;
@@ -315,22 +288,21 @@ export default function CreateDisputeScreen() {
 
     if (result.canceled) return;
 
-    const nextImages = [...images, ...result.assets].slice(0, 5);
-    const unsupported = nextImages.find((asset) => !isSupportedImage(asset));
-    if (unsupported) {
-      setImageError("Có ảnh không đúng định dạng. Chỉ dùng JPG, JPEG, PNG hoặc WEBP.");
-      return;
-    }
-
-    const oversized = nextImages.find(
-      (asset) => Number((asset as any).fileSize || 0) > MAX_IMAGE_SIZE,
+    const validation = await validateNewLocalFiles(
+      "DisputeEvidence",
+      result.assets.map((asset) => ({
+        fileName: asset.fileName,
+        uri: asset.uri,
+        fileSize: asset.fileSize,
+      })),
     );
-    if (oversized) {
-      setImageError("Có ảnh vượt quá 5MB. Vui lòng chọn ảnh nhỏ hơn.");
+
+    if (!validation.valid) {
+      setImageError(validation.message);
       return;
     }
 
-    setImages(nextImages);
+    setImages((current) => [...current, ...result.assets].slice(0, 5));
   };
 
   const removeImage = (index: number) => {
@@ -360,6 +332,20 @@ export default function CreateDisputeScreen() {
 
   const submit = async () => {
     if (!validate() || !orderId || !category) return;
+
+    const filesValidation = await validateNewLocalFiles(
+      "DisputeEvidence",
+      images.map((asset) => ({
+        fileName: asset.fileName,
+        uri: asset.uri,
+        fileSize: asset.fileSize,
+      })),
+    );
+
+    if (!filesValidation.valid) {
+      setImageError(filesValidation.message);
+      return;
+    }
 
     try {
       setIsSubmitting(true);

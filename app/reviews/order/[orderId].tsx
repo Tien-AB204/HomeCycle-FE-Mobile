@@ -19,6 +19,7 @@ import {
 import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import apiClient from "../../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
 
 const reviewApi = {
@@ -230,6 +231,20 @@ export default function OrderReviewScreen() {
 
     if (result.canceled) return;
 
+    const validation = await validateNewLocalFiles(
+      "ReviewMedia",
+      result.assets.map((asset) => ({
+        fileName: asset.fileName,
+        uri: asset.uri,
+        fileSize: asset.fileSize,
+      })),
+    );
+
+    if (!validation.valid) {
+      setImageError(validation.message);
+      return;
+    }
+
     setImages((current) => [...current, ...result.assets].slice(0, 3));
   };
 
@@ -242,6 +257,22 @@ export default function OrderReviewScreen() {
 
   const submitCreateReview = async () => {
     if (!orderId || !validate()) return;
+
+    if (images.length > 0) {
+      const filesValidation = await validateNewLocalFiles(
+        "ReviewMedia",
+        images.map((asset) => ({
+          fileName: asset.fileName,
+          uri: asset.uri,
+          fileSize: asset.fileSize,
+        })),
+      );
+
+      if (!filesValidation.valid) {
+        setImageError(filesValidation.message);
+        return;
+      }
+    }
 
     try {
       setIsSubmitting(true);

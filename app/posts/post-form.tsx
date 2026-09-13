@@ -24,6 +24,7 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 const postApi = {
@@ -505,6 +506,20 @@ export default function PostFormScreen() {
         quality: 0.8,
       });
       if (!result.canceled) {
+        const validation = await validateNewLocalFiles(
+          "PostMedia",
+          result.assets.map((asset) => ({
+            fileName: asset.fileName,
+            uri: asset.uri,
+            fileSize: asset.fileSize,
+          })),
+        );
+
+        if (!validation.valid) {
+          setImageError(validation.message);
+          return;
+        }
+
         setImages((current) => [
           ...current,
           ...result.assets.map((asset) => asset.uri).slice(0, remainingSlots),
@@ -653,6 +668,23 @@ export default function PostFormScreen() {
         text: "Vui lòng nhập giá và ít nhất 1 ảnh trước khi đăng.",
       });
       return;
+    }
+
+    if (!isBuyPost && images.length > 0) {
+      const localImages = images.filter((uri) => !uri.startsWith("http"));
+
+      if (localImages.length > 0) {
+        const filesValidation = await validateNewLocalFiles(
+          "PostMedia",
+          localImages.map((uri) => ({ uri })),
+        );
+
+        if (!filesValidation.valid) {
+          setImageError(filesValidation.message);
+          setFormMessage({ type: "error", text: filesValidation.message });
+          return;
+        }
+      }
     }
 
     const attributeValues: Array<

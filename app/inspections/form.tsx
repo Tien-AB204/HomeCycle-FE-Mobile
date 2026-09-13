@@ -22,6 +22,7 @@ import {
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import inspectionFormApi, {
   APPEARANCE_STATUS_OPTIONS,
   CONCLUSION_OPTIONS,
@@ -231,6 +232,20 @@ export default function InspectionFormScreen() {
 
     if (result.canceled) return;
 
+    const validation = await validateNewLocalFiles(
+      "InspectionEvidence",
+      result.assets.map((asset) => ({
+        fileName: asset.fileName,
+        uri: asset.uri,
+        fileSize: asset.fileSize,
+      })),
+    );
+
+    if (!validation.valid) {
+      setPageMessage({ type: "error", text: validation.message });
+      return;
+    }
+
     setNewImages((current) => [...current, ...result.assets].slice(0, 5));
     setIsDirty(true);
     setPageMessage(null);
@@ -283,6 +298,19 @@ export default function InspectionFormScreen() {
 
       const checklist = buildChecklist();
       const assets = newImages.map(toImageAsset);
+      const willSendImages = !form || isReplacingImages;
+
+      if (willSendImages && assets.length > 0) {
+        const validation = await validateNewLocalFiles(
+          "InspectionEvidence",
+          assets,
+        );
+
+        if (!validation.valid) {
+          setPageMessage({ type: "error", text: validation.message });
+          return;
+        }
+      }
 
       const updated = form
         ? await inspectionFormApi.updateDraft(
