@@ -1554,7 +1554,12 @@ export default function SearchScreen() {
             {searchResults.map((post) => (
               <TouchableOpacity
                 key={post.postId}
-                style={isGridView ? styles.gridCard : styles.listCard}
+                style={[
+                  isGridView ? styles.gridCard : styles.listCard,
+                  isGridView && isBuyPostType(post.postType)
+                    ? styles.gridBuyCard
+                    : undefined,
+                ]}
                 onPress={() => router.push(`/posts/${post.postId}` as any)}
                 activeOpacity={0.8}
               >
@@ -2086,6 +2091,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#BAC2C1",
+  },
+  gridBuyCard: {
+    alignSelf: "flex-start",
   },
   gridImageWrapper: {
     width: "100%",
