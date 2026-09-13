@@ -22,6 +22,8 @@ import {
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import inspectionFormApi, {
+  translateConclusion,
+  translateInspectionStatus,
   type InspectionFormSummary,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
@@ -862,6 +864,67 @@ export default function AppointmentDetailScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+        ) : null}
+
+        {!isCollection &&
+        (inspectionForm || appointmentActions.canCreateInspectionForm) ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Phiếu kiểm định</Text>
+
+            {inspectionForm ? (
+              <>
+                <InfoRow
+                  label="Trạng thái"
+                  value={translateInspectionStatus(
+                    inspectionForm.inspectionStatus,
+                  )}
+                />
+                {inspectionForm.conclusion ? (
+                  <InfoRow
+                    label="Kết luận"
+                    value={
+                      translateConclusion(inspectionForm.conclusion) ||
+                      "Chưa có"
+                    }
+                  />
+                ) : null}
+                <TouchableOpacity
+                  style={styles.primarySmallButtonFlex}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/inspections/form",
+                      params: { appointmentId: String(appointmentId) },
+                    } as any)
+                  }
+                >
+                  <Text style={styles.primarySmallButtonText}>
+                    {inspectionForm.actions?.canEdit
+                      ? "Chỉnh sửa phiếu kiểm định"
+                      : "Xem phiếu kiểm định"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.actionHintText}>
+                  Bạn có thể tạo phiếu kiểm định cho lịch hẹn này.
+                </Text>
+                <TouchableOpacity
+                  style={styles.primarySmallButtonFlex}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/inspections/form",
+                      params: { appointmentId: String(appointmentId) },
+                    } as any)
+                  }
+                >
+                  <Text style={styles.primarySmallButtonText}>
+                    Tạo phiếu kiểm định
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         ) : null}
 
