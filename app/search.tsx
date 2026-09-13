@@ -62,6 +62,12 @@ const FILTER_SPACES = [
   "Phòng làm việc",
   "Phòng tắm",
 ];
+const SPACE_MAP: Record<string, string> = {
+  "Phòng khách": "Living_room",
+  "Phòng ngủ": "Bedroom",
+  "Nhà bếp": "Kitchen",
+  "Phòng tắm": "Bathroom",
+};
 const POST_TYPES = ["Bán", "Mua"];
 const DELIVERY_METHODS = [
   "Không xác định",
@@ -86,12 +92,32 @@ const PRIORITY_MAP: Record<string, string> = {
 
 type ViewState = "BUILDER" | "HISTORY" | "RESULTS";
 
+type ProductTypeOption = {
+  productTypeId: string;
+  productTypeName: string;
+};
+
+type AttributeOption = {
+  optionId: string;
+  optionValue: string;
+};
+
+type FilterableAttribute = {
+  attributeId: string;
+  attributeName: string;
+  dataType: string;
+  unit?: string | null;
+  options: AttributeOption[];
+};
+
 export default function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
   const inputRef = useRef<TextInput>(null);
   const autoSearchStartedRef = useRef(false);
+  const productTypeRequestGenerationRef = useRef(0);
+  const attributeRequestGenerationRef = useRef(0);
 
   const autoSearchParam = Array.isArray(params.autoSearch)
     ? params.autoSearch[0]
@@ -120,6 +146,20 @@ export default function SearchScreen() {
   const [postType, setPostType] = useState(initialPostType);
   const [filterCategories, setFilterCategories] = useState<any[]>([]);
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  const [productTypes, setProductTypes] = useState<ProductTypeOption[]>([]);
+  const [selectedProductType, setSelectedProductType] = useState<string | null>(
+    null,
+  );
+  const [filterableAttributes, setFilterableAttributes] = useState<
+    FilterableAttribute[]
+  >([]);
+  const [selectedAttributeOptions, setSelectedAttributeOptions] = useState<
+    Record<string, string[]>
+  >({});
+  const [isLoadingProductTypes, setIsLoadingProductTypes] = useState(false);
+  const [isLoadingAttributes, setIsLoadingAttributes] = useState(false);
+  const [productTypeError, setProductTypeError] = useState("");
+  const [attributeError, setAttributeError] = useState("");
   const [selectedCondition, setSelectedCondition] = useState("");
   const [selectedSpace, setSelectedSpace] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState("");
@@ -144,7 +184,6 @@ export default function SearchScreen() {
   >([]);
   const [showCityDropdown, setShowCityDropdown] = useState(false);
 
-  const [originalResults, setOriginalResults] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -179,6 +218,165 @@ export default function SearchScreen() {
     };
     void fetchCategories();
   }, []);
+
+  useEffect(
+    () => () => {
+      productTypeRequestGenerationRef.current += 1;
+      attributeRequestGenerationRef.current += 1;
+    },
+    [],
+  );
+
+  const loadProductTypes = async (categoryId: string) => {
+    const generation = ++productTypeRequestGenerationRef.current;
+    setIsLoadingProductTypes(true);
+    setProductTypeError("");
+
+    try {
+      const response = await apiClient.get(
+        `/product-types/category/${categoryId}`,
+      );
+      if (generation !== productTypeRequestGenerationRef.current) return;
+
+      const data = response.data?.data ?? response.data;
+      const nextProductTypes = Array.isArray(data)
+        ? data.filter(
+            (item): item is ProductTypeOption =>
+              typeof item?.productTypeId === "string" &&
+              typeof item?.productTypeName === "string",
+          )
+        : [];
+      setProductTypes(nextProductTypes);
+    } catch {
+      if (generation !== productTypeRequestGenerationRef.current) return;
+      setProductTypes([]);
+      setProductTypeError(
+        "Không thể tải loại sản phẩm. Bạn vẫn có thể tìm theo danh mục.",
+      );
+    } finally {
+      if (generation === productTypeRequestGenerationRef.current) {
+        setIsLoadingProductTypes(false);
+      }
+    }
+  };
+
+  const loadFilterableAttributes = async (productTypeId: string) => {
+    const generation = ++attributeRequestGenerationRef.current;
+    setIsLoadingAttributes(true);
+    setAttributeError("");
+
+    try {
+      const response = await apiClient.get(
+        `/product-types/${productTypeId}/filterable-attributes`,
+      );
+      if (generation !== attributeRequestGenerationRef.current) return;
+
+      const data = response.data?.data ?? response.data;
+      const nextAttributes = Array.isArray(data)
+        ? data
+            .map((item): FilterableAttribute | null => {
+              if (
+                typeof item?.attributeId !== "string" ||
+                typeof item?.attributeName !== "string" ||
+                !Array.isArray(item?.options)
+              ) {
+                return null;
+              }
+
+              const options = item.options.filter(
+                (option: unknown): option is AttributeOption => {
+                  const candidate = option as Partial<AttributeOption>;
+                  return (
+                    typeof candidate?.optionId === "string" &&
+                    typeof candidate?.optionValue === "string"
+                  );
+                },
+              );
+
+              if (options.length === 0) return null;
+
+              return {
+                attributeId: item.attributeId,
+                attributeName: item.attributeName,
+                dataType: String(item.dataType ?? ""),
+                unit: typeof item.unit === "string" ? item.unit : null,
+                options,
+              };
+            })
+            .filter(
+              (item): item is FilterableAttribute => item !== null,
+            )
+        : [];
+      setFilterableAttributes(nextAttributes);
+    } catch {
+      if (generation !== attributeRequestGenerationRef.current) return;
+      setFilterableAttributes([]);
+      setAttributeError(
+        "Không thể tải bộ lọc mở rộng. Bạn vẫn có thể dùng các bộ lọc khác.",
+      );
+    } finally {
+      if (generation === attributeRequestGenerationRef.current) {
+        setIsLoadingAttributes(false);
+      }
+    }
+  };
+
+  const handleCategorySelection = (categoryId: string) => {
+    const nextCategoryId = selectedCat === categoryId ? null : categoryId;
+
+    productTypeRequestGenerationRef.current += 1;
+    attributeRequestGenerationRef.current += 1;
+    setSelectedCat(nextCategoryId);
+    setSelectedProductType(null);
+    setProductTypes([]);
+    setFilterableAttributes([]);
+    setSelectedAttributeOptions({});
+    setIsLoadingProductTypes(false);
+    setIsLoadingAttributes(false);
+    setProductTypeError("");
+    setAttributeError("");
+
+    if (nextCategoryId) {
+      void loadProductTypes(nextCategoryId);
+    }
+  };
+
+  const handleProductTypeSelection = (productTypeId: string) => {
+    const nextProductTypeId =
+      selectedProductType === productTypeId ? null : productTypeId;
+
+    attributeRequestGenerationRef.current += 1;
+    setSelectedProductType(nextProductTypeId);
+    setFilterableAttributes([]);
+    setSelectedAttributeOptions({});
+    setIsLoadingAttributes(false);
+    setAttributeError("");
+
+    if (nextProductTypeId) {
+      void loadFilterableAttributes(nextProductTypeId);
+    }
+  };
+
+  const toggleAttributeOption = (attributeId: string, optionId: string) => {
+    setSelectedAttributeOptions((currentSelections) => {
+      const current = currentSelections[attributeId] ?? [];
+      const isSelected = current.includes(optionId);
+      const next = isSelected
+        ? current.filter((currentOptionId) => currentOptionId !== optionId)
+        : [...current, optionId];
+
+      if (next.length === 0) {
+        const remainingSelections = { ...currentSelections };
+        delete remainingSelections[attributeId];
+        return remainingSelections;
+      }
+
+      return {
+        ...currentSelections,
+        [attributeId]: next,
+      };
+    });
+  };
 
   const handleInputFocus = () => setViewState("HISTORY");
 
@@ -222,23 +420,13 @@ export default function SearchScreen() {
     return 0;
   };
 
-  const applyLocalSort = (data: any[], sortType: string) => {
+  const applyResultOrder = (data: any[], sortType: string) => {
     const uniqueData = Array.from(
       new Map(data.map((item) => [item.postId, item])).values(),
     );
     const sorted = [...uniqueData];
 
-    if (sortType === "PriceAsc") {
-      sorted.sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
-    } else if (sortType === "PriceDesc") {
-      sorted.sort((a, b) => (b.basePrice || 0) - (a.basePrice || 0));
-    } else if (sortType === "Newest") {
-      sorted.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.createdDate || 0).getTime();
-        const dateB = new Date(b.createdAt || b.createdDate || 0).getTime();
-        return dateB - dateA;
-      });
-    } else if (sortType === "Relevance") {
+    if (sortType === "Relevance") {
       const keyword = query.trim();
       if (keyword) {
         sorted.sort(
@@ -250,7 +438,7 @@ export default function SearchScreen() {
     setSearchResults(sorted);
   };
 
-  const executeSearch = async () => {
+  const executeSearch = async (requestedSort = sortBy) => {
     Keyboard.dismiss();
     setSearchError("");
 
@@ -295,7 +483,6 @@ export default function SearchScreen() {
         pageNumber: 1,
         pageSize: 100,
         onlyAvailable,
-        attributeFilters: [],
       };
 
       if (query.trim()) payload.keyword = query.trim();
@@ -309,8 +496,14 @@ export default function SearchScreen() {
       }
 
       if (selectedCat) payload.categoryId = selectedCat;
+      if (selectedCat && selectedProductType) {
+        payload.productTypeId = selectedProductType;
+      }
       if (selectedCondition) {
         payload.functionalityStatus = CONDITION_MAP[selectedCondition];
+      }
+      if (selectedSpace && SPACE_MAP[selectedSpace]) {
+        payload.spaceUsage = SPACE_MAP[selectedSpace];
       }
       if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
       if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
@@ -321,6 +514,27 @@ export default function SearchScreen() {
       if (actualMinDamage !== null) payload.minDamageLevel = actualMinDamage;
       if (actualMaxDamage !== null) payload.maxDamageLevel = actualMaxDamage;
       if (city) payload.city = city;
+      if (requestedSort !== "Relevance") payload.sortBy = requestedSort;
+
+      const attributeFilters = filterableAttributes
+        .map((attribute) => {
+          const realOptionIds = new Set(
+            attribute.options.map((option) => option.optionId),
+          );
+          const optionIds = (
+            selectedAttributeOptions[attribute.attributeId] ?? []
+          ).filter((optionId) => realOptionIds.has(optionId));
+
+          return {
+            attributeId: attribute.attributeId,
+            optionIds,
+          };
+        })
+        .filter((filter) => filter.optionIds.length > 0);
+
+      if (attributeFilters.length > 0) {
+        payload.attributeFilters = attributeFilters;
+      }
 
       const response = await apiClient.post("/posts/search", payload);
       const fetchedData =
@@ -335,8 +549,7 @@ export default function SearchScreen() {
           (!isBusiness || post.postType === "Sell"),
       );
 
-      setOriginalResults(activeData);
-      applyLocalSort(activeData, sortBy);
+      applyResultOrder(activeData, requestedSort);
     } catch (error) {
       setSearchError(
         getApiErrorMessage(
@@ -344,7 +557,6 @@ export default function SearchScreen() {
           "Không thể kết nối đến máy chủ. Vui lòng thử lại.",
         ),
       );
-      setOriginalResults([]);
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -360,17 +572,27 @@ export default function SearchScreen() {
 
   const handleSort = (type: string) => {
     setSortBy(type);
-    applyLocalSort(originalResults, type);
+    void executeSearch(type);
   };
 
   const handlePriceSort = () => {
     const newSort = sortBy === "PriceAsc" ? "PriceDesc" : "PriceAsc";
     setSortBy(newSort);
-    applyLocalSort(originalResults, newSort);
+    void executeSearch(newSort);
   };
 
   const resetFilters = () => {
+    productTypeRequestGenerationRef.current += 1;
+    attributeRequestGenerationRef.current += 1;
     setSelectedCat(null);
+    setProductTypes([]);
+    setSelectedProductType(null);
+    setFilterableAttributes([]);
+    setSelectedAttributeOptions({});
+    setIsLoadingProductTypes(false);
+    setIsLoadingAttributes(false);
+    setProductTypeError("");
+    setAttributeError("");
     setQuery("");
     setSelectedCondition("");
     setSelectedSpace("");
@@ -488,7 +710,7 @@ export default function SearchScreen() {
               <TouchableOpacity
                 key={cat.categoryId}
                 style={[styles.chip, isActive ? styles.chipActive : undefined]}
-                onPress={() => setSelectedCat(isActive ? null : cat.categoryId)}
+                onPress={() => handleCategorySelection(cat.categoryId)}
               >
                 <Text
                   style={[
@@ -510,6 +732,125 @@ export default function SearchScreen() {
             );
           })}
         </View>
+
+        {selectedCat ? (
+          <>
+            <Text style={styles.subLabel}>Loại sản phẩm</Text>
+            {isLoadingProductTypes ? (
+              <Text style={styles.metadataHint}>Đang tải loại sản phẩm...</Text>
+            ) : productTypeError ? (
+              <Text style={styles.metadataError}>{productTypeError}</Text>
+            ) : productTypes.length > 0 ? (
+              <View style={styles.chipContainer}>
+                {productTypes.map((productTypeItem) => {
+                  const isActive =
+                    selectedProductType === productTypeItem.productTypeId;
+                  return (
+                    <TouchableOpacity
+                      key={productTypeItem.productTypeId}
+                      style={[
+                        styles.chip,
+                        isActive ? styles.chipActive : undefined,
+                      ]}
+                      onPress={() =>
+                        handleProductTypeSelection(
+                          productTypeItem.productTypeId,
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          isActive ? styles.chipTextActive : undefined,
+                        ]}
+                      >
+                        {productTypeItem.productTypeName}
+                      </Text>
+                      {isActive ? (
+                        <Ionicons
+                          name="close"
+                          size={14}
+                          color={COLORS.primary}
+                          style={styles.chipCloseIcon}
+                        />
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.metadataHint}>
+                Danh mục này chưa có loại sản phẩm.
+              </Text>
+            )}
+          </>
+        ) : null}
+
+        {selectedProductType ? (
+          <>
+            {isLoadingAttributes ? (
+              <Text style={styles.metadataHint}>
+                Đang tải bộ lọc mở rộng...
+              </Text>
+            ) : attributeError ? (
+              <Text style={styles.metadataError}>{attributeError}</Text>
+            ) : filterableAttributes.length > 0 ? (
+              <View style={styles.dynamicFilters}>
+                {filterableAttributes.map((attribute) => (
+                  <View key={attribute.attributeId}>
+                    <Text style={styles.subLabel}>
+                      {attribute.attributeName}
+                      {attribute.unit ? ` (${attribute.unit})` : ""}
+                    </Text>
+                    <View style={styles.chipContainer}>
+                      {attribute.options.map((option) => {
+                        const isActive = (
+                          selectedAttributeOptions[attribute.attributeId] ?? []
+                        ).includes(option.optionId);
+                        return (
+                          <TouchableOpacity
+                            key={option.optionId}
+                            style={[
+                              styles.chip,
+                              isActive ? styles.chipActive : undefined,
+                            ]}
+                            onPress={() =>
+                              toggleAttributeOption(
+                                attribute.attributeId,
+                                option.optionId,
+                              )
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                isActive ? styles.chipTextActive : undefined,
+                              ]}
+                            >
+                              {option.optionValue}
+                            </Text>
+                            {isActive ? (
+                              <Ionicons
+                                name="close"
+                                size={14}
+                                color={COLORS.primary}
+                                style={styles.chipCloseIcon}
+                              />
+                            ) : null}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.metadataHint}>
+                Loại sản phẩm này chưa có bộ lọc mở rộng.
+              </Text>
+            )}
+          </>
+        ) : null}
 
         <Text style={styles.filterSectionTitle}>2. Tình trạng & Giá cả</Text>
         <Text style={styles.subLabel}>Khoảng giá (VNĐ)</Text>
@@ -875,6 +1216,30 @@ export default function SearchScreen() {
       }
     }
 
+    if (selectedProductType) {
+      const productTypeItem = productTypes.find(
+        (item) => item.productTypeId === selectedProductType,
+      );
+      if (productTypeItem?.productTypeName) {
+        labels.push(productTypeItem.productTypeName);
+      }
+    }
+
+    filterableAttributes.forEach((attribute) => {
+      const selectedIds = new Set(
+        selectedAttributeOptions[attribute.attributeId] ?? [],
+      );
+      const selectedValues = attribute.options
+        .filter((option) => selectedIds.has(option.optionId))
+        .map((option) => option.optionValue);
+
+      if (selectedValues.length > 0) {
+        labels.push(
+          `${attribute.attributeName}: ${selectedValues.join(", ")}`,
+        );
+      }
+    });
+
     if (selectedCondition) {
       labels.push(selectedCondition);
     }
@@ -990,6 +1355,10 @@ export default function SearchScreen() {
 
     if (deliveryMethod) {
       labels.push(deliveryMethod);
+    }
+
+    if (selectedSpace) {
+      labels.push(selectedSpace);
     }
 
     if (priorityLevel) {
@@ -1456,6 +1825,19 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 12,
     lineHeight: 17,
+  },
+  metadataHint: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  metadataError: {
+    color: "#7A1012",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  dynamicFilters: {
+    marginTop: 4,
   },
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
