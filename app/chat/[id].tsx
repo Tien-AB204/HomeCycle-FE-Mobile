@@ -33,7 +33,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import conversationApi from "../../src/services/apis/conversationApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-import { isBuyPostType } from "../../src/utils/postType";
+import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 
 
 const agreementApi = {
@@ -201,17 +201,24 @@ const getTransactionRoleLabels = (userId: unknown, context: any) => {
   const normalizedUserId = String(userId ?? "").trim().toLowerCase();
   if (!normalizedUserId) return [];
 
-  return [
-    normalizedUserId === String(context?.sellerId ?? "").trim().toLowerCase()
-      ? "Người bán"
-      : null,
-    normalizedUserId === String(context?.buyerId ?? "").trim().toLowerCase()
-      ? "Người mua"
-      : null,
-    normalizedUserId === String(context?.postOwnerId ?? "").trim().toLowerCase()
-      ? "Người đăng bài"
-      : null,
-  ].filter((label): label is string => Boolean(label));
+  const isSeller =
+    normalizedUserId === String(context?.sellerId ?? "").trim().toLowerCase();
+  const isBuyer =
+    normalizedUserId === String(context?.buyerId ?? "").trim().toLowerCase();
+  const isPoster =
+    normalizedUserId ===
+    String(context?.postOwnerId ?? "").trim().toLowerCase();
+
+  // A poster gets ONE merged label ("Người đăng bài bán"/"mua") instead of
+  // the old "Người bán · Người đăng bài" composite; the non-poster
+  // counterparty keeps a plain role label.
+  if (isPoster) {
+    return [getPosterRoleLabel(isBuyPostType(context?.postType))];
+  }
+
+  return [isSeller ? "Người bán" : isBuyer ? "Người mua" : null].filter(
+    (label): label is string => Boolean(label),
+  );
 };
 
 const normalizeAgreementUiText = (
@@ -2527,15 +2534,6 @@ export default function ChatDetailScreen() {
   };
 
   const renderProductBanner = () => {
-    const myRoles = getTransactionRoleLabels(
-      negotiationInfo?.myUserId || currentUserId,
-      negotiationInfo,
-    );
-    const partnerRoles = getTransactionRoleLabels(
-      negotiationInfo?.partnerUserId,
-      negotiationInfo,
-    );
-
     return (
     <TouchableOpacity
       style={styles.productBanner}
@@ -2599,17 +2597,6 @@ export default function ChatDetailScreen() {
             )}
           </Text>
         </Text>
-
-        {myRoles.length > 0 ? (
-          <Text style={styles.participantRoleText} numberOfLines={1}>
-            {negotiationInfo?.myName || "Bạn"} · {myRoles.join(" · ")}
-          </Text>
-        ) : null}
-        {partnerRoles.length > 0 ? (
-          <Text style={styles.participantRoleText} numberOfLines={1}>
-            {negotiationInfo?.partnerName || "Đối tác"} · {partnerRoles.join(" · ")}
-          </Text>
-        ) : null}
       </View>
 
       <Ionicons
@@ -4330,12 +4317,6 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontWeight: "600",
     marginTop: 4,
-  },
-  participantRoleText: {
-    marginTop: 3,
-    color: COLORS.textLight,
-    fontSize: 10,
-    lineHeight: 14,
   },
 
   boldText: {

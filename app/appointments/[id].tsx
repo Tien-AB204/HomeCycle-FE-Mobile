@@ -642,6 +642,13 @@ export default function AppointmentDetailScreen() {
         ? 1
         : 0;
 
+  // Backend explicitly allows Scheduled + isOverdue = true — this is a
+  // TIME status ("late"), never a terminal/failed state. Late Inspection
+  // check-in or late direct Collection can still proceed per Backend
+  // business rules, so this must never be shown or treated as Expired.
+  const isOverdueActive =
+    Boolean(appt.isOverdue) && !isCompleted && !isCancelled && !isExpired;
+
   const checkIn = isCollection ? null : detail?.checkIn || null;
   const buyerCheckAt =
     checkIn?.buyerCheckAt || appt.buyerCheckAt || appt.buyerCheckedAt || null;
@@ -650,7 +657,11 @@ export default function AppointmentDetailScreen() {
 
   const stepLabels = [
     "Chờ xác nhận",
-    isInProgress ? "Đang diễn ra" : "Đã lên lịch",
+    isOverdueActive
+      ? "Đã quá hạn"
+      : isInProgress
+        ? "Đang diễn ra"
+        : "Đã lên lịch",
     isCancelled ? "Đã hủy" : isExpired ? "Quá hạn" : "Hoàn thành",
   ];
 
@@ -727,7 +738,9 @@ export default function AppointmentDetailScreen() {
                           : styles.circlePending,
                       (isCancelled || isExpired) && index === 2
                         ? styles.circleFailed
-                        : undefined,
+                        : isOverdueActive && index === 1
+                          ? styles.circleFailed
+                          : undefined,
                     ]}
                   >
                     {isPassed ? (
@@ -751,6 +764,9 @@ export default function AppointmentDetailScreen() {
                     style={[
                       styles.progressLabel,
                       isCurrent ? styles.progressLabelActive : undefined,
+                      isOverdueActive && index === 1
+                        ? styles.progressLabelOverdue
+                        : undefined,
                     ]}
                   >
                     {label}
@@ -1450,6 +1466,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   progressLabelActive: { color: COLORS.primary, fontWeight: "800" },
+  progressLabelOverdue: { color: "#7A1012", fontWeight: "800" },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -22,7 +22,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-import { isBuyPostType } from "../../src/utils/postType";
+import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 
 type InlineMessage = {
   type: "error" | "warning" | "info" | "success";
@@ -113,6 +113,9 @@ const translateRelatedAppointmentType = (value: unknown) => {
 const HIDDEN_ORDER_TIMELINE_CODES = new Set([
   "collectionschedule",
   "inspectionscheduled",
+  // Dispute is an exception branch, not a mandatory happy-path step —
+  // it has its own dedicated warning card below the timeline instead.
+  "dispute",
 ]);
 
 const filterOrderTimelineForDisplay = (steps: any[]): any[] =>
@@ -672,12 +675,28 @@ export default function OrderDetailScreen() {
       ? order.timeline
       : [];
 
-  const orderTimeline =
-    filterOrderTimelineForDisplay(rawOrderTimeline);
+  const orderTimeline = filterOrderTimelineForDisplay(rawOrderTimeline).flatMap(
+    (step: any) =>
+      deliveryMethod === "BuyerPickUp" &&
+      normalizeStatus(step?.code) === "handover" &&
+      Array.isArray(step?.subSteps) &&
+      step.subSteps.length > 0
+        ? step.subSteps
+        : [step],
+  );
 
   const hasActiveDispute = dispute?.hasActiveDispute === true;
   const latestDisputeId = dispute?.latestDisputeId;
   const canOpenDispute = hasActiveDispute && Boolean(latestDisputeId);
+  const disputeStatusKey = normalizeStatus(dispute?.latestDisputeStatus);
+  const disputeStatusText =
+    disputeStatusKey === "0" || disputeStatusKey === "pending"
+      ? "Đang chờ xử lý"
+      : disputeStatusKey === "4" || disputeStatusKey === "underreview"
+        ? "Moderator đang xem xét"
+        : disputeStatusKey === "5" || disputeStatusKey === "awaitingreturn"
+          ? "Đang chờ hoàn trả"
+          : null;
   const canCreateDispute =
     (data?.actions ?? order?.actions ?? {}).canDispute === true;
 
@@ -737,17 +756,16 @@ export default function OrderDetailScreen() {
   const currentUserName = String(
     user?.name || user?.displayName || user?.username || "Bạn",
   ).trim();
+  const posterRoleLabel = getPosterRoleLabel(isBuyPost);
   const currentPartyRoles = transactionRole
-    ? [
-        transactionRole === "seller" ? "Người bán" : "Người mua",
-        currentUserId && currentUserId === postOwnerId ? "Người đăng bài" : null,
-      ].filter(Boolean)
+    ? currentUserId && currentUserId === postOwnerId
+      ? [posterRoleLabel]
+      : [transactionRole === "seller" ? "Người bán" : "Người mua"]
     : [];
   const counterpartyRoles = transactionRole
-    ? [
-        transactionRole === "seller" ? "Người mua" : "Người bán",
-        counterpartyId && counterpartyId === postOwnerId ? "Người đăng bài" : null,
-      ].filter(Boolean)
+    ? counterpartyId && counterpartyId === postOwnerId
+      ? [posterRoleLabel]
+      : [transactionRole === "seller" ? "Người mua" : "Người bán"]
     : [];
 
   const renderDeliveryInfo = () => (
@@ -991,6 +1009,36 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
+        {canConfirmSellerReady ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
+            <Text style={styles.actionHint}>
+              Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao.
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isSellerReadyLoading ? { opacity: 0.65 } : undefined,
+              ]}
+              onPress={() => void handleConfirmSellerReady()}
+              disabled={isSellerReadyLoading}
+            >
+              {isSellerReadyLoading ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="cube-outline"
+                    size={20}
+                    color={COLORS.white}
+                  />
+                  <Text style={styles.actionButtonText}>Hàng đã sẵn sàng</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {relatedAppointments.length === 0 ? (
           <View style={styles.card}>
             {renderDeliveryInfo()}
@@ -1056,36 +1104,6 @@ export default function OrderDetailScreen() {
             <View style={styles.relatedDeliverySection}>
               {renderDeliveryInfo()}
             </View>
-          </View>
-        ) : null}
-
-        {canConfirmSellerReady ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
-            <Text style={styles.actionHint}>
-              Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao.
-            </Text>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                isSellerReadyLoading ? { opacity: 0.65 } : undefined,
-              ]}
-              onPress={() => void handleConfirmSellerReady()}
-              disabled={isSellerReadyLoading}
-            >
-              {isSellerReadyLoading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="cube-outline"
-                    size={20}
-                    color={COLORS.white}
-                  />
-                  <Text style={styles.actionButtonText}>Hàng đã sẵn sàng</Text>
-                </>
-              )}
-            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -1296,8 +1314,11 @@ export default function OrderDetailScreen() {
             <Ionicons name="warning-outline" size={20} color="#9A6418" />
             <View style={styles.disputeInfoContent}>
               <Text style={styles.disputeInfoTitle}>Đơn hàng đang có tranh chấp</Text>
+              {disputeStatusText ? (
+                <Text style={styles.disputeInfoStatus}>{disputeStatusText}</Text>
+              ) : null}
               <Text style={styles.disputeInfoText}>
-                Giao dịch đang tạm khóa thao tác trong thời gian xử lý tranh chấp.
+                Quy trình hoàn tất giao dịch đang tạm khóa trong thời gian xử lý tranh chấp.
               </Text>
             </View>
           </View>
@@ -2181,6 +2202,12 @@ const styles = StyleSheet.create({
   },
   disputeInfoContent: { flex: 1 },
   disputeInfoTitle: { color: "#9A6418", fontSize: 13, fontWeight: "800" },
+  disputeInfoStatus: {
+    color: "#9A6418",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
   disputeInfoText: {
     color: "#9A6418",
     fontSize: 12,

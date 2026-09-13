@@ -586,13 +586,16 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     backgroundColor: "rgba(84, 123, 125, 0.08)",
   },
-  stateTitle: { color: COLORS.text, fontSize: 18, fontWeight: "800", textAlign: "center" },
+  // Same heading/body/button typography as the logged-out state below
+  // (and the shared Appointments/Posts/Orders unauth pattern) so guest and
+  // authenticated-empty Cart read as one consistent app typography system.
+  stateTitle: { color: COLORS.text, fontSize: 20, fontWeight: "bold", textAlign: "center" },
   stateDescription: {
     maxWidth: 300,
     marginTop: 8,
     color: COLORS.textLight,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
     textAlign: "center",
   },
   primaryButton: {
@@ -601,11 +604,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 20,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+    paddingHorizontal: 32,
+    borderRadius: 8,
     backgroundColor: COLORS.primary,
   },
-  primaryButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "700" },
+  primaryButtonText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
   // Logged-out state family — same values as Appointments/Posts/Orders.
   unauthContainer: {
     flex: 1,

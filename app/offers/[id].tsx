@@ -23,6 +23,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage, getApiSuccessMessage } from "../../src/utils/apiFeedback";
+import { getPosterRoleLabel } from "../../src/utils/postType";
 
 const offerApi = {
   getOfferById: (offerId: string) =>
@@ -55,6 +56,18 @@ const normalizeStatus = (value: unknown) =>
   String(value ?? "")
     .replace(/[\s_-]/g, "")
     .toLowerCase();
+
+const normalizeId = (value: unknown) =>
+  String(value ?? "").trim().toLowerCase();
+
+const getParticipantName = (participant: any, fallback: string) =>
+  String(
+    participant?.displayName ??
+      participant?.DisplayName ??
+      participant?.username ??
+      participant?.Username ??
+      "",
+  ).trim() || fallback;
 
 const getOfferErrorCode = (error: any) =>
   String(
@@ -379,6 +392,22 @@ export default function OfferDetailScreen() {
     (normalizeStatus(offer.offerStatus) === "accepted" ||
       String(offer.offerStatus) === "1") &&
     Boolean(offer.negotiationId);
+  const seller = offer.seller ?? offer.Seller;
+  const buyer = offer.buyer ?? offer.Buyer;
+  const postOwnerId = normalizeId(
+    offer.buyPost?.ownerId ??
+      offer.BuyPost?.OwnerId ??
+      offer.sellPost?.ownerId ??
+      offer.SellPost?.OwnerId,
+  );
+  const sellerId = normalizeId(seller?.userId ?? seller?.UserId);
+  const buyerId = normalizeId(buyer?.userId ?? buyer?.UserId);
+  const isBuyPostOffer = Boolean(offer.buyPost ?? offer.BuyPost);
+  const posterRoleLabel = getPosterRoleLabel(isBuyPostOffer);
+  const sellerRoles =
+    sellerId && sellerId === postOwnerId ? [posterRoleLabel] : ["Người bán"];
+  const buyerRoles =
+    buyerId && buyerId === postOwnerId ? [posterRoleLabel] : ["Người mua"];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -401,6 +430,27 @@ export default function OfferDetailScreen() {
               </Text>
             </View>
           </View>
+
+          {sellerId || buyerId ? (
+            <View style={styles.participantSection}>
+              {sellerId ? (
+                <View style={styles.participantRow}>
+                  <Text style={styles.participantName} numberOfLines={1}>
+                    {getParticipantName(seller, "Người bán")}
+                  </Text>
+                  <Text style={styles.participantRoles}>{sellerRoles.join(" · ")}</Text>
+                </View>
+              ) : null}
+              {buyerId ? (
+                <View style={styles.participantRow}>
+                  <Text style={styles.participantName} numberOfLines={1}>
+                    {getParticipantName(buyer, "Người mua")}
+                  </Text>
+                  <Text style={styles.participantRoles}>{buyerRoles.join(" · ")}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.row}>
             <Text style={styles.label}>Giá đề nghị</Text>
@@ -645,6 +695,32 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  participantSection: {
+    gap: 8,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  participantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  participantName: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  participantRoles: {
+    flexShrink: 1,
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
   },
   iconBox: {
     width: 42,

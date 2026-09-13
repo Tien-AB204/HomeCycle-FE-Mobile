@@ -16,6 +16,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 
 const agreementApi = {
   getPreview: async (negotiationId: string) => {
@@ -50,6 +51,13 @@ const agreementApi = {
 const orderApi = {
   getByAgreement: async (agreementId: string) => {
     const response = await apiClient.get(`/orders/agreement/${agreementId}`);
+    return response.data;
+  },
+};
+
+const postApi = {
+  getById: async (postId: string) => {
+    const response = await apiClient.get(`/posts/get-by-id/${postId}`);
     return response.data;
   },
 };
@@ -121,6 +129,7 @@ export default function AgreementPreviewScreen() {
 
   const [agreementData, setAgreementData] = useState<any>(null);
   const [previewInfo, setPreviewInfo] = useState<any>(null);
+  const [postContext, setPostContext] = useState<any>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -210,6 +219,17 @@ export default function AgreementPreviewScreen() {
 
         setAgreementData(agreement);
         setPreviewInfo(preview);
+
+        if (agreement?.postId) {
+          try {
+            const postResponse = await postApi.getById(String(agreement.postId));
+            setPostContext(unwrapResponse(postResponse));
+          } catch {
+            setPostContext(null);
+          }
+        } else {
+          setPostContext(null);
+        }
 
         const latestStatus = normalizeStatus(agreement?.agreementStatus);
         const isPostPayment =
@@ -732,6 +752,30 @@ export default function AgreementPreviewScreen() {
   const isBuyer = Boolean(
     currentUserId && buyerId && currentUserId === buyerId,
   );
+  const postOwnerId = normalizeId(postContext?.ownerId);
+  const currentUserName = String(
+    user?.name || user?.displayName || user?.username || "Bạn",
+  ).trim();
+  const postOwnerName = String(
+    postContext?.ownerName || postContext?.ownerUsername || "",
+  ).trim();
+  const sellerName = isSeller
+    ? currentUserName
+    : sellerId && sellerId === postOwnerId && postOwnerName
+      ? postOwnerName
+      : "Đối tác";
+  const buyerName = isBuyer
+    ? currentUserName
+    : buyerId && buyerId === postOwnerId && postOwnerName
+      ? postOwnerName
+      : "Đối tác";
+  const posterRoleLabel = getPosterRoleLabel(
+    isBuyPostType(postContext?.postType),
+  );
+  const sellerRoles =
+    sellerId && sellerId === postOwnerId ? [posterRoleLabel] : ["Người bán"];
+  const buyerRoles =
+    buyerId && buyerId === postOwnerId ? [posterRoleLabel] : ["Người mua"];
 
   const isParticipant = hasParticipantIds
     ? isSeller || isBuyer
@@ -822,6 +866,25 @@ export default function AgreementPreviewScreen() {
               </View>
             </View>
           )}
+
+          {sellerId || buyerId ? (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>Các bên giao dịch</Text>
+              {sellerId ? (
+                <View style={styles.participantRow}>
+                  <Text style={styles.participantName} numberOfLines={1}>{sellerName}</Text>
+                  <Text style={styles.participantRoles}>{sellerRoles.join(" · ")}</Text>
+                </View>
+              ) : null}
+              {buyerId ? (
+                <View style={styles.participantRow}>
+                  <Text style={styles.participantName} numberOfLines={1}>{buyerName}</Text>
+                  <Text style={styles.participantRoles}>{buyerRoles.join(" · ")}</Text>
+                </View>
+              ) : null}
+            </>
+          ) : null}
 
           <View style={styles.row}>
             <Text style={styles.label}>Loại giao dịch:</Text>
@@ -1389,6 +1452,29 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: COLORS.text,
     marginBottom: 12,
+  },
+  participantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 10,
+    padding: 11,
+    borderRadius: 9,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  participantName: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  participantRoles: {
+    flexShrink: 1,
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
   },
   postPaymentActions: {
     gap: 10,
