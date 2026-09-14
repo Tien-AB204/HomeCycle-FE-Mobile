@@ -237,13 +237,34 @@ export default function AppointmentDetailScreen() {
                 inspectionError?.response?.status ??
                   0,
               );
+            // BE trả "không tìm thấy" dạng 400 + code (không phải HTTP 404
+            // thật) cho hầu hết domain error, bao gồm Inspection.NotFound.
+            const inspectionCode = String(
+              inspectionError?.response?.data?.code ||
+                inspectionError?.response?.data?.error?.code ||
+                "",
+            ).toLowerCase();
+            const isFormNotFound =
+              inspectionStatus === 404 ||
+              inspectionCode === "inspection.notfound";
 
             setInspectionForm(null);
 
-            if (inspectionStatus !== 404) {
+            if (!isFormNotFound) {
               setActionMessage({
                 type: "info",
                 text: "Chưa thể tải các thao tác sau kiểm định. Vui lòng mở lại lịch hẹn để thử lại.",
+              });
+            } else if (
+              !normalizedAppointment?.actions
+                ?.canCreateInspectionForm
+            ) {
+              // Không có phiếu kiểm định và hiện cũng không thể tạo mới
+              // (vd. lịch hẹn đã hoàn thành) — đây là trạng thái xác định,
+              // không phải lỗi tạm thời nên không dùng wording "thử lại".
+              setActionMessage({
+                type: "info",
+                text: "Chưa có biểu mẫu kiểm định cho lịch hẹn này.",
               });
             }
           }
