@@ -45,7 +45,7 @@ const getWithdrawalStatus = (value: unknown) => {
     case "approved":
       return { label: "Đã duyệt", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
     case "processing":
-      return { label: "Đang chuyển tiền", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
+      return { label: "Đang xử lý", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
     case "completed":
       return { label: "Hoàn tất", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
     case "rejected":
@@ -177,6 +177,8 @@ export default function WithdrawalDetailScreen() {
   );
 
   const status = getWithdrawalStatus(withdrawal?.status);
+  const isWithdrawalCompleted =
+    String(withdrawal?.status ?? "").trim().toLowerCase() === "completed";
   const bank = withdrawal?.bankAccount;
   const events = Array.isArray(withdrawal?.financialEvents)
     ? withdrawal.financialEvents
@@ -217,6 +219,11 @@ export default function WithdrawalDetailScreen() {
             <View style={[styles.statusBadge, { backgroundColor: status.background }]}>
               <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
             </View>
+            {isWithdrawalCompleted ? (
+              <Text style={styles.completedHint}>
+                Yêu cầu rút tiền đã được xử lý hoàn tất trên hệ thống.
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.card}>
@@ -329,6 +336,13 @@ const styles = StyleSheet.create({
   amount: { marginTop: 6, color: "#2F765D", fontSize: 27, fontWeight: "900" },
   statusBadge: { paddingHorizontal: 11, paddingVertical: 6, marginTop: 12, borderRadius: 999 },
   statusText: { fontSize: 12, fontWeight: "800" },
+  completedHint: {
+    marginTop: 10,
+    color: "#2F765D",
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
+  },
   card: {
     padding: 16,
     marginBottom: 14,

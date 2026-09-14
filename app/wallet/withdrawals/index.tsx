@@ -35,7 +35,7 @@ const STATUS_FILTERS: StatusFilter[] = [
   { label: "Tất cả" },
   { label: "Đang chờ xử lý", value: "Pending" },
   { label: "Đã duyệt", value: "Approved" },
-  { label: "Đang chuyển tiền", value: "Processing" },
+  { label: "Đang xử lý", value: "Processing" },
   { label: "Hoàn tất", value: "Completed" },
   { label: "Bị từ chối", value: "Rejected" },
   { label: "Thất bại", value: "Failed" },
@@ -63,7 +63,7 @@ const getStatusPresentation = (value: unknown) => {
     case "approved":
       return { label: "Đã duyệt", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
     case "processing":
-      return { label: "Đang chuyển tiền", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
+      return { label: "Đang xử lý", color: "#2B5659", background: "rgba(84, 123, 125, 0.10)" };
     case "completed":
       return { label: "Hoàn tất", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
     case "rejected":

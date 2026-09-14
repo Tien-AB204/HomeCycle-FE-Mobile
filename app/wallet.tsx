@@ -17,10 +17,10 @@ import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
+import { getMyWithdrawalQuota, WithdrawalQuota } from "../src/services/apis/withdrawalApi";
 import { NETWORK_ERROR_MESSAGE } from "../src/utils/errorMessage";
 
 const PAGE_SIZE = 10;
-const REFERENCE_TYPE_WITHDRAWAL = 4;
 
 const walletApi = {
   getMyWallet: () => apiClient.get("/wallet/me").then((response) => response.data),
@@ -38,11 +38,6 @@ const walletApi = {
   createWithdrawal: (amount: number) =>
     apiClient
       .post("/wallet/withdrawals", { amount })
-      .then((response) => response.data),
-
-  syncWithdrawal: (withdrawalId: string) =>
-    apiClient
-      .post(`/wallet/withdrawals/${withdrawalId}/sync`)
       .then((response) => response.data),
 };
 
@@ -75,6 +70,16 @@ const getErrorCode = (error: any) =>
       error?.code ||
       "",
   );
+
+// BE là source of truth cho các quy tắc hạn mức rút tiền động (min/max/hạn
+// mức ngày); message BE trả đã có sẵn số tiền chính xác nên ưu tiên hiển
+// thị nguyên văn thay vì tự soạn lại ở FE.
+const getErrorMessageFromResponse = (error: any) =>
+  String(
+    error?.response?.data?.message ||
+      error?.response?.data?.error?.message ||
+      "",
+  ).trim();
 
 const formatCurrency = (value: unknown) =>
   new Intl.NumberFormat("vi-VN", {
@@ -109,11 +114,6 @@ const getBalanceTypeLabel = (value: unknown) => {
   return normalized === "1" || normalized === "hold" ? "Tiền đang giữ" : "Số dư khả dụng";
 };
 
-const isWithdrawalReference = (value: unknown) => {
-  const normalized = normalizeEnum(value);
-  return normalized === String(REFERENCE_TYPE_WITHDRAWAL) || normalized === "withdrawal";
-};
-
 export default function WalletScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -126,11 +126,10 @@ export default function WalletScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
-  const [syncingWithdrawalId, setSyncingWithdrawalId] = useState<string | null>(null);
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
-  const [latestWithdrawalId, setLatestWithdrawalId] = useState<string | null>(null);
+  const [quota, setQuota] = useState<WithdrawalQuota | null>(null);
 
   const isBusiness = String(user?.role || "").toLowerCase() === "business";
   const availableBalance = Number(wallet?.availableBalance ?? wallet?.AvailableBalance ?? 0);
@@ -139,6 +138,17 @@ export default function WalletScreen() {
   const loadWallet = useCallback(async () => {
     const response = await walletApi.getMyWallet();
     setWallet(unwrap(response));
+  }, []);
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const response = await getMyWithdrawalQuota();
+      setQuota(unwrap(response));
+    } catch {
+      // Hạn mức là thông tin tham khảo hiển thị thêm; nếu tải thất bại vẫn
+      // để BE là nơi xác thực cuối cùng khi submit, không chặn màn hình ví.
+      setQuota(null);
+    }
   }, []);
 
   const loadLedger = useCallback(async (page: number) => {
@@ -159,7 +169,7 @@ export default function WalletScreen() {
         else setIsLoading(true);
 
         setMessage(null);
-        await Promise.all([loadWallet(), loadLedger(page)]);
+        await Promise.all([loadWallet(), loadLedger(page), loadQuota()]);
       } catch {
         setMessage({
           type: "error",
@@ -170,7 +180,7 @@ export default function WalletScreen() {
         setIsRefreshing(false);
       }
     },
-    [loadLedger, loadWallet],
+    [loadLedger, loadQuota, loadWallet],
   );
 
   useFocusEffect(
@@ -206,6 +216,31 @@ export default function WalletScreen() {
       return false;
     }
 
+    // Kiểm tra sơ bộ theo hạn mức động từ BE để UX phản hồi sớm; BE vẫn là
+    // nơi xác thực cuối cùng khi submit thật (không thay thế validation BE).
+    if (quota) {
+      if (parsedWithdrawalAmount < quota.minimumWithdrawalAmount) {
+        setAmountError(
+          `Số tiền rút tối thiểu là ${formatCurrency(quota.minimumWithdrawalAmount)}.`,
+        );
+        return false;
+      }
+
+      if (parsedWithdrawalAmount > quota.maximumWithdrawalAmount) {
+        setAmountError(
+          `Số tiền rút tối đa mỗi lần là ${formatCurrency(quota.maximumWithdrawalAmount)}.`,
+        );
+        return false;
+      }
+
+      if (parsedWithdrawalAmount > quota.remainingDailyLimitAmount) {
+        setAmountError(
+          `Hạn mức rút còn lại hôm nay là ${formatCurrency(quota.remainingDailyLimitAmount)}.`,
+        );
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -222,7 +257,6 @@ export default function WalletScreen() {
         data?.withdrawalId || response?.withdrawalId || "",
       ).trim();
 
-      setLatestWithdrawalId(withdrawalId || null);
       setWithdrawalAmount("");
       setMessage({
         type: "success",
@@ -231,7 +265,7 @@ export default function WalletScreen() {
           : "Đã tạo yêu cầu rút tiền.",
       });
 
-      await Promise.all([loadWallet(), loadLedger(1)]);
+      await Promise.all([loadWallet(), loadLedger(1), loadQuota()]);
     } catch (error: any) {
       const code = getErrorCode(error);
       const messageByCode: Record<string, string> = {
@@ -245,32 +279,13 @@ export default function WalletScreen() {
 
       setMessage({
         type: "error",
-        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
+        text:
+          messageByCode[code] ||
+          getErrorMessageFromResponse(error) ||
+          NETWORK_ERROR_MESSAGE,
       });
     } finally {
       setIsWithdrawing(false);
-    }
-  };
-
-  const syncWithdrawal = async (withdrawalId: string) => {
-    if (!withdrawalId) return;
-
-    try {
-      setSyncingWithdrawalId(withdrawalId);
-      setMessage(null);
-      await walletApi.syncWithdrawal(withdrawalId);
-      setMessage({
-        type: "success",
-        text: "Đã đồng bộ trạng thái yêu cầu rút tiền.",
-      });
-      await Promise.all([loadWallet(), loadLedger(pageNumber)]);
-    } catch {
-      setMessage({
-        type: "error",
-        text: NETWORK_ERROR_MESSAGE,
-      });
-    } finally {
-      setSyncingWithdrawalId(null);
     }
   };
 
@@ -352,6 +367,28 @@ export default function WalletScreen() {
             Tiền rút sẽ được khóa khỏi số dư khả dụng và chuyển sang trạng thái đang giữ trong lúc chờ xử lý.
           </Text>
 
+          {quota ? (
+            <View style={styles.quotaBox}>
+              <View style={styles.quotaRow}>
+                <Text style={styles.quotaLabel}>Tối thiểu</Text>
+                <Text style={styles.quotaValue}>{formatCurrency(quota.minimumWithdrawalAmount)}</Text>
+              </View>
+              <View style={styles.quotaRow}>
+                <Text style={styles.quotaLabel}>Tối đa mỗi lần</Text>
+                <Text style={styles.quotaValue}>{formatCurrency(quota.maximumWithdrawalAmount)}</Text>
+              </View>
+              <View style={[styles.quotaRow, styles.quotaRowLast]}>
+                <Text style={styles.quotaLabel}>Đã sử dụng hạn mức ngày</Text>
+                <Text style={styles.quotaValue}>
+                  {formatCurrency(quota.usedDailyLimitAmount)} / {formatCurrency(quota.dailyWithdrawalLimit)}
+                </Text>
+              </View>
+              <Text style={styles.quotaRemainingText}>
+                Còn lại hôm nay: {formatCurrency(quota.remainingDailyLimitAmount)}
+              </Text>
+            </View>
+          ) : null}
+
           {isBusiness ? (
             <View style={styles.businessWarning}>
               <Ionicons name="warning-outline" size={18} color="#9A6418" />
@@ -371,7 +408,9 @@ export default function WalletScreen() {
               setMessage(null);
             }}
             keyboardType="number-pad"
-            placeholder="VD: 100000"
+            placeholder={
+              quota ? `Tối thiểu ${formatCurrency(quota.minimumWithdrawalAmount)}` : "VD: 100000"
+            }
             placeholderTextColor={COLORS.textLight}
             editable={!isBusiness && !isWithdrawing}
           />
@@ -400,21 +439,6 @@ export default function WalletScreen() {
               </>
             )}
           </TouchableOpacity>
-
-          {latestWithdrawalId ? (
-            <TouchableOpacity
-              style={styles.syncLatestButton}
-              disabled={syncingWithdrawalId === latestWithdrawalId}
-              onPress={() => void syncWithdrawal(latestWithdrawalId)}
-            >
-              {syncingWithdrawalId === latestWithdrawalId ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : (
-                <Ionicons name="sync-outline" size={18} color={COLORS.primary} />
-              )}
-              <Text style={styles.syncLatestText}>Đồng bộ yêu cầu vừa tạo</Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         <TouchableOpacity
@@ -451,9 +475,6 @@ export default function WalletScreen() {
           ) : (
             ledger.map((item, index) => {
               const incoming = isDirectionIn(item.direction);
-              const withdrawalReference =
-                isWithdrawalReference(item.referenceType) && Boolean(item.referenceId);
-              const referenceId = String(item.referenceId || "");
 
               return (
                 <View
@@ -486,21 +507,6 @@ export default function WalletScreen() {
                     <Text style={styles.balanceAfterText}>
                       {formatCurrency(item.balanceBefore)} → {formatCurrency(item.balanceAfter)}
                     </Text>
-
-                    {withdrawalReference ? (
-                      <TouchableOpacity
-                        style={styles.syncRowButton}
-                        disabled={syncingWithdrawalId === referenceId}
-                        onPress={() => void syncWithdrawal(referenceId)}
-                      >
-                        {syncingWithdrawalId === referenceId ? (
-                          <ActivityIndicator size="small" color={COLORS.primary} />
-                        ) : (
-                          <Ionicons name="sync-outline" size={16} color={COLORS.primary} />
-                        )}
-                        <Text style={styles.syncRowText}>Đồng bộ trạng thái rút tiền</Text>
-                      </TouchableOpacity>
-                    ) : null}
                   </View>
                 </View>
               );
@@ -600,6 +606,31 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   businessWarningText: { flex: 1, color: "#9A6418", fontSize: 12, lineHeight: 17 },
+  quotaBox: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    backgroundColor: "#F8F9FA",
+  },
+  quotaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  quotaRowLast: { borderBottomWidth: 0 },
+  quotaLabel: { color: COLORS.textLight, fontSize: 12 },
+  quotaValue: { color: COLORS.text, fontSize: 12, fontWeight: "700" },
+  quotaRemainingText: {
+    marginTop: 6,
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
   inputLabel: { color: COLORS.text, fontSize: 13, fontWeight: "700", marginBottom: 7 },
   amountInput: {
     minHeight: 52,
@@ -625,18 +656,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: COLORS.white, fontWeight: "900", fontSize: 13 },
   disabledButton: { opacity: 0.45 },
-  syncLatestButton: {
-    minHeight: 44,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderRadius: 9,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-  },
-  syncLatestText: { color: COLORS.primary, fontWeight: "800", fontSize: 12 },
   withdrawalHistoryButton: {
     minHeight: 64,
     marginBottom: 14,
@@ -700,8 +719,6 @@ const styles = StyleSheet.create({
   amountOut: { color: "#7A1012" },
   ledgerMeta: { color: COLORS.textLight, fontSize: 11, marginTop: 5 },
   balanceAfterText: { color: COLORS.textLight, fontSize: 10, marginTop: 3 },
-  syncRowButton: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, alignSelf: "flex-start" },
-  syncRowText: { color: COLORS.primary, fontSize: 11, fontWeight: "700" },
   paginationRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14 },
   pageButton: {
     minHeight: 40,

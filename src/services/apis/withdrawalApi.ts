@@ -64,6 +64,17 @@ export type WithdrawalDetail = {
   financialEvents: WithdrawalFinancialEvent[];
 };
 
+export type WithdrawalQuota = {
+  minimumWithdrawalAmount: number;
+  maximumWithdrawalAmount: number;
+  dailyWithdrawalLimit: number;
+  completedTodayAmount: number;
+  activeReservedAmount: number;
+  usedDailyLimitAmount: number;
+  remainingDailyLimitAmount: number;
+  resetAt: string;
+};
+
 export type WithdrawalSearchParams = {
   PageNumber: number;
   PageSize: number;
@@ -103,4 +114,9 @@ export const getMyWithdrawalDetail = (withdrawalId: string) =>
     .get<ApiResult<WithdrawalDetail> | WithdrawalDetail>(
       `/wallet/withdrawals/${encodeURIComponent(withdrawalId)}`,
     )
+    .then((response) => response.data);
+
+export const getMyWithdrawalQuota = () =>
+  apiClient
+    .get<ApiResult<WithdrawalQuota> | WithdrawalQuota>("/wallet/withdrawals/quota")
     .then((response) => response.data);
