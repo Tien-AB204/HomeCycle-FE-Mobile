@@ -26,6 +26,42 @@ type InlineMessage = {
   text: string;
 } | null;
 
+// BE hiện tại (đã xác minh runtime) vẫn trả category dạng chuỗi enum cũ
+// (vd. "ItemMismatch"), chưa triển khai object {disputeCategoryId, code,
+// name, description} như hợp đồng mới. Giữ bảng này CHỈ để hiển thị đúng
+// dữ liệu cũ trong lúc chờ BE triển khai đầy đủ; ưu tiên category.name khi
+// BE đã trả object.
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
+  "1": "Không xuất hiện / bùng hẹn",
+  noshow: "Không xuất hiện / bùng hẹn",
+  "2": "Hàng hóa không đúng mô tả",
+  itemmismatch: "Hàng hóa không đúng mô tả",
+  "3": "Người bán không giao hàng",
+  sellernotshipped: "Người bán không giao hàng",
+  "4": "Hàng hóa hư hỏng hoặc thất lạc",
+  damagedorlost: "Hàng hóa hư hỏng hoặc thất lạc",
+  "5": "Không nhận được hàng",
+  itemnotreceived: "Không nhận được hàng",
+  "6": "Gian lận / lừa đảo",
+  fraudorscam: "Gian lận / lừa đảo",
+  "7": "Đánh giá có nội dung không phù hợp",
+  abusivereview: "Đánh giá có nội dung không phù hợp",
+  "8": "Không thanh toán theo thỏa thuận",
+  paymentnotcompleted: "Không thanh toán theo thỏa thuận",
+  "9": "Vi phạm cam kết giao dịch",
+  commitmentviolation: "Vi phạm cam kết giao dịch",
+  "99": "Khác",
+  other: "Khác",
+};
+
+const getDisputeCategoryLabel = (category: unknown): string => {
+  if (category && typeof category === "object") {
+    const name = (category as { name?: unknown }).name;
+    if (typeof name === "string" && name.trim()) return name;
+  }
+  return LEGACY_CATEGORY_LABELS[normalizeKey(category)] || "Chưa rõ";
+};
+
 const statusLabels: Record<string, string> = {
   "0": "Đang chờ xử lý",
   pending: "Đang chờ xử lý",
@@ -179,7 +215,7 @@ export default function DisputeDetailScreen() {
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
   // Category luôn hiển thị đúng tên đã lưu, kể cả khi loại đó hiện không
   // còn active cho khiếu nại mới (lịch sử vẫn phải hiển thị đúng).
-  const categoryLabel = detail.category?.name || "Chưa rõ";
+  const categoryLabel = getDisputeCategoryLabel(detail.category);
   const canCloseDispute = detail.actions?.canCloseDispute === true;
 
   return (

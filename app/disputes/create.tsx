@@ -31,20 +31,56 @@ type DisputeCategoryOption = {
   description: string | null;
 };
 
+// BE hiện tại (đã xác minh runtime) vẫn trả allowedDisputeCategories dạng
+// mảng chuỗi enum cũ (vd. "ItemMismatch"), chưa triển khai object contract
+// mới. Giữ bảng này CHỈ để suy ra id/label hợp lệ từ enum cũ trong lúc chờ
+// BE triển khai đầy đủ; nhánh object phía trên vẫn là đường chính khi BE
+// đã trả đúng contract mới.
+const LEGACY_CATEGORY_BY_KEY: Record<string, { id: number; name: string }> = {
+  "1": { id: 1, name: "Không xuất hiện / bùng hẹn" },
+  noshow: { id: 1, name: "Không xuất hiện / bùng hẹn" },
+  "2": { id: 2, name: "Hàng hóa không đúng mô tả" },
+  itemmismatch: { id: 2, name: "Hàng hóa không đúng mô tả" },
+  "3": { id: 3, name: "Người bán không giao hàng" },
+  sellernotshipped: { id: 3, name: "Người bán không giao hàng" },
+  "4": { id: 4, name: "Hàng hóa hư hỏng hoặc thất lạc" },
+  damagedorlost: { id: 4, name: "Hàng hóa hư hỏng hoặc thất lạc" },
+  "5": { id: 5, name: "Không nhận được hàng" },
+  itemnotreceived: { id: 5, name: "Không nhận được hàng" },
+  "6": { id: 6, name: "Gian lận / lừa đảo" },
+  fraudorscam: { id: 6, name: "Gian lận / lừa đảo" },
+  "8": { id: 8, name: "Không thanh toán theo thỏa thuận" },
+  paymentnotcompleted: { id: 8, name: "Không thanh toán theo thỏa thuận" },
+  "9": { id: 9, name: "Vi phạm cam kết giao dịch" },
+  commitmentviolation: { id: 9, name: "Vi phạm cam kết giao dịch" },
+  "99": { id: 99, name: "Khác" },
+  other: { id: 99, name: "Khác" },
+};
+
 const normalizeAllowedDisputeCategory = (
   value: unknown,
 ): DisputeCategoryOption | null => {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Record<string, unknown>;
-  const disputeCategoryId = Number(raw.disputeCategoryId ?? raw.DisputeCategoryId);
-  if (!Number.isFinite(disputeCategoryId)) return null;
+  if (value && typeof value === "object") {
+    const raw = value as Record<string, unknown>;
+    const disputeCategoryId = Number(raw.disputeCategoryId ?? raw.DisputeCategoryId);
+    if (!Number.isFinite(disputeCategoryId)) return null;
 
-  return {
-    disputeCategoryId,
-    code: String(raw.code ?? raw.Code ?? ""),
-    name: String(raw.name ?? raw.Name ?? `Loại #${disputeCategoryId}`),
-    description: (raw.description ?? raw.Description ?? null) as string | null,
-  };
+    return {
+      disputeCategoryId,
+      code: String(raw.code ?? raw.Code ?? ""),
+      name: String(raw.name ?? raw.Name ?? `Loại #${disputeCategoryId}`),
+      description: (raw.description ?? raw.Description ?? null) as string | null,
+    };
+  }
+
+  const rawValue = String(value ?? "").trim();
+  const legacyKey = rawValue.replace(/[\s_-]/g, "").toLowerCase();
+  const legacy = LEGACY_CATEGORY_BY_KEY[legacyKey];
+  if (!legacy) return null;
+
+  // Giữ nguyên chuỗi gốc trong `code` — đây chính là giá trị enum hợp lệ
+  // mà field `Category` cũ của BE đang mong đợi khi submit.
+  return { disputeCategoryId: legacy.id, code: rawValue, name: legacy.name, description: null };
 };
 
 type InlineMessage = {
@@ -351,7 +387,11 @@ export default function CreateDisputeScreen() {
       setPageMessage(null);
 
       const formData = new FormData();
-      // BE là source of truth. FE chỉ gửi đúng 5 field mà endpoint CreateDispute yêu cầu.
+      // BE là source of truth. FE chỉ gửi đúng field mà endpoint CreateDispute yêu cầu.
+      // Runtime đã xác minh Order actions.allowedDisputeCategories trả đúng
+      // contract mới (disputeCategoryId thật), nên submit chỉ gửi
+      // DisputeCategoryId — không gửi kèm field `Category` enum cũ vì code
+      // mới (vd. "ITEM_MISMATCH") không khớp giá trị enum cũ BE từng dùng.
       formData.append("TargetType", "2");
       formData.append("TargetId", orderId);
       formData.append("DisputeCategoryId", String(category));

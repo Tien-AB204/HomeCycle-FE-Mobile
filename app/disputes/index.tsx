@@ -55,7 +55,7 @@ type DisputeListItem = {
   targetType?: number | string | null;
   targetId?: string | null;
   orderCode?: string | null;
-  category?: DisputeCategoryOption | null;
+  category?: DisputeCategoryOption | string | number | null;
   status?: number | string | null;
   description?: string | null;
   resolutionOutcome?: number | string | null;
@@ -103,6 +103,42 @@ const statusLabels: Record<string, string> = {
   underreview: "Đang xem xét",
   "5": "Đang chờ hoàn trả",
   awaitingreturn: "Đang chờ hoàn trả",
+};
+
+// BE hiện tại (đã xác minh runtime) vẫn trả category dạng chuỗi enum cũ
+// (vd. "ItemMismatch"), chưa triển khai object {disputeCategoryId, code,
+// name, description} như hợp đồng mới. Giữ bảng này CHỈ để hiển thị đúng
+// dữ liệu cũ trong lúc chờ BE triển khai đầy đủ; ưu tiên category.name khi
+// BE đã trả object.
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
+  "1": "Không xuất hiện / bùng hẹn",
+  noshow: "Không xuất hiện / bùng hẹn",
+  "2": "Hàng hóa không đúng mô tả",
+  itemmismatch: "Hàng hóa không đúng mô tả",
+  "3": "Người bán không giao hàng",
+  sellernotshipped: "Người bán không giao hàng",
+  "4": "Hàng hóa hư hỏng hoặc thất lạc",
+  damagedorlost: "Hàng hóa hư hỏng hoặc thất lạc",
+  "5": "Không nhận được hàng",
+  itemnotreceived: "Không nhận được hàng",
+  "6": "Gian lận / lừa đảo",
+  fraudorscam: "Gian lận / lừa đảo",
+  "7": "Đánh giá có nội dung không phù hợp",
+  abusivereview: "Đánh giá có nội dung không phù hợp",
+  "8": "Không thanh toán theo thỏa thuận",
+  paymentnotcompleted: "Không thanh toán theo thỏa thuận",
+  "9": "Vi phạm cam kết giao dịch",
+  commitmentviolation: "Vi phạm cam kết giao dịch",
+  "99": "Khác",
+  other: "Khác",
+};
+
+const getDisputeCategoryLabel = (category: unknown): string => {
+  if (category && typeof category === "object") {
+    const name = (category as { name?: unknown }).name;
+    if (typeof name === "string" && name.trim()) return name;
+  }
+  return LEGACY_CATEGORY_LABELS[normalizeKey(category)] || "Chưa xác định";
 };
 
 const targetTypeLabels: Record<string, string> = {
@@ -444,7 +480,7 @@ export default function DisputeHistoryScreen() {
               const statusLabel = statusLabels[statusKey] || "Chưa xác định";
               // Category luôn hiển thị đúng tên đã lưu của khiếu nại, kể cả khi
               // loại đó hiện không còn active cho khiếu nại mới.
-              const categoryLabel = item.category?.name || "Chưa xác định";
+              const categoryLabel = getDisputeCategoryLabel(item.category);
               const targetTypeLabel = targetTypeLabels[targetTypeKey] || null;
               const outcomeLabel = resolutionOutcomeLabels[outcomeKey] || null;
 
