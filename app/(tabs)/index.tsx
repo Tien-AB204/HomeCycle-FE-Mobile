@@ -19,6 +19,7 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { isBuyPostType } from "../../src/utils/postType";
 
 const postApi = {
   getAllActivePosts: async (params?: any) => {
@@ -176,30 +177,39 @@ export default function HomeScreen() {
       onPress={() => router.push(`/posts/${post.postId}`)}
       activeOpacity={0.8}
     >
-      <View style={styles.imageWrapper}>
-        <Image source={getCoverImage(post)} style={styles.productImage} />
-        <View style={styles.topBadgeRow}>
-          {post.categoryName ? (
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                {post.categoryName}
-              </Text>
+      {!isBuyPostType(post.postType) ? (
+        <View style={styles.imageWrapper}>
+          <Image source={getCoverImage(post)} style={styles.productImage} />
+          <View style={styles.topBadgeRow}>
+            {post.categoryName ? (
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                  {post.categoryName}
+                </Text>
+              </View>
+            ) : null}
+            <View style={[styles.postTypeBadge, styles.sellPostBadge]}>
+              <Text style={styles.postTypeBadgeText}>Tin bán</Text>
             </View>
-          ) : null}
-          <View
-            style={[
-              styles.postTypeBadge,
-              post.postType === "Buy" ? styles.buyPostBadge : styles.sellPostBadge,
-            ]}
-          >
-            <Text style={styles.postTypeBadgeText}>
-              {post.postType === "Buy" ? "Tin mua" : "Tin bán"}
-            </Text>
           </View>
         </View>
-      </View>
+      ) : null}
 
       <View style={styles.infoWrapper}>
+        {isBuyPostType(post.postType) ? (
+          <View style={styles.textBadgeRow}>
+            {post.categoryName ? (
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                  {post.categoryName}
+                </Text>
+              </View>
+            ) : null}
+            <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
+              <Text style={styles.postTypeBadgeText}>Tin mua</Text>
+            </View>
+          </View>
+        ) : null}
         {post.brandName ? (
           <View style={styles.brandBadgeWhite}>
             <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
@@ -507,6 +517,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 4,
+  },
+  textBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginBottom: 7,
   },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",

@@ -19,6 +19,7 @@ import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
+import { isBuyPostType } from "../src/utils/postType";
 
 const locationApi = {
   getProvinces: async () => {
@@ -1563,40 +1564,48 @@ export default function SearchScreen() {
                 onPress={() => router.push(`/posts/${post.postId}` as any)}
                 activeOpacity={0.8}
               >
-                <View
-                  style={
-                    isGridView
-                      ? styles.gridImageWrapper
-                      : styles.listImageWrapper
-                  }
-                >
-                  <Image source={getCoverImage(post)} style={styles.productImage} />
-                  <View style={styles.topBadgeRow}>
-                    {post.categoryName ? (
-                      <View style={styles.categoryBadge}>
-                        <Text style={styles.categoryText}>{post.categoryName}</Text>
+                {!isBuyPostType(post.postType) ? (
+                  <View
+                    style={
+                      isGridView
+                        ? styles.gridImageWrapper
+                        : styles.listImageWrapper
+                    }
+                  >
+                    <Image source={getCoverImage(post)} style={styles.productImage} />
+                    <View style={styles.topBadgeRow}>
+                      {post.categoryName ? (
+                        <View style={styles.categoryBadge}>
+                          <Text style={styles.categoryText}>{post.categoryName}</Text>
+                        </View>
+                      ) : null}
+                      <View style={[styles.postTypeBadge, styles.sellPostBadge]}>
+                        <Text style={styles.postTypeBadgeText}>Tin bán</Text>
                       </View>
-                    ) : null}
-                    <View
-                      style={[
-                        styles.postTypeBadge,
-                        post.postType === "Buy"
-                          ? styles.buyPostBadge
-                          : styles.sellPostBadge,
-                      ]}
-                    >
-                      <Text style={styles.postTypeBadgeText}>
-                        {post.postType === "Buy" ? "Tin mua" : "Tin bán"}
-                      </Text>
                     </View>
                   </View>
-                </View>
+                ) : null}
 
                 <View
-                  style={
-                    isGridView ? styles.gridInfoWrapper : styles.listInfoWrapper
-                  }
+                  style={[
+                    isGridView ? styles.gridInfoWrapper : styles.listInfoWrapper,
+                    !isGridView && isBuyPostType(post.postType)
+                      ? styles.textOnlyListInfo
+                      : undefined,
+                  ]}
                 >
+                  {isBuyPostType(post.postType) ? (
+                    <View style={styles.textBadgeRow}>
+                      {post.categoryName ? (
+                        <View style={styles.categoryBadge}>
+                          <Text style={styles.categoryText}>{post.categoryName}</Text>
+                        </View>
+                      ) : null}
+                      <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
+                        <Text style={styles.postTypeBadgeText}>Tin mua</Text>
+                      </View>
+                    </View>
+                  ) : null}
                   {post.brandName ? (
                     <View style={styles.brandBadgeWhite}>
                       <Text style={styles.brandBadgeTextWhite}>
@@ -2121,6 +2130,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   listInfoWrapper: { flex: 1, marginLeft: 12, justifyContent: "space-between" },
+  textOnlyListInfo: { marginLeft: 0 },
   productImage: { width: "100%", height: "100%" },
   topBadgeRow: {
     position: "absolute",
@@ -2130,6 +2140,12 @@ const styles = StyleSheet.create({
     gap: 4,
     flexWrap: "wrap",
     right: 6,
+  },
+  textBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginBottom: 8,
   },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",
