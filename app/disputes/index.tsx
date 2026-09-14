@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -35,19 +35,16 @@ type DisputeStatusValue =
   | "UnderReview"
   | "AwaitingReturn";
 
-type DisputeCategoryValue =
-  | "NoShow"
-  | "ItemMismatch"
-  | "SellerNotShipped"
-  | "DamagedOrLost"
-  | "ItemNotReceived"
-  | "FraudOrScam"
-  | "AbusiveReview"
-  | "PaymentNotCompleted"
-  | "CommitmentViolation"
-  | "Other";
-
 type DisputeTargetTypeValue = "Appointment" | "Order" | "Review";
+
+// Dispute category is dynamic (BE-owned) — fetched from
+// GET /dispute-categories, never a hard-coded enum/list.
+type DisputeCategoryOption = {
+  disputeCategoryId: number;
+  code: string;
+  name: string;
+  description: string | null;
+};
 
 type DisputeListItem = {
   disputeId: string;
@@ -58,7 +55,7 @@ type DisputeListItem = {
   targetType?: number | string | null;
   targetId?: string | null;
   orderCode?: string | null;
-  category?: number | string | null;
+  category?: DisputeCategoryOption | null;
   status?: number | string | null;
   description?: string | null;
   resolutionOutcome?: number | string | null;
@@ -76,23 +73,6 @@ const STATUS_FILTER_OPTIONS: { key: DisputeStatusValue | "all"; label: string }[
     { key: "Rejected", label: "Đã từ chối" },
     { key: "Closed", label: "Đã đóng" },
   ];
-
-const CATEGORY_FILTER_OPTIONS: {
-  key: DisputeCategoryValue | "all";
-  label: string;
-}[] = [
-  { key: "all", label: "Tất cả loại khiếu nại" },
-  { key: "NoShow", label: "Không xuất hiện / bùng hẹn" },
-  { key: "ItemMismatch", label: "Hàng hóa không đúng mô tả" },
-  { key: "SellerNotShipped", label: "Người bán không giao hàng" },
-  { key: "DamagedOrLost", label: "Hàng hóa hư hỏng hoặc thất lạc" },
-  { key: "ItemNotReceived", label: "Không nhận được hàng" },
-  { key: "FraudOrScam", label: "Gian lận / lừa đảo" },
-  { key: "AbusiveReview", label: "Đánh giá có nội dung không phù hợp" },
-  { key: "PaymentNotCompleted", label: "Không thanh toán theo thỏa thuận" },
-  { key: "CommitmentViolation", label: "Vi phạm cam kết giao dịch" },
-  { key: "Other", label: "Khác" },
-];
 
 const TARGET_TYPE_FILTER_OPTIONS: {
   key: DisputeTargetTypeValue | "all";
@@ -123,29 +103,6 @@ const statusLabels: Record<string, string> = {
   underreview: "Đang xem xét",
   "5": "Đang chờ hoàn trả",
   awaitingreturn: "Đang chờ hoàn trả",
-};
-
-const categoryLabels: Record<string, string> = {
-  "1": "Không xuất hiện / bùng hẹn",
-  noshow: "Không xuất hiện / bùng hẹn",
-  "2": "Hàng hóa không đúng mô tả",
-  itemmismatch: "Hàng hóa không đúng mô tả",
-  "3": "Người bán không giao hàng",
-  sellernotshipped: "Người bán không giao hàng",
-  "4": "Hàng hóa hư hỏng hoặc thất lạc",
-  damagedorlost: "Hàng hóa hư hỏng hoặc thất lạc",
-  "5": "Không nhận được hàng",
-  itemnotreceived: "Không nhận được hàng",
-  "6": "Gian lận / lừa đảo",
-  fraudorscam: "Gian lận / lừa đảo",
-  "7": "Đánh giá có nội dung không phù hợp",
-  abusivereview: "Đánh giá có nội dung không phù hợp",
-  "8": "Không thanh toán theo thỏa thuận",
-  paymentnotcompleted: "Không thanh toán theo thỏa thuận",
-  "9": "Vi phạm cam kết giao dịch",
-  commitmentviolation: "Vi phạm cam kết giao dịch",
-  "99": "Khác",
-  other: "Khác",
 };
 
 const targetTypeLabels: Record<string, string> = {
@@ -188,9 +145,7 @@ export default function DisputeHistoryScreen() {
   const [statusFilter, setStatusFilter] = useState<DisputeStatusValue | "all">(
     "all",
   );
-  const [categoryFilter, setCategoryFilter] = useState<
-    DisputeCategoryValue | "all"
-  >("all");
+  const [categoryFilter, setCategoryFilter] = useState<number | "all">("all");
   const [targetTypeFilter, setTargetTypeFilter] = useState<
     DisputeTargetTypeValue | "all"
   >("all");
@@ -198,13 +153,47 @@ export default function DisputeHistoryScreen() {
   const [draftStatusFilter, setDraftStatusFilter] = useState<
     DisputeStatusValue | "all"
   >("all");
-  const [draftCategoryFilter, setDraftCategoryFilter] = useState<
-    DisputeCategoryValue | "all"
-  >("all");
+  const [draftCategoryFilter, setDraftCategoryFilter] = useState<number | "all">(
+    "all",
+  );
   const [draftTargetTypeFilter, setDraftTargetTypeFilter] = useState<
     DisputeTargetTypeValue | "all"
   >("all");
   const [showFilterModal, setShowFilterModal] = useState(false);
+
+  const [categoryOptions, setCategoryOptions] = useState<DisputeCategoryOption[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await apiClient.get("/dispute-categories", {
+          params: { targetType: "Order" },
+        });
+        const data = response.data?.data || response.data;
+        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+        if (active) setCategoryOptions(list);
+      } catch {
+        // Bộ lọc loại khiếu nại là tiện ích phụ; im lặng nếu tải thất bại.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const CATEGORY_FILTER_OPTIONS = useMemo(
+    () => [
+      { key: "all" as const, label: "Tất cả loại khiếu nại" },
+      ...categoryOptions.map((item) => ({
+        key: item.disputeCategoryId,
+        label: item.name,
+      })),
+    ],
+    [categoryOptions],
+  );
 
   const [items, setItems] = useState<DisputeListItem[]>([]);
   const [pageNumber, setPageNumber] = useState(1);
@@ -240,7 +229,7 @@ export default function DisputeHistoryScreen() {
             PageNumber: page,
             PageSize: PAGE_SIZE,
             Status: statusFilter === "all" ? undefined : statusFilter,
-            Category: categoryFilter === "all" ? undefined : categoryFilter,
+            DisputeCategoryId: categoryFilter === "all" ? undefined : categoryFilter,
             TargetType:
               targetTypeFilter === "all" ? undefined : targetTypeFilter,
             Keyword: appliedKeyword || undefined,
@@ -345,7 +334,7 @@ export default function DisputeHistoryScreen() {
     setShowFilterModal(false);
   };
 
-  const renderFilterGroup = <T extends string>(
+  const renderFilterGroup = <T extends string | number>(
     title: string,
     options: { key: T | "all"; label: string }[],
     draftValue: T | "all",
@@ -450,12 +439,12 @@ export default function DisputeHistoryScreen() {
                 ? item.targetUsername
                 : item.senderUsername;
               const statusKey = normalizeKey(item.status);
-              const categoryKey = normalizeKey(item.category);
               const targetTypeKey = normalizeKey(item.targetType);
               const outcomeKey = normalizeKey(item.resolutionOutcome);
               const statusLabel = statusLabels[statusKey] || "Chưa xác định";
-              const categoryLabel =
-                categoryLabels[categoryKey] || "Chưa xác định";
+              // Category luôn hiển thị đúng tên đã lưu của khiếu nại, kể cả khi
+              // loại đó hiện không còn active cho khiếu nại mới.
+              const categoryLabel = item.category?.name || "Chưa xác định";
               const targetTypeLabel = targetTypeLabels[targetTypeKey] || null;
               const outcomeLabel = resolutionOutcomeLabels[outcomeKey] || null;
 

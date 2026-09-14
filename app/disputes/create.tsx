@@ -21,33 +21,30 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 
-const disputeCategories = [
-  { value: 1, key: "NoShow", label: "Không xuất hiện / bùng hẹn" },
-  { value: 2, key: "ItemMismatch", label: "Hàng hóa không đúng mô tả" },
-  { value: 3, key: "SellerNotShipped", label: "Người bán không giao hàng" },
-  { value: 4, key: "DamagedOrLost", label: "Hàng hóa hư hỏng hoặc thất lạc" },
-  { value: 5, key: "ItemNotReceived", label: "Không nhận được hàng" },
-  { value: 6, key: "FraudOrScam", label: "Gian lận / lừa đảo" },
-  { value: 8, key: "PaymentNotCompleted", label: "Không thanh toán theo thỏa thuận" },
-  { value: 9, key: "CommitmentViolation", label: "Vi phạm cam kết giao dịch" },
-  { value: 99, key: "Other", label: "Khác" },
-] as const;
+// Dispute category is dynamic (BE-owned), never a hard-coded enum/list.
+// Order Detail's actions.allowedDisputeCategories already carries the
+// full, context-filtered category objects — use it as-is.
+type DisputeCategoryOption = {
+  disputeCategoryId: number;
+  code: string;
+  name: string;
+  description: string | null;
+};
 
-const normalizeAllowedDisputeCategory = (value: unknown): number | null => {
-  const raw = String(value ?? "").trim();
-  const numeric = Number(raw);
+const normalizeAllowedDisputeCategory = (
+  value: unknown,
+): DisputeCategoryOption | null => {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const disputeCategoryId = Number(raw.disputeCategoryId ?? raw.DisputeCategoryId);
+  if (!Number.isFinite(disputeCategoryId)) return null;
 
-  if (Number.isFinite(numeric)) {
-    return disputeCategories.find((item) => item.value === numeric)?.value ?? null;
-  }
-
-  const normalized = raw.replace(/[\s_-]/g, "").toLowerCase();
-
-  return (
-    disputeCategories.find(
-      (item) => item.key.replace(/[\s_-]/g, "").toLowerCase() === normalized,
-    )?.value ?? null
-  );
+  return {
+    disputeCategoryId,
+    code: String(raw.code ?? raw.Code ?? ""),
+    name: String(raw.name ?? raw.Name ?? `Loại #${disputeCategoryId}`),
+    description: (raw.description ?? raw.Description ?? null) as string | null,
+  };
 };
 
 type InlineMessage = {
@@ -110,7 +107,7 @@ export default function CreateDisputeScreen() {
   );
   const [disputeEligibility, setDisputeEligibility] = useState<{
     canDispute: boolean;
-    allowedCategories: number[];
+    allowedCategories: DisputeCategoryOption[];
   } | null>(null);
 
   useEffect(() => {
@@ -142,19 +139,16 @@ export default function CreateDisputeScreen() {
           throw new Error("ORDER_DISPUTE_ACTION_CONTRACT_UNAVAILABLE");
         }
 
-        const normalizedCategories: number[] =
+        const allowedCategories: DisputeCategoryOption[] =
           actions.allowedDisputeCategories
             .map(
-              (value: unknown): number | null =>
+              (value: unknown): DisputeCategoryOption | null =>
                 normalizeAllowedDisputeCategory(value),
             )
             .filter(
-              (value: number | null): value is number => value !== null,
+              (value: DisputeCategoryOption | null): value is DisputeCategoryOption =>
+                value !== null,
             );
-
-        const allowedCategories = Array.from(
-          new Set<number>(normalizedCategories),
-        );
 
         if (!active) return;
 
@@ -164,7 +158,10 @@ export default function CreateDisputeScreen() {
         });
 
         setCategory((current) =>
-          current !== null && !allowedCategories.includes(current) ? null : current,
+          current !== null &&
+          !allowedCategories.some((item) => item.disputeCategoryId === current)
+            ? null
+            : current,
         );
       } catch {
         if (!active) return;
@@ -189,15 +186,15 @@ export default function CreateDisputeScreen() {
 
   const availableDisputeCategories = useMemo(() => {
     if (!disputeEligibility?.canDispute) return [];
-
-    return disputeCategories.filter((item) =>
-      disputeEligibility.allowedCategories.includes(item.value),
-    );
+    return disputeEligibility.allowedCategories;
   }, [disputeEligibility]);
 
   const selectedCategoryLabel = useMemo(
-    () => disputeCategories.find((item) => item.value === category)?.label,
-    [category],
+    () =>
+      disputeEligibility?.allowedCategories.find(
+        (item) => item.disputeCategoryId === category,
+      )?.name,
+    [category, disputeEligibility],
   );
 
   const isDisputeSubmitDisabled =
@@ -245,7 +242,9 @@ export default function CreateDisputeScreen() {
       valid = false;
     } else if (
       disputeEligibility &&
-      !disputeEligibility.allowedCategories.includes(category)
+      !disputeEligibility.allowedCategories.some(
+        (item) => item.disputeCategoryId === category,
+      )
     ) {
       setCategoryError(
         "Loại khiếu nại này không còn được phép với trạng thái hiện tại của đơn hàng.",
@@ -355,7 +354,7 @@ export default function CreateDisputeScreen() {
       // BE là source of truth. FE chỉ gửi đúng 5 field mà endpoint CreateDispute yêu cầu.
       formData.append("TargetType", "2");
       formData.append("TargetId", orderId);
-      formData.append("Category", String(category));
+      formData.append("DisputeCategoryId", String(category));
       formData.append("Description", description.trim());
 
       for (let index = 0; index < images.length; index += 1) {
@@ -463,13 +462,13 @@ export default function CreateDisputeScreen() {
 
             <View style={styles.categoryList}>
               {availableDisputeCategories.map((item) => {
-                const selected = category === item.value;
+                const selected = category === item.disputeCategoryId;
                 return (
                   <TouchableOpacity
-                    key={item.value}
+                    key={item.disputeCategoryId}
                     style={[styles.categoryItem, selected && styles.categoryItemSelected]}
                     onPress={() => {
-                      setCategory(item.value);
+                      setCategory(item.disputeCategoryId);
                       setCategoryError(null);
                       clearMessage();
                     }}
@@ -478,7 +477,7 @@ export default function CreateDisputeScreen() {
                       {selected ? <View style={styles.radioInner} /> : null}
                     </View>
                     <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
-                      {item.label}
+                      {item.name}
                     </Text>
                   </TouchableOpacity>
                 );

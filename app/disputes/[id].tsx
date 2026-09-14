@@ -26,29 +26,6 @@ type InlineMessage = {
   text: string;
 } | null;
 
-const categoryLabels: Record<string, string> = {
-  "1": "Không xuất hiện / bùng hẹn",
-  noshow: "Không xuất hiện / bùng hẹn",
-  "2": "Hàng hóa không đúng mô tả",
-  itemmismatch: "Hàng hóa không đúng mô tả",
-  "3": "Người bán không giao hàng",
-  sellernotshipped: "Người bán không giao hàng",
-  "4": "Hàng hóa hư hỏng hoặc thất lạc",
-  damagedorlost: "Hàng hóa hư hỏng hoặc thất lạc",
-  "5": "Không nhận được hàng",
-  itemnotreceived: "Không nhận được hàng",
-  "6": "Gian lận / lừa đảo",
-  fraudorscam: "Gian lận / lừa đảo",
-  "7": "Đánh giá có nội dung không phù hợp",
-  abusivereview: "Đánh giá có nội dung không phù hợp",
-  "8": "Không thanh toán theo thỏa thuận",
-  paymentnotcompleted: "Không thanh toán theo thỏa thuận",
-  "9": "Vi phạm cam kết giao dịch",
-  commitmentviolation: "Vi phạm cam kết giao dịch",
-  "99": "Khác",
-  other: "Khác",
-};
-
 const statusLabels: Record<string, string> = {
   "0": "Đang chờ xử lý",
   pending: "Đang chờ xử lý",
@@ -199,9 +176,10 @@ export default function DisputeDetailScreen() {
   const targetUser = detail.targetUser || {};
   const evidenceImages = Array.isArray(detail.evidenceImages) ? detail.evidenceImages : [];
   const statusKey = normalizeKey(detail.status);
-  const categoryKey = normalizeKey(detail.category);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
-  const categoryLabel = categoryLabels[categoryKey] || "Chưa rõ";
+  // Category luôn hiển thị đúng tên đã lưu, kể cả khi loại đó hiện không
+  // còn active cho khiếu nại mới (lịch sử vẫn phải hiển thị đúng).
+  const categoryLabel = detail.category?.name || "Chưa rõ";
   const canCloseDispute = detail.actions?.canCloseDispute === true;
 
   return (
