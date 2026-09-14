@@ -417,6 +417,20 @@ export default function WalletScreen() {
           ) : null}
         </View>
 
+        <TouchableOpacity
+          style={styles.withdrawalHistoryButton}
+          onPress={() => router.push("/wallet/withdrawals" as any)}
+        >
+          <Ionicons name="cash-outline" size={20} color={COLORS.primary} />
+          <View style={styles.historyButtonContent}>
+            <Text style={styles.withdrawalHistoryTitle}>Lịch sử rút tiền</Text>
+            <Text style={styles.withdrawalHistoryText}>
+              Xem trạng thái và chi tiết các yêu cầu của bạn
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={19} color={COLORS.primary} />
+        </TouchableOpacity>
+
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <View>
@@ -623,6 +637,22 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   syncLatestText: { color: COLORS.primary, fontWeight: "800", fontSize: 12 },
+  withdrawalHistoryButton: {
+    minHeight: 64,
+    marginBottom: 14,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+  },
+  historyButtonContent: { flex: 1 },
+  withdrawalHistoryTitle: { color: COLORS.primary, fontSize: 14, fontWeight: "800" },
+  withdrawalHistoryText: { marginTop: 3, color: COLORS.textLight, fontSize: 11, lineHeight: 16 },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 14 },
   messageText: { fontSize: 12, lineHeight: 18 },
   messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
