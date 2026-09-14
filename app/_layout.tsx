@@ -17,11 +17,26 @@ import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 import { NotificationProvider } from "../src/contexts/NotificationContext";
+import {
+  applyAppearancePreference,
+  loadAppearancePreference,
+} from "../src/utils/appearance";
 
 function RootNavigator() {
   const insets = useSafeAreaInsets();
   const [isKeyboardVisible, setIsKeyboardVisible] =
     useState(false);
+
+  useEffect(() => {
+    // Áp dụng lựa chọn giao diện đã lưu trên thiết bị (nơi nền tảng hỗ trợ).
+    let isMounted = true;
+    void loadAppearancePreference().then((preference) => {
+      if (isMounted) applyAppearancePreference(preference);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== "android") {
