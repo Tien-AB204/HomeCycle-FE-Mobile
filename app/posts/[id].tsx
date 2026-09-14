@@ -33,6 +33,7 @@ import {
 } from "../../src/utils/apiFeedback";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { getAvatarSource } from "../../src/utils/avatar";
+import { isBuyPostType } from "../../src/utils/postType";
 
 type FeedbackType = "error" | "success" | "warning" | "info";
 type LocalFeedback = {
@@ -349,6 +350,16 @@ const offerApi = {
     apiClient
       .get("/offers/sent", { params })
       .then((response) => response.data),
+
+  getReceivedOffers: (params: {
+    PageNumber: number;
+    PageSize: number;
+    PostId?: string;
+    BuyPostId?: string;
+  }) =>
+    apiClient
+      .get("/offers/received", { params })
+      .then((response) => response.data),
 };
 
 const isPendingSellerOffer = (item: any, buyPostId: string, senderId: unknown, receiverId: unknown) =>
@@ -401,6 +412,7 @@ export default function PostDetailScreen() {
   const [post, setPost] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [existingOfferId, setExistingOfferId] = useState<string | null>(null);
+  const [receivedOfferCount, setReceivedOfferCount] = useState<number | null>(null);
 
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerQuantity, setOfferQuantity] = useState("1");
@@ -447,7 +459,17 @@ export default function PostDetailScreen() {
     clearFeedback: clearPageFeedback,
     showError: showPageError,
     showSuccess: showPageSuccess,
+    showInfo: showPageInfo,
   } = useLocalFeedback();
+
+  const [isPostMenuVisible, setPostMenuVisible] = useState(false);
+  const reportPost = () => {
+    setPostMenuVisible(false);
+    // BE chưa có endpoint report post. Không gọi API giả và không báo thành công.
+    showPageInfo(
+      "Tính năng báo cáo bài đăng đang được phát triển. Vui lòng thử lại sau.",
+    );
+  };
 
   const {
     feedback: offerFeedback,
@@ -492,6 +514,34 @@ export default function PostDetailScreen() {
       if (postLoadVersion.current !== version) return;
       const postData = resPost?.data || resPost;
       setPost(postData);
+
+      const ownsPost = Boolean(
+        currentUserId &&
+          normalizePostId(postData?.ownerId) === normalizePostId(currentUserId),
+      );
+
+      if (ownsPost && postData?.postId) {
+        try {
+          const receivedResponse = await offerApi.getReceivedOffers({
+            PageNumber: 1,
+            PageSize: 1,
+            ...(isBuyPostType(postData.postType)
+              ? { BuyPostId: String(postData.postId) }
+              : { PostId: String(postData.postId) }),
+          });
+          if (postLoadVersion.current !== version) return;
+          const receivedPage = receivedResponse?.data ?? receivedResponse;
+          const rawCount = receivedPage?.totalCount ?? receivedPage?.TotalCount;
+          setReceivedOfferCount(
+            Number.isFinite(Number(rawCount)) ? Math.max(0, Number(rawCount)) : null,
+          );
+        } catch {
+          if (postLoadVersion.current !== version) return;
+          setReceivedOfferCount(null);
+        }
+      } else {
+        setReceivedOfferCount(0);
+      }
 
       const isForeignBusinessBuy =
         user?.role === "business" &&
@@ -1539,6 +1589,7 @@ export default function PostDetailScreen() {
   }
 
   const product = post.product || {};
+  const isBuyPost = isBuyPostType(post.postType);
   const address = [post.streetAddress, post.ward, post.city]
     .filter(Boolean)
     .join(", ");
@@ -1584,11 +1635,40 @@ export default function PostDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Chi tiết tin đăng</Text>
-        <View style={styles.headerSpacer} />
+        {!isMyPost ? (
+          <TouchableOpacity
+            onPress={() => setPostMenuVisible(true)}
+            style={styles.headerIcon}
+            accessibilityLabel="Thêm tùy chọn"
+          >
+            <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
+      <Modal
+        visible={isPostMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPostMenuVisible(false)}
+      >
+        <ModalBackdrop
+          style={styles.postMenuBackdrop}
+          onPress={() => setPostMenuVisible(false)}
+        >
+          <ModalSurface style={styles.postMenuSurface}>
+            <TouchableOpacity style={styles.postMenuOption} onPress={reportPost}>
+              <Ionicons name="flag-outline" size={19} color="#7A1012" />
+              <Text style={styles.postMenuOptionText}>Báo cáo bài đăng</Text>
+            </TouchableOpacity>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
+
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
-        {post.postType !== "Buy" ? (
+        {!isBuyPost ? (
           <>
         <View style={styles.imageContainer}>
           {post.medias && post.medias.length > 0 ? (
@@ -1701,7 +1781,7 @@ export default function PostDetailScreen() {
           </View>
         </View>
 
-        {isMyPost ? (
+        {isMyPost && receivedOfferCount !== 0 ? (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.receivedOffersCard}
@@ -1718,7 +1798,11 @@ export default function PostDetailScreen() {
 
               <View style={styles.receivedOffersContent}>
                 <Text style={styles.receivedOffersTitle}>
-                  Đề nghị đã nhận
+                  {typeof receivedOfferCount === "number"
+                    ? `${receivedOfferCount} ${isBuyPost ? "chào bán" : "đề nghị"} đã nhận`
+                    : isBuyPost
+                      ? "Chào bán đã nhận"
+                      : "Đề nghị đã nhận"}
                 </Text>
 
                 <Text style={styles.receivedOffersSubtitle}>
@@ -2898,6 +2982,29 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
   headerIcon: { padding: 8 },
   headerSpacer: { width: 40, height: 40 },
+  postMenuBackdrop: {
+    flex: 1,
+    alignItems: "flex-end",
+    paddingTop: 56,
+    paddingRight: 12,
+    backgroundColor: "rgba(23, 40, 48, 0.25)",
+  },
+  postMenuSurface: {
+    minWidth: 200,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  postMenuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  postMenuOptionText: { color: "#7A1012", fontSize: 14, fontWeight: "600" },
   imageContainer: { position: "relative", backgroundColor: COLORS.white },
   mainImage: { width, height: 300 },
   imagePlaceholder: {

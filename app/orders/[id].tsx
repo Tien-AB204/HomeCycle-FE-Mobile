@@ -118,6 +118,24 @@ const HIDDEN_ORDER_TIMELINE_CODES = new Set([
   "dispute",
 ]);
 
+const findActiveTimelineText = (steps: any[]): string => {
+  for (const step of steps) {
+    const status = normalizeStatus(step?.status);
+    if (status === "inprogress" || status === "1") {
+      return (
+        sanitizeTimelineText(step?.description) ||
+        sanitizeTimelineText(step?.title) ||
+        ""
+      );
+    }
+    if (Array.isArray(step?.subSteps) && step.subSteps.length > 0) {
+      const nested = findActiveTimelineText(step.subSteps);
+      if (nested) return nested;
+    }
+  }
+  return "";
+};
+
 const filterOrderTimelineForDisplay = (steps: any[]): any[] =>
   steps
     .filter(
@@ -685,6 +703,12 @@ export default function OrderDetailScreen() {
         : [step],
   );
 
+  const compactTimelineStatusText =
+    findActiveTimelineText(orderTimeline) ||
+    (orderTimeline.length > 0
+      ? sanitizeTimelineText(orderTimeline[orderTimeline.length - 1]?.title)
+      : "");
+
   const hasActiveDispute = dispute?.hasActiveDispute === true;
   const latestDisputeId = dispute?.latestDisputeId;
   const canOpenDispute = hasActiveDispute && Boolean(latestDisputeId);
@@ -931,6 +955,15 @@ export default function OrderDetailScreen() {
                 Tiến trình đơn hàng đang được cập nhật.
               </Text>
             )
+          ) : orderTimeline.length > 0 ? (
+            <View style={styles.compactTimelineWrap}>
+              <CompactOrderTimeline steps={orderTimeline} />
+              {compactTimelineStatusText ? (
+                <Text style={styles.compactStatusSummary}>
+                  {compactTimelineStatusText}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
         <View style={styles.card}>
@@ -962,7 +995,7 @@ export default function OrderDetailScreen() {
               </Text>
               <Text style={styles.productMeta}>Số lượng: {order.quantity || 1}</Text>
               <Text style={styles.productPrice}>
-                {formatCurrency(order.finalTotalAmount)}
+                {formatCurrency(order.originalTotalAmount)}
               </Text>
             </View>
             {postId ? (
@@ -978,7 +1011,7 @@ export default function OrderDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Thanh toán chi tiết</Text>
           <InfoRow
-            label="Giá trị sản phẩm gốc:"
+            label="Giá trị sản phẩm:"
             value={formatCurrency(order.originalTotalAmount)}
           />
           <InfoRow
@@ -1311,7 +1344,7 @@ export default function OrderDetailScreen() {
 
         {hasActiveDispute && latestDisputeId ? (
           <View style={styles.disputeInfoCard}>
-            <Ionicons name="warning-outline" size={20} color="#9A6418" />
+            <Ionicons name="warning-outline" size={20} color="#7A1012" />
             <View style={styles.disputeInfoContent}>
               <Text style={styles.disputeInfoTitle}>Đơn hàng đang có tranh chấp</Text>
               {disputeStatusText ? (
@@ -1352,7 +1385,7 @@ export default function OrderDetailScreen() {
               <Ionicons
                 name="document-text-outline"
                 size={18}
-                color="#9A6418"
+                color="#7A1012"
               />
               <Text style={styles.outlineBtnWarningText}>Xem Tranh Chấp</Text>
             </TouchableOpacity>
@@ -1370,7 +1403,7 @@ export default function OrderDetailScreen() {
                 } as any)
               }
             >
-              <Ionicons name="warning-outline" size={18} color="#9A6418" />
+              <Ionicons name="warning-outline" size={18} color="#7A1012" />
               <Text style={styles.outlineBtnWarningText}>Gửi Khiếu Nại</Text>
             </TouchableOpacity>
           )}
@@ -1530,6 +1563,65 @@ function shouldShowTimelineDescription(status: unknown) {
     normalized === "cancelled" ||
     normalized === "canceled" ||
     normalized === "4"
+  );
+}
+
+function CompactOrderTimeline({ steps }: { steps: any[] }) {
+  if (!steps.length) return null;
+
+  return (
+    <View style={styles.compactMilestoneRow}>
+      {steps.map((step: any, index: number) => {
+        const visual = getTimelineVisual(step?.status);
+        const isPassed = isTimelineCompletedStatus(step?.status);
+        const prevPassed =
+          index > 0 && isTimelineCompletedStatus(steps[index - 1]?.status);
+
+        return (
+          <View
+            key={`${String(step?.code ?? "step")}-${index}`}
+            style={styles.compactMilestoneCol}
+          >
+            <View style={styles.compactMilestoneLineTrack}>
+              <View
+                style={[
+                  styles.compactMilestoneLineHalf,
+                  index === 0
+                    ? styles.compactMilestoneLineHidden
+                    : prevPassed
+                      ? styles.compactMilestoneLineDone
+                      : undefined,
+                ]}
+              />
+              <View style={[styles.compactMilestoneDot, visual.dotStyle]}>
+                <Ionicons
+                  name={visual.icon}
+                  size={9}
+                  color={
+                    isTimelineUpcomingStatus(step?.status)
+                      ? COLORS.textLight
+                      : COLORS.white
+                  }
+                />
+              </View>
+              <View
+                style={[
+                  styles.compactMilestoneLineHalf,
+                  index === steps.length - 1
+                    ? styles.compactMilestoneLineHidden
+                    : isPassed
+                      ? styles.compactMilestoneLineDone
+                      : undefined,
+                ]}
+              />
+            </View>
+            <Text style={styles.compactMilestoneLabel} numberOfLines={2}>
+              {sanitizeTimelineText(step?.title) || "Cập nhật"}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1859,6 +1951,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textLight,
   },
+  compactTimelineWrap: {
+    marginTop: 12,
+  },
+  compactMilestoneRow: {
+    flexDirection: "row",
+  },
+  compactMilestoneCol: {
+    flex: 1,
+    alignItems: "center",
+  },
+  compactMilestoneLineTrack: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+  },
+  compactMilestoneLineHalf: {
+    flex: 1,
+    height: 2,
+    backgroundColor: "#D7DDDC",
+  },
+  compactMilestoneLineHidden: {
+    backgroundColor: "transparent",
+  },
+  compactMilestoneLineDone: {
+    backgroundColor: "#2F765D",
+  },
+  compactMilestoneDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactMilestoneLabel: {
+    marginTop: 6,
+    fontSize: 10,
+    lineHeight: 13,
+    color: COLORS.textLight,
+    textAlign: "center",
+  },
+  compactStatusSummary: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
+    textAlign: "center",
+  },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
@@ -2058,7 +2198,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   actionHintWarning: {
-    color: "#9A6418",
+    color: "#7A1012",
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 10,
@@ -2193,23 +2333,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(154, 100, 24, 0.24)",
+    borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
   },
   disputeInfoContent: { flex: 1 },
-  disputeInfoTitle: { color: "#9A6418", fontSize: 13, fontWeight: "800" },
+  disputeInfoTitle: { color: "#7A1012", fontSize: 13, fontWeight: "800" },
   disputeInfoStatus: {
-    color: "#9A6418",
+    color: "#7A1012",
     fontSize: 12,
     fontWeight: "700",
     marginTop: 2,
   },
   disputeInfoText: {
-    color: "#9A6418",
+    color: "#7A1012",
     fontSize: 12,
     lineHeight: 18,
     marginTop: 3,
@@ -2251,15 +2391,15 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#9A6418",
+    borderColor: "#7A1012",
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
   },
   outlineBtnWarningText: {
-    color: "#9A6418",
+    color: "#7A1012",
     fontSize: 14,
     fontWeight: "bold",
   },

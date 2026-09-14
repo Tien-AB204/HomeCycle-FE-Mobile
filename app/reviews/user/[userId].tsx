@@ -54,6 +54,14 @@ export default function UserReviewsScreen() {
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [developmentNotice, setDevelopmentNotice] = useState<string | null>(null);
+
+  const reportReview = () => {
+    // BE chưa có endpoint report review. Không gọi API giả và không báo thành công.
+    setDevelopmentNotice(
+      "Tính năng báo cáo đánh giá đang được phát triển. Vui lòng thử lại sau.",
+    );
+  };
 
   const loadPage = useCallback(
     async (page: number) => {
@@ -116,6 +124,15 @@ export default function UserReviewsScreen() {
             </View>
           </View>
 
+          {developmentNotice ? (
+            <View style={styles.noticeBox}>
+              <Text style={styles.noticeText}>{developmentNotice}</Text>
+              <TouchableOpacity onPress={() => setDevelopmentNotice(null)}>
+                <Ionicons name="close" size={18} color="#2B5659" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{errorMessage}</Text>
@@ -162,9 +179,18 @@ export default function UserReviewsScreen() {
                   </View>
                 </View>
 
-                <Text style={styles.reviewTime}>
-                  {formatDateTime(review.updatedAt || review.createdAt)}
-                </Text>
+                <View style={styles.reviewTimeCol}>
+                  <Text style={styles.reviewTime}>
+                    {formatDateTime(review.updatedAt || review.createdAt)}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.reportReviewButton}
+                    onPress={() => reportReview()}
+                    accessibilityLabel="Báo cáo đánh giá"
+                  >
+                    <Ionicons name="flag-outline" size={14} color="#7A1012" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {review.comment ? (
@@ -297,7 +323,22 @@ const styles = StyleSheet.create({
   },
   reviewerName: { color: COLORS.text, fontWeight: "700", fontSize: 13 },
   starRow: { flexDirection: "row", marginTop: 3 },
+  reviewTimeCol: { alignItems: "flex-end", gap: 6 },
   reviewTime: { color: COLORS.textLight, fontSize: 10, maxWidth: 110, textAlign: "right" },
+  reportReviewButton: { padding: 2 },
+  noticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.24)",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+  noticeText: { flex: 1, color: "#2B5659", fontSize: 12, lineHeight: 17 },
   comment: { color: COLORS.text, fontSize: 13, lineHeight: 20, marginTop: 12 },
   noComment: { color: COLORS.textLight, fontSize: 12, fontStyle: "italic", marginTop: 12 },
   imageList: { gap: 8, marginTop: 12 },
