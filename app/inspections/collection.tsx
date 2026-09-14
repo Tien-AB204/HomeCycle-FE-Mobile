@@ -71,10 +71,9 @@ type PartyForm = {
   addressDetail: string;
 };
 
-type HeavyItemForm = {
+type ParcelForm = {
   name: string;
   code: string;
-  quantity: string;
   weightGram: string;
   lengthCm: string;
   widthCm: string;
@@ -95,15 +94,18 @@ const EMPTY_PARTY: PartyForm = {
   addressDetail: "",
 };
 
-const EMPTY_HEAVY_ITEM: HeavyItemForm = {
+const EMPTY_PARCEL: ParcelForm = {
   name: "",
   code: "",
-  quantity: "1",
   weightGram: "",
   lengthCm: "",
   widthCm: "",
   heightCm: "",
 };
+
+const MAX_GHN_WEIGHT_GRAM = 50_000;
+const MULTI_PARCEL_MESSAGE =
+  "GHN hiện chưa hỗ trợ xác nhận đơn có nhiều kiện trên HomeCycle. Vui lòng chọn Người bán giao hoặc Người mua tự lấy.";
 
 const unwrap = <T,>(value: any): T =>
   (value?.data?.data ?? value?.data ?? value) as T;
@@ -780,9 +782,6 @@ export default function InspectionCollectionScreen() {
   const [receiver, setReceiver] =
     useState<PartyForm>(EMPTY_PARTY);
 
-  const [serviceTypeId, setServiceTypeId] =
-    useState<2 | 5>(2);
-
   const [requiredNote, setRequiredNote] =
     useState<
       | "CHOTHUHANG"
@@ -790,10 +789,16 @@ export default function InspectionCollectionScreen() {
       | "KHONGCHOXEMHANG"
     >("CHOXEMHANGKHONGTHU");
 
-  const [heavyItem, setHeavyItem] =
-    useState<HeavyItemForm>(
-      EMPTY_HEAVY_ITEM,
+  const [parcel, setParcel] =
+    useState<ParcelForm>(
+      EMPTY_PARCEL,
     );
+
+  const [hasUnsupportedMultiParcel, setHasUnsupportedMultiParcel] =
+    useState(false);
+
+  const parcelWeightGram = toPositiveInteger(parcel.weightGram);
+  const serviceTypeId: 2 | 5 = parcelWeightGram >= 20_000 ? 5 : 2;
 
   const [provinces, setProvinces] =
     useState<GhnProvince[]>([]);
@@ -1002,14 +1007,6 @@ export default function InspectionCollectionScreen() {
           setSender(senderValue);
           setReceiver(receiverValue);
 
-          setServiceTypeId(
-            Number(
-              ghnInfo?.serviceTypeId,
-            ) === 5
-              ? 5
-              : 2,
-          );
-
           const note = String(
             ghnInfo?.requiredNote ?? "",
           ).toUpperCase();
@@ -1024,44 +1021,45 @@ export default function InspectionCollectionScreen() {
             setRequiredNote(note);
           }
 
-          const firstItem =
-            Array.isArray(
-              ghnInfo?.items,
-            )
-              ? ghnInfo.items[0]
-              : null;
+          const savedItems = Array.isArray(ghnInfo?.items)
+            ? ghnInfo.items
+            : [];
+          const isMultiParcel =
+            Number(ghnInfo?.parcelCount ?? savedItems.length ?? 1) > 1 ||
+            savedItems.length > 1;
 
-          if (firstItem) {
-            setHeavyItem({
+          setHasUnsupportedMultiParcel(isMultiParcel);
+
+          if (!isMultiParcel) {
+            const firstItem = savedItems[0];
+            const savedParcel = firstItem ?? ghnInfo?.lightParcel ?? ghnInfo;
+
+            setParcel({
               name: String(
-                firstItem?.name ?? "",
+                firstItem?.name ?? "Kiện hàng HomeCycle",
               ),
 
               code: String(
                 firstItem?.code ?? "",
               ),
 
-              quantity: String(
-                firstItem?.quantity ?? 1,
-              ),
-
               weightGram: String(
-                firstItem?.weightGram ??
+                savedParcel?.weightGram ??
                   "",
               ),
 
               lengthCm: String(
-                firstItem?.lengthCm ??
+                savedParcel?.lengthCm ??
                   "",
               ),
 
               widthCm: String(
-                firstItem?.widthCm ??
+                savedParcel?.widthCm ??
                   "",
               ),
 
               heightCm: String(
-                firstItem?.heightCm ??
+                savedParcel?.heightCm ??
                   "",
               ),
             });
@@ -1279,73 +1277,64 @@ export default function InspectionCollectionScreen() {
         buildGhnContact(receiver);
 
       if (
+        hasUnsupportedMultiParcel ||
         !senderPayload ||
         !receiverPayload
       ) {
         return null;
       }
 
-      if (serviceTypeId === 5) {
-        const item: GhnItemInput = {
-          name:
-            heavyItem.name.trim(),
+      const item: GhnItemInput = {
+        name:
+          parcel.name.trim(),
 
-          code:
-            heavyItem.code.trim() ||
-            null,
+        code:
+          parcel.code.trim() ||
+          null,
 
-          quantity:
-            toPositiveInteger(
-              heavyItem.quantity,
-            ),
+        quantity: 1,
 
-          weightGram:
-            toPositiveInteger(
-              heavyItem.weightGram,
-            ),
+        weightGram:
+          parcelWeightGram,
 
-          lengthCm:
-            toPositiveInteger(
-              heavyItem.lengthCm,
-            ),
+        lengthCm:
+          toPositiveInteger(
+            parcel.lengthCm,
+          ),
 
-          widthCm:
-            toPositiveInteger(
-              heavyItem.widthCm,
-            ),
+        widthCm:
+          toPositiveInteger(
+            parcel.widthCm,
+          ),
 
-          heightCm:
-            toPositiveInteger(
-              heavyItem.heightCm,
-            ),
-        };
+        heightCm:
+          toPositiveInteger(
+            parcel.heightCm,
+          ),
+      };
 
-        if (
-          !item.name ||
-          item.quantity <= 0 ||
-          item.weightGram <= 0 ||
-          item.lengthCm <= 0 ||
-          item.widthCm <= 0 ||
-          item.heightCm <= 0
-        ) {
-          return null;
-        }
-
-        return {
-          sender: senderPayload,
-          receiver: receiverPayload,
-          serviceTypeId: 5,
-          requiredNote,
-          items: [item],
-        };
+      if (
+        !item.name ||
+        item.weightGram <= 0 ||
+        item.weightGram > MAX_GHN_WEIGHT_GRAM ||
+        [item.lengthCm, item.widthCm, item.heightCm].some(
+          (dimension) => dimension < 1 || dimension > 200,
+        )
+      ) {
+        return null;
       }
 
       return {
         sender: senderPayload,
         receiver: receiverPayload,
-        serviceTypeId: 2,
+        serviceTypeId,
+        parcelCount: 1,
+        weightGram: item.weightGram,
+        lengthCm: item.lengthCm,
+        widthCm: item.widthCm,
+        heightCm: item.heightCm,
         requiredNote,
-        items: [],
+        items: [item],
       };
     };
 
@@ -1404,6 +1393,14 @@ export default function InspectionCollectionScreen() {
       ScheduleInspectionCollectionRequest;
 
     if (isGhn) {
+      if (hasUnsupportedMultiParcel) {
+        setNotice({
+          type: "error",
+          text: MULTI_PARCEL_MESSAGE,
+        });
+        return;
+      }
+
       const ghnInfo =
         buildGhnInfo();
 
@@ -1786,7 +1783,7 @@ export default function InspectionCollectionScreen() {
               <Text
                 style={styles.noticeText}
               >
-                Phí vận chuyển GHN được hệ thống tính tự động. Người mua/người nhận sẽ thanh toán phí vận chuyển cho GHN.
+                Phí vận chuyển GHN và chính sách thanh toán được hệ thống xác định tự động.
               </Text>
             </View>
 
@@ -1799,55 +1796,19 @@ export default function InspectionCollectionScreen() {
                 Thông tin GHN
               </Text>
 
-              <View
-                style={
-                  styles.serviceTypeRow
-                }
-              >
-                {[2, 5].map(
-                  (value) => (
-                    <TouchableOpacity
-                      key={value}
-                      style={[
-                        styles.serviceTypeButton,
-                        serviceTypeId ===
-                        value
-                          ? styles.serviceTypeButtonActive
-                          : undefined,
-                      ]}
-                      onPress={() =>
-                        setServiceTypeId(
-                          value as 2 | 5,
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.serviceTypeText,
-                          serviceTypeId ===
-                          value
-                            ? styles.serviceTypeTextActive
-                            : undefined,
-                        ]}
-                      >
-                        {value === 2
-                          ? "Hàng nhẹ"
-                          : "Hàng nặng"}
-                      </Text>
-                    </TouchableOpacity>
-                  ),
-                )}
-              </View>
-
               <Text
                 style={
                   styles.helperText
                 }
               >
-                {serviceTypeId === 2
-                  ? "Khối lượng và kích thước hàng nhẹ được hệ thống lấy từ thông tin sản phẩm."
-                  : "Vui lòng nhập thông tin kiện hàng nặng bên dưới."}
+                Loại dịch vụ được xác định từ khối lượng kiện đã đóng gói: {serviceTypeId === 2 ? "Hàng nhẹ" : "Hàng nặng"}.
               </Text>
+
+              {hasUnsupportedMultiParcel ? (
+                <Text style={styles.noticeTextError}>
+                  {MULTI_PARCEL_MESSAGE}
+                </Text>
+              ) : null}
             </View>
 
             <PartyFields
@@ -1988,7 +1949,7 @@ export default function InspectionCollectionScreen() {
               })}
             </View>
 
-            {serviceTypeId === 5 ? (
+            {!hasUnsupportedMultiParcel ? (
               <View
                 style={styles.card}
               >
@@ -1997,7 +1958,7 @@ export default function InspectionCollectionScreen() {
                     styles.sectionTitle
                   }
                 >
-                  Kiện hàng nặng
+                  Kiện GHN đã đóng gói
                 </Text>
 
                 <View
@@ -2013,12 +1974,12 @@ export default function InspectionCollectionScreen() {
 
                   <TextInput
                     value={
-                      heavyItem.name
+                      parcel.name
                     }
                     onChangeText={(
                       name,
                     ) =>
-                      setHeavyItem(
+                      setParcel(
                         (current) => ({
                           ...current,
                           name,
@@ -2046,12 +2007,12 @@ export default function InspectionCollectionScreen() {
 
                   <TextInput
                     value={
-                      heavyItem.code
+                      parcel.code
                     }
                     onChangeText={(
                       code,
                     ) =>
-                      setHeavyItem(
+                      setParcel(
                         (current) => ({
                           ...current,
                           code,
@@ -2068,12 +2029,8 @@ export default function InspectionCollectionScreen() {
 
                 {[
                   [
-                    "quantity",
-                    "Số lượng *",
-                  ],
-                  [
                     "weightGram",
-                    "Khối lượng (gram) *",
+                    "Khối lượng kiện (gram) *",
                   ],
                   [
                     "lengthCm",
@@ -2105,14 +2062,14 @@ export default function InspectionCollectionScreen() {
 
                       <TextInput
                         value={
-                          heavyItem[
-                            key as keyof HeavyItemForm
+                          parcel[
+                            key as keyof ParcelForm
                           ]
                         }
                         onChangeText={(
                           text,
                         ) =>
-                          setHeavyItem(
+                          setParcel(
                             (
                               current,
                             ) => ({

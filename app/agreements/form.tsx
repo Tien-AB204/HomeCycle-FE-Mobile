@@ -88,6 +88,7 @@ const GHN_ERROR_MESSAGES: Record<string, string> = {
   "Ghn.QuoteChanged": "Phí giao hàng đã thay đổi. Vui lòng tính lại phí và kiểm tra trước khi lưu.",
   "Ghn.ServiceUnavailable": "GHN hiện chưa hỗ trợ kiện hàng trên tuyến giao nhận này. Vui lòng kiểm tra địa chỉ hoặc chọn phương thức giao nhận khác.",
   "Ghn.ParcelInformationRequired": "Vui lòng nhập đủ khối lượng và kích thước đóng gói thực tế của kiện hàng.",
+  "Ghn.MultiParcelDimensionsUnverified": "GHN hiện chưa hỗ trợ xác nhận đơn có nhiều kiện trên HomeCycle. Vui lòng chọn Người bán giao hoặc Người mua tự lấy.",
 };
 const formatGhnDate = (value?: string | null) => {
   const date = value ? new Date(value) : null;
@@ -237,19 +238,10 @@ export default function AgreementFormScreen() {
   const [senderExpanded, setSenderExpanded] = useState(false);
   const [receiverExpanded, setReceiverExpanded] = useState(false);
   const [requiredNote, setRequiredNote] = useState<RequiredNote | "">("");
-  // Số kiện hàng là số gói vật lý sau đóng gói — độc lập với số lượng sản
-  // phẩm thương lượng, không bao giờ được suy ra/khóa theo số lượng.
-  const [parcelCount, setParcelCount] = useState("1");
-  // Kích thước đóng gói (cấp đơn/kiện hàng sau đóng gói). Backend không thể
-  // suy an toàn các giá trị này khi số lượng sản phẩm > 1, nên vẫn là trường
-  // nhập riêng — không phải bản sao của kích thước từng sản phẩm.
-  const [lengthCm, setLengthCm] = useState("");
-  const [widthCm, setWidthCm] = useState("");
-  const [heightCm, setHeightCm] = useState("");
-  // Một sản phẩm đã thương lượng duy nhất — không còn danh sách sản phẩm
-  // động. weightGram ở đây là khối lượng MỖI sản phẩm; tổng khối lượng kiện
-  // hàng được suy ra (perUnit * số lượng), không nhập trùng lặp thủ công.
+  // Backend hiện chỉ xác nhận một kiện vật lý. Số lượng Agreement vẫn chỉ là
+  // số lượng thương mại và không tham gia phép tính kiện GHN.
   const [item, setItem] = useState<GhnItemForm>({ ...EMPTY_ITEM });
+  const [hasUnsupportedMultiParcel, setHasUnsupportedMultiParcel] = useState(false);
   const [shippingContent, setShippingContent] = useState("");
   const [packagingHint, setPackagingHint] = useState("");
   const [ghnPreview, setGhnPreview] = useState<GhnPreviewResponse | null>(null);
@@ -258,14 +250,8 @@ export default function AgreementFormScreen() {
   const submitInFlightRef = useRef(false);
   const senderEditedRef = useRef(false);
   const receiverEditedRef = useRef(false);
-  // Set only when an edited Agreement's saved weight is an aggregate with no
-  // per-unit item to read directly; resolved by the effect below once the
-  // negotiated quantity (fetchSummary, loaded in parallel) is known.
-  const pendingEditTotalWeightRef = useRef<number | null>(null);
-  // Integer-safe: both operands come from toPositiveInt (digit-only parsing),
-  // never from formatted-string arithmetic.
-  const totalWeightGram = toPositiveInt(item.weightGram) * Math.max(1, summary.quantity);
-  const serviceTypeId: 2 | 5 = totalWeightGram >= 20000 || toPositiveInt(parcelCount) > 1 ? 5 : 2;
+  const totalWeightGram = toPositiveInt(item.weightGram);
+  const serviceTypeId: 2 | 5 = totalWeightGram >= 20000 ? 5 : 2;
 
   const invalidateQuote = useCallback(() => {
     previewGenerationRef.current += 1;
@@ -283,14 +269,6 @@ export default function AgreementFormScreen() {
     }, Math.max(0, Math.min(remaining, 2147483647)));
     return () => clearTimeout(timeout);
   }, [ghnPreview, invalidateQuote]);
-  useEffect(() => {
-    const pendingTotal = pendingEditTotalWeightRef.current;
-    if (!pendingTotal || !summary.quantity) return;
-    pendingEditTotalWeightRef.current = null;
-    setItem((current) =>
-      current.weightGram ? current : { ...current, weightGram: String(Math.ceil(pendingTotal / summary.quantity)) },
-    );
-  }, [summary.quantity]);
   const updateItem = (patch: Partial<GhnItemForm>) => {
     invalidateQuote();
     setItem(current => ({ ...current, ...patch }));
@@ -309,28 +287,25 @@ export default function AgreementFormScreen() {
   const fetchSummary = useCallback(async () => { if (!negotiationId) return; try { setIsLoadingSummary(true); if (!isEditing) setHasAuthoritativeTerms(false); const negRes = await negotiationApi.getNegotiationById(negotiationId as string); const neg = negRes?.data || negRes; const price = Number(neg?.finalPrice ?? neg?.FinalPrice); const quantity = Number(neg?.finalQuantity ?? neg?.FinalQuantity); if (!isEditing && (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0)) { setNotice({ type: "error", message: FINAL_TERMS_REQUIRED_MESSAGE }); return; } const postId = neg?.postId ?? neg?.PostId; let productName = "Sản phẩm thương lượng"; let productCode = postId || ""; if (postId) { const postRes = await postApi.getPostById(postId); const postData = postRes?.data || postRes; productName = postData?.product?.productName || postData?.productName || productName; productCode = postData?.product?.productId || postData?.productId || postId; let method: DeliveryMethod = "SELLER_DELIVERY"; const raw = postData?.product?.deliveryMethod ?? postData?.deliveryMethod; if (raw === 1 || raw === "GhnDelivery") method = "GHN"; else if (raw === 3 || raw === "BuyerPickUp") method = "BUYER_PICKUP"; setDefaultPostDeliveryMethod(method); } setSummary((current) => ({ productName, productCode, price: isEditing ? current.price : price, quantity: isEditing ? current.quantity : quantity })); if (!isEditing) setHasAuthoritativeTerms(true); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải thông tin giao dịch.") }); } finally { setIsLoadingSummary(false); } }, [isEditing, negotiationId]);
   const hydrateGhnParty = (party: any): GhnPartyFormValue => ({ fullName: capitalizeWordInitials(party?.fullName || ""), phone: party?.phone || "", province: party?.address?.provinceId ? { provinceId: Number(party.address.provinceId), provinceName: party.address.provinceName || "" } : null, district: party?.address?.districtId ? { districtId: Number(party.address.districtId), provinceId: Number(party.address.provinceId || 0), districtName: party.address.districtName || "" } : null, ward: party?.address?.wardCode ? { wardCode: String(party.address.wardCode), districtId: Number(party.address.districtId || 0), wardName: party.address.wardName || "" } : null, addressDetail: capitalizeWordInitials(party?.address?.addressDetail || "") });
   const loadEditLocationOptions = useCallback(async (senderValue: GhnPartyFormValue, receiverValue: GhnPartyFormValue) => { try { const [a, b] = await Promise.all([senderValue.province ? ghnApi.getDistricts(senderValue.province.provinceId) : Promise.resolve([]), receiverValue.province ? ghnApi.getDistricts(receiverValue.province.provinceId) : Promise.resolve([])]); setSenderDistricts(a); setReceiverDistricts(b); const [c, d] = await Promise.all([senderValue.district ? ghnApi.getWards(senderValue.district.districtId) : Promise.resolve([]), receiverValue.district ? ghnApi.getWards(receiverValue.district.districtId) : Promise.resolve([])]); setSenderWards(c); setReceiverWards(d); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải lại dữ liệu địa chỉ GHN.") }); } }, []);
-  const fetchExistingAgreement = useCallback(async () => { if (!isEditing || !editAgreementId) return; const generation = previewGenerationRef.current; try { setIsLoadingData(true); const res = await agreementApi.getAgreementById(editAgreementId as string); const data = res?.data || res; if (!data || generation !== previewGenerationRef.current) return; const price = Number(data.finalPrice ?? data.FinalPrice ?? data.initialPrice ?? data.InitialPrice); const quantity = Number(data.quantity ?? data.Quantity); if (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0) throw new Error("Không tìm thấy giá và số lượng hợp đồng hợp lệ."); invalidateQuote(); setSummary((current) => ({ ...current, price, quantity })); setHasAuthoritativeTerms(true); const inspection = data.agreementType === "Inspection" || data.agreementType === 0; setIsInspection(inspection); setPaymentType(data.paymentType === "Deposit" || data.paymentType === 1 ? "DEPOSIT" : "FULL"); const details = data.agreementDetails || {}; const currentRevision = Number(details.revision ?? data.revision ?? 1); setRevision(Number.isFinite(currentRevision) && currentRevision >= 1 ? currentRevision : 1); setNotes(details.notes || ""); setInspectionDate(details.inspectionDate ? details.inspectionDate.split("T")[0] : ""); setInspectionAddress(details.inspectionAddress || ""); setCollectionDate(details.collectionDate ? details.collectionDate.split("T")[0] : ""); setPickupAddress(details.pickupAddress || ""); setDeliveryAddress(details.deliveryAddress || ""); if (details.deliveryMethod === "SellerDelivers" || details.deliveryMethod === 2) setDeliveryMethod("SELLER_DELIVERY"); else if (details.deliveryMethod === "BuyerPickUp" || details.deliveryMethod === 3) setDeliveryMethod("BUYER_PICKUP"); else if (details.deliveryMethod === "GhnDelivery" || details.deliveryMethod === 1) setDeliveryMethod("GHN"); const info = details.ghnInfo; if (info) { hasFetchedGhnRef.current = true; const s = hydrateGhnParty(info.sender); const r = hydrateGhnParty(info.receiver); setSender(s); setReceiver(r);  setRequiredNote(info.requiredNote || ""); setParcelCount(String(info.parcelCount || 1)); setShippingContent(info.content || "");
-      const parcel = info.lightParcel;
-      setLengthCm(String(info.lengthCm ?? parcel?.lengthCm ?? ""));
-      setWidthCm(String(info.widthCm ?? parcel?.widthCm ?? ""));
-      setHeightCm(String(info.heightCm ?? parcel?.heightCm ?? ""));
-      // A saved Agreement may predate the single-product simplification and
-      // still carry several items; only the first ever represented the
-      // negotiated product, so that is the only one restored for editing.
-      const savedItem = Array.isArray(info.items) && info.items.length ? info.items[0] : null;
-      const dimsFallback = { name: "", quantity: 1, weightGram: 0, lengthCm: parcel?.lengthCm || 0, widthCm: parcel?.widthCm || 0, heightCm: parcel?.heightCm || 0 };
-      if (savedItem?.weightGram) {
-        // Older saves already stored genuine per-unit item weight.
-        setItem(toItemForm(savedItem));
-      } else {
-        // No item weight saved (light-goods path): the saved value is the
-        // shipment AGGREGATE, so a per-unit suggestion needs the negotiated
-        // quantity, which fetchSummary may still be loading in parallel.
-        // Deferred to the effect below once summary.quantity is known.
-        setItem(toItemForm(dimsFallback as any));
-        pendingEditTotalWeightRef.current = toPositiveInt(String(info.weightGram ?? parcel?.weightGram ?? ""));
+  const fetchExistingAgreement = useCallback(async () => { if (!isEditing || !editAgreementId) return; const generation = previewGenerationRef.current; try { setIsLoadingData(true); const res = await agreementApi.getAgreementById(editAgreementId as string); const data = res?.data || res; if (!data || generation !== previewGenerationRef.current) return; const price = Number(data.finalPrice ?? data.FinalPrice ?? data.initialPrice ?? data.InitialPrice); const quantity = Number(data.quantity ?? data.Quantity); if (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0) throw new Error("Không tìm thấy giá và số lượng hợp đồng hợp lệ."); invalidateQuote(); setSummary((current) => ({ ...current, price, quantity })); setHasAuthoritativeTerms(true); const inspection = data.agreementType === "Inspection" || data.agreementType === 0; setIsInspection(inspection); setPaymentType(data.paymentType === "Deposit" || data.paymentType === 1 ? "DEPOSIT" : "FULL"); const details = data.agreementDetails || {}; const currentRevision = Number(details.revision ?? data.revision ?? 1); setRevision(Number.isFinite(currentRevision) && currentRevision >= 1 ? currentRevision : 1); setNotes(details.notes || ""); setInspectionDate(details.inspectionDate ? details.inspectionDate.split("T")[0] : ""); setInspectionAddress(details.inspectionAddress || ""); setCollectionDate(details.collectionDate ? details.collectionDate.split("T")[0] : ""); setPickupAddress(details.pickupAddress || ""); setDeliveryAddress(details.deliveryAddress || ""); if (details.deliveryMethod === "SellerDelivers" || details.deliveryMethod === 2) setDeliveryMethod("SELLER_DELIVERY"); else if (details.deliveryMethod === "BuyerPickUp" || details.deliveryMethod === 3) setDeliveryMethod("BUYER_PICKUP"); else if (details.deliveryMethod === "GhnDelivery" || details.deliveryMethod === 1) setDeliveryMethod("GHN"); const info = details.ghnInfo; if (info) { hasFetchedGhnRef.current = true; const s = hydrateGhnParty(info.sender); const r = hydrateGhnParty(info.receiver); setSender(s); setReceiver(r); setRequiredNote(info.requiredNote || ""); setShippingContent(info.content || "");
+      const savedItems = Array.isArray(info.items) ? info.items : [];
+      const isMultiParcel = Number(info.parcelCount || savedItems.length || 1) > 1 || savedItems.length > 1;
+      setHasUnsupportedMultiParcel(isMultiParcel);
+      if (!isMultiParcel) {
+        const parcel = savedItems[0] ?? info.lightParcel ?? info;
+        setItem(toItemForm({
+          name: savedItems[0]?.name || "Kiện hàng HomeCycle",
+          code: savedItems[0]?.code ?? null,
+          quantity: 1,
+          weightGram: Number(parcel?.weightGram || 0),
+          lengthCm: Number(parcel?.lengthCm || 0),
+          widthCm: Number(parcel?.widthCm || 0),
+          heightCm: Number(parcel?.heightCm || 0),
+        }));
       }
-      setPackagingHint("Vui lòng kiểm tra lại thông tin đóng gói và tính phí trước khi lưu thay đổi.");
+      setPackagingHint(isMultiParcel
+        ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
+        : "Vui lòng kiểm tra lại thông tin kiện đã đóng gói và tính phí trước khi lưu thay đổi.");
       await loadEditLocationOptions(s, r); } } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải dữ liệu hợp đồng hiện tại.") }); } finally { setIsLoadingData(false); } }, [editAgreementId, invalidateQuote, isEditing, loadEditLocationOptions]);
   useFocusEffect(useCallback(() => {
     void fetchProvinces();
@@ -368,28 +343,29 @@ export default function AgreementFormScreen() {
         );
       }
       const suggestedItems = Array.isArray(data.items) ? data.items : [];
-      // Heavy-path items already carry genuine per-unit weight/dims; the
-      // light-path only returns the shipment AGGREGATE, so it is divided
-      // back to a per-unit suggestion (still just a suggestion to review).
-      const suggestedHeavyItem = suggestedItems[0];
-      const suggestedTotalFromLight = data.lightParcel?.weightGram;
-      const suggestedPerUnitWeight = suggestedHeavyItem?.weightGram ||
-        (suggestedTotalFromLight ? Math.ceil(suggestedTotalFromLight / Math.max(1, summary.quantity)) : 0);
-      const parcel = data.requiresPackagingDimensions ? null : data.lightParcel ?? suggestedHeavyItem;
-      setLengthCm(String(parcel?.lengthCm || ""));
-      setWidthCm(String(parcel?.widthCm || ""));
-      setHeightCm(String(parcel?.heightCm || ""));
+      const isMultiParcel = suggestedItems.length > 1;
+      setHasUnsupportedMultiParcel(isMultiParcel);
+      const parcel = isMultiParcel
+        ? null
+        : suggestedItems[0] ?? (data.requiresPackagingDimensions ? null : data.lightParcel);
       setItem({
         ...EMPTY_ITEM,
-        weightGram: suggestedPerUnitWeight ? String(suggestedPerUnitWeight) : "",
-        lengthCm: String(suggestedHeavyItem?.lengthCm || parcel?.lengthCm || ""),
-        widthCm: String(suggestedHeavyItem?.widthCm || parcel?.widthCm || ""),
-        heightCm: String(suggestedHeavyItem?.heightCm || parcel?.heightCm || ""),
+        weightGram: String(parcel?.weightGram || ""),
+        lengthCm: String(parcel?.lengthCm || ""),
+        widthCm: String(parcel?.widthCm || ""),
+        heightCm: String(parcel?.heightCm || ""),
       });
-      setPackagingHint(data.requiresPackagingDimensions
-        ? "Cần nhập kích thước đóng gói thực tế. Kích thước từng sản phẩm chưa mô tả được kiện hàng sau đóng gói."
-        : "Thông số từ bài đăng chỉ là gợi ý. Vui lòng kiểm tra khối lượng, số kiện và kích thước sau đóng gói.");
-      setNotice({ type: "info", message: "Đã lấy gợi ý kiện hàng. Vui lòng kiểm tra và nhập thông tin đóng gói thực tế." });
+      setPackagingHint(isMultiParcel
+        ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
+        : data.requiresPackagingDimensions
+          ? "Vui lòng nhập khối lượng và kích thước thực tế của kiện sau đóng gói."
+          : "Thông số từ bài đăng chỉ là gợi ý. Vui lòng kiểm tra kiện thực tế sau đóng gói.");
+      setNotice({
+        type: isMultiParcel ? "error" : "info",
+        message: isMultiParcel
+          ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
+          : "Đã lấy gợi ý kiện hàng. Vui lòng kiểm tra và nhập thông tin đóng gói thực tế.",
+      });
     } catch {
       if (generation === previewGenerationRef.current)
         setNotice({ type: "error", message: "Không thể lấy gợi ý kiện hàng. Bạn có thể nhập thông tin đóng gói hoặc chọn lại GHN để thử lại." });
@@ -397,11 +373,8 @@ export default function AgreementFormScreen() {
       setIsLoadingGhnInfo(false);
     }
   };
-  // Single negotiated product row. Name/quantity always mirror the
-  // Agreement's own negotiated identity — never a free-typed value — so the
-  // GHN payload can never diverge from what was actually negotiated.
-  const buildPreviewItems = (): GhnItemPayload[] => serviceTypeId === 2 ? [] : [{
-    name: summary.productName.trim(), quantity: summary.quantity,
+  const buildPreviewItems = (): GhnItemPayload[] => [{
+    name: summary.productName.trim() || "Kiện hàng HomeCycle", quantity: 1,
     weightGram: toPositiveInt(item.weightGram), lengthCm: toPositiveInt(item.lengthCm),
     widthCm: toPositiveInt(item.widthCm), heightCm: toPositiveInt(item.heightCm),
   }];
@@ -410,15 +383,12 @@ export default function AgreementFormScreen() {
       return "Vui lòng nhập đầy đủ thông tin và địa chỉ người gửi.";
     if (!receiver.fullName.trim() || !receiver.phone.trim() || !receiver.province || !receiver.district || !receiver.ward || !receiver.addressDetail.trim())
       return "Vui lòng nhập đầy đủ thông tin và địa chỉ người nhận.";
-    if (!toPositiveInt(parcelCount)) return "Vui lòng nhập số kiện đóng gói thực tế lớn hơn 0.";
-    if (!toPositiveInt(item.weightGram)) return "Vui lòng nhập khối lượng mỗi sản phẩm lớn hơn 0.";
+    if (hasUnsupportedMultiParcel) return GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"];
+    if (!toPositiveInt(item.weightGram)) return "Vui lòng nhập khối lượng kiện đã đóng gói lớn hơn 0.";
     if (totalWeightGram > MAX_WEIGHT_GRAM)
-      return "Giao hàng nhanh chỉ hỗ trợ tổng khối lượng đơn hàng tối đa 50 kg. Vui lòng điều chỉnh số lượng, khối lượng hoặc chọn phương thức giao hàng khác.";
-    if ([lengthCm, widthCm, heightCm].some(value => !toPositiveInt(value) || toPositiveInt(value) > 200))
-      return "Kích thước đóng gói phải là số nguyên từ 1 đến 200 cm.";
-    if (serviceTypeId === 5 &&
-      [item.lengthCm, item.widthCm, item.heightCm].some(value => !toPositiveInt(value) || toPositiveInt(value) > 200))
-      return "Kích thước mỗi sản phẩm phải là số nguyên từ 1 đến 200 cm.";
+      return "GHN chỉ hỗ trợ kiện hàng có tổng khối lượng tối đa 50 kg. Vui lòng giảm khối lượng hoặc chọn phương thức giao hàng khác.";
+    if ([item.lengthCm, item.widthCm, item.heightCm].some(value => !toPositiveInt(value) || toPositiveInt(value) > 200))
+      return "Kích thước kiện đã đóng gói phải là số nguyên từ 1 đến 200 cm.";
     if (!requiredNote) return "Vui lòng chọn yêu cầu khi giao hàng.";
     if (shippingContent.trim().length > 2000) return "Nội dung hàng gửi không được vượt quá 2.000 ký tự.";
     return null;
@@ -439,9 +409,9 @@ export default function AgreementFormScreen() {
       const payload: GhnPreviewRequest = {
         agreementType: "No_Inspection", deliveryMethod: "GhnDelivery",
         sender: toPartyPayload(sender), receiver: toPartyPayload(receiver),
-        serviceTypeId, parcelCount: toPositiveInt(parcelCount),
-        weightGram: totalWeightGram, lengthCm: toPositiveInt(lengthCm),
-        widthCm: toPositiveInt(widthCm), heightCm: toPositiveInt(heightCm),
+        serviceTypeId, parcelCount: 1,
+        weightGram: totalWeightGram, lengthCm: toPositiveInt(item.lengthCm),
+        widthCm: toPositiveInt(item.widthCm), heightCm: toPositiveInt(item.heightCm),
         requiredNote: requiredNote as RequiredNote,
         content: shippingContent.trim(), items: buildPreviewItems(),
       };
@@ -488,36 +458,24 @@ export default function AgreementFormScreen() {
     {deliveryMethod === "GHN" ? <View style={styles.configCard}><View style={styles.ghnHeader}><Ionicons name="cube-outline" size={22} color={COLORS.primary} /><Text style={styles.ghnTitle}>Thông tin giao hàng nhanh (GHN)</Text></View>{isLoadingGhnInfo ? <View style={styles.ghnLoadingBox}><ActivityIndicator size="small" color={COLORS.primary} /><Text style={styles.ghnLoadingText}>Đang tự động lấy thông tin kiện hàng...</Text></View> : <><GhnPartyFields title="Thông tin người gửi" value={sender} isExpanded={senderExpanded} onToggle={() => setSenderExpanded(!senderExpanded)} provinces={provinces} districts={senderDistricts} wards={senderWards} loadingDistricts={loadingSenderDistricts} loadingWards={loadingSenderWards} onChange={updateSender} onSelectProvince={selectSenderProvince} onSelectDistrict={selectSenderDistrict} onSelectWard={(ward) => updateSender({ ward })} /><GhnPartyFields title="Thông tin người nhận" value={receiver} isExpanded={receiverExpanded} onToggle={() => setReceiverExpanded(!receiverExpanded)} provinces={provinces} districts={receiverDistricts} wards={receiverWards} loadingDistricts={loadingReceiverDistricts} loadingWards={loadingReceiverWards} onChange={updateReceiver} onSelectProvince={selectReceiverProvince} onSelectDistrict={selectReceiverDistrict} onSelectWard={(ward) => updateReceiver({ ward })} />
         <Text style={styles.quoteHint}>{packagingHint || "Nhập thông tin đóng gói thực tế trước khi tính phí."}</Text>
 
-        <Text style={styles.ghnSubTitle}>Thông tin sản phẩm</Text>
+        <Text style={styles.ghnSubTitle}>Kiện GHN đã đóng gói</Text>
         <View style={styles.ghnSubCard}>
           <Text style={styles.inputLabel} numberOfLines={2}>{summary.productName}</Text>
           <View style={styles.productQtyRow}>
-            <Text style={styles.subLabelInline}>Số lượng sản phẩm</Text>
+            <Text style={styles.subLabelInline}>Số lượng thương mại</Text>
             <Text style={styles.productQtyValue}>{summary.quantity}</Text>
           </View>
-          <NumericInput label="Khối lượng mỗi sản phẩm (g) *" value={item.weightGram} onChangeText={weightGram => updateItem({ weightGram })} />
-          {serviceTypeId === 5 ? <>
-            <Text style={styles.numericHint}>Kích thước mỗi sản phẩm (cm)</Text>
-            <View style={styles.numericGrid}>
-              <NumericInput label="Dài (cm) *" value={item.lengthCm} onChangeText={lengthCm => updateItem({ lengthCm })} />
-              <NumericInput label="Rộng (cm) *" value={item.widthCm} onChangeText={widthCm => updateItem({ widthCm })} />
-              <NumericInput label="Cao (cm) *" value={item.heightCm} onChangeText={heightCm => updateItem({ heightCm })} />
-            </View>
-          </> : null}
-        </View>
-
-        <Text style={styles.ghnSubTitle}>Thông tin đóng gói</Text>
-        <View style={styles.ghnSubCard}>
+          <Text style={styles.numericHint}>HomeCycle hiện hỗ trợ một kiện GHN. Số lượng thương mại không phải số kiện.</Text>
           <Text style={styles.quoteHint}>Loại hàng: {serviceTypeId === 2 ? "Hàng nhẹ" : "Hàng nặng"}</Text>
           <Text style={totalWeightGram > MAX_WEIGHT_GRAM ? styles.numericError : styles.quoteHint}>
-            Tổng khối lượng: {totalWeightGram.toLocaleString("vi-VN")} g (tối đa 50.000 g){totalWeightGram > MAX_WEIGHT_GRAM ? " — vượt giới hạn giao hàng nhanh." : ""}
+            Khối lượng kiện: {totalWeightGram.toLocaleString("vi-VN")} g (tối đa 50.000 g){totalWeightGram > MAX_WEIGHT_GRAM ? " — vượt giới hạn giao hàng nhanh." : ""}
           </Text>
-          <NumericInput label="Số kiện hàng *" hint="Số gói vật lý sau đóng gói, không phải số lượng sản phẩm." value={parcelCount} onChangeText={value => { invalidateQuote(); setParcelCount(value); }} />
-          <Text style={styles.numericHint}>Kích thước đóng gói (cm)</Text>
+          <NumericInput label="Khối lượng kiện đã đóng gói (g) *" value={item.weightGram} onChangeText={weightGram => updateItem({ weightGram })} />
+          <Text style={styles.numericHint}>Kích thước kiện đã đóng gói (cm)</Text>
           <View style={styles.numericGrid}>
-            <NumericInput label="Dài (cm) *" value={lengthCm} onChangeText={value => { invalidateQuote(); setLengthCm(value); }} />
-            <NumericInput label="Rộng (cm) *" value={widthCm} onChangeText={value => { invalidateQuote(); setWidthCm(value); }} />
-            <NumericInput label="Cao (cm) *" value={heightCm} onChangeText={value => { invalidateQuote(); setHeightCm(value); }} />
+            <NumericInput label="Dài (cm) *" value={item.lengthCm} onChangeText={lengthCm => updateItem({ lengthCm })} />
+            <NumericInput label="Rộng (cm) *" value={item.widthCm} onChangeText={widthCm => updateItem({ widthCm })} />
+            <NumericInput label="Cao (cm) *" value={item.heightCm} onChangeText={heightCm => updateItem({ heightCm })} />
           </View>
         </View>
         <View style={styles.inputContainer}>

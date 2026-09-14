@@ -53,12 +53,17 @@ export type CollectionGhnInfoInput = {
   sender: GhnContactInput;
   receiver: GhnContactInput;
   serviceTypeId: 2 | 5;
+  parcelCount: 1;
+  weightGram: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  content?: string | null;
   requiredNote:
     | "CHOTHUHANG"
     | "CHOXEMHANGKHONGTHU"
     | "KHONGCHOXEMHANG";
-  lightParcel?: GhnLightParcelInput | null;
-  items?: GhnItemInput[];
+  items: [GhnItemInput];
 };
 
 export type InspectionFormActions = {

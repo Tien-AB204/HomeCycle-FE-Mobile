@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -18,6 +19,7 @@ import {
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
@@ -65,7 +67,16 @@ export default function PostsScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
+  const isFocused = useIsFocused();
   const { user } = useAuth();
+  const { postNotificationSignal } = useNotifications();
+  const handledPostNotificationVersionRef = useRef(
+    postNotificationSignal.version,
+  );
+  const latestPostNotificationVersionRef = useRef(
+    postNotificationSignal.version,
+  );
+  latestPostNotificationVersionRef.current = postNotificationSignal.version;
 
   const userRole = user?.role?.toLowerCase() || "personal";
   const currentUserId = user?.userId || user?.id;
@@ -132,6 +143,8 @@ export default function PostsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      handledPostNotificationVersionRef.current =
+        latestPostNotificationVersionRef.current;
       if (!currentUserId) {
         setPosts([]);
         setIsLoading(false);
@@ -144,6 +157,25 @@ export default function PostsScreen() {
       void fetchPosts(1, false);
     }, [currentUserId, fetchPosts]),
   );
+
+  useEffect(() => {
+    if (
+      !isFocused ||
+      !currentUserId ||
+      postNotificationSignal.version <= handledPostNotificationVersionRef.current
+    ) {
+      return;
+    }
+
+    handledPostNotificationVersionRef.current = postNotificationSignal.version;
+    setPageNumber(1);
+    void fetchPosts(1, true);
+  }, [
+    currentUserId,
+    fetchPosts,
+    isFocused,
+    postNotificationSignal.version,
+  ]);
 
   const onRefresh = async () => {
     setPendingAction(null);
@@ -378,6 +410,11 @@ export default function PostsScreen() {
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     style={styles.iconBtn}
+                    accessibilityLabel={
+                      post.status === "Closed" && Number(post.remainingQuantity) <= 0
+                        ? "Bổ sung số lượng"
+                        : "Sửa tin đăng"
+                    }
                     onPress={(event) => {
                       event.stopPropagation();
                       router.push({
@@ -387,7 +424,15 @@ export default function PostsScreen() {
                     }}
                     disabled={isProcessing}
                   >
-                    <Ionicons name="pencil-outline" size={18} color={COLORS.primary} />
+                    <Ionicons
+                      name={
+                        post.status === "Closed" && Number(post.remainingQuantity) <= 0
+                          ? "add-circle-outline"
+                          : "pencil-outline"
+                      }
+                      size={18}
+                      color={COLORS.primary}
+                    />
                   </TouchableOpacity>
 
                   {post.status === "Active" ? (
@@ -401,7 +446,7 @@ export default function PostsScreen() {
                     >
                       <Ionicons name="close-circle-outline" size={18} color={COLORS.error} />
                     </TouchableOpacity>
-                  ) : post.status === "Closed" ? (
+                  ) : post.status === "Closed" && Number(post.remainingQuantity) > 0 ? (
                     <TouchableOpacity
                       style={[styles.iconBtn, styles.reactivateButton]}
                       onPress={(event) => {

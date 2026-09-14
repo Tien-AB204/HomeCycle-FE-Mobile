@@ -1886,6 +1886,11 @@ export default function PostFormScreen() {
             )}
 
             <Text style={styles.label}>Số lượng *</Text>
+            {isEditMode ? (
+              <Text style={styles.quantityHelper}>
+                Nhập tổng số lượng mới của tin, không phải số lượng cộng thêm.
+              </Text>
+            ) : null}
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -2057,6 +2062,7 @@ const styles = StyleSheet.create({
   imagePreview: { width: 90, height: 90, borderRadius: 12 },
   removeImageBtn: { position: "absolute", top: -6, right: -6, backgroundColor: COLORS.white, borderRadius: 12 },
   label: { fontSize: 13, fontWeight: "600", color: COLORS.text, marginBottom: 8 },
+  quantityHelper: { fontSize: 12, color: COLORS.textLight, marginTop: -4, marginBottom: 8 },
   required: { color: COLORS.error, fontWeight: "normal" },
   inputContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, minHeight: 46, backgroundColor: "#F8F9FA", marginBottom: 16, overflow: "hidden" },
   shortDescription: { minHeight: 80, alignItems: "flex-start", paddingTop: 12 },

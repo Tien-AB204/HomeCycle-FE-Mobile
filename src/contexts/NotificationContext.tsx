@@ -13,6 +13,7 @@ import apiClient from "../services/apis/axiosClient";
 import {
   navigateToNotificationTarget,
   normalizeNotificationItem,
+  normalizeTargetType,
 } from "../services/notifications/notificationTargets";
 import {
   consumeInitialNotificationResponse,
@@ -26,6 +27,10 @@ import { useChatRealtime } from "./ChatRealtimeContext";
 
 type NotificationContextValue = {
   unreadCount: number;
+  postNotificationSignal: {
+    version: number;
+    targetId: string | null;
+  };
   refreshUnreadCount: () => Promise<number>;
   markNotificationAsRead: (notificationId: string) => Promise<any>;
   markAllNotificationsAsRead: () => Promise<any>;
@@ -67,6 +72,10 @@ export function NotificationProvider({
   const { connection, reconnectVersion } = useChatRealtime();
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [postNotificationSignal, setPostNotificationSignal] = useState({
+    version: 0,
+    targetId: null as string | null,
+  });
   const [systemNotificationsEnabled, setSystemNotificationsEnabledState] =
     useState(true);
   const [
@@ -169,6 +178,7 @@ export function NotificationProvider({
 
     if (!userToken) {
       setUnreadCount(0);
+      setPostNotificationSignal({ version: 0, targetId: null });
       return;
     }
 
@@ -233,6 +243,13 @@ export function NotificationProvider({
       }
 
       if (!isNewNotification) return;
+
+      if (item && normalizeTargetType(item.targetType) === "post") {
+        setPostNotificationSignal((current) => ({
+          version: current.version + 1,
+          targetId: item.targetId,
+        }));
+      }
 
       const isRead = Boolean(
         notification?.isRead ?? notification?.IsRead ?? false,
@@ -372,6 +389,7 @@ export function NotificationProvider({
     <NotificationContext.Provider
       value={{
         unreadCount,
+        postNotificationSignal,
         refreshUnreadCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,

@@ -25,6 +25,7 @@ import {
 
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
@@ -387,7 +388,15 @@ export default function PostDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const { user } = useAuth();
+  const { postNotificationSignal } = useNotifications();
   const currentUserId = user?.userId || user?.id;
+  const handledPostNotificationVersionRef = useRef(
+    postNotificationSignal.version,
+  );
+  const latestPostNotificationVersionRef = useRef(
+    postNotificationSignal.version,
+  );
+  latestPostNotificationVersionRef.current = postNotificationSignal.version;
 
   const [post, setPost] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -570,10 +579,37 @@ export default function PostDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      handledPostNotificationVersionRef.current =
+        latestPostNotificationVersionRef.current;
       void fetchPostData();
       return () => { postLoadVersion.current += 1; };
     }, [fetchPostData]),
   );
+
+  useEffect(() => {
+    if (
+      !isFocused ||
+      postNotificationSignal.version <= handledPostNotificationVersionRef.current
+    ) {
+      return;
+    }
+
+    handledPostNotificationVersionRef.current = postNotificationSignal.version;
+    const visiblePostId = normalizePostId(Array.isArray(id) ? id[0] : id);
+
+    if (
+      visiblePostId &&
+      normalizePostId(postNotificationSignal.targetId) === visiblePostId
+    ) {
+      void fetchPostData();
+    }
+  }, [
+    fetchPostData,
+    id,
+    isFocused,
+    postNotificationSignal.targetId,
+    postNotificationSignal.version,
+  ]);
 
   const isMyPost = Boolean(
     currentUserId &&
@@ -1893,7 +1929,7 @@ export default function PostDetailScreen() {
                   />
                   <Text style={styles.dangerBtnText}>Đóng tin</Text>
                 </TouchableOpacity>
-              ) : post.status === "Closed" ? (
+              ) : post.status === "Closed" && Number(post.remainingQuantity) > 0 ? (
                 <TouchableOpacity
                   style={styles.reactivateBtn}
                   onPress={handleReactivatePost}
@@ -1917,7 +1953,11 @@ export default function PostDetailScreen() {
                 }
               >
                 <Ionicons name="pencil" size={20} color={COLORS.white} />
-                <Text style={styles.primaryBtnText}>Sửa tin đăng</Text>
+                <Text style={styles.primaryBtnText}>
+                  {post.status === "Closed" && Number(post.remainingQuantity) <= 0
+                    ? "Bổ sung số lượng"
+                    : "Sửa tin đăng"}
+                </Text>
               </TouchableOpacity>
             </>
           ) : post.status === "Active" ? (
