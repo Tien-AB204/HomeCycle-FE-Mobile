@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -13,7 +14,9 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
@@ -25,6 +28,14 @@ type FeedbackState = {
   text: string;
 } | null;
 
+type PaymentQuote = {
+  paymentType: string | number;
+  depositRatePercent: number;
+  baseAmount: number;
+  shippingFee: number;
+  amountToPay: number;
+};
+
 const agreementApi = {
   getAgreementById: (agreementId: string) =>
     apiClient
@@ -33,6 +44,11 @@ const agreementApi = {
 };
 
 const paymentApi = {
+  getQuote: (agreementId: string) =>
+    apiClient
+      .get(`/payments/${agreementId}/quote`)
+      .then((response) => response.data),
+
   checkoutWithPayOS: (
     agreementId: string,
     payload: { returnUrl: string; cancelUrl: string },
@@ -53,6 +69,34 @@ const walletApi = {
 };
 
 const unwrap = (value: any) => value?.data ?? value;
+
+const normalizeEnum = (value: unknown) =>
+  String(value ?? "").trim().toLowerCase();
+
+const normalizeId = (value: unknown) =>
+  String(value ?? "").trim().toLowerCase();
+
+
+const normalizePaymentQuote = (value: any): PaymentQuote => {
+  const data = unwrap(value);
+  const quote: PaymentQuote = {
+    paymentType: data?.paymentType,
+    depositRatePercent: Number(data?.depositRatePercent),
+    baseAmount: Number(data?.baseAmount),
+    shippingFee: Number(data?.shippingFee),
+    amountToPay: Number(data?.amountToPay),
+  };
+
+  if (
+    (quote.paymentType === null || quote.paymentType === undefined) ||
+    ![quote.depositRatePercent, quote.baseAmount, quote.shippingFee, quote.amountToPay]
+      .every((amount) => Number.isFinite(amount) && amount >= 0)
+  ) {
+    throw new Error("Báo giá thanh toán từ hệ thống không hợp lệ.");
+  }
+
+  return quote;
+};
 
 function InlineFeedback({ feedback }: { feedback: FeedbackState }) {
   if (!feedback) return null;
@@ -100,12 +144,14 @@ function InlineFeedback({ feedback }: { feedback: FeedbackState }) {
 export default function CheckoutScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { user } = useAuth();
 
   const agreementId = Array.isArray(params.agreementId)
     ? params.agreementId[0]
     : params.agreementId;
 
   const [agreement, setAgreement] = useState<any>(null);
+  const [quote, setQuote] = useState<PaymentQuote | null>(null);
   const [wallet, setWallet] = useState<any>(null);
   const [walletLoadError, setWalletLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -115,6 +161,7 @@ export default function CheckoutScreen() {
     "wallet",
   );
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [showLowAmountConfirm, setShowLowAmountConfirm] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   const clearFeedback = useCallback(() => setFeedback(null), []);
@@ -134,6 +181,7 @@ export default function CheckoutScreen() {
   const fetchCheckoutData = useCallback(async () => {
     if (!agreementId) {
       setAgreement(null);
+      setQuote(null);
       setWallet(null);
       setIsLoading(false);
       showError("Không tìm thấy mã hợp đồng cần thanh toán.");
@@ -145,16 +193,21 @@ export default function CheckoutScreen() {
       clearFeedback();
       setWalletLoadError("");
 
-      const [agreementResult, walletResult] = await Promise.allSettled([
+      const [agreementResult, quoteResult, walletResult] = await Promise.allSettled([
         agreementApi.getAgreementById(agreementId),
+        paymentApi.getQuote(agreementId),
         walletApi.getMyWallet(),
       ]);
 
       if (agreementResult.status === "rejected") {
         throw agreementResult.reason;
       }
+      if (quoteResult.status === "rejected") {
+        throw quoteResult.reason;
+      }
 
       setAgreement(unwrap(agreementResult.value));
+      setQuote(normalizePaymentQuote(quoteResult.value));
 
       if (walletResult.status === "fulfilled") {
         const nextWallet = unwrap(walletResult.value);
@@ -174,6 +227,7 @@ export default function CheckoutScreen() {
     } catch (error: unknown) {
       console.error("Lỗi lấy thông tin thanh toán:", error);
       setAgreement(null);
+      setQuote(null);
       showError(
         getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
       );
@@ -189,11 +243,16 @@ export default function CheckoutScreen() {
     }, [fetchCheckoutData]),
   );
 
-  const finalPrice = Number(agreement?.finalPrice || 0);
-  const isDeposit = agreement?.paymentType === "Deposit";
-  const amountToPay = isDeposit ? finalPrice * 0.2 : finalPrice;
-  const platformFee = 0;
-  const totalPayment = amountToPay + platformFee;
+  const isDeposit = ["deposit", "1"].includes(normalizeEnum(quote?.paymentType));
+  const depositRatePercent = quote?.depositRatePercent ?? 0;
+  const baseAmount = quote?.baseAmount ?? 0;
+  const shippingFee = quote?.shippingFee ?? 0;
+  const totalPayment = quote?.amountToPay ?? 0;
+  const currentUserId = normalizeId(user?.userId || user?.id);
+  const buyerId = normalizeId(agreement?.buyerId ?? agreement?.buyerUserId);
+  const sellerId = normalizeId(agreement?.sellerId ?? agreement?.sellerUserId);
+  const isBuyer = Boolean(currentUserId && buyerId && currentUserId === buyerId);
+  const isSeller = Boolean(currentUserId && sellerId && currentUserId === sellerId);
 
   const availableBalance = Number(
     wallet?.availableBalance ?? wallet?.AvailableBalance ?? 0,
@@ -212,6 +271,7 @@ export default function CheckoutScreen() {
     isProcessing ||
     isPaymentCompleted ||
     !hasAcceptedTerms ||
+    isSeller ||
     (paymentMethod === "wallet" && isWalletDisabled);
 
   React.useEffect(() => {
@@ -245,7 +305,7 @@ export default function CheckoutScreen() {
     }
   };
 
-  const handlePaymentSubmit = async () => {
+  const handlePaymentSubmit = async (confirmedLowAmount = false) => {
     if (!agreementId) {
       showError("Không tìm thấy mã hợp đồng cần thanh toán.");
       return;
@@ -275,6 +335,16 @@ export default function CheckoutScreen() {
         );
         return;
       }
+    }
+
+    if (
+      paymentMethod === "payos" &&
+      totalPayment < 10_000 &&
+      !confirmedLowAmount
+    ) {
+      clearFeedback();
+      setShowLowAmountConfirm(true);
+      return;
     }
 
     clearFeedback();
@@ -366,7 +436,7 @@ export default function CheckoutScreen() {
     );
   }
 
-  if (!agreement) {
+  if (!agreement || !quote) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Header title="Thanh toán" showBack={true} />
@@ -393,24 +463,43 @@ export default function CheckoutScreen() {
     <SafeAreaView style={styles.safeArea}>
       <Header title="Thanh toán" showBack={true} />
       <View style={styles.container}>
+        {isBuyer || isSeller ? (
+          <View style={styles.transactionRoleCard}>
+            <View>
+              <Text style={styles.transactionRoleLabel}>Vai trò của bạn</Text>
+              <Text style={styles.transactionRoleValue}>
+                {isBuyer ? "Người mua" : "Người bán"}
+              </Text>
+            </View>
+            <Text style={styles.transactionRoleHint}>
+              {isBuyer
+                ? "Người mua thực hiện thanh toán hợp đồng."
+                : "Chỉ Người mua có thể thanh toán hợp đồng này."}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.invoiceCard}>
           <Text style={styles.sectionTitle}>Tổng hóa đơn</Text>
           <View style={styles.row}>
-            <Text style={styles.label}>
-              {isDeposit ? "Tiền cọc (20%):" : "Thanh toán toàn phần:"}
-            </Text>
-            <Text style={styles.value}>{formatCurrency(amountToPay)}</Text>
+            <Text style={styles.label}>Giá trị tiền hàng:</Text>
+            <Text style={styles.value}>{formatCurrency(baseAmount)}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Phí nền tảng:</Text>
-            <Text style={styles.value}>{formatCurrency(platformFee)}</Text>
-          </View>
+          {isDeposit ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Tỷ lệ đặt cọc:</Text>
+              <Text style={styles.value}>{depositRatePercent}%</Text>
+            </View>
+          ) : null}
+          {shippingFee > 0 ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Phí vận chuyển:</Text>
+              <Text style={styles.value}>{formatCurrency(shippingFee)}</Text>
+            </View>
+          ) : null}
           <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.totalLabel}>Tổng thanh toán:</Text>
-            <Text style={styles.totalValue}>
-              {formatCurrency(totalPayment)}
-            </Text>
+            <Text style={styles.totalValue}>{formatCurrency(totalPayment)}</Text>
           </View>
         </View>
 
@@ -585,6 +674,40 @@ export default function CheckoutScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+      <Modal
+        visible={showLowAmountConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLowAmountConfirm(false)}
+      >
+        <ModalBackdrop
+          style={styles.confirmBackdrop}
+          onPress={() => setShowLowAmountConfirm(false)}
+        >
+          <ModalSurface style={styles.confirmCard}>
+            <Text style={styles.confirmMessage}>
+              Số tiền cần thanh toán hiện dưới 10.000đ. PayOS có thể từ chối giao dịch do giới hạn số tiền tối thiểu.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmSecondaryButton}
+                onPress={() => setShowLowAmountConfirm(false)}
+              >
+                <Text style={styles.confirmSecondaryText}>Chọn phương thức khác</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmPrimaryButton}
+                onPress={() => {
+                  setShowLowAmountConfirm(false);
+                  void handlePaymentSubmit(true);
+                }}
+              >
+                <Text style={styles.confirmPrimaryText}>Vẫn tiếp tục</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -627,6 +750,32 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  transactionRoleCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.24)",
+    borderRadius: 12,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  transactionRoleLabel: { color: COLORS.textLight, fontSize: 11 },
+  transactionRoleValue: {
+    marginTop: 2,
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  transactionRoleHint: {
+    flex: 1,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "right",
   },
   sectionTitle: {
     fontSize: 16,
@@ -757,4 +906,56 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backBtnText: { color: COLORS.primary, fontSize: 15, fontWeight: "700" },
+  confirmBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    backgroundColor: "rgba(23, 40, 48, 0.45)",
+    padding: 20,
+  },
+  confirmCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+  },
+  confirmMessage: {
+    color: COLORS.text,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 20,
+  },
+  confirmSecondaryButton: {
+    flex: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  confirmSecondaryText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  confirmPrimaryButton: {
+    flex: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  confirmPrimaryText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+  },
 });
