@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 
+import OfferManagementPanel from "../../src/components/offers/OfferManagementPanel";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -25,8 +26,14 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+import { isBuyPostType } from "../../src/utils/postType";
 
-type PostTab = "active" | "closed";
+type PostTab = "all" | "active" | "closed";
+type PostSection = "posts" | "offers";
+type OfferTab = "received" | "sent";
+
+const readParam = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value;
 type PostAction = "close" | "reactivate";
 
 type PendingAction = {
@@ -65,6 +72,13 @@ const postApi = {
 
 export default function PostsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ section?: string; tab?: string }>();
+  const requestedSection: PostSection =
+    readParam(params.section) === "offers" ? "offers" : "posts";
+  const requestedOfferTab: OfferTab =
+    readParam(params.tab) === "sent" ? "sent" : "received";
+  const requestedKey = `${readParam(params.section) ?? ""}:${readParam(params.tab) ?? ""}`;
+  const handledRequestKeyRef = useRef(requestedKey);
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
   const isFocused = useIsFocused();
@@ -81,7 +95,17 @@ export default function PostsScreen() {
   const userRole = user?.role?.toLowerCase() || "personal";
   const currentUserId = user?.userId || user?.id;
 
-  const [activeTab, setActiveTab] = useState<PostTab>("active");
+  const [section, setSection] = useState<PostSection>(requestedSection);
+  const [offerTab, setOfferTab] = useState<OfferTab>(requestedOfferTab);
+  const [activeTab, setActiveTab] = useState<PostTab>("all");
+
+  useEffect(() => {
+    // Deep links (e.g. migrated /chat?tab=received) select the Đề nghị section.
+    if (handledRequestKeyRef.current === requestedKey) return;
+    handledRequestKeyRef.current = requestedKey;
+    setSection(requestedSection);
+    setOfferTab(requestedOfferTab);
+  }, [requestedKey, requestedOfferTab, requestedSection]);
   const [posts, setPosts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -161,6 +185,7 @@ export default function PostsScreen() {
   useEffect(() => {
     if (
       !isFocused ||
+      section !== "posts" ||
       !currentUserId ||
       postNotificationSignal.version <= handledPostNotificationVersionRef.current
     ) {
@@ -175,6 +200,7 @@ export default function PostsScreen() {
     fetchPosts,
     isFocused,
     postNotificationSignal.version,
+    section,
   ]);
 
   const onRefresh = async () => {
@@ -343,7 +369,9 @@ export default function PostsScreen() {
         ? pendingAction.action
         : null;
     const message = postMessage?.postId === post.postId ? postMessage : null;
-    const imageUrl = Array.isArray(post.medias) ? post.medias[0]?.url : null;
+    const isBuyPost = isBuyPostType(post.postType);
+    const imageUrl =
+      !isBuyPost && Array.isArray(post.medias) ? post.medias[0]?.url : null;
 
     return (
       <View key={post.postId} style={styles.cardWrapper}>
@@ -357,19 +385,17 @@ export default function PostsScreen() {
             })
           }
         >
-          {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.postImage} resizeMode="cover" />
-          ) : (
-            <View style={styles.iconBox}>
-              <Ionicons
-                name={post.postType === "Sell" ? "cube-outline" : "megaphone-outline"}
-                size={32}
-                color={COLORS.primary}
-              />
-            </View>
-          )}
+          {!isBuyPost ? (
+            imageUrl ? (
+              <Image source={{ uri: imageUrl }} style={styles.postImage} resizeMode="cover" />
+            ) : (
+              <View style={styles.iconBox}>
+                <Ionicons name="cube-outline" size={32} color={COLORS.primary} />
+              </View>
+            )
+          ) : null}
 
-          <View style={styles.cardContent}>
+          <View style={[styles.cardContent, isBuyPost ? styles.textOnlyCardContent : undefined]}>
             <Text style={styles.cardTitle} numberOfLines={2}>
               {post.productName || post.description || "Không có tiêu đề"}
             </Text>
@@ -534,33 +560,66 @@ export default function PostsScreen() {
       <View style={[styles.mobileWrapper, isWeb ? styles.webWrapper : undefined]}>
         <MainHeader title="Quản lý tin đăng" />
 
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabBtn, activeTab === "active" ? styles.tabBtnActive : undefined]}
-            onPress={() => {
-              setPageMessage(null);
-              setActiveTab("active");
-            }}
-          >
-            <Text
-              style={[styles.tabText, activeTab === "active" ? styles.tabTextActive : undefined]}
-            >
-              {userRole === "personal" ? "Đang hiển thị" : "Đang thu mua"} ({activePosts.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, activeTab === "closed" ? styles.tabBtnActive : undefined]}
-            onPress={() => {
-              setPageMessage(null);
-              setActiveTab("closed");
-            }}
-          >
-            <Text
-              style={[styles.tabText, activeTab === "closed" ? styles.tabTextActive : undefined]}
-            >
-              Đã đóng ({closedPosts.length})
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.sectionSwitcher}>
+          {([
+            { key: "posts", label: "Bài đăng", icon: "document-text-outline" },
+            { key: "offers", label: "Đề nghị", icon: "swap-horizontal-outline" },
+          ] as const).map((item) => {
+            const selected = section === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.sectionBtn, selected ? styles.sectionBtnActive : undefined]}
+                onPress={() => {
+                  setPageMessage(null);
+                  setSection(item.key);
+                }}
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={16}
+                  color={selected ? COLORS.white : COLORS.primary}
+                />
+                <Text style={[styles.sectionText, selected ? styles.sectionTextActive : undefined]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {section === "offers" ? (
+          <OfferManagementPanel initialTab={offerTab} />
+        ) : (
+          <>
+        <View style={styles.statusFilterContainer}>
+          {([
+            { key: "all", label: "Tất cả", count: validPosts.length },
+            {
+              key: "active",
+              label: userRole === "personal" ? "Đang hiển thị" : "Đang thu mua",
+              count: activePosts.length,
+            },
+            { key: "closed", label: "Đã đóng", count: closedPosts.length },
+          ] as const).map((item) => {
+            const selected = activeTab === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.statusChip, selected ? styles.statusChipActive : undefined]}
+                onPress={() => {
+                  setPageMessage(null);
+                  setActiveTab(item.key);
+                }}
+              >
+                <Text
+                  style={[styles.statusChipText, selected ? styles.statusChipTextActive : undefined]}
+                >
+                  {item.label} ({item.count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {pageMessage ? (
@@ -606,21 +665,29 @@ export default function PostsScreen() {
               />
             }
           >
-            {activeTab === "active" ? (
-              activePosts.length > 0 ? (
-                activePosts.map(renderCard)
-              ) : (
-                <Text style={styles.emptyText}>
-                  {userRole === "personal"
+            {(() => {
+              const visiblePosts =
+                activeTab === "active"
+                  ? activePosts
+                  : activeTab === "closed"
+                    ? closedPosts
+                    : validPosts;
+
+              if (visiblePosts.length > 0) {
+                return visiblePosts.map(renderCard);
+              }
+
+              const emptyText =
+                activeTab === "active"
+                  ? userRole === "personal"
                     ? "Chưa có tin đăng nào đang hoạt động."
-                    : "Chưa có tin thu mua nào đang hoạt động."}
-                </Text>
-              )
-            ) : closedPosts.length > 0 ? (
-              closedPosts.map(renderCard)
-            ) : (
-              <Text style={styles.emptyText}>Bạn chưa đóng tin đăng nào.</Text>
-            )}
+                    : "Chưa có tin thu mua nào đang hoạt động."
+                  : activeTab === "closed"
+                    ? "Bạn chưa đóng tin đăng nào."
+                    : "Bạn chưa có tin đăng nào.";
+
+              return <Text style={styles.emptyText}>{emptyText}</Text>;
+            })()}
 
             {hasMore && !isLoading ? (
               <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore}>
@@ -639,6 +706,8 @@ export default function PostsScreen() {
         <TouchableOpacity style={styles.fabButton} onPress={() => router.push("/posts/post-form")}>
           <Ionicons name="add" size={32} color={COLORS.white} />
         </TouchableOpacity>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -676,22 +745,49 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   loginBtnText: { color: COLORS.white, fontSize: 16, fontWeight: "bold" },
-  tabContainer: {
+  sectionSwitcher: {
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: COLORS.white,
   },
-  tabBtn: {
+  sectionBtn: {
     flex: 1,
+    minHeight: 38,
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
   },
-  tabBtnActive: { borderBottomColor: COLORS.primary },
-  tabText: { color: COLORS.textLight, fontSize: 14, fontWeight: "600" },
-  tabTextActive: { color: COLORS.primary },
+  sectionBtnActive: { backgroundColor: COLORS.primary },
+  sectionText: { color: COLORS.primary, fontSize: 14, fontWeight: "700" },
+  sectionTextActive: { color: COLORS.white },
+  statusFilterContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  statusChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#F8F9FA",
+  },
+  statusChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  statusChipText: { color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
+  statusChipTextActive: { color: COLORS.white },
   pageMessage: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -730,6 +826,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   cardContent: { flex: 1, justifyContent: "space-between", marginLeft: 12 },
+  textOnlyCardContent: { marginLeft: 0 },
   cardTitle: { marginBottom: 2, color: COLORS.text, fontSize: 15, fontWeight: "bold" },
   cardPrice: { marginBottom: 4, color: COLORS.error, fontSize: 15, fontWeight: "bold" },
   descText: { marginBottom: 4, color: COLORS.textLight, fontSize: 12 },
