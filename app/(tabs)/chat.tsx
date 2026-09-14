@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   useFocusEffect,
   useLocalSearchParams,
+  useRootNavigationState,
   useRouter,
 } from "expo-router";
 import React, {
@@ -124,6 +125,7 @@ function InlineFeedback({
 
 export default function ChatListScreen() {
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
   const params = useLocalSearchParams();
   const legacyTabParam = Array.isArray(params.tab)
     ? params.tab[0]
@@ -135,12 +137,20 @@ export default function ChatListScreen() {
 
   useEffect(() => {
     if (!legacyOfferTab) return;
-    // Offer management moved under Post → Đề nghị; keep old links working.
-    router.replace({
-      pathname: "/(tabs)/posts",
-      params: { section: "offers", tab: legacyOfferTab },
-    } as any);
-  }, [legacyOfferTab, router]);
+    // Navigator isn't mounted yet on a cold/direct load of this URL; wait for it
+    // so router.replace doesn't throw "navigate before mounting the Root Layout".
+    if (!rootNavigationState?.key) return;
+    // On a cold static-web load this effect can still fire before the root
+    // navigator ref finishes attaching; push the replace past that commit.
+    const timeoutId = setTimeout(() => {
+      // Offer management moved under Post → Đề nghị; keep old links working.
+      router.replace({
+        pathname: "/(tabs)/posts",
+        params: { section: "offers", tab: legacyOfferTab },
+      } as any);
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, [legacyOfferTab, router, rootNavigationState?.key]);
 
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
