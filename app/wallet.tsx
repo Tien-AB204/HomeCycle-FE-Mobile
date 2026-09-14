@@ -393,7 +393,7 @@ export default function WalletScreen() {
             <View style={styles.businessWarning}>
               <Ionicons name="warning-outline" size={18} color="#9A6418" />
               <Text style={styles.businessWarningText}>
-                Tạm khóa rút tiền cho Business vì backend hiện đang lấy nhầm ví Personal khi tạo withdrawal. Bạn vẫn có thể xem số dư và lịch sử ví.
+                Tài khoản doanh nghiệp hiện chưa hỗ trợ gửi yêu cầu rút tiền. Bạn vẫn có thể xem số dư và lịch sử ví.
               </Text>
             </View>
           ) : null}
@@ -459,7 +459,7 @@ export default function WalletScreen() {
           <View style={styles.cardHeaderRow}>
             <View>
               <Text style={styles.cardTitle}>Biến động ví</Text>
-              <Text style={styles.countText}>{totalCount} giao dịch ledger</Text>
+              <Text style={styles.countText}>{totalCount} giao dịch</Text>
             </View>
             <TouchableOpacity style={styles.refreshButton} onPress={() => void loadPage(pageNumber, true)}>
               <Ionicons name="refresh" size={18} color={COLORS.primary} />
