@@ -329,6 +329,58 @@ const getTimelineTime = (value: unknown) => {
   return Number.isFinite(time) ? time : 0;
 };
 
+const MESSAGE_PAGE_SIZE = 50;
+
+type TimelineMergeAuthority = "authoritative" | "backfill";
+
+const mergeTimelineMessages = (
+  existing: any[],
+  incoming: any[],
+  authority: TimelineMergeAuthority,
+) => {
+  if (existing.length === 0) return incoming;
+
+  const incomingById = new Map(
+    incoming.map((message) => [String(message.id), message]),
+  );
+  const existingIds = new Set(existing.map((message) => String(message.id)));
+  const merged = existing.map((message) =>
+    authority === "authoritative"
+      ? incomingById.get(String(message.id)) || message
+      : message,
+  );
+
+  incoming.forEach((message) => {
+    if (!existingIds.has(String(message.id))) merged.push(message);
+  });
+
+  return merged
+    .sort((first, second) => {
+      const createdAtDifference =
+        getTimelineTime(first.createdAt) - getTimelineTime(second.createdAt);
+      if (createdAtDifference !== 0) return createdAtDifference;
+
+      const sourceMessageDifference = String(first.sourceMessageId || first.id)
+        .localeCompare(String(second.sourceMessageId || second.id));
+      if (sourceMessageDifference !== 0) return sourceMessageDifference;
+
+      return Number(first.timelineItemOrder || 0) - Number(second.timelineItemOrder || 0);
+    });
+};
+
+const markLatestAgreementCard = (items: any[]) => {
+  let latestAgreementCardIndex = -1;
+  items.forEach((item, index) => {
+    if (item.type === "agreement_card") latestAgreementCardIndex = index;
+  });
+
+  return items.map((item, index) =>
+    item.type === "agreement_card"
+      ? { ...item, isLatestAgreement: index === latestAgreementCardIndex }
+      : item,
+  );
+};
+
 const applyTimelineGrouping = (items: any[]) => {
   const grouped = items.map((item) => ({
     ...item,
@@ -464,6 +516,14 @@ export default function ChatDetailScreen() {
   const isNearLatestRef = useRef(true);
   const scrollRetryTimersRef =
     useRef<ReturnType<typeof setTimeout>[]>([]);
+  const messagePageStateRef = useRef({
+    generation: 0,
+    nextPage: 2,
+    hasOlderMessages: true,
+    loadedPages: new Set<number>(),
+    inFlightPages: new Set<number>(),
+    loadedRawMessageIds: new Set<string>(),
+  });
 
   const clearScheduledScrolls = useCallback(() => {
     scrollRetryTimersRef.current.forEach((timer) =>
@@ -514,6 +574,8 @@ export default function ChatDetailScreen() {
   );
 
   const [messages, setMessages] = useState<any[]>([]);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(true);
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -558,7 +620,17 @@ export default function ChatDetailScreen() {
     setNegotiationInfo(null);
     negotiationInfoRef.current = null;
     processedRealtimeMessageIdsRef.current.clear();
+    messagePageStateRef.current = {
+      generation: messagePageStateRef.current.generation + 1,
+      nextPage: 2,
+      hasOlderMessages: true,
+      loadedPages: new Set(),
+      inFlightPages: new Set(),
+      loadedRawMessageIds: new Set(),
+    };
     setMessages([]);
+    setIsLoadingOlderMessages(false);
+    setHasOlderMessages(true);
     setAgreementPreview(null);
     setRevealedSystemMessageIds(new Set());
     setLoadError(null);
@@ -567,6 +639,10 @@ export default function ChatDetailScreen() {
     animateNextScrollToLatestRef.current = false;
     isNearLatestRef.current = true;
     setIsResolvingRoute(true);
+
+    return () => {
+      messagePageStateRef.current.generation += 1;
+    };
   }, [routeId, requestedNegotiationId]);
 
   useEffect(() => {
@@ -1190,28 +1266,42 @@ export default function ChatDetailScreen() {
   const fetchMessagesOnly =
     useCallback(async (
       targetNegotiationId?: string,
+      pageNumber = 1,
     ) => {
       const effectiveNegotiationId =
         targetNegotiationId ||
         negotiationId;
 
       if (!effectiveNegotiationId || !currentUserId) {
-        return;
+        return false;
       }
 
       const info =
         negotiationInfoRef.current;
 
       if (!info) {
-        return;
+        return false;
       }
+
+      const pageState = messagePageStateRef.current;
+      const requestGeneration = pageState.generation;
+      if (pageState.inFlightPages.has(pageNumber)) {
+        return false;
+      }
+
+      if (pageNumber > 1 && !pageState.hasOlderMessages) {
+        return false;
+      }
+
+      pageState.inFlightPages.add(pageNumber);
+      if (pageNumber > 1) setIsLoadingOlderMessages(true);
 
       try {
         const messageResponse =
           await messageApi.getMessages({
             negotiationId: effectiveNegotiationId,
-            PageNumber: 1,
-            PageSize: 50,
+            PageNumber: pageNumber,
+            PageSize: MESSAGE_PAGE_SIZE,
           });
 
         const messageData =
@@ -1223,11 +1313,49 @@ export default function ChatDetailScreen() {
         if (Array.isArray(messageData)) {
           rawMessages = [...messageData];
         } else if (
+          Array.isArray(messageData?.Items) ||
           Array.isArray(messageData?.items)
         ) {
           rawMessages = [
-            ...messageData.items,
+            ...(messageData.Items ?? messageData.items),
           ];
+        }
+
+        const responsePageNumber = Number(
+          messageData?.PageNumber ?? messageData?.pageNumber,
+        );
+        const responsePageSize = Number(
+          messageData?.PageSize ?? messageData?.pageSize,
+        );
+        const totalCount = Number(
+          messageData?.TotalCount ?? messageData?.totalCount,
+        );
+        const minimumMessagesThroughThisPage =
+          (pageNumber - 1) * responsePageSize + rawMessages.length;
+        const hasValidPaginationMetadata =
+          Number.isInteger(responsePageNumber) &&
+          responsePageNumber === pageNumber &&
+          Number.isInteger(responsePageSize) &&
+          responsePageSize > 0 &&
+          Number.isInteger(totalCount) &&
+          totalCount >= minimumMessagesThroughThisPage;
+        const rawMessageIds = rawMessages
+          .map((message) =>
+            String(message?.messageId ?? message?.MessageId ?? "").trim(),
+          )
+          .filter(Boolean);
+
+        if (requestGeneration !== messagePageStateRef.current.generation) {
+          return false;
+        }
+
+        if (rawMessages.length === 0) {
+          // A final page confirmed by metadata is authoritative. An empty
+          // page with missing or contradictory metadata stops only as the
+          // compatibility fallback, so it cannot trigger repeated requests.
+          messagePageStateRef.current.hasOlderMessages = false;
+          setHasOlderMessages(false);
+          return false;
         }
 
         const getMessageTypeOrder = (
@@ -1378,6 +1506,8 @@ export default function ChatDetailScreen() {
 
               const agreementCardMessage = {
                 id: `card-${message.messageId}`,
+                sourceMessageId: String(message.messageId || index),
+                timelineItemOrder: 1,
                 type: "agreement_card",
                 agreementId: info.agreementData.agreementId,
                 agreementData: info.agreementData,
@@ -1396,6 +1526,8 @@ export default function ChatDetailScreen() {
 
               const agreementSystemMessage = {
                 id: message.messageId,
+                sourceMessageId: String(message.messageId || index),
+                timelineItemOrder: 0,
                 type: "system",
                 text: agreementUiText,
                 createdAt: message.createdAt || null,
@@ -1434,6 +1566,8 @@ export default function ChatDetailScreen() {
                 id:
                   message.messageId ||
                   "system-" + index,
+                sourceMessageId: String(message.messageId || index),
+                timelineItemOrder: 0,
                 type: "system",
                 text: systemUiText,
                 createdAt:
@@ -1453,6 +1587,8 @@ export default function ChatDetailScreen() {
               ) {
                 formattedMessages.push({
                   id: `paid-card-${message.messageId || index}`,
+                  sourceMessageId: String(message.messageId || index),
+                  timelineItemOrder: 1,
                   type: "agreement_card",
                   agreementId: info.agreementData.agreementId,
                   agreementData: info.agreementData,
@@ -1491,6 +1627,8 @@ export default function ChatDetailScreen() {
               id:
                 message.messageId ||
                 String(index),
+              sourceMessageId: String(message.messageId || index),
+              timelineItemOrder: 0,
               type: isOfferType
                 ? "offer"
                 : "text",
@@ -1549,6 +1687,8 @@ export default function ChatDetailScreen() {
 
               formattedMessages.push({
                 id: `system-agreed-${formattedMessage.id}`,
+                sourceMessageId: String(message.messageId || index),
+                timelineItemOrder: 1,
                 type: "system",
                 text: `${accepterName} đã chấp nhận thương lượng`,
                 createdAt: message.createdAt || null,
@@ -1584,17 +1724,70 @@ export default function ChatDetailScreen() {
             position === agreementCardIndexes.length - 1;
         });
 
-        setMessages(applyTimelineGrouping(formattedMessages));
+        setMessages((previousMessages) =>
+          applyTimelineGrouping(
+            markLatestAgreementCard(
+              mergeTimelineMessages(
+                previousMessages,
+                formattedMessages,
+                pageNumber === 1 ? "authoritative" : "backfill",
+              ),
+            ),
+          ),
+        );
+
+        const latestPageState = messagePageStateRef.current;
+        const loadedPageNumber = hasValidPaginationMetadata
+          ? responsePageNumber
+          : pageNumber;
+        latestPageState.loadedPages.add(loadedPageNumber);
+        let nextUnloadedOlderPage = Math.max(
+          2,
+          latestPageState.nextPage,
+          loadedPageNumber + 1,
+        );
+        while (latestPageState.loadedPages.has(nextUnloadedOlderPage)) {
+          nextUnloadedOlderPage += 1;
+        }
+        latestPageState.nextPage = nextUnloadedOlderPage;
+        rawMessageIds.forEach((messageId) =>
+          latestPageState.loadedRawMessageIds.add(messageId),
+        );
+        if (hasValidPaginationMetadata) {
+          const loadedRawMessageCount =
+            latestPageState.loadedRawMessageIds.size;
+          latestPageState.hasOlderMessages =
+            responsePageNumber * responsePageSize < totalCount &&
+            loadedRawMessageCount < totalCount;
+        } else {
+          latestPageState.hasOlderMessages = rawMessages.length >= MESSAGE_PAGE_SIZE;
+        }
+        setHasOlderMessages(latestPageState.hasOlderMessages);
+        return true;
       } catch (error) {
         console.error(
           "Lỗi tải tin nhắn:",
           error,
         );
+        return false;
+      } finally {
+        const latestPageState = messagePageStateRef.current;
+        if (requestGeneration === latestPageState.generation) {
+          latestPageState.inFlightPages.delete(pageNumber);
+          if (pageNumber > 1) setIsLoadingOlderMessages(false);
+        }
       }
     }, [
       currentUserId,
       negotiationId,
     ]);
+
+  const loadOlderMessages = useCallback(async () => {
+    const pageState = messagePageStateRef.current;
+    if (!pageState.hasOlderMessages) return;
+
+    await fetchMessagesOnly(undefined, pageState.nextPage);
+  }, [fetchMessagesOnly]);
 
   const initialLoad =
     useCallback(async (
@@ -1878,6 +2071,10 @@ export default function ChatDetailScreen() {
               newMsg.messageId ||
               newMsg.MessageId ||
               Date.now().toString(),
+            sourceMessageId: String(
+              newMsg.messageId || newMsg.MessageId || "",
+            ),
+            timelineItemOrder: 0,
             type: "text",
             text:
               newMsg.messageContent ||
@@ -1910,7 +2107,11 @@ export default function ChatDetailScreen() {
             }),
           };
 
-          return applyTimelineGrouping([...prev, formatted]);
+          return applyTimelineGrouping(
+            markLatestAgreementCard(
+              mergeTimelineMessages(prev, [formatted], "authoritative"),
+            ),
+          );
         });
       }
     };
@@ -3415,9 +3616,27 @@ export default function ChatDetailScreen() {
               }}
               scrollEventThrottle={16}
               ListHeaderComponent={
-                <Text style={styles.dateSeparator}>
-                  Giao dịch bắt đầu
-                </Text>
+                <View>
+                  {hasOlderMessages ? (
+                    <TouchableOpacity
+                      onPress={() => void loadOlderMessages()}
+                      disabled={isLoadingOlderMessages}
+                      style={{ alignItems: "center", paddingVertical: 12 }}
+                    >
+                      {isLoadingOlderMessages ? (
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                      ) : (
+                        <Text style={{ color: COLORS.primary, fontWeight: "600" }}>
+                          Tải tin nhắn cũ hơn
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.dateSeparator}>
+                      Giao dịch bắt đầu
+                    </Text>
+                  )}
+                </View>
               }
               onLayout={() => {
                 if (
