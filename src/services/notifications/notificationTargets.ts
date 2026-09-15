@@ -23,6 +23,7 @@ export type NotificationTargetType =
   | "withdrawal"
   | "businessProfile"
   | "personalProfile"
+  | "review"
   | "";
 
 export type NotificationItem = {
@@ -105,6 +106,9 @@ export const normalizeTargetType = (
     case "10":
     case "personalprofile":
       return "personalProfile";
+    case "11":
+    case "review":
+      return "review";
     default:
       return "";
   }
@@ -207,6 +211,9 @@ export async function navigateToNotificationTarget(
       // authoritative profile id. Keep this explicit so an ID-aware route can
       // be added here later without falling through to an unrelated profile.
       return false;
+    case "review":
+      router.push(`/reviews/${targetId}` as any);
+      return true;
     case "agreement": {
       const response = await apiClient.get(`/agreements/${targetId}`);
       const agreement = unwrap(response.data);

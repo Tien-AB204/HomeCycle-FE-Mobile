@@ -373,6 +373,8 @@ export default function NotificationsScreen() {
         return "calendar-outline" as const;
       case "withdrawal":
         return "wallet-outline" as const;
+      case "review":
+        return "star-outline" as const;
       default:
         return "notifications-outline" as const;
     }

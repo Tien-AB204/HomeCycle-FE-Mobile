@@ -20,6 +20,10 @@ import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import apiClient from "../../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../../src/services/fileUploadPolicy";
+import {
+  isUnavailableReviewStatus,
+  normalizeReviewStatus,
+} from "../../../src/services/reviews/reviewStatus";
 import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
 
 const reviewApi = {
@@ -127,6 +131,11 @@ export default function OrderReviewScreen() {
 
   const order = orderData?.order || orderData;
   const completed = isCompletedOrder(order?.orderStatus ?? order?.status);
+  const reviewStatus = normalizeReviewStatus(
+    myReview?.reviewStatus ?? myReview?.ReviewStatus ?? myReview?.status,
+  );
+  const isUnavailableReview = isUnavailableReviewStatus(reviewStatus);
+  const canEditReview = myReview?.canEdit === true && !isUnavailableReview;
 
   const loadReviewData = useCallback(
     async (preserveMessage = false) => {
@@ -326,9 +335,20 @@ export default function OrderReviewScreen() {
       setMessage({ type: "success", text: "Đã cập nhật đánh giá." });
     } catch (error: any) {
       const code = getErrorCode(error);
+
+      if (code === "Review.NotVisible" || code === "Review.NotFound") {
+        setIsEditing(false);
+        await loadReviewData(true);
+        setMessage({
+          type: "warning",
+          text: "Đánh giá không còn khả dụng để chỉnh sửa.",
+        });
+        return;
+      }
+
       const fallback =
         code === "Review.EditWindowExpired"
-          ? "Đánh giá đã hết thời hạn chỉnh sửa 3 ngày."
+          ? "Đánh giá này hiện không thể chỉnh sửa."
           : "Không thể cập nhật đánh giá lúc này.";
 
       setMessage({ type: "error", text: getErrorMessage(error, fallback) });
@@ -338,10 +358,10 @@ export default function OrderReviewScreen() {
   };
 
   const startEditing = () => {
-    if (!myReview?.canEdit) {
+    if (!canEditReview) {
       setMessage({
         type: "warning",
-        text: "Đánh giá này đã hết thời hạn chỉnh sửa 3 ngày.",
+        text: "Đánh giá này hiện không thể chỉnh sửa.",
       });
       return;
     }
@@ -504,7 +524,11 @@ export default function OrderReviewScreen() {
                 </ScrollView>
               ) : null}
 
-              {myReview.canEdit ? (
+              {isUnavailableReview ? (
+                <Text style={styles.editExpiredText}>
+                  Đánh giá này không còn hiển thị công khai.
+                </Text>
+              ) : canEditReview ? (
                 <TouchableOpacity
                   style={styles.secondaryButton}
                   onPress={startEditing}
@@ -518,7 +542,7 @@ export default function OrderReviewScreen() {
                 </TouchableOpacity>
               ) : (
                 <Text style={styles.editExpiredText}>
-                  Đã hết thời hạn chỉnh sửa 3 ngày.
+                  Đánh giá này hiện không thể chỉnh sửa.
                 </Text>
               )}
             </View>

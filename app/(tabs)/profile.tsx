@@ -1,7 +1,7 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -78,7 +78,10 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
-  const { user, logout, isLoading } = useAuth();
+  const { user, logout, isLoading, reloadUser } = useAuth();
+  const reloadUserRef = useRef(reloadUser);
+
+  reloadUserRef.current = reloadUser;
 
   const [imageError, setImageError] = useState(false);
   const [postCount, setPostCount] = useState(0);
@@ -101,6 +104,14 @@ export default function ProfileScreen() {
       const fetchData = async () => {
         if (!currentUserId) return;
 
+        try {
+          await reloadUserRef.current();
+        } catch {
+          // Existing profile data remains available if an authoritative
+          // refresh is temporarily unavailable.
+        }
+
+        if (!active) return;
         setMessage(null);
 
         const requests: Promise<any>[] = [

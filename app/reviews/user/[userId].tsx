@@ -1,7 +1,7 @@
 import { getAvatarSource } from "../../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -103,9 +103,11 @@ export default function UserReviewsScreen() {
     [userId],
   );
 
-  useEffect(() => {
+  useFocusEffect(
+    useCallback(() => {
     void loadPage(1);
-  }, [loadPage]);
+    }, [loadPage]),
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
