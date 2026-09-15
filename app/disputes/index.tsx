@@ -23,6 +23,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 450;
@@ -135,10 +136,19 @@ const LEGACY_CATEGORY_LABELS: Record<string, string> = {
 
 const getDisputeCategoryLabel = (category: unknown): string => {
   if (category && typeof category === "object") {
-    const name = (category as { name?: unknown }).name;
-    if (typeof name === "string" && name.trim()) return name;
+    const raw = category as Record<string, unknown>;
+    return getDisputeCategoryDisplayName(
+      raw.code ?? raw.Code,
+      raw.name ?? raw.Name,
+      "Chưa xác định",
+    );
   }
-  return LEGACY_CATEGORY_LABELS[normalizeKey(category)] || "Chưa xác định";
+
+  return getDisputeCategoryDisplayName(
+    category,
+    LEGACY_CATEGORY_LABELS[normalizeKey(category)],
+    "Chưa xác định",
+  );
 };
 
 const targetTypeLabels: Record<string, string> = {
@@ -227,7 +237,7 @@ export default function DisputeHistoryScreen() {
       { key: "all" as const, label: "Tất cả loại khiếu nại" },
       ...categoryOptions.map((item) => ({
         key: item.disputeCategoryId,
-        label: item.name,
+        label: getDisputeCategoryDisplayName(item.code, item.name),
       })),
     ],
     [categoryOptions],

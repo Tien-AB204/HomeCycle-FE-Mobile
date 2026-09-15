@@ -20,6 +20,7 @@ import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
+import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 
 // Dispute category is dynamic (BE-owned), never a hard-coded enum/list.
 // Order Detail's actions.allowedDisputeCategories already carries the
@@ -225,13 +226,18 @@ export default function CreateDisputeScreen() {
     return disputeEligibility.allowedCategories;
   }, [disputeEligibility]);
 
-  const selectedCategoryLabel = useMemo(
-    () =>
-      disputeEligibility?.allowedCategories.find(
-        (item) => item.disputeCategoryId === category,
-      )?.name,
-    [category, disputeEligibility],
-  );
+  const selectedCategoryLabel = useMemo(() => {
+    const selectedCategory = disputeEligibility?.allowedCategories.find(
+      (item) => item.disputeCategoryId === category,
+    );
+
+    return selectedCategory
+      ? getDisputeCategoryDisplayName(
+          selectedCategory.code,
+          selectedCategory.name,
+        )
+      : undefined;
+  }, [category, disputeEligibility]);
 
   const isDisputeSubmitDisabled =
     isSubmitting ||
@@ -517,7 +523,7 @@ export default function CreateDisputeScreen() {
                       {selected ? <View style={styles.radioInner} /> : null}
                     </View>
                     <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
-                      {item.name}
+                      {getDisputeCategoryDisplayName(item.code, item.name)}
                     </Text>
                   </TouchableOpacity>
                 );

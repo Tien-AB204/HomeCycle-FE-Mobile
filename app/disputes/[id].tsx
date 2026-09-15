@@ -20,6 +20,7 @@ import {
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 
 type InlineMessage = {
   type: "error" | "success";
@@ -56,10 +57,19 @@ const LEGACY_CATEGORY_LABELS: Record<string, string> = {
 
 const getDisputeCategoryLabel = (category: unknown): string => {
   if (category && typeof category === "object") {
-    const name = (category as { name?: unknown }).name;
-    if (typeof name === "string" && name.trim()) return name;
+    const raw = category as Record<string, unknown>;
+    return getDisputeCategoryDisplayName(
+      raw.code ?? raw.Code,
+      raw.name ?? raw.Name,
+      "Chưa rõ",
+    );
   }
-  return LEGACY_CATEGORY_LABELS[normalizeKey(category)] || "Chưa rõ";
+
+  return getDisputeCategoryDisplayName(
+    category,
+    LEGACY_CATEGORY_LABELS[normalizeKey(category)],
+    "Chưa rõ",
+  );
 };
 
 const statusLabels: Record<string, string> = {

@@ -17,18 +17,167 @@ import {
 } from "react-native";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
-import {
-  ContentReportCategoryOption,
-  ContentReportLimits,
-  ContentReportTargetType,
-  FALLBACK_CONTENT_REPORT_LIMITS,
-  createContentReport,
-  getContentReportCategories,
-  getContentReportLimits,
-} from "../../src/services/apis/contentDisputeApi";
+import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
+import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 
+type ContentReportTargetType = "Post" | "Review";
+
+type ContentReportCategoryOption = {
+  disputeCategoryId: number;
+  code: string;
+  name: string;
+  description: string | null;
+};
+
+type ContentReportLimits = {
+  minimumEvidenceImages: number;
+  maximumEvidenceImages: number;
+  minimumDescriptionLength: number;
+  maximumDescriptionLength: number;
+};
+
+const FALLBACK_CONTENT_REPORT_LIMITS: ContentReportLimits = {
+  minimumEvidenceImages: 2,
+  maximumEvidenceImages: 5,
+  minimumDescriptionLength: 10,
+  maximumDescriptionLength: 2000,
+};
+
+type ContentReportImageAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+
+type CreateContentReportPayload = {
+  targetType: ContentReportTargetType;
+  targetId: string;
+  disputeCategoryId: number;
+  description: string;
+  images: ContentReportImageAsset[];
+};
+
+const unwrapContentReportResponse = (value: any) => value?.data ?? value;
+
+const getContentReportCategories = async (
+  targetType: ContentReportTargetType,
+): Promise<ContentReportCategoryOption[]> => {
+  const response = await apiClient.get("/dispute-categories", {
+    params: { targetType },
+  });
+
+  const data = unwrapContentReportResponse(response.data);
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+      ? data.items
+      : [];
+
+  return list
+    .map((item: any): ContentReportCategoryOption | null => {
+      const disputeCategoryId = Number(
+        item?.disputeCategoryId ?? item?.DisputeCategoryId,
+      );
+
+      if (!Number.isFinite(disputeCategoryId)) return null;
+
+      return {
+        disputeCategoryId,
+        code: String(item?.code ?? item?.Code ?? ""),
+        name: String(
+          item?.name ?? item?.Name ?? `Loại #${disputeCategoryId}`,
+        ),
+        description: (item?.description ?? item?.Description ?? null) as
+          | string
+          | null,
+      };
+    })
+    .filter(
+      (
+        item: ContentReportCategoryOption | null,
+      ): item is ContentReportCategoryOption => item !== null,
+    );
+};
+
+const getContentReportLimits = async (
+  targetType: ContentReportTargetType,
+): Promise<ContentReportLimits> => {
+  const response = await apiClient.get("/disputes/options", {
+    params: { targetType },
+  });
+
+  const data = unwrapContentReportResponse(response.data);
+
+  const toPositiveInt = (value: unknown, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.trunc(parsed)
+      : fallback;
+  };
+
+  return {
+    minimumEvidenceImages: toPositiveInt(
+      data?.minimumEvidenceImages,
+      FALLBACK_CONTENT_REPORT_LIMITS.minimumEvidenceImages,
+    ),
+    maximumEvidenceImages: toPositiveInt(
+      data?.maximumEvidenceImages,
+      FALLBACK_CONTENT_REPORT_LIMITS.maximumEvidenceImages,
+    ),
+    minimumDescriptionLength: toPositiveInt(
+      data?.minimumDescriptionLength,
+      FALLBACK_CONTENT_REPORT_LIMITS.minimumDescriptionLength,
+    ),
+    maximumDescriptionLength: toPositiveInt(
+      data?.maximumDescriptionLength,
+      FALLBACK_CONTENT_REPORT_LIMITS.maximumDescriptionLength,
+    ),
+  };
+};
+
+const createContentReport = async (
+  payload: CreateContentReportPayload,
+): Promise<any> => {
+  const formData = new FormData();
+
+  formData.append("TargetType", payload.targetType);
+  formData.append("TargetId", payload.targetId);
+  formData.append(
+    "DisputeCategoryId",
+    String(payload.disputeCategoryId),
+  );
+  formData.append("Description", payload.description);
+
+  for (let index = 0; index < payload.images.length; index += 1) {
+    const asset = payload.images[index];
+    const fallbackName = `report-evidence-${index + 1}.jpg`;
+
+    if (Platform.OS === "web") {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+
+      formData.append(
+        "EvidenceImages",
+        blob,
+        asset.fileName || fallbackName,
+      );
+    } else {
+      formData.append("EvidenceImages", {
+        uri: asset.uri,
+        name: asset.fileName || fallbackName,
+        type: asset.mimeType || "image/jpeg",
+      } as any);
+    }
+  }
+
+  const response = await apiClient.post("/disputes", formData, {
+    timeout: 60000,
+  });
+
+  return unwrapContentReportResponse(response.data);
+};
 type InlineMessage = {
   type: "error" | "warning" | "info";
   text: string;
@@ -433,7 +582,7 @@ export default function ContentReportScreen() {
                             selected && styles.categoryTextSelected,
                           ]}
                         >
-                          {item.name}
+                          {getDisputeCategoryDisplayName(item.code, item.name)}
                         </Text>
                         {item.description ? (
                           <Text style={styles.categoryDescription}>
