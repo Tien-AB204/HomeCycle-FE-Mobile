@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -25,6 +26,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
+  isProfileVerificationTarget,
   navigateToNotificationTarget,
   normalizeNotificationItem,
   normalizeTargetType,
@@ -49,7 +51,7 @@ export default function NotificationsScreen() {
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
   const { user } = useAuth();
-  const { connection } = useChatRealtime();
+  const { connection, reconnectVersion } = useChatRealtime();
   const {
     unreadCount,
     refreshUnreadCount,
@@ -66,6 +68,12 @@ export default function NotificationsScreen() {
   const [openingNotificationId, setOpeningNotificationId] =
     useState<string | null>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
+  const [isScreenFocused, setIsScreenFocused] = useState(false);
+  const realtimeNotificationIdsRef = useRef<Set<string>>(new Set());
+  const handledReconnectVersionRef = useRef(0);
+  const latestReconnectVersionRef = useRef(reconnectVersion);
+
+  latestReconnectVersionRef.current = reconnectVersion;
 
   const fetchNotifications = useCallback(
     async (isRefresh = false) => {
@@ -91,11 +99,30 @@ export default function NotificationsScreen() {
             ? data
             : [];
 
-        setNotifications(
-          items
-            .map(normalizeNotificationItem)
-            .filter((item: NotificationItem | null): item is NotificationItem => Boolean(item)),
-        );
+        const fetchedItems = items
+          .map(normalizeNotificationItem)
+          .filter((item: NotificationItem | null): item is NotificationItem => Boolean(item));
+
+        setNotifications((current) => {
+          const fetchedIds = new Set<string>();
+          const dedupedFetchedItems = fetchedItems.filter((item: NotificationItem) => {
+            if (fetchedIds.has(item.notificationId)) return false;
+            fetchedIds.add(item.notificationId);
+            return true;
+          });
+
+          const realtimeOnlyItems = current.filter(
+            (item) =>
+              realtimeNotificationIdsRef.current.has(item.notificationId) &&
+              !fetchedIds.has(item.notificationId),
+          );
+
+          realtimeNotificationIdsRef.current = new Set(
+            realtimeOnlyItems.map((item) => item.notificationId),
+          );
+
+          return [...realtimeOnlyItems, ...dedupedFetchedItems];
+        });
       } catch (error: unknown) {
         setNotifications([]);
         setMessage({
@@ -115,8 +142,14 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setIsScreenFocused(true);
+      handledReconnectVersionRef.current = latestReconnectVersionRef.current;
       void fetchNotifications(false);
       void refreshUnreadCount();
+
+      return () => {
+        setIsScreenFocused(false);
+      };
     }, [fetchNotifications, refreshUnreadCount]),
   );
 
@@ -139,6 +172,8 @@ export default function NotificationsScreen() {
       const item = normalizeNotificationItem(payload?.data ?? payload);
 
       if (!item) return;
+
+      realtimeNotificationIdsRef.current.add(item.notificationId);
 
       setNotifications((current) => {
         if (
@@ -188,6 +223,19 @@ export default function NotificationsScreen() {
     };
   }, [connection]);
 
+  useEffect(() => {
+    if (
+      !isScreenFocused ||
+      reconnectVersion <= 0 ||
+      handledReconnectVersionRef.current === reconnectVersion
+    ) {
+      return;
+    }
+
+    handledReconnectVersionRef.current = reconnectVersion;
+    void fetchNotifications(false);
+  }, [fetchNotifications, isScreenFocused, reconnectVersion]);
+
   const onRefresh = () => {
     setIsRefreshing(true);
 
@@ -234,7 +282,9 @@ export default function NotificationsScreen() {
     if (!navigated) {
       setMessage({
         type: "info",
-        text: "Thông báo này chưa có khu vực chi tiết để mở.",
+        text: isProfileVerificationTarget(item.targetType)
+          ? "Thông báo xác thực này chưa có màn hình chi tiết để mở."
+          : "Thông báo này chưa có khu vực chi tiết để mở.",
       });
     }
   };

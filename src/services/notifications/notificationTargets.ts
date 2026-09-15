@@ -21,6 +21,8 @@ export type NotificationTargetType =
   | "post"
   | "appointment"
   | "withdrawal"
+  | "businessProfile"
+  | "personalProfile"
   | "";
 
 export type NotificationItem = {
@@ -97,9 +99,22 @@ export const normalizeTargetType = (
     case "8":
     case "withdrawal":
       return "withdrawal";
+    case "9":
+    case "businessprofile":
+      return "businessProfile";
+    case "10":
+    case "personalprofile":
+      return "personalProfile";
     default:
       return "";
   }
+};
+
+export const isProfileVerificationTarget = (value: unknown) => {
+  const targetType = normalizeTargetType(value);
+  return (
+    targetType === "businessProfile" || targetType === "personalProfile"
+  );
 };
 
 /**
@@ -186,6 +201,12 @@ export async function navigateToNotificationTarget(
     case "withdrawal":
       router.push(`/wallet/withdrawals/${targetId}` as any);
       return true;
+    case "businessProfile":
+    case "personalProfile":
+      // The current app has no profile-verification route that accepts this
+      // authoritative profile id. Keep this explicit so an ID-aware route can
+      // be added here later without falling through to an unrelated profile.
+      return false;
     case "agreement": {
       const response = await apiClient.get(`/agreements/${targetId}`);
       const agreement = unwrap(response.data);

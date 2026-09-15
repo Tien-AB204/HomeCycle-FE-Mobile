@@ -13,6 +13,7 @@ import {
 
 import AppDialogHost from "../src/components/shared/AppDialogHost";
 import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
+import InAppNotificationToast from "../src/components/shared/InAppNotificationToast";
 import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
@@ -87,6 +88,7 @@ function RootNavigator() {
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
             </Stack>
+            <InAppNotificationToast />
           </NotificationProvider>
         </ChatRealtimeProvider>
       </AuthProvider>

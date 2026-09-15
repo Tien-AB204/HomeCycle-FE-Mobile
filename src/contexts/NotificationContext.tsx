@@ -11,6 +11,7 @@ import React, {
 import { AppState, type AppStateStatus } from "react-native";
 import apiClient from "../services/apis/axiosClient";
 import {
+  isProfileVerificationTarget,
   navigateToNotificationTarget,
   normalizeNotificationItem,
   normalizeTargetType,
@@ -31,6 +32,12 @@ type NotificationContextValue = {
     version: number;
     targetId: string | null;
   };
+  inAppNotification: {
+    version: number;
+    notificationId: string;
+    title: string;
+    message: string;
+  } | null;
   refreshUnreadCount: () => Promise<number>;
   markNotificationAsRead: (notificationId: string) => Promise<any>;
   markAllNotificationsAsRead: () => Promise<any>;
@@ -76,6 +83,12 @@ export function NotificationProvider({
     version: 0,
     targetId: null as string | null,
   });
+  const [inAppNotification, setInAppNotification] = useState<{
+    version: number;
+    notificationId: string;
+    title: string;
+    message: string;
+  } | null>(null);
   const [systemNotificationsEnabled, setSystemNotificationsEnabledState] =
     useState(true);
   const [
@@ -86,6 +99,7 @@ export function NotificationProvider({
   const handledReconnectVersionRef = useRef(0);
   const currentUserIdRef = useRef<string | null>(null);
   const systemNotificationsEnabledRef = useRef(true);
+  const unreadStateVersionRef = useRef(0);
 
   currentUserIdRef.current = String(user?.userId ?? user?.id ?? "") || null;
   systemNotificationsEnabledRef.current = systemNotificationsEnabled;
@@ -124,13 +138,22 @@ export function NotificationProvider({
 
   const refreshUnreadCount = useCallback(async () => {
     if (!userToken) {
+      unreadStateVersionRef.current += 1;
       setUnreadCount(0);
       return 0;
     }
 
+    const refreshVersion = unreadStateVersionRef.current;
     const response = await apiClient.get("/notifications/unread-count");
     const count = getUnreadCount(response.data);
-    setUnreadCount(count);
+
+    // A NotificationCreated event may arrive while this request is in flight.
+    // Do not replace that newer local increment with this older server snapshot.
+    if (refreshVersion === unreadStateVersionRef.current) {
+      unreadStateVersionRef.current += 1;
+      setUnreadCount(count);
+    }
+
     return count;
   }, [userToken]);
 
@@ -146,8 +169,10 @@ export function NotificationProvider({
         data?.unreadCount !== undefined ||
         data?.UnreadCount !== undefined
       ) {
+        unreadStateVersionRef.current += 1;
         setUnreadCount(nextCount);
       } else {
+        unreadStateVersionRef.current += 1;
         setUnreadCount((current) => Math.max(0, current - 1));
       }
 
@@ -164,8 +189,10 @@ export function NotificationProvider({
       data?.unreadCount !== undefined ||
       data?.UnreadCount !== undefined
     ) {
+      unreadStateVersionRef.current += 1;
       setUnreadCount(getUnreadCount(data));
     } else {
+      unreadStateVersionRef.current += 1;
       setUnreadCount(0);
     }
 
@@ -175,8 +202,10 @@ export function NotificationProvider({
   useEffect(() => {
     handledReconnectVersionRef.current = 0;
     processedCreatedNotificationIdsRef.current.clear();
+    setInAppNotification(null);
 
     if (!userToken) {
+      unreadStateVersionRef.current += 1;
       setUnreadCount(0);
       setPostNotificationSignal({ version: 0, targetId: null });
       return;
@@ -256,7 +285,17 @@ export function NotificationProvider({
       );
 
       if (!isRead) {
+        unreadStateVersionRef.current += 1;
         setUnreadCount((current) => current + 1);
+      }
+
+      if (item) {
+        setInAppNotification((current) => ({
+          version: (current?.version ?? 0) + 1,
+          notificationId: item.notificationId,
+          title: item.title,
+          message: item.message,
+        }));
       }
 
       // One authoritative NotificationCreated -> at most one native system
@@ -284,6 +323,7 @@ export function NotificationProvider({
         data?.unreadCount !== undefined ||
         data?.UnreadCount !== undefined
       ) {
+        unreadStateVersionRef.current += 1;
         setUnreadCount(getUnreadCount(data));
       } else {
         // Không tự -1 ở đây vì markNotificationAsRead()
@@ -300,8 +340,10 @@ export function NotificationProvider({
         data?.unreadCount !== undefined ||
         data?.UnreadCount !== undefined
       ) {
+        unreadStateVersionRef.current += 1;
         setUnreadCount(getUnreadCount(data));
       } else {
+        unreadStateVersionRef.current += 1;
         setUnreadCount(0);
       }
     };
@@ -359,17 +401,34 @@ export function NotificationProvider({
   // resolver the in-app Notification list uses, so a tap can never open a
   // different destination than the equivalent in-app row would.
   useEffect(() => {
-    const handleTap = (data: SystemNotificationTapData) => {
+    const handleTap = async (data: SystemNotificationTapData) => {
       if (!currentUserIdRef.current) return;
 
       if (data.notificationId) {
         // Best-effort: keep read state in sync with the existing contract.
         // A failure here (e.g. already read, or offline) must not block
         // navigation.
-        void markNotificationAsRead(data.notificationId).catch(() => {});
+        try {
+          await markNotificationAsRead(data.notificationId);
+        } catch {
+          // Keep legacy navigation available if the read update is transiently
+          // unavailable (for example, after returning from offline state).
+        }
       }
 
-      void navigateToNotificationTarget(data, currentUserIdRef.current);
+      const navigated = await navigateToNotificationTarget(
+        data,
+        currentUserIdRef.current,
+      );
+
+      if (!navigated && isProfileVerificationTarget(data.targetType)) {
+        setInAppNotification((current) => ({
+          version: (current?.version ?? 0) + 1,
+          notificationId: data.notificationId ?? "verification-target",
+          title: "Thông báo xác thực",
+          message: "Thông báo xác thực này chưa có màn hình chi tiết để mở.",
+        }));
+      }
     };
 
     const removeResponseListener = registerNotificationResponseHandler(handleTap);
@@ -378,7 +437,7 @@ export function NotificationProvider({
     // here once, on the first mount after that cold start; already-consumed
     // on any later mount (e.g. logout/login within the same process).
     const initialTap = consumeInitialNotificationResponse();
-    if (initialTap) handleTap(initialTap);
+    if (initialTap) void handleTap(initialTap);
 
     return () => {
       removeResponseListener();
@@ -390,6 +449,7 @@ export function NotificationProvider({
       value={{
         unreadCount,
         postNotificationSignal,
+        inAppNotification,
         refreshUnreadCount,
         markNotificationAsRead,
         markAllNotificationsAsRead,
