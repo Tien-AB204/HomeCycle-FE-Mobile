@@ -98,10 +98,12 @@ export function NotificationProvider({
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const handledReconnectVersionRef = useRef(0);
   const currentUserIdRef = useRef<string | null>(null);
+  const currentUserRoleRef = useRef<string | null>(null);
   const systemNotificationsEnabledRef = useRef(true);
   const unreadStateVersionRef = useRef(0);
 
   currentUserIdRef.current = String(user?.userId ?? user?.id ?? "") || null;
+  currentUserRoleRef.current = String(user?.role ?? "") || null;
   systemNotificationsEnabledRef.current = systemNotificationsEnabled;
   const processedCreatedNotificationIdsRef = useRef<Set<string>>(new Set());
 
@@ -419,6 +421,7 @@ export function NotificationProvider({
       const navigated = await navigateToNotificationTarget(
         data,
         currentUserIdRef.current,
+        currentUserRoleRef.current,
       );
 
       if (!navigated && isProfileVerificationTarget(data.targetType)) {

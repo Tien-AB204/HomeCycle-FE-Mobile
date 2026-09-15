@@ -277,7 +277,12 @@ export default function NotificationsScreen() {
 
   const openNotificationTarget = async (item: NotificationItem) => {
     const currentUserId = String(user?.userId ?? user?.id ?? "") || null;
-    const navigated = await navigateToNotificationTarget(item, currentUserId);
+    const currentUserRole = String(user?.role ?? "") || null;
+    const navigated = await navigateToNotificationTarget(
+      item,
+      currentUserId,
+      currentUserRole,
+    );
 
     if (!navigated) {
       setMessage({

@@ -134,9 +134,13 @@ export const isProfileVerificationTarget = (value: unknown) => {
 export async function navigateToNotificationTarget(
   target: { targetType: string | null; targetId: string | null },
   currentUserId?: string | null,
+  currentUserRole?: string | null,
 ): Promise<boolean> {
   const targetType = normalizeTargetType(target.targetType);
   const targetId = target.targetId;
+  const normalizedCurrentUserRole = String(currentUserRole ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!targetType || !targetId) {
     return false;
@@ -206,11 +210,25 @@ export async function navigateToNotificationTarget(
       router.push(`/wallet/withdrawals/${targetId}` as any);
       return true;
     case "businessProfile":
+      // Mobile business profile screens operate on the signed-in account.
+      // Let the Profile tab resolve the current onboarding state instead of
+      // guessing between pending, rejected, survey, or completed screens here.
+      if (normalizedCurrentUserRole !== "business") {
+        return false;
+      }
+
+      router.push("/(tabs)/profile" as any);
+      return true;
+
     case "personalProfile":
-      // The current app has no profile-verification route that accepts this
-      // authoritative profile id. Keep this explicit so an ID-aware route can
-      // be added here later without falling through to an unrelated profile.
-      return false;
+      // Personal account information is the stable current-user destination
+      // for identity-verification notifications on Mobile.
+      if (normalizedCurrentUserRole !== "personal") {
+        return false;
+      }
+
+      router.push("/profile/account-info" as any);
+      return true;
     case "review":
       router.push(`/reviews/${targetId}` as any);
       return true;
