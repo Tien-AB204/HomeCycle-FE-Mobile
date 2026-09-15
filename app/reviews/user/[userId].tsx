@@ -1,6 +1,6 @@
 import { getAvatarSource } from "../../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -45,6 +45,7 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export default function UserReviewsScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
   const userId = Array.isArray(params.userId) ? params.userId[0] : params.userId;
 
@@ -54,13 +55,17 @@ export default function UserReviewsScreen() {
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [developmentNotice, setDevelopmentNotice] = useState<string | null>(null);
 
-  const reportReview = () => {
-    // BE chưa có endpoint report review. Không gọi API giả và không báo thành công.
-    setDevelopmentNotice(
-      "Tính năng báo cáo đánh giá đang được phát triển. Vui lòng thử lại sau.",
-    );
+  // Self-report identity (reviewer vs current user) isn't reliably available
+  // from this screen's existing state — Backend still enforces
+  // DISPUTE_SELF_REPORT_NOT_ALLOWED on submit, so no client-side guess is added.
+  const reportReview = (reviewId?: string) => {
+    if (!reviewId) return;
+
+    router.push({
+      pathname: "/disputes/report",
+      params: { targetType: "Review", targetId: String(reviewId) },
+    } as any);
   };
 
   const loadPage = useCallback(
@@ -124,15 +129,6 @@ export default function UserReviewsScreen() {
             </View>
           </View>
 
-          {developmentNotice ? (
-            <View style={styles.noticeBox}>
-              <Text style={styles.noticeText}>{developmentNotice}</Text>
-              <TouchableOpacity onPress={() => setDevelopmentNotice(null)}>
-                <Ionicons name="close" size={18} color="#2B5659" />
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{errorMessage}</Text>
@@ -185,7 +181,7 @@ export default function UserReviewsScreen() {
                   </Text>
                   <TouchableOpacity
                     style={styles.reportReviewButton}
-                    onPress={() => reportReview()}
+                    onPress={() => reportReview(review.reviewId)}
                     accessibilityLabel="Báo cáo đánh giá"
                   >
                     <Ionicons name="flag-outline" size={14} color="#7A1012" />

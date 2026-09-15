@@ -148,6 +148,8 @@ const targetTypeLabels: Record<string, string> = {
   order: "Đơn hàng",
   "3": "Đánh giá",
   review: "Đánh giá",
+  "4": "Bài đăng",
+  post: "Bài đăng",
 };
 
 const resolutionOutcomeLabels: Record<string, string> = {
@@ -265,7 +267,13 @@ export default function DisputeHistoryScreen() {
             PageNumber: page,
             PageSize: PAGE_SIZE,
             Status: statusFilter === "all" ? undefined : statusFilter,
-            DisputeCategoryId: categoryFilter === "all" ? undefined : categoryFilter,
+            // Bộ lọc loại khiếu nại hiện chỉ được tải cho Order (xem loadCategories
+            // bên dưới) — không áp dụng category id đó cho Post/Review để tránh
+            // lọc sai loại tranh chấp bằng category không tương ứng.
+            DisputeCategoryId:
+              targetTypeFilter === "Order" && categoryFilter !== "all"
+                ? categoryFilter
+                : undefined,
             TargetType:
               targetTypeFilter === "all" ? undefined : targetTypeFilter,
             Keyword: appliedKeyword || undefined,
@@ -365,7 +373,10 @@ export default function DisputeHistoryScreen() {
 
   const handleApplyFilter = () => {
     setStatusFilter(draftStatusFilter);
-    setCategoryFilter(draftCategoryFilter);
+    // Loại khiếu nại hiện chỉ có dữ liệu cho Order (xem loadCategories bên
+    // dưới) — bỏ chọn category nếu người dùng lọc theo đối tượng khác, thay
+    // vì âm thầm áp dụng category Order cho Post/Review.
+    setCategoryFilter(draftTargetTypeFilter === "Order" ? draftCategoryFilter : "all");
     setTargetTypeFilter(draftTargetTypeFilter);
     setShowFilterModal(false);
   };
@@ -585,6 +596,12 @@ export default function DisputeHistoryScreen() {
                 draftCategoryFilter,
                 setDraftCategoryFilter,
               )}
+              {draftTargetTypeFilter !== "Order" ? (
+                <Text style={styles.filterLimitationText}>
+                  Bộ lọc &ldquo;Loại khiếu nại&rdquo; hiện chỉ áp dụng cho
+                  tranh chấp Đơn hàng.
+                </Text>
+              ) : null}
               {renderFilterGroup(
                 "Đối tượng khiếu nại",
                 TARGET_TYPE_FILTER_OPTIONS,
@@ -762,6 +779,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   filterGroup: { marginBottom: 16 },
+  filterLimitationText: {
+    marginTop: -8,
+    marginBottom: 16,
+    color: COLORS.textLight,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   filterGroupTitle: {
     color: COLORS.textLight,
     fontSize: 12,

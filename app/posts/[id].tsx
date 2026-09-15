@@ -459,16 +459,18 @@ export default function PostDetailScreen() {
     clearFeedback: clearPageFeedback,
     showError: showPageError,
     showSuccess: showPageSuccess,
-    showInfo: showPageInfo,
   } = useLocalFeedback();
 
   const [isPostMenuVisible, setPostMenuVisible] = useState(false);
   const reportPost = () => {
     setPostMenuVisible(false);
-    // BE chưa có endpoint report post. Không gọi API giả và không báo thành công.
-    showPageInfo(
-      "Tính năng báo cáo bài đăng đang được phát triển. Vui lòng thử lại sau.",
-    );
+    const targetPostId = post?.postId;
+    if (!targetPostId) return;
+
+    router.push({
+      pathname: "/disputes/report",
+      params: { targetType: "Post", targetId: String(targetPostId) },
+    } as any);
   };
 
   const {

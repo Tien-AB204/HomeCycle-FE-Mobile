@@ -103,6 +103,28 @@ const formatCurrency = (value?: number | null) =>
 
 const normalizeKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
+// Post/Review content-report labels. Unmapped values fall back to "Chưa rõ"
+// rather than guessing, since not every PostStatus/ReviewStatus value is
+// reachable from a content dispute.
+const postStatusLabels: Record<string, string> = {
+  active: "Đang hoạt động",
+  closed: "Đã đóng",
+  suspended: "Đã bị đình chỉ",
+  deleted: "Đã xóa",
+  expired: "Đã hết hạn",
+};
+
+const postTypeLabels: Record<string, string> = {
+  sell: "Bán",
+  buy: "Mua",
+};
+
+const reviewStatusLabels: Record<string, string> = {
+  active: "Đang hiển thị",
+  hidden: "Đã bị ẩn",
+  removed: "Đã bị gỡ",
+};
+
 export default function DisputeDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -207,7 +229,12 @@ export default function DisputeDetailScreen() {
   }
 
   const target = detail.target || {};
+  const targetTypeKey = normalizeKey(target.targetType);
+  const isPostTarget = targetTypeKey === "post";
+  const isReviewTarget = targetTypeKey === "review";
   const order = target.order || {};
+  const contentPost = target.post || null;
+  const contentReview = target.review || null;
   const sender = detail.sender || {};
   const targetUser = detail.targetUser || {};
   const evidenceImages = Array.isArray(detail.evidenceImages) ? detail.evidenceImages : [];
@@ -265,29 +292,40 @@ export default function DisputeDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Đơn hàng liên quan</Text>
-          <InfoRow label="Mã đơn hàng" value={order.orderCode || "Chưa có"} strong />
-          <InfoRow label="Sản phẩm" value={order.productName || "Chưa có"} />
-          <InfoRow label="Số lượng" value={String(order.quantity ?? "Chưa có")} />
-          <InfoRow label="Giá trị giao dịch" value={formatCurrency(order.finalTotalAmount)} />
-          <InfoRow label="Thời hạn khiếu nại" value={formatDateTime(order.disputeDeadlineUtc)} />
-          {order.disputeWindowHours ? (
-            <Text style={styles.helperText}>
-              Thời hạn khiếu nại được áp dụng: {order.disputeWindowHours} giờ.
-            </Text>
-          ) : null}
+        {isPostTarget && contentPost ? (
+          <PostTargetCard
+            post={contentPost}
+            onOpenPost={() =>
+              router.push(`/posts/${contentPost.postId}` as any)
+            }
+          />
+        ) : isReviewTarget && contentReview ? (
+          <ReviewTargetCard review={contentReview} />
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Đơn hàng liên quan</Text>
+            <InfoRow label="Mã đơn hàng" value={order.orderCode || "Chưa có"} strong />
+            <InfoRow label="Sản phẩm" value={order.productName || "Chưa có"} />
+            <InfoRow label="Số lượng" value={String(order.quantity ?? "Chưa có")} />
+            <InfoRow label="Giá trị giao dịch" value={formatCurrency(order.finalTotalAmount)} />
+            <InfoRow label="Thời hạn khiếu nại" value={formatDateTime(order.disputeDeadlineUtc)} />
+            {order.disputeWindowHours ? (
+              <Text style={styles.helperText}>
+                Thời hạn khiếu nại được áp dụng: {order.disputeWindowHours} giờ.
+              </Text>
+            ) : null}
 
-          {order.orderId ? (
-            <TouchableOpacity
-              style={styles.linkButton}
-              onPress={() => router.push(`/orders/${order.orderId}` as any)}
-            >
-              <Ionicons name="receipt-outline" size={18} color={COLORS.primary} />
-              <Text style={styles.linkButtonText}>Xem chi tiết đơn hàng</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+            {order.orderId ? (
+              <TouchableOpacity
+                style={styles.linkButton}
+                onPress={() => router.push(`/orders/${order.orderId}` as any)}
+              >
+                <Ionicons name="receipt-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.linkButtonText}>Xem chi tiết đơn hàng</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Các bên liên quan</Text>
@@ -409,6 +447,109 @@ export default function DisputeDetailScreen() {
         </ModalBackdrop>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+// Original CONTENT images (target.post.images / target.review.images) are
+// rendered here, kept fully separate from the reporter's "Ảnh bằng chứng"
+// (detail.evidenceImages) section above — never merged into one gallery.
+function ContentImageGrid({
+  images,
+  emptyText,
+}: {
+  images: any[];
+  emptyText: string;
+}) {
+  if (images.length === 0) {
+    return <Text style={styles.emptyText}>{emptyText}</Text>;
+  }
+
+  return (
+    <View style={styles.evidenceGrid}>
+      {images.map((item: any, index: number) => {
+        const url = item?.url || item?.Url;
+        if (!url) return null;
+        return (
+          <Image
+            key={item?.mediaId || item?.MediaId || `${url}-${index}`}
+            source={{ uri: url }}
+            style={styles.evidenceImage}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function PostTargetCard({
+  post,
+  onOpenPost,
+}: {
+  post: any;
+  onOpenPost: () => void;
+}) {
+  const images = Array.isArray(post?.images) ? post.images : [];
+  const statusLabel = postStatusLabels[normalizeKey(post?.status)] || "Chưa rõ";
+  const postTypeLabel = postTypeLabels[normalizeKey(post?.postType)] || null;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>Bài đăng bị báo cáo</Text>
+      <InfoRow label="Sản phẩm" value={post?.productName || "Chưa có"} strong />
+      {postTypeLabel ? <InfoRow label="Loại tin" value={postTypeLabel} /> : null}
+      <InfoRow label="Giá" value={formatCurrency(post?.basePrice)} />
+      <InfoRow label="Trạng thái hiện tại" value={statusLabel} />
+      <InfoRow label="Ngày đăng" value={formatDateTime(post?.createdAt)} />
+      <InfoRow label="Cập nhật" value={formatDateTime(post?.updatedAt)} />
+
+      {post?.description ? (
+        <>
+          <Text style={styles.descriptionLabel}>Mô tả bài đăng</Text>
+          <Text style={styles.descriptionText}>{post.description}</Text>
+        </>
+      ) : null}
+
+      <ContentImageGrid images={images} emptyText="Bài đăng hiện không có ảnh." />
+
+      {post?.postId ? (
+        <TouchableOpacity style={styles.linkButton} onPress={onOpenPost}>
+          <Ionicons name="cube-outline" size={18} color={COLORS.primary} />
+          <Text style={styles.linkButtonText}>Xem bài đăng</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function ReviewTargetCard({ review }: { review: any }) {
+  const images = Array.isArray(review?.images) ? review.images : [];
+  const statusLabel =
+    reviewStatusLabels[normalizeKey(review?.status)] || "Chưa rõ";
+  const rating = Number(review?.rating);
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>Đánh giá bị báo cáo</Text>
+      {Number.isFinite(rating) && rating > 0 ? (
+        <InfoRow label="Số sao" value={`${rating}/5`} strong />
+      ) : null}
+      <InfoRow label="Trạng thái hiện tại" value={statusLabel} />
+      <InfoRow label="Ngày đánh giá" value={formatDateTime(review?.createdAt)} />
+      {/* orderId is contextual only — never treated as an Order dispute. */}
+      <InfoRow
+        label="Thuộc đơn hàng"
+        value={review?.orderId ? String(review.orderId) : "Chưa có"}
+      />
+
+      {review?.comment ? (
+        <>
+          <Text style={styles.descriptionLabel}>Nội dung đánh giá</Text>
+          <Text style={styles.descriptionText}>{review.comment}</Text>
+        </>
+      ) : null}
+
+      <ContentImageGrid images={images} emptyText="Đánh giá hiện không có ảnh." />
+    </View>
   );
 }
 
