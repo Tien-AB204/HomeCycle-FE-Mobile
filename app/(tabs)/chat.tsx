@@ -609,7 +609,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F1F2",
+    borderBottomColor: "rgba(186, 194, 193, 0.22)",
   },
   negotiationRow: { flexDirection: "row", alignItems: "center" },
   negotiationAvatar: {

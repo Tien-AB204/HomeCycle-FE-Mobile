@@ -1910,7 +1910,7 @@ const styles = StyleSheet.create({
     width: 2,
     flex: 1,
     minHeight: 18,
-    backgroundColor: "#D7DDDC",
+    backgroundColor: "rgba(186, 194, 193, 0.55)",
   },
   timelineContent: {
     flex: 1,
@@ -1969,7 +1969,7 @@ const styles = StyleSheet.create({
   compactMilestoneLineHalf: {
     flex: 1,
     height: 2,
-    backgroundColor: "#D7DDDC",
+    backgroundColor: "rgba(186, 194, 193, 0.55)",
   },
   compactMilestoneLineHidden: {
     backgroundColor: "transparent",

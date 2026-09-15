@@ -785,7 +785,7 @@ const styles = StyleSheet.create({
   },
   timeAgo: {
     fontSize: 11,
-    color: "#6D8687",
+    color: COLORS.textLight,
   },
   unreadDot: {
     width: 9,

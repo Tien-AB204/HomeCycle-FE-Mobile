@@ -4368,7 +4368,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 20,
-    backgroundColor: "rgba(16, 31, 32, 0.38)",
+    backgroundColor: "rgba(23, 40, 48, 0.45)",
   },
 
   negotiationPickerCard: {
@@ -4691,9 +4691,9 @@ const styles = StyleSheet.create({
   },
 
   bubbleThem: {
-    backgroundColor: "#EEF2F2",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
     borderWidth: 1,
-    borderColor: "#D3DDDC",
+    borderColor: "rgba(84, 123, 125, 0.24)",
     borderBottomLeftRadius: 4,
   },
 

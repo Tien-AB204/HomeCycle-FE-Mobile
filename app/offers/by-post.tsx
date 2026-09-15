@@ -1761,7 +1761,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#EEF2F2",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   offerContent: {
     flex: 1,

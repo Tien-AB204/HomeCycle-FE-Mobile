@@ -2202,7 +2202,7 @@ export default function PostDetailScreen() {
                       ? ""
                       : "Nhập số lượng..."
                   }
-                  placeholderTextColor="#A5B2B3"
+                  placeholderTextColor="rgba(84, 123, 125, 0.55)"
                   onFocus={() => setFocusedPlaceholderField("quantity")}
                   onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isAddingToCart}
@@ -2627,7 +2627,7 @@ export default function PostDetailScreen() {
                                 ? ""
                                 : "Nhập số lượng..."
                             }
-                            placeholderTextColor="#A5B2B3"
+                            placeholderTextColor="rgba(84, 123, 125, 0.55)"
                             onFocus={() =>
                               setSellerFocusedField(
                                 "quantity",
@@ -2697,7 +2697,7 @@ export default function PostDetailScreen() {
                                 ? ""
                                 : "Nhập giá bạn muốn chào..."
                             }
-                            placeholderTextColor="#A5B2B3"
+                            placeholderTextColor="rgba(84, 123, 125, 0.55)"
                             onFocus={() =>
                               setSellerFocusedField(
                                 "price",
@@ -2804,7 +2804,7 @@ export default function PostDetailScreen() {
                       ? ""
                       : "Nhập số lượng..."
                   }
-                  placeholderTextColor="#A5B2B3"
+                  placeholderTextColor="rgba(84, 123, 125, 0.55)"
                   onFocus={() => setFocusedPlaceholderField("quantity")}
                   onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isSubmittingOffer}
@@ -2845,7 +2845,7 @@ export default function PostDetailScreen() {
                       ? ""
                       : "Ví dụ: 1500000"
                   }
-                  placeholderTextColor="#A5B2B3"
+                  placeholderTextColor="rgba(84, 123, 125, 0.55)"
                   onFocus={() => setFocusedPlaceholderField("offerPrice")}
                   onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isSubmittingOffer}
@@ -3102,7 +3102,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#EEF2F2",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
   },
   ownerInfo: { flex: 1, minWidth: 0 },
   ownerNameRow: {

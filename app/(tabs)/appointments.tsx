@@ -1397,7 +1397,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
-  outsideMonthText: { color: "#AAB2B1" },
+  outsideMonthText: { color: "rgba(23, 40, 48, 0.35)" },
   todayText: { color: COLORS.primary, fontWeight: "900" },
   selectedDayText: { color: COLORS.white },
   dayDotsRow: {
