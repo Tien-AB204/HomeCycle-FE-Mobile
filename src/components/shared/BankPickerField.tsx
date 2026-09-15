@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.error,
   },
   disabled: {
-    opacity: 0.6,
+    backgroundColor: COLORS.background,
   },
   selection: {
     flex: 1,

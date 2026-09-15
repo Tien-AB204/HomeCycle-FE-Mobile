@@ -1331,7 +1331,7 @@ const styles = StyleSheet.create({
   },
 
   triggerDisabled: {
-    opacity: 0.6,
+    backgroundColor: COLORS.background,
   },
 
   triggerValue: {

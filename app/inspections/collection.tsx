@@ -2357,7 +2357,7 @@ const styles = StyleSheet.create({
   },
 
   disabledInput: {
-    opacity: 0.55,
+    backgroundColor: COLORS.background,
   },
 
   helperText: {
