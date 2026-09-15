@@ -372,6 +372,7 @@ function ChoiceField({
   options,
   onSelect,
   disabled = false,
+  required = false,
 }: {
   label: string;
   placeholder: string;
@@ -379,6 +380,7 @@ function ChoiceField({
   options: ChoiceOption[];
   onSelect: (option: ChoiceOption) => void;
   disabled?: boolean;
+  required?: boolean;
 }) {
   const [visible, setVisible] =
     useState(false);
@@ -409,6 +411,7 @@ function ChoiceField({
     <View style={styles.fieldGroup}>
       <Text style={styles.label}>
         {label}
+        {required ? <Text style={{ color: COLORS.error }}> *</Text> : null}
       </Text>
 
       <TouchableOpacity
@@ -558,7 +561,7 @@ function PartyFields({
 
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>
-          Họ và tên *
+          Họ và tên <Text style={{ color: COLORS.error }}>*</Text>
         </Text>
 
         <TextInput
@@ -576,7 +579,7 @@ function PartyFields({
 
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>
-          Số điện thoại *
+          Số điện thoại <Text style={{ color: COLORS.error }}>*</Text>
         </Text>
 
         <TextInput
@@ -599,7 +602,8 @@ function PartyFields({
       </View>
 
       <ChoiceField
-        label="Tỉnh / Thành phố *"
+        label="Tỉnh / Thành phố"
+        required
         placeholder="Chọn tỉnh/thành phố"
         valueLabel={
           value.province?.provinceName
@@ -629,7 +633,8 @@ function PartyFields({
       />
 
       <ChoiceField
-        label="Quận / Huyện *"
+        label="Quận / Huyện"
+        required
         placeholder={
           value.province
             ? "Chọn quận/huyện"
@@ -664,7 +669,8 @@ function PartyFields({
       />
 
       <ChoiceField
-        label="Phường / Xã *"
+        label="Phường / Xã"
+        required
         placeholder={
           value.district
             ? "Chọn phường/xã"
@@ -691,7 +697,7 @@ function PartyFields({
 
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>
-          Số nhà, tên đường *
+          Số nhà, tên đường <Text style={{ color: COLORS.error }}>*</Text>
         </Text>
 
         <TextInput

@@ -270,7 +270,7 @@ export default function ProfileSetupScreen() {
               <Text style={styles.sectionTitle}>THÔNG TIN CÁ NHÂN</Text>
             </View>
 
-            <Text style={styles.fieldLabel}>Họ và tên *</Text>
+            <Text style={styles.fieldLabel}>Họ và tên <Text style={{ color: COLORS.error }}>*</Text></Text>
             <View
               style={[
                 styles.inputContainer,
@@ -308,7 +308,7 @@ export default function ProfileSetupScreen() {
               </Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Username *</Text>
+            <Text style={styles.fieldLabel}>Username <Text style={{ color: COLORS.error }}>*</Text></Text>
             <View
               style={[
                 styles.inputContainer,
@@ -345,7 +345,7 @@ export default function ProfileSetupScreen() {
               </Text>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Số điện thoại *</Text>
+            <Text style={styles.fieldLabel}>Số điện thoại <Text style={{ color: COLORS.error }}>*</Text></Text>
             <View
               style={[
                 styles.inputContainer,

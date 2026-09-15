@@ -1099,7 +1099,7 @@ export default function BusinessSetupScreen() {
                 maxLength={1000}
               />
 
-              <Text style={styles.label}>Mã số thuế *</Text>
+              <Text style={styles.label}>Mã số thuế <Text style={{ color: COLORS.error }}>*</Text></Text>
               <TextInput
                 style={[
                   styles.input,
@@ -1170,7 +1170,7 @@ export default function BusinessSetupScreen() {
 
               {model === "enterprise" ? (
                 <>
-                  <Text style={styles.label}>Địa chỉ kho bãi / khu vực hoạt động *</Text>
+                  <Text style={styles.label}>Địa chỉ kho bãi / khu vực hoạt động <Text style={{ color: COLORS.error }}>*</Text></Text>
                   <AddressPickerField
                     ref={warehouseAddressPickerRef}
                     value={warehouseAddress}
@@ -1199,7 +1199,8 @@ export default function BusinessSetupScreen() {
               <SectionHeader title="THÔNG TIN NGƯỜI ĐẠI DIỆN / CHỦ HỘ" />
 
               <FullNameField
-                label="Họ và tên *"
+                label="Họ và tên"
+                required
                 value={fullName}
                 onChangeText={handleFullNameChange}
                 mode="words"
@@ -1211,7 +1212,7 @@ export default function BusinessSetupScreen() {
                 returnKeyType="next"
               />
 
-              <Text style={styles.label}>Số CCCD *</Text>
+              <Text style={styles.label}>Số CCCD <Text style={{ color: COLORS.error }}>*</Text></Text>
               <SensitiveNumberField
                 containerStyle={[
                   styles.input,
@@ -1265,7 +1266,7 @@ export default function BusinessSetupScreen() {
                 onSubmitEditing={() => identityDobPickerRef.current?.open()}
               />
 
-              <Text style={styles.label}>Ngày sinh *</Text>
+              <Text style={styles.label}>Ngày sinh <Text style={{ color: COLORS.error }}>*</Text></Text>
               <CalendarDateField
                 ref={identityDobPickerRef}
                 value={identityDob}
@@ -1290,7 +1291,7 @@ export default function BusinessSetupScreen() {
                 <Text style={styles.fieldErrorText}>{identityDobError}</Text>
               ) : null}
 
-              <Text style={styles.label}>Địa chỉ thường trú (Trên CCCD) *</Text>
+              <Text style={styles.label}>Địa chỉ thường trú (Trên CCCD) <Text style={{ color: COLORS.error }}>*</Text></Text>
               <AddressPickerField
                 ref={identityAddressPickerRef}
                 value={identityAddress}
@@ -1330,7 +1331,7 @@ export default function BusinessSetupScreen() {
                 </Text>
               ) : null}
 
-              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau) *</Text>
+              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau) <Text style={{ color: COLORS.error }}>*</Text></Text>
               <View style={styles.row}>
                 <View style={styles.leftUploadColumn}>
                   <UploadBox
@@ -1385,7 +1386,7 @@ export default function BusinessSetupScreen() {
               <SectionHeader title="THÔNG TIN THANH TOÁN" />
 
               <View style={styles.paymentBox}>
-                <Text style={styles.label}>Ngân hàng thụ hưởng *</Text>
+                <Text style={styles.label}>Ngân hàng thụ hưởng <Text style={{ color: COLORS.error }}>*</Text></Text>
                 <BankPickerField
                   bankBin={bankCode}
                   bankName={bankName}
@@ -1408,7 +1409,7 @@ export default function BusinessSetupScreen() {
                   <Text style={styles.fieldErrorText}>{bankError}</Text>
                 ) : null}
 
-                <Text style={styles.label}>Số tài khoản *</Text>
+                <Text style={styles.label}>Số tài khoản <Text style={{ color: COLORS.error }}>*</Text></Text>
                 <SensitiveNumberField
                   containerStyle={[
                     styles.inputPayment,

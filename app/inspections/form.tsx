@@ -729,7 +729,7 @@ export default function InspectionFormScreen() {
 
               {conclusion !== null && isPriceAdjustmentConclusion(conclusion) ? (
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>Giá đề xuất *</Text>
+                  <Text style={styles.label}>Giá đề xuất <Text style={{ color: COLORS.error }}>*</Text></Text>
                   <TextInput
                     value={suggestedPrice}
                     onChangeText={(text) => {
@@ -1002,7 +1002,7 @@ export default function InspectionFormScreen() {
 
             {sellerAction === "reject" ? (
               <>
-                <Text style={styles.label}>Lý do từ chối *</Text>
+                <Text style={styles.label}>Lý do từ chối <Text style={{ color: COLORS.error }}>*</Text></Text>
                 <TextInput
                   value={rejectReason}
                   onChangeText={setRejectReason}

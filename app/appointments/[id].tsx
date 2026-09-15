@@ -1212,7 +1212,7 @@ export default function AppointmentDetailScreen() {
           <ModalSurface style={styles.lifecycleModalCard}>
             <Text style={styles.lifecycleModalTitle}>Đề xuất lịch hẹn mới</Text>
 
-            <Text style={styles.label}>Ngày *</Text>
+            <Text style={styles.label}>Ngày <Text style={{ color: COLORS.error }}>*</Text></Text>
             <CalendarDateField
               value={rescheduleDate}
               onChange={setRescheduleDate}
@@ -1221,7 +1221,7 @@ export default function AppointmentDetailScreen() {
               disabled={isReschedulingSubmitting}
             />
 
-            <Text style={styles.label}>Giờ *</Text>
+            <Text style={styles.label}>Giờ <Text style={{ color: COLORS.error }}>*</Text></Text>
             <TextInput
               value={rescheduleTime}
               onChangeText={(text) =>
@@ -1286,7 +1286,7 @@ export default function AppointmentDetailScreen() {
 
             {pendingLifecycleAction === "cancel" ? (
               <>
-                <Text style={styles.label}>Lý do hủy *</Text>
+                <Text style={styles.label}>Lý do hủy <Text style={{ color: COLORS.error }}>*</Text></Text>
                 <TextInput
                   value={lifecycleReason}
                   onChangeText={setLifecycleReason}

@@ -398,7 +398,7 @@ export default function WalletScreen() {
             </View>
           ) : null}
 
-          <Text style={styles.inputLabel}>Số tiền muốn rút *</Text>
+          <Text style={styles.inputLabel}>Số tiền muốn rút <Text style={{ color: COLORS.error }}>*</Text></Text>
           <TextInput
             style={[styles.amountInput, amountError ? styles.inputError : undefined]}
             value={withdrawalAmount}

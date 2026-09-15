@@ -1071,7 +1071,7 @@ export default function BusinessAccountInfoScreen() {
               style={styles.card}
               onPress={handleEditableCardPress}
             >
-              <Text style={styles.inputLabel}>Tên tài khoản *</Text>
+              <Text style={styles.inputLabel}>Tên tài khoản <Text style={{ color: COLORS.error }}>*</Text></Text>
               <TextInput
                 style={[
                   styles.input,
@@ -1087,9 +1087,10 @@ export default function BusinessAccountInfoScreen() {
                 onFocus={() => handleFieldFocus("account")}
                 editable={!savingSection}
                 placeholder="Nhập tên tài khoản"
+                placeholderTextColor={COLORS.textLight}
               />
               <FieldError text={errors.username} />
-              <Text style={styles.inputLabel}>Số điện thoại *</Text>
+              <Text style={styles.inputLabel}>Số điện thoại <Text style={{ color: COLORS.error }}>*</Text></Text>
               <TextInput
                 style={[
                   styles.input,
@@ -1106,6 +1107,7 @@ export default function BusinessAccountInfoScreen() {
                 editable={!savingSection}
                 keyboardType="phone-pad"
                 placeholder="VD: 0987654321"
+                placeholderTextColor={COLORS.textLight}
               />
               <FieldError text={errors.phoneNumber} />
               <InlineMessage message={messages.account || null} />
@@ -1162,8 +1164,9 @@ export default function BusinessAccountInfoScreen() {
               editable={!savingSection}
               multiline
               placeholder="Nhập mô tả hoạt động, lĩnh vực hoặc dịch vụ kinh doanh..."
+              placeholderTextColor={COLORS.textLight}
             />
-            <Text style={styles.inputLabel}>Mã số thuế *</Text>
+            <Text style={styles.inputLabel}>Mã số thuế <Text style={{ color: COLORS.error }}>*</Text></Text>
             <TextInput
               style={[
                 styles.input,
@@ -1180,7 +1183,7 @@ export default function BusinessAccountInfoScreen() {
               keyboardType="number-pad"
             />
             <FieldError text={errors.taxCode} />
-            <Text style={styles.inputLabel}>Địa chỉ trụ sở *</Text>
+            <Text style={styles.inputLabel}>Địa chỉ trụ sở <Text style={{ color: COLORS.error }}>*</Text></Text>
             <AddressPickerField
               value={businessAddress}
               onChange={(value, selection) => {
@@ -1212,7 +1215,7 @@ export default function BusinessAccountInfoScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color={COLORS.primary} />
             </TouchableOpacity>
-            <Text style={styles.inputLabel}>Giấy đăng ký kinh doanh mới *</Text>
+            <Text style={styles.inputLabel}>Giấy đăng ký kinh doanh mới <Text style={{ color: COLORS.error }}>*</Text></Text>
             {documents.registration ? (
               <Text style={styles.existingFileText}>
                 Đã có giấy tờ hiện tại. BE vẫn yêu cầu tải file mới khi cập
@@ -1275,7 +1278,7 @@ export default function BusinessAccountInfoScreen() {
               style={styles.card}
               onPress={handleEditableCardPress}
             >
-            <Text style={styles.inputLabel}>Họ và tên *</Text>
+            <Text style={styles.inputLabel}>Họ và tên <Text style={{ color: COLORS.error }}>*</Text></Text>
             <TextInput
               style={[
                 styles.input,
@@ -1293,9 +1296,10 @@ export default function BusinessAccountInfoScreen() {
               autoCapitalize="words"
               autoCorrect={false}
               placeholder="Nhập họ và tên"
+              placeholderTextColor={COLORS.textLight}
             />
             <FieldError text={errors.fullName} />
-            <Text style={styles.inputLabel}>Số CCCD *</Text>
+            <Text style={styles.inputLabel}>Số CCCD <Text style={{ color: COLORS.error }}>*</Text></Text>
             <SensitiveNumberField
               containerStyle={[
                 styles.input,
@@ -1336,7 +1340,7 @@ export default function BusinessAccountInfoScreen() {
               containerStyle={styles.identityFieldContainer}
               inputStyle={styles.identityInput}
             />
-            <Text style={styles.inputLabel}>Ngày sinh *</Text>
+            <Text style={styles.inputLabel}>Ngày sinh <Text style={{ color: COLORS.error }}>*</Text></Text>
             <CalendarDateField
               value={identityDob}
               onChange={(value) => {
@@ -1349,7 +1353,7 @@ export default function BusinessAccountInfoScreen() {
               disabled={!isEditing("identity") || savingSection === "identity"}
             />
             <FieldError text={errors.identityDob} />
-            <Text style={styles.inputLabel}>Địa chỉ thường trú *</Text>
+            <Text style={styles.inputLabel}>Địa chỉ thường trú <Text style={{ color: COLORS.error }}>*</Text></Text>
             <AddressPickerField
               value={identityAddress}
               onChange={(value, selection) => {
@@ -1362,7 +1366,7 @@ export default function BusinessAccountInfoScreen() {
               disabled={!isEditing("identity") || savingSection === "identity"}
             />
             <FieldError text={errors.identityAddress} />
-            <Text style={styles.inputLabel}>CCCD mặt trước mới *</Text>
+            <Text style={styles.inputLabel}>CCCD mặt trước mới <Text style={{ color: COLORS.error }}>*</Text></Text>
             {documents.front ? (
               <Image
                 source={{ uri: documents.front }}
@@ -1394,7 +1398,7 @@ export default function BusinessAccountInfoScreen() {
                 <FieldError text={errors.cccdFront} />
               </>
             ) : null}
-            <Text style={styles.inputLabel}>CCCD mặt sau mới *</Text>
+            <Text style={styles.inputLabel}>CCCD mặt sau mới <Text style={{ color: COLORS.error }}>*</Text></Text>
             {documents.back ? (
               <Image
                 source={{ uri: documents.back }}
@@ -1583,7 +1587,7 @@ export default function BusinessAccountInfoScreen() {
             <Text style={styles.helperText}>
               Cần điền đủ thông tin ngân hàng để đi tiếp tới thanh toán.
             </Text>
-            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng *</Text>
+            <Text style={styles.inputLabel}>Ngân hàng thụ hưởng <Text style={{ color: COLORS.error }}>*</Text></Text>
             {isEditing("bank") ? (
               <BankPickerField
                 bankBin={bankCode}
@@ -1620,7 +1624,7 @@ export default function BusinessAccountInfoScreen() {
               </View>
             )}
             <FieldError text={errors.bankCode || errors.bankName} />
-            <Text style={styles.inputLabel}>Số tài khoản *</Text>
+            <Text style={styles.inputLabel}>Số tài khoản <Text style={{ color: COLORS.error }}>*</Text></Text>
             <SensitiveNumberField
               containerStyle={[
                 styles.input,

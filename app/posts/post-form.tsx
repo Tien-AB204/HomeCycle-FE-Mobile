@@ -1885,7 +1885,7 @@ export default function PostFormScreen() {
               </View>
             )}
 
-            <Text style={styles.label}>Số lượng *</Text>
+            <Text style={styles.label}>Số lượng <Text style={{ color: COLORS.error }}>*</Text></Text>
             {isEditMode ? (
               <Text style={styles.quantityHelper}>
                 Nhập tổng số lượng mới của tin, không phải số lượng cộng thêm.

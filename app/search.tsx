@@ -859,6 +859,7 @@ export default function SearchScreen() {
           <TextInput
             style={styles.numberInput}
             placeholder="Giá 1"
+            placeholderTextColor={COLORS.textLight}
             keyboardType="numeric"
             value={minPrice}
             onChangeText={setMinPrice}
@@ -867,6 +868,7 @@ export default function SearchScreen() {
           <TextInput
             style={styles.numberInput}
             placeholder="Giá 2"
+            placeholderTextColor={COLORS.textLight}
             keyboardType="numeric"
             value={maxPrice}
             onChangeText={setMaxPrice}
@@ -878,6 +880,7 @@ export default function SearchScreen() {
           <TextInput
             style={styles.numberInput}
             placeholder="Số tháng"
+            placeholderTextColor={COLORS.textLight}
             keyboardType="numeric"
             value={minUsage}
             onChangeText={setMinUsage}
@@ -886,6 +889,7 @@ export default function SearchScreen() {
           <TextInput
             style={styles.numberInput}
             placeholder="Số tháng"
+            placeholderTextColor={COLORS.textLight}
             keyboardType="numeric"
             value={maxUsage}
             onChangeText={setMaxUsage}

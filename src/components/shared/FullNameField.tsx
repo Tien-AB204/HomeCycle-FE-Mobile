@@ -21,6 +21,7 @@ interface FullNameFieldProps
     "value" | "onChangeText" | "style" | "autoCapitalize"
   > {
   label?: string;
+  required?: boolean;
   value: string;
   onChangeText: (value: string) => void;
   mode?: FullNameMode;
@@ -89,6 +90,7 @@ const capitalizeWordStarts = (value: string) =>
 
 export default function FullNameField({
   label,
+  required = false,
   value,
   onChangeText,
   mode = "words",
@@ -318,7 +320,12 @@ export default function FullNameField({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label ? <Text style={[styles.label, labelStyle]}>{label}</Text> : null}
+      {label ? (
+        <Text style={[styles.label, labelStyle]}>
+          {label}
+          {required ? <Text style={{ color: COLORS.error }}> *</Text> : null}
+        </Text>
+      ) : null}
 
       <TextInput
         {...textInputProps}

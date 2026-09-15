@@ -565,7 +565,7 @@ export default function OrderReviewScreen() {
                 {isEditing ? "Sửa đánh giá" : "Đánh giá giao dịch"}
               </Text>
 
-              <Text style={styles.fieldLabel}>Mức độ hài lòng *</Text>
+              <Text style={styles.fieldLabel}>Mức độ hài lòng <Text style={{ color: COLORS.error }}>*</Text></Text>
               {starRow}
               {ratingError ? (
                 <Text style={styles.fieldError}>{ratingError}</Text>
