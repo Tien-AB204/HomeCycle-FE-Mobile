@@ -2541,7 +2541,7 @@ const styles = StyleSheet.create({
   },
 
   submitButtonDisabled: {
-    opacity: 0.55,
+    backgroundColor: COLORS.textLight,
   },
 
   submitText: {

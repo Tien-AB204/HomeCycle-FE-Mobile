@@ -311,7 +311,7 @@ const styles =
     },
 
     disabledButton: {
-      opacity: 0.7,
+      backgroundColor: COLORS.background,
     },
 
     googleIconContainer: {
