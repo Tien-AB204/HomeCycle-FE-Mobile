@@ -7,6 +7,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -381,6 +382,11 @@ export default function OrderReviewScreen() {
     setIsEditing(false);
   };
 
+  const dismissActiveEdit = () => {
+    if (!isEditing || isSubmitting) return;
+    cancelEditing();
+  };
+
   const starRow = useMemo(
     () => (
       <View style={styles.starRow}>
@@ -432,6 +438,10 @@ export default function OrderReviewScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          <Pressable
+            style={styles.contentPressArea}
+            onPress={dismissActiveEdit}
+          >
           <View style={styles.orderCard}>
             <View style={styles.orderHeaderRow}>
               <View style={styles.flex}>
@@ -547,7 +557,10 @@ export default function OrderReviewScreen() {
               )}
             </View>
           ) : (
-            <View style={styles.card}>
+            <Pressable
+              style={styles.card}
+              onPress={(event) => event.stopPropagation()}
+            >
               <Text style={styles.cardTitle}>
                 {isEditing ? "Sửa đánh giá" : "Đánh giá giao dịch"}
               </Text>
@@ -681,7 +694,7 @@ export default function OrderReviewScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </Pressable>
           )}
 
           <TouchableOpacity
@@ -691,6 +704,7 @@ export default function OrderReviewScreen() {
             <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
             <Text style={styles.backToOrderText}>Quay lại đơn hàng</Text>
           </TouchableOpacity>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -698,6 +712,9 @@ export default function OrderReviewScreen() {
 }
 
 const styles = StyleSheet.create({
+  contentPressArea: {
+    flexGrow: 1,
+  },
   safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   flex: { flex: 1 },
   flexButton: { flex: 1 },
