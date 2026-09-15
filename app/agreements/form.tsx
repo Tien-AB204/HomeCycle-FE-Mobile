@@ -97,11 +97,30 @@ const formatGhnDate = (value?: string | null) => {
 const MAX_WEIGHT_GRAM = 50000;
 const EMPTY_PARTY: GhnPartyFormValue = { fullName: "", phone: "", province: null, district: null, ward: null, addressDetail: "" };
 const FINAL_TERMS_REQUIRED_MESSAGE = "Phiên thương lượng chưa có giá và số lượng đã chốt. Vui lòng hoàn tất thương lượng trước khi tạo hợp đồng.";
+const EDIT_UNAVAILABLE_MESSAGE = "Hợp đồng không còn ở trạng thái cho phép chỉnh sửa.";
+const isPendingAgreementStatus = (status: unknown) =>
+  typeof status === "string" &&
+  status.trim().replace(/[\s_-]/g, "").toLowerCase() === "pending";
 
 const agreementApi = {
   createAgreement: async (data: CreateAgreementPayload) => (await apiClient.post("/agreements", data)).data,
   getAgreementById: async (id: string) => (await apiClient.get(`/agreements/${id}`)).data,
-  updateAgreement: async (id: string, data: UpdateAgreementPayload) => (await apiClient.put(`/agreements/${id}`, data)).data,
+  updateAgreement: async (id: string, data: UpdateAgreementPayload) => {
+    try {
+      const response = await apiClient.get(`/agreements/${id}`);
+      const agreement = response.data?.data || response.data;
+      if (!isPendingAgreementStatus(agreement?.agreementStatus)) {
+        throw new Error(EDIT_UNAVAILABLE_MESSAGE);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === EDIT_UNAVAILABLE_MESSAGE) {
+        throw error;
+      }
+      throw new Error("Không thể xác minh trạng thái hợp đồng để cập nhật. Vui lòng thử lại.");
+    }
+
+    return (await apiClient.put(`/agreements/${id}`, data)).data;
+  },
   previewShippingFee: async (negotiationId: string, data: GhnPreviewRequest) => (await apiClient.post(`/agreements/negotiations/${negotiationId}/ghn-preview`, data)).data,
   getGhnParcelInfo: async (negotiationId: string) => (await apiClient.get(`/agreements/negotiations/${negotiationId}/ghn-parcel-info`)).data,
 };
@@ -230,6 +249,7 @@ export default function AgreementFormScreen() {
   const editAgreementId = Array.isArray(params.editAgreementId) ? params.editAgreementId[0] : params.editAgreementId;
   const isEditing = Boolean(editAgreementId);
   const [isProcessing, setIsProcessing] = useState(false); const [isLoadingData, setIsLoadingData] = useState(isEditing); const [isCalculatingFee, setIsCalculatingFee] = useState(false); const [isLoadingGhnInfo, setIsLoadingGhnInfo] = useState(false); const hasFetchedGhnRef = useRef(false);
+  const [editAccess, setEditAccess] = useState<"checking" | "allowed" | "blocked">(isEditing ? "checking" : "allowed");
   const [notice, setNotice] = useState<NoticeState | null>(null); const [isInspection, setIsInspection] = useState(true); const [paymentType, setPaymentType] = useState<"DEPOSIT" | "FULL">("DEPOSIT"); const [revision, setRevision] = useState(1); const [defaultPostDeliveryMethod, setDefaultPostDeliveryMethod] = useState<DeliveryMethod>("SELLER_DELIVERY");
   const [showLowPriceConfirm, setShowLowPriceConfirm] = useState(false);
   const [summary, setSummary] = useState({ productName: "Đang tải thông tin...", productCode: "", price: 0, quantity: 1 }); const [hasAuthoritativeTerms, setHasAuthoritativeTerms] = useState(false); const [isLoadingSummary, setIsLoadingSummary] = useState(true); const [notes, setNotes] = useState(""); const [inspectionDate, setInspectionDate] = useState(""); const [inspectionAddress, setInspectionAddress] = useState(""); const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("SELLER_DELIVERY"); const [collectionDate, setCollectionDate] = useState(""); const [pickupAddress, setPickupAddress] = useState(""); const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -249,6 +269,7 @@ export default function AgreementFormScreen() {
   const acceptedPreviewRef = useRef<GhnPreviewResponse | null>(null);
   const previewGenerationRef = useRef(0);
   const submitInFlightRef = useRef(false);
+  const editAccessRequestRef = useRef(0);
   const senderEditedRef = useRef(false);
   const receiverEditedRef = useRef(false);
   const totalWeightGram = toPositiveInt(item.weightGram);
@@ -288,26 +309,107 @@ export default function AgreementFormScreen() {
   const fetchSummary = useCallback(async () => { if (!negotiationId) return; try { setIsLoadingSummary(true); if (!isEditing) setHasAuthoritativeTerms(false); const negRes = await negotiationApi.getNegotiationById(negotiationId as string); const neg = negRes?.data || negRes; const price = Number(neg?.finalPrice ?? neg?.FinalPrice); const quantity = Number(neg?.finalQuantity ?? neg?.FinalQuantity); if (!isEditing && (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0)) { setNotice({ type: "error", message: FINAL_TERMS_REQUIRED_MESSAGE }); return; } const postId = neg?.postId ?? neg?.PostId; let productName = "Sản phẩm thương lượng"; let productCode = postId || ""; if (postId) { const postRes = await postApi.getPostById(postId); const postData = postRes?.data || postRes; productName = postData?.product?.productName || postData?.productName || productName; productCode = postData?.product?.productId || postData?.productId || postId; let method: DeliveryMethod = "SELLER_DELIVERY"; const raw = postData?.product?.deliveryMethod ?? postData?.deliveryMethod; if (raw === 1 || raw === "GhnDelivery") method = "GHN"; else if (raw === 3 || raw === "BuyerPickUp") method = "BUYER_PICKUP"; setDefaultPostDeliveryMethod(method); } setSummary((current) => ({ productName, productCode, price: isEditing ? current.price : price, quantity: isEditing ? current.quantity : quantity })); if (!isEditing) setHasAuthoritativeTerms(true); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải thông tin giao dịch.") }); } finally { setIsLoadingSummary(false); } }, [isEditing, negotiationId]);
   const hydrateGhnParty = (party: any): GhnPartyFormValue => ({ fullName: capitalizeWordInitials(party?.fullName || ""), phone: party?.phone || "", province: party?.address?.provinceId ? { provinceId: Number(party.address.provinceId), provinceName: party.address.provinceName || "" } : null, district: party?.address?.districtId ? { districtId: Number(party.address.districtId), provinceId: Number(party.address.provinceId || 0), districtName: party.address.districtName || "" } : null, ward: party?.address?.wardCode ? { wardCode: String(party.address.wardCode), districtId: Number(party.address.districtId || 0), wardName: party.address.wardName || "" } : null, addressDetail: capitalizeWordInitials(party?.address?.addressDetail || "") });
   const loadEditLocationOptions = useCallback(async (senderValue: GhnPartyFormValue, receiverValue: GhnPartyFormValue) => { try { const [a, b] = await Promise.all([senderValue.province ? ghnApi.getDistricts(senderValue.province.provinceId) : Promise.resolve([]), receiverValue.province ? ghnApi.getDistricts(receiverValue.province.provinceId) : Promise.resolve([])]); setSenderDistricts(a); setReceiverDistricts(b); const [c, d] = await Promise.all([senderValue.district ? ghnApi.getWards(senderValue.district.districtId) : Promise.resolve([]), receiverValue.district ? ghnApi.getWards(receiverValue.district.districtId) : Promise.resolve([])]); setSenderWards(c); setReceiverWards(d); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải lại dữ liệu địa chỉ GHN.") }); } }, []);
-  const fetchExistingAgreement = useCallback(async () => { if (!isEditing || !editAgreementId) return; const generation = previewGenerationRef.current; try { setIsLoadingData(true); const res = await agreementApi.getAgreementById(editAgreementId as string); const data = res?.data || res; if (!data || generation !== previewGenerationRef.current) return; const price = Number(data.finalPrice ?? data.FinalPrice ?? data.initialPrice ?? data.InitialPrice); const quantity = Number(data.quantity ?? data.Quantity); if (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0) throw new Error("Không tìm thấy giá và số lượng hợp đồng hợp lệ."); invalidateQuote(); setSummary((current) => ({ ...current, price, quantity })); setHasAuthoritativeTerms(true); const inspection = data.agreementType === "Inspection" || data.agreementType === 0; setIsInspection(inspection); setPaymentType(data.paymentType === "Deposit" || data.paymentType === 1 ? "DEPOSIT" : "FULL"); const details = data.agreementDetails || {}; const currentRevision = Number(details.revision ?? data.revision ?? 1); setRevision(Number.isFinite(currentRevision) && currentRevision >= 1 ? currentRevision : 1); setNotes(details.notes || ""); setInspectionDate(details.inspectionDate ? details.inspectionDate.split("T")[0] : ""); setInspectionAddress(details.inspectionAddress || ""); setCollectionDate(details.collectionDate ? details.collectionDate.split("T")[0] : ""); setPickupAddress(details.pickupAddress || ""); setDeliveryAddress(details.deliveryAddress || ""); if (details.deliveryMethod === "SellerDelivers" || details.deliveryMethod === 2) setDeliveryMethod("SELLER_DELIVERY"); else if (details.deliveryMethod === "BuyerPickUp" || details.deliveryMethod === 3) setDeliveryMethod("BUYER_PICKUP"); else if (details.deliveryMethod === "GhnDelivery" || details.deliveryMethod === 1) setDeliveryMethod("GHN"); const info = details.ghnInfo; if (info) { hasFetchedGhnRef.current = true; const s = hydrateGhnParty(info.sender); const r = hydrateGhnParty(info.receiver); setSender(s); setReceiver(r); setRequiredNote(info.requiredNote || ""); setShippingContent(info.content || "");
-      const savedItems = Array.isArray(info.items) ? info.items : [];
-      const isMultiParcel = Number(info.parcelCount || savedItems.length || 1) > 1 || savedItems.length > 1;
-      setHasUnsupportedMultiParcel(isMultiParcel);
-      if (!isMultiParcel) {
-        const parcel = savedItems[0] ?? info.lightParcel ?? info;
-        setItem(toItemForm({
-          name: savedItems[0]?.name || "Kiện hàng HomeCycle",
-          code: savedItems[0]?.code ?? null,
-          quantity: 1,
-          weightGram: Number(parcel?.weightGram || 0),
-          lengthCm: Number(parcel?.lengthCm || 0),
-          widthCm: Number(parcel?.widthCm || 0),
-          heightCm: Number(parcel?.heightCm || 0),
-        }));
+  const fetchExistingAgreement = useCallback(async () => {
+    if (!isEditing || !editAgreementId) return;
+
+    const request = ++editAccessRequestRef.current;
+    const generation = previewGenerationRef.current;
+    try {
+      setIsLoadingData(true);
+      setEditAccess("checking");
+
+      const res = await agreementApi.getAgreementById(editAgreementId as string);
+      const data = res?.data || res;
+      if (
+        !data ||
+        generation !== previewGenerationRef.current ||
+        request !== editAccessRequestRef.current
+      ) {
+        return;
       }
-      setPackagingHint(isMultiParcel
-        ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
-        : "Vui lòng kiểm tra lại thông tin kiện đã đóng gói và tính phí trước khi lưu thay đổi.");
-      await loadEditLocationOptions(s, r); } } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải dữ liệu hợp đồng hiện tại.") }); } finally { setIsLoadingData(false); } }, [editAgreementId, invalidateQuote, isEditing, loadEditLocationOptions]);
+
+      if (!isPendingAgreementStatus(data.agreementStatus)) {
+        setEditAccess("blocked");
+        setNotice({ type: "error", message: EDIT_UNAVAILABLE_MESSAGE });
+        return;
+      }
+
+      const price = Number(
+        data.finalPrice ?? data.FinalPrice ?? data.initialPrice ?? data.InitialPrice,
+      );
+      const quantity = Number(data.quantity ?? data.Quantity);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error("Không tìm thấy giá và số lượng hợp đồng hợp lệ.");
+      }
+
+      invalidateQuote();
+      setSummary((current) => ({ ...current, price, quantity }));
+      setHasAuthoritativeTerms(true);
+
+      const inspection = data.agreementType === "Inspection" || data.agreementType === 0;
+      setIsInspection(inspection);
+      setPaymentType(data.paymentType === "Deposit" || data.paymentType === 1 ? "DEPOSIT" : "FULL");
+
+      const details = data.agreementDetails || {};
+      const currentRevision = Number(details.revision ?? data.revision ?? 1);
+      setRevision(Number.isFinite(currentRevision) && currentRevision >= 1 ? currentRevision : 1);
+      setNotes(details.notes || "");
+      setInspectionDate(details.inspectionDate ? details.inspectionDate.split("T")[0] : "");
+      setInspectionAddress(details.inspectionAddress || "");
+      setCollectionDate(details.collectionDate ? details.collectionDate.split("T")[0] : "");
+      setPickupAddress(details.pickupAddress || "");
+      setDeliveryAddress(details.deliveryAddress || "");
+      if (details.deliveryMethod === "SellerDelivers" || details.deliveryMethod === 2) setDeliveryMethod("SELLER_DELIVERY");
+      else if (details.deliveryMethod === "BuyerPickUp" || details.deliveryMethod === 3) setDeliveryMethod("BUYER_PICKUP");
+      else if (details.deliveryMethod === "GhnDelivery" || details.deliveryMethod === 1) setDeliveryMethod("GHN");
+
+      const info = details.ghnInfo;
+      if (info) {
+        hasFetchedGhnRef.current = true;
+        const s = hydrateGhnParty(info.sender);
+        const r = hydrateGhnParty(info.receiver);
+        setSender(s);
+        setReceiver(r);
+        setRequiredNote(info.requiredNote || "");
+        setShippingContent(info.content || "");
+        const savedItems = Array.isArray(info.items) ? info.items : [];
+        const isMultiParcel = Number(info.parcelCount || savedItems.length || 1) > 1 || savedItems.length > 1;
+        setHasUnsupportedMultiParcel(isMultiParcel);
+        if (!isMultiParcel) {
+          const parcel = savedItems[0] ?? info.lightParcel ?? info;
+          setItem(toItemForm({
+            name: savedItems[0]?.name || "Kiện hàng HomeCycle",
+            code: savedItems[0]?.code ?? null,
+            quantity: 1,
+            weightGram: Number(parcel?.weightGram || 0),
+            lengthCm: Number(parcel?.lengthCm || 0),
+            widthCm: Number(parcel?.widthCm || 0),
+            heightCm: Number(parcel?.heightCm || 0),
+          }));
+        }
+        setPackagingHint(isMultiParcel
+          ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
+          : "Vui lòng kiểm tra lại thông tin kiện đã đóng gói và tính phí trước khi lưu thay đổi.");
+        await loadEditLocationOptions(s, r);
+      }
+
+      if (request === editAccessRequestRef.current) {
+        setEditAccess("allowed");
+      }
+    } catch {
+      if (request === editAccessRequestRef.current) {
+        setEditAccess("blocked");
+        setNotice({
+          type: "error",
+          message: "Không thể xác minh trạng thái hợp đồng để chỉnh sửa. Vui lòng thử lại.",
+        });
+      }
+    } finally {
+      if (request === editAccessRequestRef.current) {
+        setIsLoadingData(false);
+      }
+    }
+  }, [editAgreementId, invalidateQuote, isEditing, loadEditLocationOptions]);
   useFocusEffect(useCallback(() => {
     void fetchProvinces();
     void fetchSummary();
@@ -450,6 +552,7 @@ export default function AgreementFormScreen() {
   const formatPrice = (price: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(price);
 
   if (isLoadingData) return <SafeAreaView style={styles.safeArea}><Header title={isEditing ? "Chỉnh sửa hợp đồng" : "Thiết lập hợp đồng"} showBack /><View style={styles.loadingContainer}><ActivityIndicator size="large" color={COLORS.primary} /></View></SafeAreaView>;
+  if (isEditing && editAccess !== "allowed") return <SafeAreaView style={styles.safeArea}><Header title="Chỉnh sửa hợp đồng" showBack /><View style={[styles.loadingContainer, { padding: 24 }]}><Ionicons name="lock-closed-outline" size={40} color={COLORS.textLight} /><Text style={[styles.sectionTitle, { marginTop: 16, textAlign: "center" }]}>Không thể chỉnh sửa hợp đồng</Text><Text style={[styles.noticeText, { textAlign: "center", marginLeft: 0 }]}>{notice?.message || EDIT_UNAVAILABLE_MESSAGE}</Text><TouchableOpacity style={[styles.submitBtn, { alignSelf: "stretch", marginTop: 24 }]} onPress={() => void fetchExistingAgreement()} disabled={isProcessing}><Text style={styles.submitBtnText}>Thử lại</Text></TouchableOpacity></View></SafeAreaView>;
   return <SafeAreaView style={styles.safeArea}><Header title={isEditing ? "Chỉnh sửa hợp đồng" : "Thiết lập hợp đồng"} showBack /><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}><ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={styles.section}><Text style={styles.sectionTitle}>Tóm tắt giao dịch</Text><View style={styles.summaryCard}>{isLoadingSummary ? <ActivityIndicator color={COLORS.primary} /> : hasAuthoritativeTerms ? <><Text style={styles.summaryProductName} numberOfLines={2}>{summary.productName}</Text><Text style={styles.summaryQty}>Giá đơn vị đã chốt: {formatPrice(summary.price)}</Text><Text style={styles.summaryQty}>Số lượng: {summary.quantity}</Text><Text style={styles.summaryPrice}>Tổng tiền hàng: {formatPrice(summary.price * summary.quantity)}</Text></> : <Text style={styles.numericError}>{isEditing ? "Không tìm thấy giá và số lượng hợp đồng hợp lệ." : FINAL_TERMS_REQUIRED_MESSAGE}</Text>}</View></View>
     <View style={styles.section}><Text style={styles.sectionTitle}>Loại giao dịch</Text><View style={styles.radioGroup}><TouchableOpacity style={styles.radioBtn} disabled={isEditing} onPress={() => { if (!isInspection) invalidateQuote(); setIsInspection(true); setPaymentType("DEPOSIT"); setNotice(null); if (!isEditing) { setPickupAddress(""); setDeliveryAddress(""); setDeliveryMethod("SELLER_DELIVERY"); } }}><Ionicons name={isInspection ? "radio-button-on" : "radio-button-off"} size={24} color={isInspection ? COLORS.primary : COLORS.textLight} /><Text style={[styles.radioText, isEditing && !isInspection ? styles.disabledText : undefined]}>Có kiểm định trước</Text></TouchableOpacity><TouchableOpacity style={styles.radioBtnLast} disabled={isEditing} onPress={() => { if (isInspection) invalidateQuote(); setIsInspection(false); setNotice(null); if (!isEditing && defaultPostDeliveryMethod) void handleDeliveryMethodChange(defaultPostDeliveryMethod); }}><Ionicons name={!isInspection ? "radio-button-on" : "radio-button-off"} size={24} color={!isInspection ? COLORS.primary : COLORS.textLight} /><Text style={[styles.radioText, isEditing && isInspection ? styles.disabledText : undefined]}>Không kiểm định (Thu gom)</Text></TouchableOpacity></View>{isEditing ? <Text style={styles.lockedHint}>Không thể thay đổi loại giao dịch sau khi hợp đồng đã được tạo.</Text> : null}</View>

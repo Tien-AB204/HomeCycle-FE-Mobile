@@ -81,6 +81,9 @@ const normalizeStatus = (status: unknown) =>
     .replace(/[\s_-]/g, "")
     .toLowerCase();
 
+const isPendingAgreementStatus = (status: unknown) =>
+  typeof status === "string" && normalizeStatus(status) === "pending";
+
 const normalizeId = (id: unknown) =>
   String(id ?? "")
     .trim()
@@ -425,6 +428,32 @@ export default function AgreementPreviewScreen() {
     return diffs;
   };
 
+  const hasInterveningAgreementChange = (oldData: any, newData: any) => {
+    const diffs = detectChanges(oldData, newData);
+    const oldRevision = Number(
+      oldData?.revision ?? oldData?.agreementDetails?.revision,
+    );
+    const newRevision = Number(
+      newData?.revision ?? newData?.agreementDetails?.revision,
+    );
+    const revisionChanged =
+      Number.isInteger(oldRevision) &&
+      Number.isInteger(newRevision) &&
+      oldRevision !== newRevision;
+    const oldUpdatedAt = Date.parse(oldData?.updatedAt || "");
+    const newUpdatedAt = Date.parse(newData?.updatedAt || "");
+    const updatedAtChanged =
+      Number.isFinite(oldUpdatedAt) &&
+      Number.isFinite(newUpdatedAt) &&
+      oldUpdatedAt !== newUpdatedAt;
+
+    return {
+      diffs,
+      changed:
+        Object.keys(diffs).length > 0 || revisionChanged || updatedAtChanged,
+    };
+  };
+
   const handleAccept = async () => {
     if (!agreementId) return;
 
@@ -574,35 +603,31 @@ export default function AgreementPreviewScreen() {
       // JIT CHECK (Kiểm tra xem đối tác có vừa sửa gì không)
       const checkRes = await agreementApi.getAgreementById(agreementId);
       const latestData = unwrapResponse(checkRes);
-      const latestStatus = normalizeStatus(latestData?.agreementStatus);
 
-      if (latestStatus === "awaitingpayment" || latestStatus === "accepted") {
+      if (!isPendingAgreementStatus(latestData?.agreementStatus)) {
+        setIsConfirmingEditConflict(false);
+        setChangedFields(null);
         setStatusMessage({
           type: "warning",
-          text: "⚠️ Đối tác đã xác nhận hợp đồng. Không thể chỉnh sửa.",
+          text: "Hợp đồng không còn ở trạng thái cho phép chỉnh sửa.",
         });
         await fetchAgreementDetails(false);
         return;
       }
 
-      // [THÊM MỚI] Bắt Conflict khi đối tác cũng vừa sửa
-      const diffs = detectChanges(agreementData, latestData);
-      const currentUpdatedTime = new Date(
-        agreementData?.updatedAt || 0,
-      ).getTime();
-      const latestUpdatedTime = new Date(latestData?.updatedAt || 0).getTime();
+      const { diffs, changed } = hasInterveningAgreementChange(
+        agreementData,
+        latestData,
+      );
 
-      if (
-        Object.keys(diffs).length > 0 ||
-        currentUpdatedTime !== latestUpdatedTime
-      ) {
+      if (changed) {
         setStatusMessage({
           type: "warning",
-          text: "⚠️ Đối tác vừa cập nhật hợp đồng! Các mục thay đổi được bôi đỏ ở trên. Bạn có chắc chắn muốn tiếp tục chỉnh sửa đè lên bản này không?",
+          text: "Hợp đồng đã có thay đổi mới. Hãy xem lại trước khi tiếp tục chỉnh sửa.",
         });
-        setChangedFields(diffs);
-        await fetchAgreementDetails(false); // Cập nhật lại UI để hiển thị bản mới nhất
-        setIsConfirmingEditConflict(true); // Bật popup inline xác nhận
+        setChangedFields(Object.keys(diffs).length > 0 ? diffs : null);
+        await fetchAgreementDetails(false);
+        setIsConfirmingEditConflict(true);
         return;
       }
 
@@ -669,11 +694,15 @@ export default function AgreementPreviewScreen() {
   const renderOldValue = (key: string, formatter?: (val: any) => string) => {
     if (!changedFields || !changedFields[key]) return null;
     const oldVal = changedFields[key].old;
+    const newVal = changedFields[key].new;
     const displayVal = formatter ? formatter(oldVal) : oldVal || "Chưa có";
+    const displayNewVal = formatter ? formatter(newVal) : newVal || "Chưa có";
     return (
       <View style={styles.changeNote}>
         <Ionicons name="alert-circle" size={12} color={COLORS.error} />
-        <Text style={styles.changeNoteText}>Cũ: {displayVal}</Text>
+        <Text style={styles.changeNoteText}>
+          Cũ: {displayVal}{"\n"}Mới: {displayNewVal}
+        </Text>
       </View>
     );
   };
@@ -1132,7 +1161,7 @@ export default function AgreementPreviewScreen() {
           </View>
         ) : null}
 
-        {/* [THÊM MỚI] Giao diện hỏi xác nhận khi nhấn Edit mà đối tác vừa sửa xong */}
+        {/* Xác nhận trước khi tiếp tục sau khi dữ liệu hợp đồng thay đổi. */}
         {isConfirmingEditConflict ? (
           <View
             style={[
@@ -1145,37 +1174,33 @@ export default function AgreementPreviewScreen() {
               <Text
                 style={[styles.inlineConfirmationTitle, { color: "#9A6418" }]}
               >
-                Cảnh báo cập nhật đồng thời
+                Hợp đồng đã được cập nhật
               </Text>
             </View>
             <Text style={styles.inlineConfirmationMessage}>
-              Dữ liệu trên màn hình đã được làm mới. Bạn có chắc chắn muốn tiếp
-              tục vào trang chỉnh sửa và làm mới lại toàn bộ tiến trình không?
+              Hợp đồng đã có thay đổi mới. Hãy xem lại trước khi tiếp tục chỉnh sửa.
+              {"\n\n"}Bạn vẫn muốn chỉnh sửa hợp đồng này?
             </Text>
             <View style={styles.actionRow}>
               <TouchableOpacity
                 style={styles.secondaryBtn}
-                onPress={() => {
-                  setIsConfirmingEditConflict(false);
-                  setChangedFields(null);
-                  setStatusMessage(null);
-                }}
+                onPress={() => void handleManualReload()}
                 disabled={isProcessing}
               >
-                <Text style={styles.secondaryBtnText}>Hủy, để tôi xem lại</Text>
+                <Text style={styles.secondaryBtnText}>Quay lại</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
                   { backgroundColor: "#9A6418", borderColor: "#9A6418" },
                 ]}
-                onPress={executeEdit}
+                onPress={() => void handleEdit()}
                 disabled={isProcessing}
               >
                 {isProcessing ? (
                   <ActivityIndicator color={COLORS.white} />
                 ) : (
-                  <Text style={styles.primaryBtnText}>Tiếp tục chỉnh sửa</Text>
+                  <Text style={styles.primaryBtnText}>Vẫn chỉnh sửa</Text>
                 )}
               </TouchableOpacity>
             </View>
