@@ -1548,28 +1548,57 @@ export default function PostDetailScreen() {
 
   if (isLoading && !post) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Đang tải chi tiết...</Text>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.headerIcon}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Chi tiết tin đăng</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Đang tải chi tiết...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   if (!post) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        {pageFeedback ? (
-          <InlineFeedback
-            feedback={pageFeedback}
-            onDismiss={clearPageFeedback}
-            style={styles.emptyFeedback}
-          />
-        ) : (
-          <Text style={styles.notFoundText}>Không tìm thấy bài đăng!</Text>
-        )}
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Quay lại</Text>
-        </TouchableOpacity>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.headerIcon}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Chi tiết tin đăng</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <View style={styles.loadingContainer}>
+          {pageFeedback ? (
+            <InlineFeedback
+              feedback={pageFeedback}
+              onDismiss={clearPageFeedback}
+              style={styles.emptyFeedback}
+            />
+          ) : (
+            <Text style={styles.notFoundText}>Không tìm thấy bài đăng!</Text>
+          )}
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backBtnText}>Quay lại</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
