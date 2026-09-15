@@ -414,6 +414,19 @@ export default function CheckoutScreen() {
         return;
       }
 
+      if (errorCode.toLowerCase() === "payment.activecheckoutexists") {
+        // Không tự suy luận Payment cũ đã thất bại/hết hạn — chỉ PayOS mới
+        // là nguồn xác nhận trạng thái cuối. Làm mới dữ liệu để phản ánh
+        // đúng trạng thái hiện tại, không polling/lặp lại.
+        await fetchCheckoutData();
+
+        showError(
+          "Hợp đồng này đang có một phiên thanh toán PayOS chờ xử lý. Vui lòng kiểm tra hoặc hoàn tất phiên thanh toán hiện tại trước khi tạo thanh toán mới.",
+        );
+
+        return;
+      }
+
       showError(
         getApiErrorMessage(
           error,
