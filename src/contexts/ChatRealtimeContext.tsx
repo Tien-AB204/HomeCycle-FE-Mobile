@@ -10,7 +10,9 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import { refreshAccessToken } from "../services/apis/axiosClient";
+import conversationApi from "../services/apis/conversationApi";
 import { useAuth } from "./AuthContext";
 
 const CHAT_HUB_URL =
@@ -43,6 +45,12 @@ type ChatRealtimeContextValue = {
   connection: signalR.HubConnection | null;
   connectionStatus: ChatConnectionStatus;
   reconnectVersion: number;
+  conversationSummaries: any[];
+  chatUnreadCount: number;
+  isConversationSummaryLoading: boolean;
+  refreshConversationSummaries: (options?: {
+    silent?: boolean;
+  }) => Promise<boolean>;
   joinNegotiation: (negotiationId: string) => Promise<void>;
   leaveNegotiation: (negotiationId: string) => Promise<void>;
   joinConversation: (conversationId: string) => Promise<void>;
@@ -113,6 +121,9 @@ export function ChatRealtimeProvider({
 
   const [reconnectVersion, setReconnectVersion] =
     useState(0);
+  const [conversationSummaries, setConversationSummaries] = useState<any[]>([]);
+  const [isConversationSummaryLoading, setConversationSummaryLoading] =
+    useState(false);
 
   const connectionRef =
     useRef<signalR.HubConnection | null>(null);
@@ -120,6 +131,92 @@ export function ChatRealtimeProvider({
   const joinedNegotiationsRef = useRef<Set<string>>(new Set());
   const joinedConversationsRef = useRef<Set<string>>(new Set());
   const joinedOrdersRef = useRef<Set<string>>(new Set());
+  const conversationRequestRef = useRef(0);
+
+  const refreshConversationSummaries = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      const requestId = ++conversationRequestRef.current;
+
+      if (!userToken) {
+        setConversationSummaries([]);
+        setConversationSummaryLoading(false);
+        return false;
+      }
+
+      if (!silent) {
+        setConversationSummaryLoading(true);
+      }
+
+      try {
+        const allItems: any[] = [];
+        let pageNumber = 1;
+        let totalPages = 1;
+
+        do {
+          const response = await conversationApi.getConversations({
+            PageNumber: pageNumber,
+            PageSize: 50,
+          });
+          const page = response?.data ?? response;
+          const items = Array.isArray(page?.items) ? page.items : [];
+          allItems.push(...items);
+          totalPages = Math.max(1, Number(page?.totalPages ?? 1));
+          pageNumber += 1;
+        } while (pageNumber <= totalPages);
+
+        if (requestId !== conversationRequestRef.current) {
+          return true;
+        }
+
+        setConversationSummaries(allItems);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        if (requestId === conversationRequestRef.current) {
+          setConversationSummaryLoading(false);
+        }
+      }
+    },
+    [userToken],
+  );
+
+  const chatUnreadCount = conversationSummaries.reduce(
+    (total, conversation) => {
+      const unreadCount = Number(conversation?.unreadCount ?? 0);
+      return total + (Number.isFinite(unreadCount) ? Math.max(0, unreadCount) : 0);
+    },
+    0,
+  );
+
+  useEffect(() => {
+    conversationRequestRef.current += 1;
+
+    if (!userToken) {
+      setConversationSummaries([]);
+      setConversationSummaryLoading(false);
+      return;
+    }
+
+    void refreshConversationSummaries();
+  }, [refreshConversationSummaries, userToken]);
+
+  useEffect(() => {
+    if (!userToken) return;
+
+    let previousState = AppState.currentState;
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const shouldRefresh = previousState !== "active" && nextState === "active";
+      previousState = nextState;
+
+      if (shouldRefresh) {
+        void refreshConversationSummaries({ silent: true });
+      }
+    });
+
+    return () => subscription.remove();
+  }, [refreshConversationSummaries, userToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +244,12 @@ export function ChatRealtimeProvider({
       .withAutomaticReconnect()
       .configureLogging(signalR.LogLevel.None)
       .build();
+
+    const handleConversationUpdated = () => {
+      void refreshConversationSummaries({ silent: true });
+    };
+
+    hubConnection.on("ConversationUpdated", handleConversationUpdated);
 
     connectionRef.current = hubConnection;
 
@@ -191,6 +294,7 @@ export function ChatRealtimeProvider({
 
     hubConnection.onreconnected(async () => {
       await rejoinTrackedRooms();
+      void refreshConversationSummaries({ silent: true });
 
       if (!cancelled) {
         hasConnectedOnce = true;
@@ -293,9 +397,11 @@ export function ChatRealtimeProvider({
       );
       setConnectionStatus("idle");
 
+      hubConnection.off("ConversationUpdated", handleConversationUpdated);
+
       void hubConnection.stop();
     };
-  }, [userToken]);
+  }, [refreshConversationSummaries, userToken]);
 
   const joinNegotiation = useCallback(
     async (negotiationId: string) => {
@@ -440,6 +546,10 @@ export function ChatRealtimeProvider({
         connection,
         connectionStatus,
         reconnectVersion,
+        conversationSummaries,
+        chatUnreadCount,
+        isConversationSummaryLoading,
+        refreshConversationSummaries,
         joinNegotiation,
         leaveNegotiation,
         joinConversation,

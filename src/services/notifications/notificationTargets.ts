@@ -142,7 +142,10 @@ export async function navigateToNotificationTarget(
     .trim()
     .toLowerCase();
 
-  if (!targetType || !targetId) {
+  if (
+    !targetType ||
+    (!targetId && !isProfileVerificationTarget(targetType))
+  ) {
     return false;
   }
 
@@ -210,14 +213,11 @@ export async function navigateToNotificationTarget(
       router.push(`/wallet/withdrawals/${targetId}` as any);
       return true;
     case "businessProfile":
-      // Mobile business profile screens operate on the signed-in account.
-      // Let the Profile tab resolve the current onboarding state instead of
-      // guessing between pending, rejected, survey, or completed screens here.
       if (normalizedCurrentUserRole !== "business") {
         return false;
       }
 
-      router.push("/(tabs)/profile" as any);
+      router.push("/profile/business-account-info" as any);
       return true;
 
     case "personalProfile":

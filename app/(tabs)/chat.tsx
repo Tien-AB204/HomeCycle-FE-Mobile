@@ -10,12 +10,10 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
   ActivityIndicator,
-  AppState,
   FlatList,
   Image,
   Platform,
@@ -31,8 +29,6 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
-import conversationApi from "../../src/services/apis/conversationApi";
-import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 
 type FeedbackTarget = { type: "page" } | null;
 
@@ -157,23 +153,16 @@ export default function ChatListScreen() {
 
   const { user } = useAuth();
   const {
-    connection,
     connectionStatus,
-    reconnectVersion,
+    conversationSummaries: conversationsList,
+    isConversationSummaryLoading: isLoading,
+    refreshConversationSummaries,
   } = useChatRealtime();
-  const currentUserId = user?.userId || user?.id;
   const isWaitingForNetwork =
     connectionStatus === "reconnecting" ||
     connectionStatus === "disconnected";
 
-  const fetchRequestIdRef = useRef(0);
-  const handledReconnectVersionRef = useRef(0);
-  const isScreenFocusedRef = useRef(false);
-  const appStateRef = useRef(AppState.currentState);
-
   const [searchQuery, setSearchQuery] = useState("");
-  const [conversationsList, setConversationsList] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
@@ -189,143 +178,33 @@ export default function ChatListScreen() {
     setFeedbackTarget(null);
   }, [clearFeedback]);
 
-  useEffect(() => {
-    handledReconnectVersionRef.current = 0;
-  }, [currentUserId]);
-
   const fetchData = useCallback(
     async (options?: { silent?: boolean }) => {
       const silent = options?.silent === true;
-      const requestId = ++fetchRequestIdRef.current;
 
       if (!user) {
-        setConversationsList([]);
-        if (!silent) setIsLoading(false);
         return false;
       }
 
-      if (!silent) setIsLoading(true);
+      const didLoad = await refreshConversationSummaries({ silent });
 
-      try {
-        const response = await conversationApi.getConversations({
-          PageSize: 50,
-          PageNumber: 1,
-        });
-
-        if (requestId !== fetchRequestIdRef.current) return;
-        if (response?.isSuccess === false) throw response;
-
-        const items = response?.data?.items || response?.items || [];
-        const conversationItems = Array.isArray(items) ? items : [];
-        setConversationsList(conversationItems);
-        return true;
-      } catch (error: unknown) {
-        if (requestId !== fetchRequestIdRef.current) return;
-
-        if (!silent) {
-          setFeedbackTarget({ type: "page" });
-          showError(
-            getApiErrorMessage(error, "Không thể tải danh sách trò chuyện."),
-          );
-        }
-
-        return false;
-      } finally {
-        if (!silent && requestId === fetchRequestIdRef.current) {
-          setIsLoading(false);
-        }
+      if (!didLoad && !silent) {
+        setFeedbackTarget({ type: "page" });
+        showError("Không thể tải danh sách trò chuyện.");
       }
+
+      return didLoad;
     },
-    [showError, user],
+    [refreshConversationSummaries, showError, user],
   );
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!connection) return;
-
-      const handleConversationUpdated = () => {
-        void fetchData({ silent: true });
-      };
-
-      connection.on(
-        "ConversationUpdated",
-        handleConversationUpdated,
-      );
-
-      return () => {
-        connection.off(
-          "ConversationUpdated",
-          handleConversationUpdated,
-        );
-      };
-    }, [connection, fetchData]),
-  );
-
-  useEffect(() => {
-    if (
-      !user ||
-      reconnectVersion <= 0 ||
-      handledReconnectVersionRef.current ===
-        reconnectVersion
-    ) {
-      return;
-    }
-
-    handledReconnectVersionRef.current =
-      reconnectVersion;
-
-    void fetchData({ silent: true }).then((didLoad) => {
-      if (didLoad) {
-        clearCurrentFeedback();
-      }
-    });
-  }, [
-    clearCurrentFeedback,
-    fetchData,
-    reconnectVersion,
-    user,
-  ]);
 
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
 
-      isScreenFocusedRef.current = true;
-
       void fetchData();
-
-      return () => {
-        isScreenFocusedRef.current = false;
-        fetchRequestIdRef.current += 1;
-      };
     }, [fetchData, user]),
   );
-
-  useEffect(() => {
-    if (!user) return;
-
-    const subscription = AppState.addEventListener(
-      "change",
-      (nextState) => {
-        const previousState = appStateRef.current;
-        appStateRef.current = nextState;
-
-        if (
-          !isScreenFocusedRef.current ||
-          previousState === "active" ||
-          nextState !== "active"
-        ) {
-          return;
-        }
-
-        void fetchData({ silent: true });
-      },
-    );
-
-    return () => {
-      subscription.remove();
-    };
-  }, [fetchData, user]);
 
   const filteredConversations = useMemo(() => {
     const query = normalizeSearchText(searchQuery);

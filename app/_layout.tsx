@@ -17,6 +17,7 @@ import InAppNotificationToast from "../src/components/shared/InAppNotificationTo
 import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
+import { DiscoveryPreferencesProvider } from "../src/contexts/DiscoveryPreferencesContext";
 import { NotificationProvider } from "../src/contexts/NotificationContext";
 import {
   applyAppearancePreference,
@@ -77,20 +78,22 @@ function RootNavigator() {
       ]}
     >
       <AuthProvider>
-        <ChatRealtimeProvider>
-          <NotificationProvider>
-            <Stack
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            </Stack>
-            <InAppNotificationToast />
-          </NotificationProvider>
-        </ChatRealtimeProvider>
+        <DiscoveryPreferencesProvider>
+          <ChatRealtimeProvider>
+            <NotificationProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                }}
+              >
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen name="(tabs)" />
+              </Stack>
+              <InAppNotificationToast />
+            </NotificationProvider>
+          </ChatRealtimeProvider>
+        </DiscoveryPreferencesProvider>
       </AuthProvider>
     </View>
   );

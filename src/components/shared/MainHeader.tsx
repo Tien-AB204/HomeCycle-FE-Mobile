@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
+import { useChatRealtime } from "../../contexts/ChatRealtimeContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import Header from "./Header";
 
@@ -32,6 +33,7 @@ export default function MainHeader({
   const router = useRouter();
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
+  const { chatUnreadCount } = useChatRealtime();
   const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
@@ -52,12 +54,56 @@ export default function MainHeader({
     if (user) {
       return (
         <>
-          <TouchableOpacity onPress={() => router.push("/chat" as any)}>
+          <TouchableOpacity
+            onPress={() => router.push("/chat" as any)}
+            style={{
+              position: "relative",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 2,
+            }}
+            accessibilityLabel={
+              chatUnreadCount > 0
+                ? `Tin nhắn, ${chatUnreadCount} chưa đọc`
+                : "Tin nhắn"
+            }
+          >
             <Ionicons
               name="chatbubbles-outline"
               size={24}
               color={COLORS.text}
             />
+
+            {chatUnreadCount > 0 ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: -7,
+                  right: -9,
+                  minWidth: 18,
+                  height: 18,
+                  paddingHorizontal: 4,
+                  borderRadius: 9,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: COLORS.error,
+                  borderWidth: 1.5,
+                  borderColor: COLORS.white,
+                }}
+              >
+                <Text
+                  style={{
+                    color: COLORS.white,
+                    fontSize: 9,
+                    lineHeight: 12,
+                    fontWeight: "800",
+                  }}
+                >
+                  {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
 
           <TouchableOpacity

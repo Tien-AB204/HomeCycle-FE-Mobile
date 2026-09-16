@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Keyboard,
@@ -17,6 +17,10 @@ import {
 import { ModalBackdrop, ModalSurface } from "../src/components/shared/ModalBackdrop";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
+import {
+  filterDiscoveryPosts,
+  useDiscoveryPreferences,
+} from "../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
 import { isBuyPostType } from "../src/utils/postType";
@@ -115,6 +119,7 @@ export default function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
+  const { showOwnPostsInDiscovery } = useDiscoveryPreferences();
   const inputRef = useRef<TextInput>(null);
   const autoSearchStartedRef = useRef(false);
   const productTypeRequestGenerationRef = useRef(0);
@@ -187,6 +192,15 @@ export default function SearchScreen() {
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const visibleSearchResults = useMemo(
+    () =>
+      filterDiscoveryPosts(
+        searchResults,
+        user?.userId || user?.id,
+        showOwnPostsInDiscovery,
+      ),
+    [searchResults, showOwnPostsInDiscovery, user?.id, user?.userId],
+  );
 
   useEffect(() => {
     if (isBusiness && postType === "Mua") {
@@ -1473,7 +1487,7 @@ export default function SearchScreen() {
           </View>
         ) : null}
 
-        {!isLoading && searchResults.length > 0 ? (
+        {!isLoading && visibleSearchResults.length > 0 ? (
           <View style={styles.shopeeSortBar}>
             <Text style={styles.sortLabel}>Sắp xếp theo</Text>
             <TouchableOpacity
@@ -1542,7 +1556,7 @@ export default function SearchScreen() {
           <View style={styles.loadingResults}>
             <Text style={{ color: COLORS.textLight }}>Đang tìm kiếm...</Text>
           </View>
-        ) : searchResults.length === 0 ? (
+        ) : visibleSearchResults.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="search-outline" size={64} color={COLORS.border} />
             <Text style={styles.emptyText}>
@@ -1556,7 +1570,7 @@ export default function SearchScreen() {
               { marginTop: 12 },
             ]}
           >
-            {searchResults.map((post) => (
+            {visibleSearchResults.map((post) => (
               <TouchableOpacity
                 key={post.postId}
                 style={[

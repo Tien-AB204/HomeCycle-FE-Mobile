@@ -473,6 +473,7 @@ export default function ChatDetailScreen() {
     leaveNegotiation,
     joinConversation,
     leaveConversation,
+    refreshConversationSummaries,
   } = useChatRealtime();
 
   const currentUserId = user?.userId || user?.id;
@@ -824,6 +825,8 @@ export default function ChatDetailScreen() {
                 String(nextTarget.negotiationId),
               );
             }
+
+            void refreshConversationSummaries({ silent: true });
           } catch {
             // Read receipt không chặn UI; reconnect/focus sẽ thử lại.
           }
@@ -833,7 +836,12 @@ export default function ChatDetailScreen() {
         readRequestInFlightRef.current = false;
       }
     },
-    [conversationId, currentUserId, negotiationId],
+    [
+      conversationId,
+      currentUserId,
+      negotiationId,
+      refreshConversationSummaries,
+    ],
   );
 
   const fetchConversationNegotiations = useCallback(

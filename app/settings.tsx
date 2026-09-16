@@ -1,9 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
-import { SafeAreaView, StyleSheet, Switch, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
 import { useNotifications } from "../src/contexts/NotificationContext";
+import { useDiscoveryPreferences } from "../src/contexts/DiscoveryPreferencesContext";
+import {
+  AppearancePreference,
+  applyAppearancePreference,
+  loadAppearancePreference,
+  saveAppearancePreference,
+} from "../src/utils/appearance";
+
+const APPEARANCE_OPTIONS: {
+  value: AppearancePreference;
+  label: string;
+}[] = [
+  { value: "light", label: "Sáng" },
+  { value: "dark", label: "Tối" },
+  { value: "system", label: "Hệ thống" },
+];
 
 export default function SettingsScreen() {
   const {
@@ -11,12 +35,82 @@ export default function SettingsScreen() {
     isSystemNotificationPreferenceLoaded,
     setSystemNotificationsEnabled,
   } = useNotifications();
+  const {
+    showOwnPostsInDiscovery,
+    isDiscoveryPreferenceLoaded,
+    setShowOwnPostsInDiscovery,
+  } = useDiscoveryPreferences();
+  const [appearancePreference, setAppearancePreference] =
+    useState<AppearancePreference>("system");
+  const [isAppearanceLoaded, setIsAppearanceLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void loadAppearancePreference().then((preference) => {
+      if (!isMounted) return;
+      setAppearancePreference(preference);
+      setIsAppearanceLoaded(true);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleAppearanceChange = async (
+    preference: AppearancePreference,
+  ) => {
+    setAppearancePreference(preference);
+    applyAppearancePreference(preference);
+
+    try {
+      await saveAppearancePreference(preference);
+    } catch {
+      const storedPreference = await loadAppearancePreference();
+      setAppearancePreference(storedPreference);
+      applyAppearancePreference(storedPreference);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Thiết lập ứng dụng" showBack={true} />
 
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.sectionTitle}>Khám phá</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.iconTextWrap}>
+              <View style={styles.iconBox}>
+                <Ionicons name="compass-outline" size={20} color="#2B5659" />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.settingText}>
+                  Hiển thị tin đăng của tôi khi khám phá
+                </Text>
+                <Text style={styles.settingDescription}>
+                  Cho phép tin của bạn xuất hiện tại Trang chủ và Tìm kiếm.
+                </Text>
+              </View>
+            </View>
+            <Switch
+              trackColor={{ false: COLORS.border, true: COLORS.primary }}
+              thumbColor="#ffffff"
+              ios_backgroundColor={COLORS.border}
+              onValueChange={(value) => {
+                void setShowOwnPostsInDiscovery(value);
+              }}
+              value={showOwnPostsInDiscovery}
+              disabled={!isDiscoveryPreferenceLoaded}
+            />
+          </View>
+        </View>
+
         <Text style={styles.sectionTitle}>Thông báo</Text>
         <View style={styles.card}>
           <View style={styles.row}>
@@ -42,17 +136,60 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Text style={styles.sectionTitle}>Giao diện</Text>
+        <View style={styles.card}>
+          <View style={styles.appearanceHeader}>
+            <View style={styles.iconBox}>
+              <Ionicons name="color-palette-outline" size={20} color="#2B5659" />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.settingText}>Chế độ hiển thị</Text>
+              <Text style={styles.settingDescription}>
+                Áp dụng theo khả năng hiển thị hiện có của thiết bị.
+              </Text>
+            </View>
+          </View>
+          <View style={styles.appearanceOptions}>
+            {APPEARANCE_OPTIONS.map((option) => {
+              const isSelected = appearancePreference === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.appearanceOption,
+                    isSelected ? styles.appearanceOptionSelected : undefined,
+                  ]}
+                  onPress={() => void handleAppearanceChange(option.value)}
+                  disabled={!isAppearanceLoaded}
+                >
+                  <Text
+                    style={[
+                      styles.appearanceOptionText,
+                      isSelected
+                        ? styles.appearanceOptionTextSelected
+                        : undefined,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         <View style={styles.footerInfo}>
           <Text style={styles.companyText}>© 2026 HomeCycle VN</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
-  container: { flex: 1, padding: 16 },
+  container: { flex: 1 },
+  content: { padding: 16 },
   flex: { flex: 1 },
   sectionTitle: {
     fontSize: 14,
@@ -98,6 +235,35 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: COLORS.textLight,
   },
+  appearanceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  appearanceOptions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 16,
+  },
+  appearanceOption: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
+  appearanceOptionSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+  },
+  appearanceOptionText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.textLight,
+  },
+  appearanceOptionTextSelected: { color: COLORS.primary },
   footerInfo: { marginTop: 40, alignItems: "center" },
   companyText: { fontSize: 12, color: "#547B7D" },
 });

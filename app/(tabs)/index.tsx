@@ -18,6 +18,10 @@ import {
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import {
+  filterDiscoveryPosts,
+  useDiscoveryPreferences,
+} from "../../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { isBuyPostType } from "../../src/utils/postType";
 
@@ -47,6 +51,8 @@ export default function HomeScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
   const { user } = useAuth();
+  const { showOwnPostsInDiscovery } = useDiscoveryPreferences();
+  const currentUserId = user?.userId || user?.id;
 
   const [categories, setCategories] = useState<any[]>([]);
   const [sellPosts, setSellPosts] = useState<any[]>([]);
@@ -112,9 +118,14 @@ export default function HomeScreen() {
         // - Sell Post chỉ do Personal tạo và Personal/Business đều có thể mua.
         // - Buy Post chỉ do Business tạo và chỉ Personal được tương tác.
         // Vì vậy Business không nhìn thấy Buy Post của Business khác trong discovery.
+        const discoveryPosts = filterDiscoveryPosts(
+          allPosts,
+          currentUserId,
+          showOwnPostsInDiscovery,
+        );
         const visiblePosts = isBusiness
-          ? allPosts.filter((post: any) => post.postType === "Sell")
-          : allPosts;
+          ? discoveryPosts.filter((post: any) => post.postType === "Sell")
+          : discoveryPosts;
 
         setSellPosts(
           visiblePosts.filter((post: any) => post.postType === "Sell"),
@@ -129,7 +140,7 @@ export default function HomeScreen() {
         setIsRefreshing(false);
       }
     },
-    [isBusiness],
+    [currentUserId, isBusiness, showOwnPostsInDiscovery],
   );
 
   useFocusEffect(

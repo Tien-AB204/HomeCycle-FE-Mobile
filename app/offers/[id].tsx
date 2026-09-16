@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -147,6 +147,7 @@ const formatDate = (value: unknown) => {
 };
 
 export default function OfferDetailScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
   const { connection } = useChatRealtime();
   const offerId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -498,6 +499,18 @@ export default function OfferDetailScreen() {
           </Text>
         ) : null}
 
+        {movedToNegotiation ? (
+          <TouchableOpacity
+            style={styles.chatButton}
+            onPress={() =>
+              router.push(`/chat/${String(offer.negotiationId)}` as any)
+            }
+          >
+            <Ionicons name="chatbubbles-outline" size={19} color={COLORS.white} />
+            <Text style={styles.chatButtonText}>Đi tới trò chuyện</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {canUpdate ? (
           <TouchableOpacity
             style={styles.updateButton}
@@ -818,6 +831,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   updateButtonText: {
+    color: COLORS.white,
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  chatButton: {
+    marginTop: 16,
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+  },
+  chatButtonText: {
     color: COLORS.white,
     fontWeight: "800",
     fontSize: 14,

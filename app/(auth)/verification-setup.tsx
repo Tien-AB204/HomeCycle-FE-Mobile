@@ -175,7 +175,8 @@ export default function VerificationSetupScreen() {
   ] = useState<boolean | null>(null);
 
   const [repCode, setRepCode] = useState("");
-  const [repName, setRepName] = useState("");
+  const [legalName, setLegalName] = useState("");
+  const repName = legalName;
   const [repDob, setRepDob] = useState("");
   const [repAddress, setRepAddress] = useState("");
   const [frontImage, setFrontImage] = useState<string | null>(null);
@@ -184,7 +185,7 @@ export default function VerificationSetupScreen() {
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankAccount, setBankAccount] = useState("");
-  const [bankAccountName, setBankAccountName] = useState("");
+  const bankAccountName = legalName;
 
 
   const hasVerificationData = useMemo(
@@ -215,6 +216,16 @@ export default function VerificationSetupScreen() {
 
   const clearError = (field: keyof FieldErrors) => {
     setErrors((current) => ({ ...current, [field]: undefined }));
+    setMessage(null);
+  };
+
+  const updateLegalName = (value: string) => {
+    setLegalName(uppercaseName(value));
+    setErrors((current) => ({
+      ...current,
+      repName: undefined,
+      bankAccountName: undefined,
+    }));
     setMessage(null);
   };
 
@@ -750,8 +761,7 @@ export default function VerificationSetupScreen() {
             label="Họ và tên (Theo CCCD)"
             value={repName}
             onChangeText={(value) => {
-              setRepName(value);
-              clearError("repName");
+              updateLegalName(value);
             }}
             placeholder="VD: NGUYEN VAN A"
             editable={!isLoading}
@@ -899,8 +909,7 @@ export default function VerificationSetupScreen() {
               placeholderTextColor={COLORS.textLight}
               value={bankAccountName}
               onChangeText={(value) => {
-                setBankAccountName(uppercaseName(value));
-                clearError("bankAccountName");
+                updateLegalName(value);
               }}
               autoCapitalize="characters"
               autoCorrect={false}

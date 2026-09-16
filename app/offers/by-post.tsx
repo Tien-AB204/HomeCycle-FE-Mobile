@@ -948,11 +948,38 @@ export default function OffersByPostScreen() {
       }
 
       const completedMode = actionMode;
+      let acceptedNegotiationId =
+        completedMode === "accept"
+          ? String(
+              response?.data?.negotiationId ??
+                response?.negotiationId ??
+                "",
+            ).trim()
+          : "";
 
       setActionMode(null);
       setSelectedOffer(null);
       setCounterPrice("");
       setCounterQuantity("");
+
+      if (completedMode === "accept" && !acceptedNegotiationId) {
+        try {
+          const detailResponse = await offerApi.getOfferById(offerId);
+          const detail = detailResponse?.data ?? detailResponse;
+          acceptedNegotiationId = String(
+            detail?.negotiationId ?? detail?.NegotiationId ?? "",
+          ).trim();
+        } catch {
+          // Offer đã được chấp nhận; danh sách bên dưới vẫn được làm mới.
+        }
+      }
+
+      if (!isCurrentAction()) return;
+
+      if (completedMode === "accept" && acceptedNegotiationId) {
+        router.push(`/chat/${acceptedNegotiationId}` as any);
+        return;
+      }
 
       await loadOffers(true);
       if (!isCurrentAction()) return;
@@ -961,9 +988,7 @@ export default function OffersByPostScreen() {
         type: "success",
         text:
           completedMode === "accept"
-            ? isBuyPost
-              ? "Đã chấp nhận chào bán. Phòng chat đã được mở."
-              : "Đã chấp nhận thương lượng. Phòng chat đã được mở."
+            ? "Đã chấp nhận nhưng chưa thể mở phòng trò chuyện. Vui lòng mở lại chi tiết đề nghị."
             : completedMode === "reject"
               ? `Đã từ chối ${offerNoun}.`
               : "Đã gửi đề xuất giá mới.",
