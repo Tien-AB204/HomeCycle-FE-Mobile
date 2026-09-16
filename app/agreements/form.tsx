@@ -67,6 +67,13 @@ type GhnParcelInfo = {
   items: GhnItemPayload[];
   hasProductDimensions: boolean;
   requiresPackagingDimensions: boolean;
+  productWeightGram?: number | null;
+  productLengthCm?: number | null;
+  productWidthCm?: number | null;
+  productHeightCm?: number | null;
+  commercialQuantity?: number;
+  estimatedTotalWeightGram?: number | null;
+  estimatedOverLimit?: boolean;
 };
 
 type AgreementDetailsPayload = { revision: number; notes?: string | null; inspectionDate?: string | null; inspectionAddress?: string | null; collectionDate?: string | null; pickupAddress?: string | null; deliveryAddress?: string | null; deliveryMethod?: "Unknown" | "GhnDelivery" | "SellerDelivers" | "BuyerPickUp"; ghnInfo?: GhnShippingInfo | null; codValue?: number | null; estimatedShippingFee?: number | null };
@@ -470,9 +477,24 @@ export default function AgreementFormScreen() {
       const suggestedItems = Array.isArray(data.items) ? data.items : [];
       const isMultiParcel = suggestedItems.length > 1;
       setHasUnsupportedMultiParcel(isMultiParcel);
+      const productSuggestion: ParcelPayload | null =
+        [
+          data.productWeightGram,
+          data.productLengthCm,
+          data.productWidthCm,
+          data.productHeightCm,
+        ].some((value) => Number(value) > 0)
+          ? {
+              weightGram: Number(data.productWeightGram ?? 0),
+              lengthCm: Number(data.productLengthCm ?? 0),
+              widthCm: Number(data.productWidthCm ?? 0),
+              heightCm: Number(data.productHeightCm ?? 0),
+            }
+          : null;
+
       const parcel = isMultiParcel
         ? null
-        : suggestedItems[0] ?? (data.requiresPackagingDimensions ? null : data.lightParcel);
+        : suggestedItems[0] ?? data.lightParcel ?? productSuggestion;
       setItem({
         ...EMPTY_ITEM,
         weightGram: String(parcel?.weightGram || ""),
@@ -483,7 +505,7 @@ export default function AgreementFormScreen() {
       setPackagingHint(isMultiParcel
         ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
         : data.requiresPackagingDimensions
-          ? "Vui lòng nhập khối lượng và kích thước thực tế của kiện sau đóng gói."
+          ? "Thông số từ bài đăng là gợi ý ban đầu. Vui lòng kiểm tra và điều chỉnh theo kiện thực tế sau đóng gói trước khi tính phí."
           : "Thông số từ bài đăng chỉ là gợi ý. Vui lòng kiểm tra kiện thực tế sau đóng gói.");
       setNotice({
         type: isMultiParcel ? "error" : "info",
