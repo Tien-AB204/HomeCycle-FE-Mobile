@@ -228,8 +228,28 @@ export default function CheckoutScreen() {
       console.error("Lỗi lấy thông tin thanh toán:", error);
       setAgreement(null);
       setQuote(null);
+      const errorCode = String(
+        (error as any)?.response?.data?.error?.code ??
+          (error as any)?.response?.data?.code ??
+          (error as any)?.error?.code ??
+          (error as any)?.code ??
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      const checkoutUnavailableMessage =
+        errorCode === "agreement.appointmentschedulemissing"
+          ? "Hợp đồng chưa có lịch hẹn hợp lệ. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán."
+          : errorCode === "agreement.appointmentscheduleexpired"
+            ? "Lịch hẹn của Hợp đồng đã hết hạn. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán."
+            : errorCode === "auth.forbidden"
+              ? "Bạn không có quyền thanh toán Hợp đồng này. Vui lòng kiểm tra lại tài khoản và quyền truy cập."
+              : errorCode === "agreement.notfound"
+                ? "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch."
+                : null;
       showError(
-        getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
+        checkoutUnavailableMessage ||
+          getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
       );
       return false;
     } finally {
@@ -399,8 +419,9 @@ export default function CheckoutScreen() {
           (error as any)?.code ??
           "",
       ).trim();
+      const normalizedErrorCode = errorCode.toLowerCase();
 
-      if (errorCode.toLowerCase() === "agreement.invalidstatus") {
+      if (normalizedErrorCode === "agreement.invalidstatus") {
         const refreshed = await fetchCheckoutData();
 
         if (!refreshed) {
@@ -414,7 +435,35 @@ export default function CheckoutScreen() {
         return;
       }
 
-      if (errorCode.toLowerCase() === "payment.activecheckoutexists") {
+      if (
+        normalizedErrorCode === "agreement.appointmentschedulemissing" ||
+        normalizedErrorCode === "agreement.appointmentscheduleexpired"
+      ) {
+        await fetchCheckoutData();
+        showError(
+          normalizedErrorCode === "agreement.appointmentschedulemissing"
+            ? "Hợp đồng chưa có lịch hẹn hợp lệ. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán."
+            : "Lịch hẹn của Hợp đồng đã hết hạn. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán.",
+        );
+        return;
+      }
+
+      if (normalizedErrorCode === "auth.forbidden") {
+        showError(
+          "Bạn không có quyền thanh toán Hợp đồng này. Vui lòng kiểm tra lại tài khoản và quyền truy cập.",
+        );
+        return;
+      }
+
+      if (normalizedErrorCode === "agreement.notfound") {
+        await fetchCheckoutData();
+        showError(
+          "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch.",
+        );
+        return;
+      }
+
+      if (normalizedErrorCode === "payment.activecheckoutexists") {
         // Không tự suy luận Payment cũ đã thất bại/hết hạn — chỉ PayOS mới
         // là nguồn xác nhận trạng thái cuối. Làm mới dữ liệu để phản ánh
         // đúng trạng thái hiện tại, không polling/lặp lại.

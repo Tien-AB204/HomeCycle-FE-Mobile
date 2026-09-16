@@ -602,22 +602,50 @@ export default function PostFormScreen() {
       return;
     }
 
-    // Early UX warning only — Agreement/Backend keep the authoritative GHN
-    // check. product.Weight (kg, per unit) * quantity mirrors the same
-    // aggregate-shipment formula the Backend GHN preview flow uses. Skipped
-    // when weight is blank: this Post field is optional, so there is not
-    // always enough data to compute an aggregate safely.
     if (!isBuyPost && deliveryMethod === "GhnDelivery") {
       const parsedWeightKg = Number(weight);
-      if (Number.isFinite(parsedWeightKg) && parsedWeightKg > 0) {
-        const totalWeightGram = parsedWeightKg * 1000 * parsedQuantity;
-        if (totalWeightGram > 50000) {
-          setFormMessage({
-            type: "error",
-            text: "Giao hàng nhanh chỉ hỗ trợ tổng khối lượng đơn hàng tối đa 50 kg. Vui lòng điều chỉnh số lượng, khối lượng hoặc chọn phương thức giao hàng khác.",
-          });
-          return;
-        }
+      const parsedLengthCm = Number(length);
+      const parsedWidthCm = Number(width);
+      const parsedHeightCm = Number(height);
+
+      if (!Number.isFinite(parsedWeightKg) || parsedWeightKg <= 0) {
+        setFormMessage({
+          type: "error",
+          text: "Vui lòng nhập khối lượng sản phẩm lớn hơn 0 kg để giao hàng GHN.",
+        });
+        return;
+      }
+
+      if (parsedWeightKg > 50) {
+        setFormMessage({
+          type: "error",
+          text: "GHN chỉ hỗ trợ khối lượng sản phẩm tối đa 50 kg.",
+        });
+        return;
+      }
+
+      if (
+        [parsedLengthCm, parsedWidthCm, parsedHeightCm].some(
+          (dimension) => !Number.isFinite(dimension) || dimension <= 0,
+        )
+      ) {
+        setFormMessage({
+          type: "error",
+          text: "Vui lòng nhập đầy đủ chiều dài, chiều rộng và chiều cao lớn hơn 0 cm để giao hàng GHN.",
+        });
+        return;
+      }
+
+      if (
+        [parsedLengthCm, parsedWidthCm, parsedHeightCm].some(
+          (dimension) => dimension > 200,
+        )
+      ) {
+        setFormMessage({
+          type: "error",
+          text: "Mỗi chiều kích thước sản phẩm dùng cho GHN không được vượt quá 200 cm.",
+        });
+        return;
       }
     }
 
@@ -1747,7 +1775,7 @@ export default function PostFormScreen() {
             {!isBuyPost ? (
               <View style={styles.row}>
                 <View style={styles.flex}>
-                  <Text style={styles.label}>Kích thước (DxRxC)</Text>
+                  <Text style={styles.label}>Kích thước (DxRxC){deliveryMethod === "GhnDelivery" ? <Text style={{ color: COLORS.error }}> *</Text> : null}</Text>
                   <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDimensionsModal(true)}>
                     <Text style={displayDimensions ? styles.inputText : styles.placeholderText} numberOfLines={1}>
                       {displayDimensions || "VD: 120 x 60 x 80 cm"}
@@ -1756,7 +1784,7 @@ export default function PostFormScreen() {
                   </TouchableOpacity>
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.label}>Cân nặng (kg)</Text>
+                  <Text style={styles.label}>Cân nặng (kg){deliveryMethod === "GhnDelivery" ? <Text style={{ color: COLORS.error }}> *</Text> : null}</Text>
                   <View style={styles.inputContainer}>
                     <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 15" placeholderTextColor="#547B7D" value={weight} onChangeText={setWeight} />
                   </View>
