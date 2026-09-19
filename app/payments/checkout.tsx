@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Modal,
   Platform,
   SafeAreaView,
@@ -18,10 +19,13 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { devLog } from "../../src/utils/devLog";
 import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -61,6 +65,17 @@ const paymentApi = {
     apiClient
       .post(`/payments/wallet/checkout/${agreementId}`)
       .then((response) => response.data),
+
+  // Trạng thái thanh toán do Backend xác nhận (không suy ra từ trình duyệt/URL).
+  getStatus: (agreementId: string) =>
+    apiClient
+      .get(`/payments/${agreementId}/status`)
+      .then((response) => response.data),
+};
+
+const isCompletedPaymentStatus = (value: unknown) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "completed" || normalized === "1";
 };
 
 const walletApi = {
@@ -75,7 +90,6 @@ const normalizeEnum = (value: unknown) =>
 
 const normalizeId = (value: unknown) =>
   String(value ?? "").trim().toLowerCase();
-
 
 const normalizePaymentQuote = (value: any): PaymentQuote => {
   const data = unwrap(value);
@@ -142,7 +156,7 @@ function InlineFeedback({ feedback }: { feedback: FeedbackState }) {
 }
 
 export default function CheckoutScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
 
@@ -157,12 +171,16 @@ export default function CheckoutScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPaymentCompleted, setIsPaymentCompleted] = useState(false);
+  // Đã mở PayOS ở trình duyệt ngoài và chưa nhận được kết quả trong ứng dụng.
+  const externalCheckoutPendingRef = useRef(false);
+  const reconcileInFlightRef = useRef(false);
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [showLowAmountConfirm, setShowLowAmountConfirm] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  useAutoDismissFeedback(feedback, () => setFeedback(null));
 
   const clearFeedback = useCallback(() => setFeedback(null), []);
   const showError = useCallback(
@@ -225,7 +243,7 @@ export default function CheckoutScreen() {
 
       return true;
     } catch (error: unknown) {
-      console.error("Lỗi lấy thông tin thanh toán:", error);
+      devLog("[checkout] Lỗi lấy thông tin thanh toán:", error);
       setAgreement(null);
       setQuote(null);
       const errorCode = String(
@@ -257,11 +275,69 @@ export default function CheckoutScreen() {
     }
   }, [agreementId, clearFeedback, showError]);
 
+  // Người dùng có thể thanh toán xong ở PayOS rồi tự quay lại ứng dụng mà không
+  // bấm liên kết trở về: đối chiếu trạng thái với Backend khi màn hình được
+  // focus lại hoặc ứng dụng trở lại foreground (một lần cho mỗi sự kiện, không polling).
+  const reconcileExternalCheckout = useCallback(async () => {
+    if (
+      !agreementId ||
+      !externalCheckoutPendingRef.current ||
+      reconcileInFlightRef.current
+    ) {
+      return;
+    }
+    reconcileInFlightRef.current = true;
+    try {
+      const statusResponse = await paymentApi.getStatus(agreementId);
+      const statusData = unwrap(statusResponse);
+      const rawStatus =
+        statusData?.paymentStatus ??
+        statusData?.status ??
+        statusData?.payment?.paymentStatus ??
+        statusData?.payment?.status;
+
+      if (isCompletedPaymentStatus(rawStatus)) {
+        externalCheckoutPendingRef.current = false;
+        setIsPaymentCompleted(true);
+        clearFeedback();
+        router.replace({
+          pathname: "/payments/success",
+          params: { agreementId },
+        });
+        return;
+      }
+
+      // Chưa ghi nhận thanh toán: bỏ trạng thái "đang mở PayOS" cũ và
+      // phản ánh dữ liệu hiện tại; không tự tạo phiên thanh toán mới.
+      clearFeedback();
+      showInfo(
+        "Chưa ghi nhận thanh toán cho hợp đồng này. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
+      );
+      await fetchCheckoutData();
+    } catch (error) {
+      devLog("[checkout] Không đối chiếu được trạng thái thanh toán:", error);
+      clearFeedback();
+    } finally {
+      reconcileInFlightRef.current = false;
+    }
+  }, [agreementId, clearFeedback, fetchCheckoutData, router, showInfo]);
+
   useFocusEffect(
     useCallback(() => {
-      void fetchCheckoutData();
-    }, [fetchCheckoutData]),
+      if (externalCheckoutPendingRef.current) {
+        void reconcileExternalCheckout();
+      } else {
+        void fetchCheckoutData();
+      }
+    }, [fetchCheckoutData, reconcileExternalCheckout]),
   );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void reconcileExternalCheckout();
+    });
+    return () => subscription.remove();
+  }, [reconcileExternalCheckout]);
 
   const isDeposit = ["deposit", "1"].includes(normalizeEnum(quote?.paymentType));
   const depositRatePercent = quote?.depositRatePercent ?? 0;
@@ -318,10 +394,13 @@ export default function CheckoutScreen() {
       return;
     }
 
+    externalCheckoutPendingRef.current = true;
     const result = await WebBrowser.openBrowserAsync(checkoutUrl);
 
-    if (result.type === "cancel") {
-      showInfo("Bạn đã đóng trang thanh toán.");
+    // Trình duyệt ngoài đã đóng (người dùng tự quay lại): đối chiếu với Backend
+    // thay vì giữ thông báo "Đang mở trang thanh toán PayOS...".
+    if (result.type === "cancel" || result.type === "dismiss") {
+      await reconcileExternalCheckout();
     }
   };
 
@@ -410,7 +489,7 @@ export default function CheckoutScreen() {
       showInfo("Đang mở trang thanh toán PayOS...");
       await openPayOSCheckout(checkoutUrl);
     } catch (error: unknown) {
-      console.error("Lỗi thanh toán:", error);
+      devLog("[checkout] Lỗi thanh toán:", error);
 
       const errorCode = String(
         (error as any)?.response?.data?.error?.code ??
