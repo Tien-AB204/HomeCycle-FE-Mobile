@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -27,6 +27,8 @@ import inspectionFormApi, {
   type InspectionFormSummary,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const appointmentApi = {
   getAppointmentDetail: (appointmentId: string) =>
@@ -157,7 +159,7 @@ const translateDeliveryMethod = (value: unknown) => {
 };
 
 export default function AppointmentDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const appointmentId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -169,6 +171,7 @@ export default function AppointmentDetailScreen() {
     useState<InspectionFormSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(actionMessage, () => setActionMessage(null));
 
   const [isRescheduleModalVisible, setIsRescheduleModalVisible] =
     useState(false);
@@ -745,10 +748,28 @@ export default function AppointmentDetailScreen() {
           <Text style={styles.sectionTitle}>Tiến trình lịch hẹn</Text>
           <View style={styles.progressContainer}>
             {stepLabels.map((label, index) => {
-              const isPassed = index < progressStep;
-              const isCurrent = index === progressStep;
+              const isCompletedStep =
+                isCompleted && index <= progressStep;
+              const isPassed =
+                index < progressStep || isCompletedStep;
+              const isCurrent =
+                index === progressStep && !isCompletedStep;
+              const connectorCompleted =
+                index < progressStep || isCompleted;
+
               return (
                 <View key={label} style={styles.progressStep}>
+                  {index < stepLabels.length - 1 ? (
+                    <View
+                      style={[
+                        styles.progressConnector,
+                        connectorCompleted
+                          ? styles.progressConnectorCompleted
+                          : styles.progressConnectorPending,
+                      ]}
+                    />
+                  ) : null}
+
                   <View
                     style={[
                       styles.circle,
@@ -1218,6 +1239,7 @@ export default function AppointmentDetailScreen() {
               onChange={setRescheduleDate}
               placeholder="Chọn ngày hẹn mới"
               defaultViewDate={rescheduleDate || undefined}
+              clearable
               disabled={isReschedulingSubmitting}
             />
 
@@ -1462,7 +1484,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  progressStep: { flex: 1, alignItems: "center" },
+  progressStep: {
+    flex: 1,
+    alignItems: "center",
+    position: "relative",
+  },
+  progressConnector: {
+    position: "absolute",
+    top: 14,
+    left: "50%",
+    width: "100%",
+    height: 2,
+  },
+  progressConnectorCompleted: {
+    backgroundColor: "#2F765D",
+  },
+  progressConnectorPending: {
+    backgroundColor: "#D9DEDD",
+  },
   circle: {
     width: 30,
     height: 30,
@@ -1471,6 +1510,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1.5,
     marginBottom: 6,
+    position: "relative",
+    zIndex: 1,
   },
   circleCompleted: { backgroundColor: "#2F765D", borderColor: "#2F765D" },
   circleActive: {
