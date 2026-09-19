@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -42,20 +43,40 @@ const STATUS_FILTERS: StatusFilter[] = [
   { label: "Thất bại", value: "Failed" },
 ];
 
+// Chỉ các mốc đã đủ ngày + giờ hợp lệ mới vào bộ lọc truy vấn (ISO đúng khoảnh khắc địa phương).
 type ListFilters = {
   status?: WithdrawalStatus;
-  fromDate: string;
-  toDate: string;
+  fromIso?: string;
+  toIso?: string;
 };
 
 const unwrap = <T,>(value: { data?: T } | T): T =>
   (value as { data?: T })?.data ?? (value as T);
 
-// Ngày chọn là ngày địa phương; gửi mốc đầu/cuối ngày để Backend lọc RequestedAt trọn ngày.
-const toDayStartIso = (value: string) => new Date(`${value}T00:00:00`).toISOString();
-const toDayEndIso = (value: string) => new Date(`${value}T23:59:59.999`).toISOString();
-const isValidDateValue = (value: string) =>
-  Boolean(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
+// FromDate/ToDate là DateTime: người dùng nhập cả ngày và giờ địa phương; không tự
+// chuẩn hóa về 00:00 / 23:59:59. Ghép theo múi giờ máy rồi gửi toISOString (UTC).
+const isValidClockTime = (value: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value.trim());
+const combineLocalDateTime = (date: string, time: string): Date | null => {
+  const dateMatch = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch || !isValidClockTime(time)) return null;
+  const [, yearText, monthText, dayText] = dateMatch;
+  const [hourText, minuteText] = time.trim().split(":");
+  const combined = new Date(
+    Number(yearText),
+    Number(monthText) - 1,
+    Number(dayText),
+    Number(hourText),
+    Number(minuteText),
+    0,
+    0,
+  );
+  const valid =
+    combined.getFullYear() === Number(yearText) &&
+    combined.getMonth() === Number(monthText) - 1 &&
+    combined.getDate() === Number(dayText);
+  return valid ? combined : null;
+};
+const sanitizeClockInput = (text: string) => text.replace(/[^0-9:]/g, "").slice(0, 5);
 
 const getStatusPresentation = (value: unknown) => {
   switch (String(value ?? "").trim().toLowerCase()) {
@@ -107,7 +128,9 @@ export default function WithdrawalHistoryScreen() {
   const [items, setItems] = useState<WithdrawalListItem[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<WithdrawalStatus | undefined>();
   const [fromDate, setFromDate] = useState("");
+  const [fromTime, setFromTime] = useState("");
   const [toDate, setToDate] = useState("");
+  const [toTime, setToTime] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -115,15 +138,29 @@ export default function WithdrawalHistoryScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  const fromInstant = useMemo(() => combineLocalDateTime(fromDate, fromTime), [fromDate, fromTime]);
+  const toInstant = useMemo(() => combineLocalDateTime(toDate, toTime), [toDate, toTime]);
+  const fromTimeError =
+    fromTime.trim() && !isValidClockTime(fromTime) ? "Giờ không hợp lệ (00:00–23:59)." : null;
+  const toTimeError =
+    toTime.trim() && !isValidClockTime(toTime) ? "Giờ không hợp lệ (00:00–23:59)." : null;
+  // Đã chọn ngày nhưng chưa có giờ hợp lệ: mốc này chưa được áp dụng (không gửi mốc thiếu/sai).
+  const fromIncomplete = Boolean(fromDate) && !fromInstant;
+  const toIncomplete = Boolean(toDate) && !toInstant;
+
   const filters = useMemo<ListFilters>(
-    () => ({ status: selectedStatus, fromDate, toDate }),
-    [fromDate, selectedStatus, toDate],
+    () => ({
+      status: selectedStatus,
+      ...(fromInstant ? { fromIso: fromInstant.toISOString() } : {}),
+      ...(toInstant ? { toIso: toInstant.toISOString() } : {}),
+    }),
+    [fromInstant, selectedStatus, toInstant],
   );
   const rangeError =
-    isValidDateValue(fromDate) && isValidDateValue(toDate) && fromDate > toDate
-      ? "Từ ngày không được sau Đến ngày. Vui lòng chọn lại khoảng thời gian."
+    fromInstant && toInstant && fromInstant.getTime() > toInstant.getTime()
+      ? "Thời gian bắt đầu không được sau thời gian kết thúc."
       : null;
-  const hasActiveFilters = Boolean(selectedStatus || fromDate || toDate);
+  const hasActiveFilters = Boolean(selectedStatus || fromDate || fromTime || toDate || toTime);
 
   const loadPage = useCallback(async (
     targetPage: number,
@@ -144,12 +181,8 @@ export default function WithdrawalHistoryScreen() {
         PageNumber: targetPage,
         PageSize: PAGE_SIZE,
         ...(activeFilters.status ? { Status: activeFilters.status } : {}),
-        ...(isValidDateValue(activeFilters.fromDate)
-          ? { FromDate: toDayStartIso(activeFilters.fromDate) }
-          : {}),
-        ...(isValidDateValue(activeFilters.toDate)
-          ? { ToDate: toDayEndIso(activeFilters.toDate) }
-          : {}),
+        ...(activeFilters.fromIso ? { FromDate: activeFilters.fromIso } : {}),
+        ...(activeFilters.toIso ? { ToDate: activeFilters.toIso } : {}),
       });
       if (requestGeneration.current !== generation) return;
 
@@ -206,12 +239,25 @@ export default function WithdrawalHistoryScreen() {
   const changeFromDate = (value: string) => {
     if (value === fromDate) return;
     setFromDate(value);
+    // Xóa ngày thì xóa cả giờ đi kèm: không giữ giờ cũ ẩn.
+    if (!value) setFromTime("");
     setPageNumber(1);
   };
 
   const changeToDate = (value: string) => {
     if (value === toDate) return;
     setToDate(value);
+    if (!value) setToTime("");
+    setPageNumber(1);
+  };
+
+  const changeFromTime = (text: string) => {
+    setFromTime(sanitizeClockInput(text));
+    setPageNumber(1);
+  };
+
+  const changeToTime = (text: string) => {
+    setToTime(sanitizeClockInput(text));
     setPageNumber(1);
   };
 
@@ -219,7 +265,9 @@ export default function WithdrawalHistoryScreen() {
     if (!hasActiveFilters) return;
     setSelectedStatus(undefined);
     setFromDate("");
+    setFromTime("");
     setToDate("");
+    setToTime("");
     setPageNumber(1);
   };
 
@@ -334,6 +382,21 @@ export default function WithdrawalHistoryScreen() {
                   hasError={Boolean(rangeError)}
                   maximumDate={new Date()}
                 />
+                <Text style={[styles.dateFilterLabel, styles.timeFilterLabel]}>Từ giờ</Text>
+                <TextInput
+                  value={fromTime}
+                  onChangeText={changeFromTime}
+                  placeholder="08:30"
+                  placeholderTextColor={COLORS.textLight}
+                  keyboardType="numbers-and-punctuation"
+                  style={[styles.timeInput, fromTimeError || rangeError ? styles.timeInputError : undefined]}
+                  accessibilityLabel="Từ giờ (HH:mm)"
+                />
+                {fromTimeError ? (
+                  <Text style={styles.rangeErrorText}>{fromTimeError}</Text>
+                ) : fromIncomplete ? (
+                  <Text style={styles.timeHint}>Nhập giờ (HH:mm) để áp dụng mốc bắt đầu.</Text>
+                ) : null}
               </View>
               <View style={styles.dateFilterItem}>
                 <Text style={styles.dateFilterLabel}>Đến ngày</Text>
@@ -346,6 +409,21 @@ export default function WithdrawalHistoryScreen() {
                   defaultViewDate={fromDate || undefined}
                   maximumDate={new Date()}
                 />
+                <Text style={[styles.dateFilterLabel, styles.timeFilterLabel]}>Đến giờ</Text>
+                <TextInput
+                  value={toTime}
+                  onChangeText={changeToTime}
+                  placeholder="17:45"
+                  placeholderTextColor={COLORS.textLight}
+                  keyboardType="numbers-and-punctuation"
+                  style={[styles.timeInput, toTimeError || rangeError ? styles.timeInputError : undefined]}
+                  accessibilityLabel="Đến giờ (HH:mm)"
+                />
+                {toTimeError ? (
+                  <Text style={styles.rangeErrorText}>{toTimeError}</Text>
+                ) : toIncomplete ? (
+                  <Text style={styles.timeHint}>Nhập giờ (HH:mm) để áp dụng mốc kết thúc.</Text>
+                ) : null}
               </View>
             </View>
             {rangeError ? <Text style={styles.rangeErrorText}>{rangeError}</Text> : null}
@@ -442,6 +520,19 @@ const styles = StyleSheet.create({
   dateFilterItem: { flex: 1 },
   dateFilterLabel: { marginBottom: 6, color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
   rangeErrorText: { marginTop: 6, color: "#7A1012", fontSize: 12, lineHeight: 17 },
+  timeFilterLabel: { marginTop: 8 },
+  timeInput: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.white,
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  timeInputError: { borderColor: "#7A1012" },
+  timeHint: { marginTop: 6, color: COLORS.textLight, fontSize: 12, lineHeight: 17 },
   resetFiltersButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8, marginBottom: 6, paddingVertical: 4 },
   resetFiltersText: { color: COLORS.primary, fontSize: 13, fontWeight: "700" },
   filterChip: {
