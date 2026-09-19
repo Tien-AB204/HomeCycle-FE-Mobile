@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   SafeAreaView,
   ScrollView,
@@ -15,9 +15,8 @@ import { useNotifications } from "../src/contexts/NotificationContext";
 import { useDiscoveryPreferences } from "../src/contexts/DiscoveryPreferencesContext";
 import {
   AppearancePreference,
-  applyAppearancePreference,
-  loadAppearancePreference,
-  saveAppearancePreference,
+  getEffectiveAppearance,
+  THEME_LOCKED_TO_LIGHT,
 } from "../src/utils/appearance";
 
 const APPEARANCE_OPTIONS: {
@@ -40,38 +39,8 @@ export default function SettingsScreen() {
     isDiscoveryPreferenceLoaded,
     setShowOwnPostsInDiscovery,
   } = useDiscoveryPreferences();
-  const [appearancePreference, setAppearancePreference] =
-    useState<AppearancePreference>("system");
-  const [isAppearanceLoaded, setIsAppearanceLoaded] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    void loadAppearancePreference().then((preference) => {
-      if (!isMounted) return;
-      setAppearancePreference(preference);
-      setIsAppearanceLoaded(true);
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const handleAppearanceChange = async (
-    preference: AppearancePreference,
-  ) => {
-    setAppearancePreference(preference);
-    applyAppearancePreference(preference);
-
-    try {
-      await saveAppearancePreference(preference);
-    } catch {
-      const storedPreference = await loadAppearancePreference();
-      setAppearancePreference(storedPreference);
-      applyAppearancePreference(storedPreference);
-    }
-  };
+  // Giao diện đang khóa ở chế độ Sáng: không lưu/không áp dụng lựa chọn khác.
+  const appearancePreference: AppearancePreference = getEffectiveAppearance("light");
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -145,22 +114,27 @@ export default function SettingsScreen() {
             <View style={styles.flex}>
               <Text style={styles.settingText}>Chế độ hiển thị</Text>
               <Text style={styles.settingDescription}>
-                Áp dụng theo khả năng hiển thị hiện có của thiết bị.
+                {THEME_LOCKED_TO_LIGHT
+                  ? "Tính năng đang được phát triển."
+                  : "Áp dụng theo khả năng hiển thị hiện có của thiết bị."}
               </Text>
             </View>
           </View>
           <View style={styles.appearanceOptions}>
             {APPEARANCE_OPTIONS.map((option) => {
               const isSelected = appearancePreference === option.value;
+              const isLocked = THEME_LOCKED_TO_LIGHT && option.value !== "light";
               return (
                 <TouchableOpacity
                   key={option.value}
                   style={[
                     styles.appearanceOption,
                     isSelected ? styles.appearanceOptionSelected : undefined,
+                    isLocked ? styles.appearanceOptionLocked : undefined,
                   ]}
-                  onPress={() => void handleAppearanceChange(option.value)}
-                  disabled={!isAppearanceLoaded}
+                  disabled
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected, disabled: true }}
                 >
                   <Text
                     style={[
@@ -264,6 +238,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
   },
   appearanceOptionTextSelected: { color: COLORS.primary },
+  appearanceOptionLocked: { opacity: 0.45 },
   footerInfo: { marginTop: 40, alignItems: "center" },
   companyText: { fontSize: 12, color: "#547B7D" },
 });
