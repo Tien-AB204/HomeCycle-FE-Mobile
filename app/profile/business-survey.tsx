@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useRef } from "react";
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -126,6 +126,10 @@ export default function BusinessSurveyScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSetupMode, setIsSetupMode] = useState(false);
+  // Chỉnh sửa khảo sát đã có: trạng thái cục bộ, không thay đổi ngữ nghĩa onboarding.
+  const [isEditingExistingSurvey, setIsEditingExistingSurvey] = useState(false);
+  // Bản khảo sát mới nhất từ máy chủ — dùng để "Hủy" khôi phục đúng dữ liệu đã lưu.
+  const lastServerDetailRef = useRef<any>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(message, () => setMessage(null));
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -141,6 +145,7 @@ export default function BusinessSurveyScreen() {
   const [citySelection, setCitySelection] = useState<AddressSelection | null>(null);
 
   const hydrateDetail = useCallback((detail: any) => {
+    lastServerDetailRef.current = detail ?? null;
     setSelectedProductIds(asArray<string>(detail?.productTypeIds));
     setSelectedCities(asArray<string>(detail?.targetCities));
     setSelectedDamage(asArray<number>(detail?.acceptableDamageLevels).map(Number));
@@ -163,6 +168,8 @@ export default function BusinessSurveyScreen() {
       const statusData = unwrap(statusResponse);
       const setupMode = isSurveyPendingStatus(statusData?.status ?? statusData);
       setIsSetupMode(setupMode);
+      setIsEditingExistingSurvey(false);
+      setErrors({});
 
       const productData = unwrap(productTypesResponse);
       const productItems =
@@ -263,12 +270,15 @@ export default function BusinessSurveyScreen() {
 
       setMessage({
         type: "success",
-        text: "Đã lưu khảo sát thu mua.",
+        text: isEditingExistingSurvey ? "Đã lưu thay đổi khảo sát thu mua." : "Đã lưu khảo sát thu mua.",
       });
       setIsSetupMode(false);
 
       const detailResponse = await surveyApi.getDetail();
       hydrateDetail(unwrap(detailResponse));
+      setIsEditingExistingSurvey(false);
+      setCityPickerValue("");
+      setCitySelection(null);
     } catch (error) {
       setMessage({
         type: "error",
@@ -278,6 +288,27 @@ export default function BusinessSurveyScreen() {
       setIsSaving(false);
     }
   };
+
+  const startEditingExistingSurvey = () => {
+    if (isSaving) return;
+    // Giữ nguyên các lựa chọn đã hydrate từ máy chủ; chỉ mở khóa điều khiển.
+    setMessage(null);
+    setErrors({});
+    setIsEditingExistingSurvey(true);
+  };
+
+  const cancelEditingExistingSurvey = () => {
+    if (isSaving) return;
+    // Khôi phục đúng bản đã lưu trên máy chủ, bỏ mọi thay đổi cục bộ dở dang.
+    hydrateDetail(lastServerDetailRef.current);
+    setErrors({});
+    setMessage(null);
+    setCityPickerValue("");
+    setCitySelection(null);
+    setIsEditingExistingSurvey(false);
+  };
+
+  const isEditable = isSetupMode || isEditingExistingSurvey;
 
   if (isLoading) {
     return (
@@ -301,18 +332,24 @@ export default function BusinessSurveyScreen() {
       >
         <View style={styles.introCard}>
           <Ionicons
-            name={isSetupMode ? "options-outline" : "document-text-outline"}
+            name={isEditable ? "options-outline" : "document-text-outline"}
             size={25}
             color={COLORS.primary}
           />
           <View style={styles.flex}>
             <Text style={styles.introTitle}>
-              {isSetupMode ? "Thiết lập tiêu chí thu mua" : "Tiêu chí thu mua đã lưu"}
+              {isSetupMode
+                ? "Thiết lập tiêu chí thu mua"
+                : isEditingExistingSurvey
+                  ? "Chỉnh sửa tiêu chí thu mua"
+                  : "Tiêu chí thu mua đã lưu"}
             </Text>
             <Text style={styles.introText}>
               {isSetupMode
                 ? "Chọn các tiêu chí để HomeCycle ghi nhận nhu cầu thu mua của doanh nghiệp."
-                : "Thông tin dưới đây được tải trực tiếp từ hồ sơ khảo sát của doanh nghiệp."}
+                : isEditingExistingSurvey
+                  ? "Cập nhật tiêu chí; gợi ý bài đăng phù hợp sẽ dựa trên khảo sát mới sau khi lưu."
+                  : "Thông tin dưới đây được tải trực tiếp từ hồ sơ khảo sát của doanh nghiệp."}
             </Text>
           </View>
         </View>
@@ -349,7 +386,7 @@ export default function BusinessSurveyScreen() {
         ) : null}
 
         <SurveySection title="LOẠI SẢN PHẨM QUAN TÂM" error={errors.products}>
-          {isSetupMode ? (
+          {isEditable ? (
             <View style={styles.chipWrap}>
               {productTypes.map((item) => {
                 const selected = selectedProductIds.includes(item.productTypeId);
@@ -380,7 +417,7 @@ export default function BusinessSurveyScreen() {
         </SurveySection>
 
         <SurveySection title="TỈNH / THÀNH QUAN TÂM" error={errors.cities}>
-          {isSetupMode ? (
+          {isEditable ? (
             <>
               <AddressPickerField
                 value={cityPickerValue}
@@ -421,7 +458,7 @@ export default function BusinessSurveyScreen() {
         </SurveySection>
 
         <SurveySection title="QUY MÔ THU MUA" error={errors.scale}>
-          {isSetupMode ? (
+          {isEditable ? (
             <OptionGrid
               options={PROCUREMENT_OPTIONS}
               selected={selectedScales}
@@ -439,7 +476,7 @@ export default function BusinessSurveyScreen() {
         </SurveySection>
 
         <SurveySection title="TÌNH TRẠNG HOẠT ĐỘNG CHẤP NHẬN" error={errors.functionality}>
-          {isSetupMode ? (
+          {isEditable ? (
             <OptionGrid
               options={FUNCTIONALITY_OPTIONS}
               selected={selectedFunctionality}
@@ -459,7 +496,7 @@ export default function BusinessSurveyScreen() {
         </SurveySection>
 
         <SurveySection title="MỨC ĐỘ HƯ HẠI CHẤP NHẬN" error={errors.damage}>
-          {isSetupMode ? (
+          {isEditable ? (
             <OptionGrid
               options={DAMAGE_OPTIONS}
               selected={selectedDamage}
@@ -476,7 +513,7 @@ export default function BusinessSurveyScreen() {
           )}
         </SurveySection>
 
-        {isSetupMode ? (
+        {isEditable ? (
           <TouchableOpacity
             style={[styles.saveButton, isSaving ? styles.disabledButton : undefined]}
             disabled={isSaving}
@@ -487,16 +524,37 @@ export default function BusinessSurveyScreen() {
             ) : (
               <>
                 <Ionicons name="save-outline" size={19} color={COLORS.white} />
-                <Text style={styles.saveText}>LƯU KHẢO SÁT THU MUA</Text>
+                <Text style={styles.saveText}>
+                  {isEditingExistingSurvey ? "LƯU THAY ĐỔI" : "LƯU KHẢO SÁT THU MUA"}
+                </Text>
               </>
             )}
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.saveButton}
+            accessibilityRole="button"
+            onPress={startEditingExistingSurvey}
+          >
+            <Ionicons name="create-outline" size={19} color={COLORS.white} />
+            <Text style={styles.saveText}>CHỈNH SỬA KHẢO SÁT</Text>
+          </TouchableOpacity>
+        )}
+        {isEditingExistingSurvey ? (
+          <TouchableOpacity
+            style={[styles.backButton, styles.footerSecondary, isSaving ? styles.disabledButton : undefined]}
+            disabled={isSaving}
+            accessibilityRole="button"
+            onPress={cancelEditingExistingSurvey}
+          >
+            <Text style={styles.backButtonText}>Hủy</Text>
+          </TouchableOpacity>
+        ) : !isSetupMode ? (
+          <TouchableOpacity style={[styles.backButton, styles.footerSecondary]} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
             <Text style={styles.backButtonText}>Quay lại hồ sơ doanh nghiệp</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -679,4 +737,5 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   backButtonText: { color: COLORS.primary, fontWeight: "800", fontSize: 13 },
+  footerSecondary: { marginTop: 10 },
 });

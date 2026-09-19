@@ -286,6 +286,14 @@ export default function ProfileScreen() {
     user.role === "business"
       ? [
           getBusinessProfileMenu(),
+          // Khảo sát thu mua luôn có lối vào (xem/chỉnh sửa), không chỉ khi SurveyPending.
+          {
+            icon: "clipboard-outline",
+            title: "Khảo sát thu mua",
+            subtitle: bizStatus === "SurveyPending" ? "Chưa hoàn thành" : "Xem hoặc chỉnh sửa tiêu chí",
+            subtitleColor: bizStatus === "SurveyPending" ? "#9A6418" : undefined,
+            route: "/profile/business-survey",
+          },
           {
             icon: "bar-chart-outline",
             title: "Thống kê & Đơn hàng",
