@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import AddressPickerField from "../../src/components/shared/AddressPickerField";
@@ -11,6 +11,9 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { capitalizeWordInitials } from "../../src/utils/textFormat";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { devLog } from "../../src/utils/devLog";
 
 type DeliveryMethod = "SELLER_DELIVERY" | "BUYER_PICKUP" | "GHN";
 type RequiredNote = "CHOTHUHANG" | "CHOXEMHANGKHONGTHU" | "KHONGCHOXEMHANG";
@@ -76,7 +79,13 @@ type GhnParcelInfo = {
   estimatedOverLimit?: boolean;
 };
 
-type AgreementDetailsPayload = { revision: number; notes?: string | null; inspectionDate?: string | null; inspectionAddress?: string | null; collectionDate?: string | null; pickupAddress?: string | null; deliveryAddress?: string | null; deliveryMethod?: "Unknown" | "GhnDelivery" | "SellerDelivers" | "BuyerPickUp"; ghnInfo?: GhnShippingInfo | null; codValue?: number | null; estimatedShippingFee?: number | null };
+// Thông tin người bán (ảnh chụp giao dịch) — bổ sung vào agreementDetails; KHÔNG thay thế ghnInfo.
+type SellerInfoPayload = { fullName: string | null; phone: string | null; streetAddress: string | null; ward: string | null; city: string | null };
+type SellerInfoForm = { fullName: string; phone: string; streetAddress: string; ward: string; city: string };
+const EMPTY_SELLER_INFO: SellerInfoForm = { fullName: "", phone: "", streetAddress: "", ward: "", city: "" };
+// Chuỗi rỗng không phải null: gửi null khi người dùng không cung cấp.
+const toNullable = (value: string) => { const text = String(value ?? "").trim(); return text ? text : null; };
+type AgreementDetailsPayload = { sellerInfo?: SellerInfoPayload | null; revision: number; notes?: string | null; inspectionDate?: string | null; inspectionAddress?: string | null; collectionDate?: string | null; pickupAddress?: string | null; deliveryAddress?: string | null; deliveryMethod?: "Unknown" | "GhnDelivery" | "SellerDelivers" | "BuyerPickUp"; ghnInfo?: GhnShippingInfo | null; codValue?: number | null; estimatedShippingFee?: number | null };
 type CreateAgreementPayload = { negotiationId: string; agreementType: "Inspection" | "No_Inspection"; paymentType: "Deposit" | "Full_Payment"; agreementDetails: AgreementDetailsPayload };
 type UpdateAgreementPayload = Omit<CreateAgreementPayload, "negotiationId">;
 type GhnPartyFormValue = { fullName: string; phone: string; province: GhnProvince | null; district: GhnDistrict | null; ward: GhnWard | null; addressDetail: string };
@@ -130,6 +139,8 @@ const isValidFutureScheduleDate = (value: string) => {
 const agreementApi = {
   createAgreement: async (data: CreateAgreementPayload) => (await apiClient.post("/agreements", data)).data,
   getAgreementById: async (id: string) => (await apiClient.get(`/agreements/${id}`)).data,
+  // Chỉ người bán của thương lượng được gọi; fullAddress chỉ có ở phản hồi.
+  getSellerInfo: async (negotiationId: string) => (await apiClient.get(`/agreements/negotiations/${negotiationId}/seller-info`)).data,
   updateAgreement: async (id: string, data: UpdateAgreementPayload) => {
     try {
       const response = await apiClient.get(`/agreements/${id}`);
@@ -268,14 +279,32 @@ function GhnPartyFields({ title, value, isExpanded, onToggle, provinces, distric
   </View>}</View>;
 }
 
+// Ô địa chỉ hợp đồng: chính ô nhập là đường tự nhập; giá trị gợi ý (seller-info,
+// hợp đồng đã lưu) được đổ sẵn vào ô và người dùng sửa trực tiếp nếu muốn.
+function AgreementAddressField({ value, onChange, onClear, disabled, placeholder }: {
+  value: string;
+  onChange: (value: string, selection?: import("../../src/components/shared/AddressPickerField").AddressSelection | null) => void;
+  onClear: () => void;
+  disabled: boolean;
+  placeholder: string;
+}) {
+  return <AddressPickerField value={value} onChange={onChange} onClear={onClear} disabled={disabled} placeholder={placeholder} />;
+}
+
 export default function AgreementFormScreen() {
-  const router = useRouter(); const { user } = useAuth(); const params = useLocalSearchParams();
+  const router = useGuardedRouter(); const { user } = useAuth(); const params = useLocalSearchParams();
   const negotiationId = Array.isArray(params.negotiationId) ? params.negotiationId[0] : params.negotiationId;
   const editAgreementId = Array.isArray(params.editAgreementId) ? params.editAgreementId[0] : params.editAgreementId;
   const isEditing = Boolean(editAgreementId);
+  const [sellerInfo, setSellerInfo] = useState<SellerInfoForm>(EMPTY_SELLER_INFO);
+  const sellerInfoLoadedRef = useRef(false);
+  // Tạo hợp đồng chỉ do người bán; khi sửa, vai trò lấy từ chính hợp đồng.
+  const [actorSide, setActorSide] = useState<"seller" | "buyer">("seller");
+  const actorId = String(user?.userId || user?.id || "");
   const [isProcessing, setIsProcessing] = useState(false); const [isLoadingData, setIsLoadingData] = useState(isEditing); const [isCalculatingFee, setIsCalculatingFee] = useState(false); const [isLoadingGhnInfo, setIsLoadingGhnInfo] = useState(false); const hasFetchedGhnRef = useRef(false);
   const [editAccess, setEditAccess] = useState<"checking" | "allowed" | "blocked">(isEditing ? "checking" : "allowed");
   const [notice, setNotice] = useState<NoticeState | null>(null); const [isInspection, setIsInspection] = useState(true); const [paymentType, setPaymentType] = useState<"DEPOSIT" | "FULL">("DEPOSIT"); const [revision, setRevision] = useState(1); const [defaultPostDeliveryMethod, setDefaultPostDeliveryMethod] = useState<DeliveryMethod>("SELLER_DELIVERY"); const [originalPostDeliveryMethod, setOriginalPostDeliveryMethod] = useState<DeliveryMethod | null>(null); const [showGhnPostCompatibilityWarning, setShowGhnPostCompatibilityWarning] = useState(false);
+  useAutoDismissFeedback(notice, () => setNotice(null));
   const [showLowPriceConfirm, setShowLowPriceConfirm] = useState(false);
   const [summary, setSummary] = useState({ productName: "Đang tải thông tin...", productCode: "", price: 0, quantity: 1 }); const [hasAuthoritativeTerms, setHasAuthoritativeTerms] = useState(false); const [isLoadingSummary, setIsLoadingSummary] = useState(true); const [notes, setNotes] = useState(""); const [inspectionDate, setInspectionDate] = useState(""); const [inspectionAddress, setInspectionAddress] = useState(""); const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("SELLER_DELIVERY"); const [collectionDate, setCollectionDate] = useState(""); const [pickupAddress, setPickupAddress] = useState(""); const [deliveryAddress, setDeliveryAddress] = useState("");
   const [provinces, setProvinces] = useState<GhnProvince[]>([]); const [senderDistricts, setSenderDistricts] = useState<GhnDistrict[]>([]); const [receiverDistricts, setReceiverDistricts] = useState<GhnDistrict[]>([]); const [senderWards, setSenderWards] = useState<GhnWard[]>([]); const [receiverWards, setReceiverWards] = useState<GhnWard[]>([]); const [loadingSenderDistricts, setLoadingSenderDistricts] = useState(false); const [loadingReceiverDistricts, setLoadingReceiverDistricts] = useState(false); const [loadingSenderWards, setLoadingSenderWards] = useState(false); const [loadingReceiverWards, setLoadingReceiverWards] = useState(false);
@@ -369,6 +398,8 @@ export default function AgreementFormScreen() {
 
       invalidateQuote();
       setSummary((current) => ({ ...current, price, quantity }));
+      const buyerId = String(data.buyerId ?? data.BuyerId ?? "").toLowerCase();
+      setActorSide(actorId && buyerId && buyerId === actorId.toLowerCase() ? "buyer" : "seller");
       setHasAuthoritativeTerms(true);
 
       const inspection = data.agreementType === "Inspection" || data.agreementType === 0;
@@ -384,6 +415,18 @@ export default function AgreementFormScreen() {
       setCollectionDate(details.collectionDate ? details.collectionDate.split("T")[0] : "");
       setPickupAddress(details.pickupAddress || "");
       setDeliveryAddress(details.deliveryAddress || "");
+      // Ưu tiên sellerInfo đã lưu trong hợp đồng (ảnh chụp lịch sử), không ghi đè bằng hồ sơ hiện tại.
+      const savedSellerInfo = details.sellerInfo ?? details.SellerInfo;
+      if (savedSellerInfo && typeof savedSellerInfo === "object") {
+        setSellerInfo({
+          fullName: String(savedSellerInfo.fullName ?? ""),
+          phone: String(savedSellerInfo.phone ?? ""),
+          streetAddress: String(savedSellerInfo.streetAddress ?? ""),
+          ward: String(savedSellerInfo.ward ?? ""),
+          city: String(savedSellerInfo.city ?? ""),
+        });
+        sellerInfoLoadedRef.current = true;
+      }
       if (details.deliveryMethod === "SellerDelivers" || details.deliveryMethod === 2) setDeliveryMethod("SELLER_DELIVERY");
       else if (details.deliveryMethod === "BuyerPickUp" || details.deliveryMethod === 3) setDeliveryMethod("BUYER_PICKUP");
       else if (details.deliveryMethod === "GhnDelivery" || details.deliveryMethod === 1) setDeliveryMethod("GHN");
@@ -434,12 +477,42 @@ export default function AgreementFormScreen() {
         setIsLoadingData(false);
       }
     }
-  }, [editAgreementId, invalidateQuote, isEditing, loadEditLocationOptions]);
+  }, [actorId, editAgreementId, invalidateQuote, isEditing, loadEditLocationOptions]);
+  const prefillSellerInfo = useCallback(async () => {
+    if (!negotiationId || sellerInfoLoadedRef.current) return;
+    try {
+      const response = await agreementApi.getSellerInfo(negotiationId as string);
+      const data = response?.data ?? response;
+      if (!data || sellerInfoLoadedRef.current) return;
+      sellerInfoLoadedRef.current = true;
+      setSellerInfo({
+        fullName: String(data.fullName ?? ""),
+        phone: String(data.phone ?? ""),
+        streetAddress: String(data.streetAddress ?? ""),
+        ward: String(data.ward ?? ""),
+        city: String(data.city ?? ""),
+      });
+      const fullAddress = String(data.fullAddress ?? "").trim();
+      // fullAddress chỉ là gợi ý ban đầu cho địa chỉ lấy hàng; người dùng vẫn sửa được.
+      setPickupAddress((current) => (current.trim() ? current : fullAddress));
+    } catch (error) {
+      // 403/404/lỗi tạm thời: người dùng vẫn tự nhập được; không chặn màn hình.
+      devLog("[agreement] Không lấy được thông tin người bán:", error);
+    }
+  }, [negotiationId]);
+
   useFocusEffect(useCallback(() => {
     void fetchProvinces();
     void fetchSummary();
-    if (isEditing) void fetchExistingAgreement();
-  }, [fetchExistingAgreement, fetchProvinces, fetchSummary, isEditing]));
+    if (isEditing) {
+      void fetchExistingAgreement().then(() => {
+        // Chỉ dùng nguồn khác khi hợp đồng chưa có sellerInfo và người sửa là người bán.
+        if (!sellerInfoLoadedRef.current && actorSide === "seller") void prefillSellerInfo();
+      });
+    } else {
+      void prefillSellerInfo();
+    }
+  }, [actorSide, fetchExistingAgreement, fetchProvinces, fetchSummary, isEditing, prefillSellerInfo]));
 
   const selectSenderProvince = async (province: GhnProvince) => { updateSender({ province, district: null, ward: null }); setSenderDistricts([]); setSenderWards([]); try { setLoadingSenderDistricts(true); setSenderDistricts(await ghnApi.getDistricts(province.provinceId)); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải quận/huyện nơi gửi.") }); } finally { setLoadingSenderDistricts(false); } };
   const selectReceiverProvince = async (province: GhnProvince) => { updateReceiver({ province, district: null, ward: null }); setReceiverDistricts([]); setReceiverWards([]); try { setLoadingReceiverDistricts(true); setReceiverDistricts(await ghnApi.getDistricts(province.provinceId)); } catch (error) { setNotice({ type: "error", message: getErrorMessage(error, "Không thể tải quận/huyện nơi nhận.") }); } finally { setLoadingReceiverDistricts(false); } };
@@ -585,7 +658,7 @@ export default function AgreementFormScreen() {
       if (generation === previewGenerationRef.current) setIsCalculatingFee(false);
     }
   };
-  const buildAgreementDetails = (): AgreementDetailsPayload => { const methodMap: Record<DeliveryMethod, AgreementDetailsPayload["deliveryMethod"]> = { SELLER_DELIVERY: "SellerDelivers", BUYER_PICKUP: "BuyerPickUp", GHN: "GhnDelivery" }; const details: AgreementDetailsPayload = { revision: Math.max(1, revision), notes: notes.trim() || null }; if (isInspection) { details.inspectionDate = inspectionDate ? new Date(inspectionDate).toISOString() : null; details.inspectionAddress = inspectionAddress.trim() || null; return details; } details.collectionDate = collectionDate ? new Date(collectionDate).toISOString() : null; details.deliveryMethod = methodMap[deliveryMethod]; if (deliveryMethod !== "GHN") { details.pickupAddress = pickupAddress.trim() || null; details.deliveryAddress = deliveryAddress.trim() || null; details.ghnInfo = null; details.codValue = 0; details.estimatedShippingFee = null; return details; } const preview = requireCurrentPreview(); details.pickupAddress = composeAddress(sender); details.deliveryAddress = composeAddress(receiver); details.codValue = 0; details.estimatedShippingFee = preview.totalFee; details.ghnInfo = preview.shippingInfo; return details; };
+  const buildAgreementDetails = (): AgreementDetailsPayload => { const methodMap: Record<DeliveryMethod, AgreementDetailsPayload["deliveryMethod"]> = { SELLER_DELIVERY: "SellerDelivers", BUYER_PICKUP: "BuyerPickUp", GHN: "GhnDelivery" }; const details: AgreementDetailsPayload = { revision: Math.max(1, revision), notes: notes.trim() || null }; if (isInspection) { details.inspectionDate = inspectionDate ? new Date(inspectionDate).toISOString() : null; details.inspectionAddress = inspectionAddress.trim() || null; return details; } details.collectionDate = collectionDate ? new Date(collectionDate).toISOString() : null; details.deliveryMethod = methodMap[deliveryMethod]; if (deliveryMethod !== "GHN") { details.pickupAddress = pickupAddress.trim() || null; details.deliveryAddress = deliveryAddress.trim() || null; details.ghnInfo = null; details.codValue = 0; details.estimatedShippingFee = null; details.sellerInfo = { fullName: toNullable(sellerInfo.fullName), phone: toNullable(sellerInfo.phone), streetAddress: toNullable(sellerInfo.streetAddress || pickupAddress), ward: toNullable(sellerInfo.ward), city: toNullable(sellerInfo.city) }; return details; } const preview = requireCurrentPreview(); details.pickupAddress = composeAddress(sender); details.deliveryAddress = composeAddress(receiver); details.codValue = 0; details.estimatedShippingFee = preview.totalFee; details.ghnInfo = preview.shippingInfo; /* GHN: sellerInfo là ảnh chụp người gửi; ghnInfo giữ nguyên dữ liệu tích hợp GHN. */ details.sellerInfo = { fullName: toNullable(sender.fullName), phone: toNullable(sender.phone), streetAddress: toNullable(sender.addressDetail), ward: toNullable(sender.ward?.wardName ?? ""), city: toNullable(sender.province?.provinceName ?? "") }; return details; };
   const handleSubmit = async (confirmedLowPrice = false) => { if (submitInFlightRef.current) return; setNotice(null); if (!isEditing && !hasAuthoritativeTerms) { setNotice({ type: "error", message: FINAL_TERMS_REQUIRED_MESSAGE }); return; } if (isInspection) { if (!inspectionDate || !inspectionAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập thời gian và địa điểm kiểm định." }); return; } if (!isValidFutureScheduleDate(inspectionDate)) { setNotice({ type: "error", message: "Thời gian kiểm định phải là ngày hợp lệ trong tương lai." }); return; } } else { if (!collectionDate) { setNotice({ type: "error", message: "Vui lòng chọn thời gian thu gom dự kiến." }); return; } if (!isValidFutureScheduleDate(collectionDate)) { setNotice({ type: "error", message: "Thời gian thu gom phải là ngày hợp lệ trong tương lai." }); return; } if (deliveryMethod === "GHN") { const validationMessage = validateGhnForm(); if (validationMessage) { setNotice({ type: "error", message: validationMessage }); return; } if (!acceptedPreviewRef.current || Date.parse(acceptedPreviewRef.current.expiresAt) <= Date.now()) { setNotice({ type: "error", message: "Thông tin giao hàng đã thay đổi hoặc chưa có phí hợp lệ. Vui lòng tính lại phí GHN." }); return; } } else if (!pickupAddress.trim() || !deliveryAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập đầy đủ địa chỉ lấy và nhận hàng." }); return; } } if (summary.price < 10_000 && !confirmedLowPrice) { setShowLowPriceConfirm(true); return; } try { submitInFlightRef.current = true; setIsProcessing(true); if (isEditing && editAgreementId) { try { const checkRes = await agreementApi.getAgreementById(editAgreementId as string); const latest = checkRes?.data || checkRes; const latestRevision = Number(latest?.agreementDetails?.revision ?? latest?.revision); if (!Number.isInteger(latestRevision) || latestRevision < 1) { setNotice({ type: "error", message: "Không xác định được phiên bản hợp đồng mới nhất. Vui lòng tải lại và thử lại để tránh ghi đè thay đổi." }); return; } if (latestRevision !== revision) { setNotice({ type: "error", message: "Dữ liệu hợp đồng đã thay đổi. Vui lòng tải lại bản mới nhất để tránh ghi đè." }); return; } } catch { setNotice({ type: "error", message: "Không thể kiểm tra phiên bản hợp đồng mới nhất. Vui lòng thử lại để tránh ghi đè thay đổi của đối tác." }); return; } } const commonPayload = { agreementType: isInspection ? ("Inspection" as const) : ("No_Inspection" as const), paymentType: isInspection ? ("Deposit" as const) : paymentType === "DEPOSIT" ? ("Deposit" as const) : ("Full_Payment" as const), agreementDetails: buildAgreementDetails() }; if (isEditing) { if (!editAgreementId) throw new Error("Không tìm thấy mã hợp đồng cần cập nhật."); await agreementApi.updateAgreement(editAgreementId as string, commonPayload);  router.replace({ pathname: "/agreements/preview", params: { agreementId: editAgreementId, negotiationId, successMsg: "Cập nhật hợp đồng thành công. Đang chờ đối tác xem và xác nhận." } }); } else { await agreementApi.createAgreement({ negotiationId: negotiationId as string, ...commonPayload }); setNotice({ type: "success", message: "Đã tạo hợp đồng và xác nhận phía người bán." }); if (negotiationId) router.replace(`/chat/${negotiationId}`); else router.back(); } } catch (error) {
       const code = getGhnErrorCode(error);
       if (!isInspection && deliveryMethod === "GHN") {
@@ -600,7 +673,7 @@ export default function AgreementFormScreen() {
   return <SafeAreaView style={styles.safeArea}><Header title={isEditing ? "Chỉnh sửa hợp đồng" : "Thiết lập hợp đồng"} showBack /><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}><ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={styles.section}><Text style={styles.sectionTitle}>Tóm tắt giao dịch</Text><View style={styles.summaryCard}>{isLoadingSummary ? <ActivityIndicator color={COLORS.primary} /> : hasAuthoritativeTerms ? <><Text style={styles.summaryProductName} numberOfLines={2}>{summary.productName}</Text><Text style={styles.summaryQty}>Giá đơn vị đã chốt: {formatPrice(summary.price)}</Text><Text style={styles.summaryQty}>Số lượng: {summary.quantity}</Text><Text style={styles.summaryPrice}>Tổng tiền hàng: {formatPrice(summary.price * summary.quantity)}</Text></> : <Text style={styles.numericError}>{isEditing ? "Không tìm thấy giá và số lượng hợp đồng hợp lệ." : FINAL_TERMS_REQUIRED_MESSAGE}</Text>}</View></View>
     <View style={styles.section}><Text style={styles.sectionTitle}>Loại giao dịch</Text><View style={styles.radioGroup}><TouchableOpacity style={styles.radioBtn} disabled={isEditing} onPress={() => { if (!isInspection) invalidateQuote(); setIsInspection(true); setPaymentType("DEPOSIT"); setNotice(null); if (!isEditing) { setPickupAddress(""); setDeliveryAddress(""); setDeliveryMethod("SELLER_DELIVERY"); } }}><Ionicons name={isInspection ? "radio-button-on" : "radio-button-off"} size={24} color={isInspection ? COLORS.primary : COLORS.textLight} /><Text style={[styles.radioText, isEditing && !isInspection ? styles.disabledText : undefined]}>Có kiểm định trước</Text></TouchableOpacity><TouchableOpacity style={styles.radioBtnLast} disabled={isEditing} onPress={() => { if (isInspection) invalidateQuote(); setIsInspection(false); setNotice(null); if (!isEditing && defaultPostDeliveryMethod) void handleDeliveryMethodChange(defaultPostDeliveryMethod); }}><Ionicons name={!isInspection ? "radio-button-on" : "radio-button-off"} size={24} color={!isInspection ? COLORS.primary : COLORS.textLight} /><Text style={[styles.radioText, isEditing && isInspection ? styles.disabledText : undefined]}>Không kiểm định (Thu gom)</Text></TouchableOpacity></View>{isEditing ? <Text style={styles.lockedHint}>Không thể thay đổi loại giao dịch sau khi hợp đồng đã được tạo.</Text> : null}</View>
-    {isInspection ? <View style={styles.section}><Text style={styles.sectionTitle}>Thông tin kiểm định</Text><View style={styles.inputContainer}><Text style={styles.inputLabel}>Thời gian hẹn <Text style={{ color: COLORS.error }}>*</Text></Text><CalendarDateField value={inspectionDate} onChange={setInspectionDate} placeholder="Chọn ngày..." defaultViewDate={new Date().toISOString().slice(0, 10)} clearable disabled={isProcessing} /></View><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa điểm kiểm định <Text style={{ color: COLORS.error }}>*</Text></Text><AddressPickerField value={inspectionAddress} onChange={(value) => setInspectionAddress(value)} onClear={() => setInspectionAddress("")} placeholder="Nhập địa điểm kiểm định..." disabled={isProcessing} /></View><View style={styles.inputContainer}><Text style={styles.inputLabel}>Ghi chú thêm</Text><TextInput placeholder="Các yêu cầu khác..." placeholderTextColor="#547B7D" value={notes} onChangeText={setNotes} style={[styles.input, styles.multilineInput]} multiline /></View><View style={styles.infoBox}><Ionicons name="information-circle-outline" size={20} color={COLORS.primary} /><Text style={styles.infoText}>Hình thức thanh toán: Đặt cọc (mặc định khi có kiểm định)</Text></View></View> : <View style={styles.section}><Text style={styles.sectionTitle}>Thông tin giao nhận</Text><Text style={styles.subLabel}>Phương thức vận chuyển</Text><View style={[styles.radioGroup, styles.deliveryGroup]}>
+    {isInspection ? <View style={styles.section}><Text style={styles.sectionTitle}>Thông tin kiểm định</Text><View style={styles.inputContainer}><Text style={styles.inputLabel}>Thời gian hẹn <Text style={{ color: COLORS.error }}>*</Text></Text><CalendarDateField value={inspectionDate} onChange={setInspectionDate} placeholder="Chọn ngày..." defaultViewDate={new Date().toISOString().slice(0, 10)} clearable disabled={isProcessing} /></View><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa điểm kiểm định <Text style={{ color: COLORS.error }}>*</Text></Text><AgreementAddressField value={inspectionAddress} onChange={(value) => setInspectionAddress(value)} onClear={() => setInspectionAddress("")} placeholder="Nhập địa điểm kiểm định..." disabled={isProcessing} /></View><View style={styles.inputContainer}><Text style={styles.inputLabel}>Ghi chú thêm</Text><TextInput placeholder="Các yêu cầu khác..." placeholderTextColor="#547B7D" value={notes} onChangeText={setNotes} style={[styles.input, styles.multilineInput]} multiline /></View><View style={styles.infoBox}><Ionicons name="information-circle-outline" size={20} color={COLORS.primary} /><Text style={styles.infoText}>Hình thức thanh toán: Đặt cọc (mặc định khi có kiểm định)</Text></View></View> : <View style={styles.section}><Text style={styles.sectionTitle}>Thông tin giao nhận</Text><Text style={styles.subLabel}>Phương thức vận chuyển</Text><View style={[styles.radioGroup, styles.deliveryGroup]}>
       {[["SELLER_DELIVERY", "Bên bán tự giao"], ["BUYER_PICKUP", "Bên mua đến lấy"], ["GHN", "Dịch vụ giao hàng (GHN)"]].map(([method, label], index) => <TouchableOpacity key={method} style={index === 2 ? styles.radioBtnLast : styles.radioBtn} onPress={() => void handleDeliveryMethodChange(method as DeliveryMethod)}><Ionicons name={deliveryMethod === method ? "radio-button-on" : "radio-button-off"} size={24} color={deliveryMethod === method ? COLORS.primary : COLORS.textLight} /><Text style={styles.radioText}>{label}</Text></TouchableOpacity>)}
     </View><View style={styles.inputContainer}><Text style={styles.inputLabel}>Thời gian thu gom dự kiến <Text style={{ color: COLORS.error }}>*</Text></Text><CalendarDateField value={collectionDate} onChange={setCollectionDate} placeholder="Chọn ngày..." defaultViewDate={new Date().toISOString().slice(0, 10)} clearable disabled={isProcessing} /></View>{showGhnPostCompatibilityWarning ? <View style={styles.infoBox}><Ionicons name="warning-outline" size={20} color={COLORS.primary} /><Text style={styles.infoText}>Bài đăng ban đầu không sử dụng GHN. Khối lượng và kích thước hiện tại có thể chưa phù hợp với quy định giao hàng nhanh. Vui lòng kiểm tra và điều chỉnh thông tin kiện hàng trước khi tính phí.</Text></View> : null}
     {deliveryMethod === "GHN" ? <View style={styles.configCard}><View style={styles.ghnHeader}><Ionicons name="cube-outline" size={22} color={COLORS.primary} /><Text style={styles.ghnTitle}>Thông tin giao hàng nhanh (GHN)</Text></View>{isLoadingGhnInfo ? <View style={styles.ghnLoadingBox}><ActivityIndicator size="small" color={COLORS.primary} /><Text style={styles.ghnLoadingText}>Đang tự động lấy thông tin kiện hàng...</Text></View> : <><GhnPartyFields title="Thông tin người gửi" value={sender} isExpanded={senderExpanded} onToggle={() => setSenderExpanded(!senderExpanded)} provinces={provinces} districts={senderDistricts} wards={senderWards} loadingDistricts={loadingSenderDistricts} loadingWards={loadingSenderWards} onChange={updateSender} onSelectProvince={selectSenderProvince} onSelectDistrict={selectSenderDistrict} onSelectWard={(ward) => updateSender({ ward })} /><GhnPartyFields title="Thông tin người nhận" value={receiver} isExpanded={receiverExpanded} onToggle={() => setReceiverExpanded(!receiverExpanded)} provinces={provinces} districts={receiverDistricts} wards={receiverWards} loadingDistricts={loadingReceiverDistricts} loadingWards={loadingReceiverWards} onChange={updateReceiver} onSelectProvince={selectReceiverProvince} onSelectDistrict={selectReceiverDistrict} onSelectWard={(ward) => updateReceiver({ ward })} />
@@ -636,7 +709,7 @@ export default function AgreementFormScreen() {
           <Text style={styles.quoteHint}>Dự kiến giao: {formatGhnDate(ghnPreview.expectedDeliveryAt)}</Text>
           <Text style={styles.quoteHint}>Thông số đã tính phí: {ghnPreview.parcelCount} kiện · {ghnPreview.weightGram} g · {ghnPreview.lengthCm} × {ghnPreview.widthCm} × {ghnPreview.heightCm} cm</Text>
           <Text style={styles.quoteHint}>Phí có hiệu lực đến {formatGhnDate(ghnPreview.expiresAt)}. Vui lòng tính lại nếu thay đổi thông tin giao hàng.</Text>
-        </View> : null}</>}</View> : <><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa chỉ lấy hàng (Người bán) <Text style={{ color: COLORS.error }}>*</Text></Text><AddressPickerField value={pickupAddress} onChange={(value) => setPickupAddress(value)} onClear={() => setPickupAddress("")} placeholder="Nhập địa chỉ lấy hàng..." disabled={isProcessing} /></View><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa chỉ nhận hàng (Người mua) <Text style={{ color: COLORS.error }}>*</Text></Text><AddressPickerField value={deliveryAddress} onChange={(value) => setDeliveryAddress(value)} onClear={() => setDeliveryAddress("")} placeholder="Nhập địa chỉ nhận hàng..." disabled={isProcessing} /></View></>}
+        </View> : null}</>}</View> : <><Text style={styles.subLabel}>Thông tin người bán</Text><View style={styles.inputContainer}><Text style={styles.inputLabel}>Họ và tên người bán</Text><TextInput value={sellerInfo.fullName} onChangeText={(fullName) => setSellerInfo((current) => ({ ...current, fullName: capitalizeWordInitials(fullName) }))} placeholder="Nhập họ và tên" placeholderTextColor="#547B7D" autoCapitalize="words" autoCorrect={false} style={styles.input} editable={!isProcessing} /></View><View style={styles.inputContainer}><Text style={styles.inputLabel}>Số điện thoại người bán</Text><TextInput value={sellerInfo.phone} onChangeText={(phone) => setSellerInfo((current) => ({ ...current, phone: phone.replace(/[^0-9+]/g, "") }))} placeholder="Nhập số điện thoại" placeholderTextColor="#547B7D" keyboardType="phone-pad" style={styles.input} editable={!isProcessing} /></View><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa chỉ lấy hàng (Người bán) <Text style={{ color: COLORS.error }}>*</Text></Text><AgreementAddressField value={pickupAddress} onChange={(value, selection) => { setPickupAddress(value); setSellerInfo((current) => selection ? { ...current, streetAddress: selection.streetAddress || value, ward: selection.wardName || "", city: selection.provinceName || "" } : { ...current, streetAddress: value, ward: "", city: "" }); }} onClear={() => { setPickupAddress(""); setSellerInfo((current) => ({ ...current, streetAddress: "", ward: "", city: "" })); }} placeholder="Nhập địa chỉ lấy hàng..." disabled={isProcessing} /></View><View style={styles.addressFieldBlock}><Text style={styles.inputLabel}>Địa chỉ nhận hàng (Người mua) <Text style={{ color: COLORS.error }}>*</Text></Text><AgreementAddressField value={deliveryAddress} onChange={(value) => setDeliveryAddress(value)} onClear={() => setDeliveryAddress("")} placeholder="Nhập địa chỉ nhận hàng..." disabled={isProcessing} /></View></>}
     <View style={styles.inputContainer}><Text style={styles.inputLabel}>Ghi chú thêm</Text><TextInput placeholder="Ghi chú cho shipper hoặc đối tác..." placeholderTextColor="#547B7D" value={notes} onChangeText={setNotes} style={[styles.input, styles.multilineInput]} multiline /></View><Text style={styles.subLabel}>Hình thức thanh toán</Text><View style={styles.radioGroupRow}><TouchableOpacity style={styles.radioBtnRow} onPress={() => deliveryMethod !== "GHN" && setPaymentType("DEPOSIT")} disabled={deliveryMethod === "GHN"}><Ionicons name={paymentType === "DEPOSIT" ? "radio-button-on" : "radio-button-off"} size={24} color={deliveryMethod === "GHN" ? COLORS.border : paymentType === "DEPOSIT" ? COLORS.primary : COLORS.textLight} /><Text style={[styles.radioText, deliveryMethod === "GHN" ? styles.disabledText : undefined]}>Đặt cọc</Text></TouchableOpacity><TouchableOpacity style={styles.radioBtnRow} onPress={() => setPaymentType("FULL")}><Ionicons name={paymentType === "FULL" ? "radio-button-on" : "radio-button-off"} size={24} color={paymentType === "FULL" ? COLORS.primary : COLORS.textLight} /><Text style={styles.radioText}>Toàn phần</Text></TouchableOpacity></View></View>}
     <InlineNotice notice={notice} /><TouchableOpacity style={[styles.submitBtn, isProcessing ? styles.buttonDisabled : undefined]} onPress={() => void handleSubmit()} disabled={isProcessing}>{isProcessing ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.submitBtnText}>{isEditing ? "Cập nhật hợp đồng" : "Tạo hợp đồng"}</Text>}</TouchableOpacity>
   </ScrollView></KeyboardAvoidingView>
