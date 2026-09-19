@@ -67,11 +67,16 @@ export type WithdrawalDetail = {
 export type WithdrawalQuota = {
   minimumWithdrawalAmount: number;
   maximumWithdrawalAmount: number;
-  dailyWithdrawalLimit: number;
+  // Hạn mức tổng tiền trong ngày: null = KHÔNG giới hạn (ví dụ Business VIP), không phải 0.
+  dailyWithdrawalLimit: number | null;
   completedTodayAmount: number;
   activeReservedAmount: number;
   usedDailyLimitAmount: number;
-  remainingDailyLimitAmount: number;
+  remainingDailyLimitAmount: number | null;
+  // Hạn mức số lượt rút trong ngày (null = không giới hạn). Ngày tính theo UTC+7.
+  dailyWithdrawalCountLimit?: number | null;
+  usedDailyWithdrawalCount?: number;
+  remainingDailyWithdrawalCount?: number | null;
   resetAt: string;
 };
 

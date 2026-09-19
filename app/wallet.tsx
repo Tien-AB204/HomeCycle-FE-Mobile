@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,7 +18,9 @@ import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getMyWithdrawalQuota, WithdrawalQuota } from "../src/services/apis/withdrawalApi";
-import { NETWORK_ERROR_MESSAGE } from "../src/utils/errorMessage";
+import { NETWORK_ERROR_MESSAGE, readSafeApiMessage } from "../src/utils/errorMessage";
+import { useAutoDismissFeedback } from "../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../src/utils/tapGuard";
 
 const PAGE_SIZE = 10;
 
@@ -75,11 +77,7 @@ const getErrorCode = (error: any) =>
 // mức ngày); message BE trả đã có sẵn số tiền chính xác nên ưu tiên hiển
 // thị nguyên văn thay vì tự soạn lại ở FE.
 const getErrorMessageFromResponse = (error: any) =>
-  String(
-    error?.response?.data?.message ||
-      error?.response?.data?.error?.message ||
-      "",
-  ).trim();
+  readSafeApiMessage(error?.response?.data) || "";
 
 const formatCurrency = (value: unknown) =>
   new Intl.NumberFormat("vi-VN", {
@@ -115,7 +113,7 @@ const getBalanceTypeLabel = (value: unknown) => {
 };
 
 export default function WalletScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user } = useAuth();
 
   const [wallet, setWallet] = useState<any>(null);
@@ -129,6 +127,7 @@ export default function WalletScreen() {
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
   const [quota, setQuota] = useState<WithdrawalQuota | null>(null);
 
   const isBusiness = String(user?.role || "").toLowerCase() === "business";
@@ -233,7 +232,21 @@ export default function WalletScreen() {
         return false;
       }
 
-      if (parsedWithdrawalAmount > quota.remainingDailyLimitAmount) {
+      if (
+        typeof quota.remainingDailyWithdrawalCount === "number" &&
+        quota.remainingDailyWithdrawalCount <= 0
+      ) {
+        setAmountError(
+          `Bạn đã sử dụng hết ${quota.dailyWithdrawalCountLimit ?? quota.usedDailyWithdrawalCount ?? 0} lượt rút tiền trong ngày.`,
+        );
+        return false;
+      }
+
+      // null = không giới hạn theo ngày (VIP); chỉ chặn khi Backend có hạn mức số.
+      if (
+        typeof quota.remainingDailyLimitAmount === "number" &&
+        parsedWithdrawalAmount > quota.remainingDailyLimitAmount
+      ) {
         setAmountError(
           `Hạn mức rút còn lại hôm nay là ${formatCurrency(quota.remainingDailyLimitAmount)}.`,
         );
@@ -275,7 +288,15 @@ export default function WalletScreen() {
           "Số dư khả dụng không đủ để rút số tiền này.",
         "Withdrawal.InvalidRequest":
           "Số tiền rút chưa hợp lệ.",
+        "Withdrawal.DailyCountLimitExceeded":
+          getErrorMessageFromResponse(error) ||
+          "Bạn đã sử dụng hết số lượt rút tiền trong ngày.",
       };
+
+      if (code === "Withdrawal.DailyCountLimitExceeded") {
+        // Đồng bộ lại hạn mức để số lượt còn lại phản ánh đúng trạng thái máy chủ.
+        void loadQuota();
+      }
 
       setMessage({
         type: "error",
@@ -380,12 +401,38 @@ export default function WalletScreen() {
               <View style={[styles.quotaRow, styles.quotaRowLast]}>
                 <Text style={styles.quotaLabel}>Đã sử dụng hạn mức ngày</Text>
                 <Text style={styles.quotaValue}>
-                  {formatCurrency(quota.usedDailyLimitAmount)} / {formatCurrency(quota.dailyWithdrawalLimit)}
+                  {formatCurrency(quota.usedDailyLimitAmount)} /{" "}
+                  {typeof quota.dailyWithdrawalLimit === "number"
+                    ? formatCurrency(quota.dailyWithdrawalLimit)
+                    : "Không giới hạn"}
                 </Text>
               </View>
               <Text style={styles.quotaRemainingText}>
-                Còn lại hôm nay: {formatCurrency(quota.remainingDailyLimitAmount)}
+                {typeof quota.remainingDailyLimitAmount === "number"
+                  ? `Còn lại hôm nay: ${formatCurrency(quota.remainingDailyLimitAmount)}`
+                  : "Hạn mức tổng tiền trong ngày: Không giới hạn"}
               </Text>
+              {typeof quota.dailyWithdrawalCountLimit === "number" ? (
+                <View style={[styles.quotaRow, styles.quotaRowTop]}>
+                  <Text style={styles.quotaLabel}>Lượt rút trong ngày</Text>
+                  <Text
+                    style={[
+                      styles.quotaValue,
+                      (quota.remainingDailyWithdrawalCount ?? 0) <= 0
+                        ? styles.quotaValueExhausted
+                        : undefined,
+                    ]}
+                  >
+                    {quota.usedDailyWithdrawalCount ?? 0} / {quota.dailyWithdrawalCountLimit}
+                    {" · "}còn {Math.max(quota.remainingDailyWithdrawalCount ?? 0, 0)} lượt
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.quotaRow, styles.quotaRowTop]}>
+                  <Text style={styles.quotaLabel}>Lượt rút trong ngày</Text>
+                  <Text style={styles.quotaValue}>Không giới hạn</Text>
+                </View>
+              )}
             </View>
           ) : null}
 
@@ -623,6 +670,8 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   quotaRowLast: { borderBottomWidth: 0 },
+  quotaRowTop: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border, borderBottomWidth: 0 },
+  quotaValueExhausted: { color: COLORS.error },
   quotaLabel: { color: COLORS.textLight, fontSize: 12 },
   quotaValue: { color: COLORS.text, fontSize: 12, fontWeight: "700" },
   quotaRemainingText: {
