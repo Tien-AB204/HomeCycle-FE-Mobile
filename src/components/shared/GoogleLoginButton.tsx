@@ -5,10 +5,7 @@ import {
   isSuccessResponse,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -25,6 +22,8 @@ import {
   getApiErrorMessage,
   NETWORK_ERROR_MESSAGE,
 } from "../../utils/apiFeedback";
+import { devLog } from "../../utils/devLog";
+import { useGuardedRouter } from "../../utils/tapGuard";
 
 const GOOGLE_WEB_CLIENT_ID =
   "624459804416-g9v4cj16eb5r6r3ub3jqudr869a3eerm.apps.googleusercontent.com";
@@ -62,7 +61,7 @@ export default function GoogleLoginButton({
   title = "Google",
   disabled = false,
 }: GoogleLoginButtonProps) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { returnUrl } = useLocalSearchParams();
   const { reloadUser } = useAuth();
 
@@ -192,7 +191,7 @@ export default function GoogleLoginButton({
         idToken,
       );
     } catch (error: unknown) {
-      console.error(
+      devLog(
         "Lỗi Google Sign-In:",
         error,
       );

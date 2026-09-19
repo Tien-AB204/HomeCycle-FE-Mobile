@@ -863,10 +863,12 @@ const AddressPickerField = forwardRef<
                   styles.modalScrollContent,
                   {
                     paddingBottom:
-                      Math.max(
-                        insets.bottom,
-                        16,
-                      ),
+                      Platform.OS === "android"
+                        ? 16
+                        : Math.max(
+                            insets.bottom,
+                            16,
+                          ),
                   },
                 ]}
                 keyboardShouldPersistTaps="handled"

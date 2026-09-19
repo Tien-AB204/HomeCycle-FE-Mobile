@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { makeRedirectUri } from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import {
@@ -16,6 +16,8 @@ import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { authApi } from "../../services/apis/authApi";
 import { getApiErrorMessage } from "../../utils/apiFeedback";
+import { devLog } from "../../utils/devLog";
+import { useGuardedRouter } from "../../utils/tapGuard";
 
 const GOOGLE_WEB_CLIENT_ID =
   "624459804416-g9v4cj16eb5r6r3ub3jqudr869a3eerm.apps.googleusercontent.com";
@@ -38,7 +40,7 @@ export default function GoogleLoginButton({
   title = "Google",
   disabled = false,
 }: GoogleLoginButtonProps) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { returnUrl } = useLocalSearchParams();
   const { reloadUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
@@ -117,7 +119,7 @@ export default function GoogleLoginButton({
 
       await handleGoogleBackendLogin(idToken);
     } catch (error: unknown) {
-      console.error("Lỗi Google Sign-In trên web:", error);
+      devLog("Lỗi Google Sign-In trên web:", error);
       setErrorMessage(
         getApiErrorMessage(error, "Không thể đăng nhập bằng Google."),
       );

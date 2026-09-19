@@ -44,7 +44,7 @@ export default function AppDialogHost({ children }: Props) {
       const normalizedButtons =
         Array.isArray(buttons) && buttons.length > 0
           ? buttons
-          : [{ text: "OK", style: "default" as const }];
+          : [{ text: "Đồng ý", style: "default" as const }];
 
       setDialog({
         title: String(title || "Thông báo"),
@@ -131,7 +131,7 @@ export default function AppDialogHost({ children }: Props) {
                         cancel ? styles.cancelButtonText : styles.primaryButtonText,
                       ]}
                     >
-                      {button.text || "OK"}
+                      {button.text || "Đồng ý"}
                     </Text>
                   </TouchableOpacity>
                 );

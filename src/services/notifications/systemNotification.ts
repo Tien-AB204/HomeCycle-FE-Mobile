@@ -13,6 +13,7 @@
 
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { devLog } from "../../utils/devLog";
 
 // Stable, project-owned channel id. One channel for all HomeCycle user
 // notifications — never one per business event/type.
@@ -73,7 +74,7 @@ export async function ensureAndroidChannelAsync(): Promise<void> {
     // Channel setup failing must never crash the app; the OS falls back to
     // its own default channel behavior for this app.
     if (__DEV__) {
-      console.warn("[systemNotification] Không thể tạo kênh thông báo Android:", error);
+      devLog("[systemNotification] Không thể tạo kênh thông báo Android:", error);
     }
     channelEnsured = false;
   }
@@ -112,7 +113,7 @@ export async function ensureNotificationPermissionAsync(): Promise<boolean> {
     return false;
   } catch (error) {
     if (__DEV__) {
-      console.warn("[systemNotification] Không thể kiểm tra quyền thông báo:", error);
+      devLog("[systemNotification] Không thể kiểm tra quyền thông báo:", error);
     }
     return false;
   }
@@ -148,7 +149,7 @@ export async function presentLocalNotificationAsync(
     });
   } catch (error) {
     if (__DEV__) {
-      console.warn("[systemNotification] Không thể hiển thị thông báo hệ thống:", error);
+      devLog("[systemNotification] Không thể hiển thị thông báo hệ thống:", error);
     }
   }
 }
@@ -219,7 +220,7 @@ export function consumeInitialNotificationResponse(): SystemNotificationTapData 
     return extractTapData(response);
   } catch (error) {
     if (__DEV__) {
-      console.warn(
+      devLog(
         "[systemNotification] Không thể đọc phản hồi thông báo khi khởi động:",
         error,
       );

@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  AppState,
   Keyboard,
   Platform,
   StyleSheet,
@@ -53,10 +54,20 @@ function RootNavigator() {
       "keyboardDidHide",
       () => setIsKeyboardVisible(false),
     );
+    // Một số thiết bị (Samsung) không phát keyboardDidHide khi màn hình bị
+    // unmount lúc bàn phím đang mở; đồng bộ lại theo trạng thái thật để
+    // phần đệm thanh điều hướng không bị mất cho toàn bộ ứng dụng.
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (state) => {
+        if (state === "active") setIsKeyboardVisible(Keyboard.isVisible());
+      },
+    );
 
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
+      appStateSubscription.remove();
     };
   }, []);
 
@@ -84,6 +95,13 @@ function RootNavigator() {
               <Stack
                 screenOptions={{
                   headerShown: false,
+                }}
+                screenListeners={{
+                  state: () => {
+                    if (Platform.OS === "android") {
+                      setIsKeyboardVisible(Keyboard.isVisible());
+                    }
+                  },
                 }}
               >
                 <Stack.Screen name="index" />

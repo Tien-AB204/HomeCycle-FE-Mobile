@@ -1,9 +1,10 @@
 // src/components/Header.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { COLORS } from "../../constants/theme";
+import { useGuardedRouter } from "../../utils/tapGuard";
 
 interface HeaderProps {
   title?: string;
@@ -20,7 +21,7 @@ export default function Header({
   leftContent,
   rightContent,
 }: HeaderProps) {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   // Safe area phía trên được xử lý tập trung ở app/_layout.tsx trên Android
   // và bởi SafeAreaView của từng màn hình trên iOS, tránh cộng padding hai lần.

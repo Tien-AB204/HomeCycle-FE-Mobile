@@ -4,6 +4,7 @@ import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JW
 import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "../services/apis/axiosClient";
 import { getApiErrorMessage } from "../utils/apiFeedback";
+import { devLog } from "../utils/devLog";
 
 interface AuthContextType {
   user: any | null;
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fallbackUserId = decoded[userIdClaim] || decoded.sub || "";
           fallbackEmail = decoded[emailClaim] || "";
         } catch (decodeError) {
-          console.error("Lỗi giải mã token doanh nghiệp:", decodeError);
+          devLog("Lỗi giải mã token doanh nghiệp:", decodeError);
         }
 
         const fallbackBusinessUser = {
@@ -120,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fallbackUserId = decoded[userIdClaim] || decoded.sub || "";
           fallbackEmail = decoded[emailClaim] || "";
         } catch (decodeError) {
-          console.error("Lỗi giải mã token Personal:", decodeError);
+          devLog("Lỗi giải mã token Personal:", decodeError);
         }
 
         const fallbackPersonalUser = {
@@ -253,7 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await reloadUser();
       router.replace("/(tabs)");
     } catch (error: any) {
-      console.error("Lỗi đăng nhập:", error);
+      devLog("Lỗi đăng nhập:", error);
       throw new Error(
         getApiErrorMessage(
           error,
