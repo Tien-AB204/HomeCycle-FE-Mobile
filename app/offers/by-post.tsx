@@ -1,9 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useFocusEffect,
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -38,6 +34,8 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
+import { canRespondToOffer, collectOfferChatRoutes, getOfferVersion, isAcceptedOffer, isPendingOffer, validOfferTerms } from "../../src/utils/offerActions";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type ReceivedOfferItem = {
   offerId?: string;
@@ -293,12 +291,6 @@ const normalizeStatus = (value: unknown) =>
     .replace(/[\s_-]/g, "")
     .toLowerCase();
 
-const isPendingOffer = (value: unknown) => {
-  const status = normalizeStatus(value);
-
-  return status === "0" || status === "pending";
-};
-
 const getOfferErrorCode = (error: any) =>
   String(
     error?.response?.data?.error?.code ??
@@ -439,7 +431,7 @@ const fetchAllReceivedOffers =
 
 export default function OffersByPostScreen() {
   const params = useLocalSearchParams();
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user } = useAuth();
   const { connection, reconnectVersion } = useChatRealtime();
   const currentUserId = user?.userId || user?.id;
@@ -471,6 +463,30 @@ export default function OffersByPostScreen() {
   const [offers, setOffers] = useState<
     ReceivedOfferItem[]
   >([]);
+  const [chatRoutes, setChatRoutes] = useState<Record<string, string>>({});
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    setChatRoutes({});
+    const wanted = offers.filter((item) => isAcceptedOffer(item.offerStatus)).map((item) => normalizeId(item.offerId));
+    if (wanted.length && currentUserId) void (async () => {
+      const routes: Record<string, string> = {};
+      try {
+        for (let pageNumber = 1; pageNumber <= MAX_PAGE_GUARD; pageNumber++) {
+          const response = await apiClient.get("/negotiations", { params: { PageNumber: pageNumber, PageSize: PAGE_SIZE } });
+          if (cancelled) return;
+          if (response.data?.isSuccess === false) break;
+          const page = unwrapPage(response.data);
+          if (!Array.isArray(page?.items)) break;
+          collectOfferChatRoutes(page.items, routes);
+          setChatRoutes({ ...routes });
+          if (wanted.every((id) => routes[id]) || !hasMorePages(page, pageNumber, page.items.length)) break;
+        }
+      } catch {
+        // Missing route data hides the shortcut; never guess or create a room.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [offers, currentUserId, contextKey]));
 
   // Default stays "newest" for both Buy and Sell context — the Buy
   // procurement default must never be highest-price-first, and there is no
@@ -754,38 +770,13 @@ export default function OffersByPostScreen() {
         return;
       }
 
-      const canAccept =
-        detail?.canAccept ??
-        detail?.CanAccept;
-
-      const canReject =
-        detail?.canReject ??
-        detail?.CanReject;
-
-      if (
-        mode === "accept" &&
-        canAccept !== true
-      ) {
+      if (!canRespondToOffer(detail, mode)) {
         await loadOffers(true);
         if (!isCurrentAction()) return;
 
         setActionFeedback({
           type: "error",
-          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này hiện không thể được chấp nhận.`,
-        });
-        return;
-      }
-
-      if (
-        mode === "reject" &&
-        canReject !== true
-      ) {
-        await loadOffers(true);
-        if (!isCurrentAction()) return;
-
-        setActionFeedback({
-          type: "error",
-          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này hiện không thể bị từ chối.`,
+          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} này hiện không cho phép thao tác đã chọn. Vui lòng kiểm tra lại.`,
         });
         return;
       }
@@ -856,8 +847,7 @@ export default function OffersByPostScreen() {
         "",
     ).trim();
 
-    const rawVersion = selectedOffer.version ?? selectedOffer.Version;
-    const version = rawVersion == null ? NaN : Number(rawVersion);
+    const version = getOfferVersion(selectedOffer);
 
     if (!offerId) {
       setActionFeedback({
@@ -871,8 +861,7 @@ export default function OffersByPostScreen() {
       (actionMode === "accept" ||
         actionMode === "counter") &&
       (
-        !Number.isInteger(version) ||
-        version < 0
+        version === null
       )
     ) {
       setActionMode(null);
@@ -899,10 +888,7 @@ export default function OffersByPostScreen() {
     if (
       actionMode === "counter" &&
       (
-        !Number.isFinite(price) ||
-        price <= 0 ||
-        !Number.isInteger(quantity) ||
-        quantity <= 0
+        !validOfferTerms(price, quantity)
       )
     ) {
       setActionFeedback({
@@ -923,7 +909,7 @@ export default function OffersByPostScreen() {
         response =
           await offerApi.acceptOffer(
             offerId,
-            version,
+            version!,
           );
       } else if (actionMode === "reject") {
         response =
@@ -937,7 +923,7 @@ export default function OffersByPostScreen() {
             {
               offerPrice: price,
               offerQuantity: quantity,
-              version,
+              version: version!,
             },
           );
       }
@@ -976,13 +962,13 @@ export default function OffersByPostScreen() {
 
       if (!isCurrentAction()) return;
 
+      await loadOffers(true);
+      if (!isCurrentAction()) return;
+
       if (completedMode === "accept" && acceptedNegotiationId) {
         router.push(`/chat/${acceptedNegotiationId}` as any);
         return;
       }
-
-      await loadOffers(true);
-      if (!isCurrentAction()) return;
 
       setActionFeedback({
         type: "success",
@@ -1212,6 +1198,7 @@ export default function OffersByPostScreen() {
           </View>
         }
         renderItem={({ item }) => {
+          const chatId = isAcceptedOffer(item.offerStatus) ? chatRoutes[normalizeId(item.offerId)] : undefined;
           const senderName =
             String(
               item.senderName || "",
@@ -1248,20 +1235,26 @@ export default function OffersByPostScreen() {
                   </Text>
                 ) : null}
                 <View style={styles.offerTopRow}>
-                  <Text
-                    style={styles.senderName}
-                    numberOfLines={1}
-                  >
-                    {senderName}
-                  </Text>
+                  <View style={styles.offerIdentityColumn}>
+                    <Text style={styles.senderName} numberOfLines={1}>
+                      {senderName}
+                    </Text>
+                    <Text style={styles.offerQuantity}>
+                      Số lượng: {Number(item.offerQuantity || 0)}
+                    </Text>
+                  </View>
 
-                  <Text style={styles.offerPrice}>
-                    {formatPrice(
-                      item.offerPrice,
-                    )}
-                  </Text>
+                  <View style={styles.offerPriceDateColumn}>
+                    <Text style={styles.offerPrice}>
+                      {formatPrice(item.offerPrice)}
+                    </Text>
+                    <Text style={styles.offerDate}>
+                      {formatDate(item.createdAt)}
+                    </Text>
+                  </View>
 
-                  {isPendingOffer(item.offerStatus) ? (
+                  <View style={styles.rejectActionSlot}>
+                    {isPendingOffer(item.offerStatus) ? (
                     <TouchableOpacity
                       style={styles.rejectIconButton}
                       hitSlop={8}
@@ -1280,22 +1273,8 @@ export default function OffersByPostScreen() {
                         color={COLORS.error}
                       />
                     </TouchableOpacity>
-                  ) : null}
-                </View>
-
-                <View style={styles.offerMetaRow}>
-                  <Text style={styles.offerQuantity}>
-                    Số lượng:{" "}
-                    {Number(
-                      item.offerQuantity || 0,
-                    )}
-                  </Text>
-
-                  <Text style={styles.offerDate}>
-                    {formatDate(
-                      item.createdAt,
-                    )}
-                  </Text>
+                    ) : null}
+                  </View>
                 </View>
 
                 {isBuyPost && postContext ? (
@@ -1320,20 +1299,28 @@ export default function OffersByPostScreen() {
                     </Text>
                   </View>
 
-                  <View style={styles.detailLink}>
-                    <Text
-                      style={
-                        styles.detailLinkText
-                      }
-                    >
-                      Xem chi tiết
-                    </Text>
-
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color={COLORS.primary}
-                    />
+                  <View style={styles.offerBottomActions}>
+                    <View style={styles.chatShortcutSlot}>
+                      {chatId ? (
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Đi tới trò chuyện"
+                          style={styles.chatShortcut}
+                          hitSlop={3}
+                          disabled={isProcessingAction}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            router.push(`/chat/${chatId}` as any);
+                          }}
+                        >
+                          <Ionicons name="chatbubbles-outline" size={18} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                    <View style={styles.detailLink}>
+                      <Text style={styles.detailLinkText}>Xem chi tiết</Text>
+                      <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+                    </View>
                   </View>
                 </View>
 
@@ -1807,38 +1794,50 @@ const styles = StyleSheet.create({
   },
   offerTopRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 10,
+  },
+  offerIdentityColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
+  offerPriceDateColumn: {
+    width: 128,
+    flexShrink: 0,
+    gap: 6,
+  },
+  rejectActionSlot: {
+    width: 22,
+    height: 22,
+    flexShrink: 0,
   },
   senderName: {
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "800",
+    lineHeight: 22,
   },
   offerPrice: {
     color: COLORS.primary,
     fontSize: 14,
     fontWeight: "800",
-  },
-  offerMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginTop: 6,
+    lineHeight: 22,
+    textAlign: "right",
   },
   offerQuantity: {
     color: COLORS.textLight,
     fontSize: 12,
+    lineHeight: 16,
   },
   offerDate: {
-    flexShrink: 1,
     color: COLORS.textLight,
     fontSize: 10,
+    lineHeight: 16,
     textAlign: "right",
   },
   offerBottomRow: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1846,6 +1845,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   statusBadge: {
+    flexShrink: 1,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
@@ -1871,6 +1871,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
+  },
+  offerBottomActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 0,
+    gap: 8,
+  },
+  chatShortcutSlot: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chatShortcut: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    backgroundColor: "rgba(43, 86, 89, 0.06)",
   },
   detailLinkText: {
     color: COLORS.primary,

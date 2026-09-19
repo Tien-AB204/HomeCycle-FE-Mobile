@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,9 +21,19 @@ import {
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage, getApiSuccessMessage } from "../../src/utils/apiFeedback";
 import { getPosterRoleLabel } from "../../src/utils/postType";
+import {
+  canRespondToOffer,
+  getOfferVersion,
+  isPendingOffer,
+  validOfferTerms,
+  type OfferResponseAction,
+} from "../../src/utils/offerActions";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const offerApi = {
   getOfferById: (offerId: string) =>
@@ -31,6 +41,13 @@ const offerApi = {
 
   cancelOffer: (offerId: string) =>
     apiClient.post(`/offers/${offerId}/cancel`).then((response) => response.data),
+
+  acceptOffer: (offerId: string, version: number) =>
+    apiClient.patch(`/offers/${offerId}/accept`, { version }).then((response) => response.data),
+  rejectOffer: (offerId: string) =>
+    apiClient.post(`/offers/${offerId}/reject`).then((response) => response.data),
+  counterOffer: (offerId: string, data: { offerPrice: number; offerQuantity: number; version: number }) =>
+    apiClient.patch(`/offers/${offerId}/counter`, data).then((response) => response.data),
 
   updateOffer: (
     offerId: string,
@@ -112,23 +129,6 @@ const translateStatus = (
   }
 };
 
-const getReadOnlyOfferSubtitle = (value: unknown) => {
-  switch (normalizeStatus(value)) {
-    case "1":
-    case "accepted":
-      return "Đề nghị đã được chấp nhận và chỉ còn để xem.";
-    case "2":
-    case "rejected":
-      return "Đề nghị đã bị từ chối và chỉ còn để xem.";
-    case "3":
-    case "cancelled":
-    case "canceled":
-      return "Đề nghị đã hủy và chỉ còn để xem.";
-    default:
-      return "Đề nghị hiện chỉ còn để xem.";
-  }
-};
-
 const formatPrice = (value: unknown) =>
   `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 
@@ -147,9 +147,11 @@ const formatDate = (value: unknown) => {
 };
 
 export default function OfferDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const { connection } = useChatRealtime();
+  const { user } = useAuth();
+  const currentUserId = user?.userId || user?.id;
   const offerId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [offer, setOffer] = useState<any>(null);
@@ -161,8 +163,18 @@ export default function OfferDetailScreen() {
   const [editPrice, setEditPrice] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
+  const [responseAction, setResponseAction] = useState<OfferResponseAction | null>(null);
+  const [responseVersion, setResponseVersion] = useState<number | null>(null);
+  const [responsePrice, setResponsePrice] = useState("");
+  const [responseQuantity, setResponseQuantity] = useState("");
+  const [isResponding, setIsResponding] = useState(false);
+  const responseLock = useRef(false);
+  const screenGeneration = useRef(0);
+  const fetchGeneration = useRef(0);
 
   const fetchOffer = useCallback(async () => {
+    const request = ++fetchGeneration.current;
     if (!offerId) {
       setMessage({ type: "error", text: "Không tìm thấy mã đề nghị." });
       setIsLoading(false);
@@ -173,21 +185,35 @@ export default function OfferDetailScreen() {
       setIsLoading(true);
       setMessage(null);
       const response = await offerApi.getOfferById(offerId);
-      setOffer(unwrap(response));
+      if (request !== fetchGeneration.current) return null;
+      if (response?.isSuccess === false) throw response;
+      const detail = unwrap(response);
+      if (normalizeId(detail?.offerId) !== normalizeId(offerId)) throw new Error("Không xác định được đề nghị.");
+      setOffer(detail);
+      return detail;
     } catch (error) {
+      if (request !== fetchGeneration.current) return null;
       setOffer(null);
       setMessage({
         type: "error",
         text: getApiErrorMessage(error, "Không thể tải chi tiết đề nghị."),
       });
     } finally {
-      setIsLoading(false);
+      if (request === fetchGeneration.current) setIsLoading(false);
     }
-  }, [offerId]);
+    return null;
+  }, [offerId, currentUserId]);
 
   useFocusEffect(
     useCallback(() => {
+      screenGeneration.current += 1;
+      setOffer(null);
+      setResponseAction(null);
       void fetchOffer();
+      return () => {
+        screenGeneration.current += 1;
+        fetchGeneration.current += 1;
+      };
     }, [fetchOffer]),
   );
 
@@ -215,9 +241,7 @@ export default function OfferDetailScreen() {
   }, [connection, fetchOffer, offerId]);
 
   const handleOpenEditOffer = async () => {
-    const pendingNow =
-      normalizeStatus(offer?.offerStatus) === "pending" ||
-      String(offer?.offerStatus) === "0";
+    const pendingNow = isPendingOffer(offer?.offerStatus);
     const version = Number(offer?.version ?? offer?.Version);
 
     if (offer?.canUpdate !== true || !pendingNow) {
@@ -356,6 +380,95 @@ export default function OfferDetailScreen() {
     }
   };
 
+  const closeResponseAction = () => {
+    if (responseLock.current) return;
+    setResponseAction(null);
+    setResponseVersion(null);
+  };
+
+  const openResponseAction = async (action: OfferResponseAction) => {
+    if (responseLock.current || isUpdating || isCancelling) return;
+    const generation = screenGeneration.current;
+    responseLock.current = true;
+    setIsResponding(true);
+    try {
+      const detail = await fetchOffer();
+      if (generation !== screenGeneration.current || !detail) return;
+      if (!canRespondToOffer(detail, action)) {
+        setMessage({ type: "warning", text: "Đề nghị này không còn cho phép thao tác đã chọn. Vui lòng kiểm tra lại." });
+        return;
+      }
+      setResponseVersion(getOfferVersion(detail));
+      setResponsePrice(String(detail.offerPrice ?? ""));
+      setResponseQuantity(String(detail.offerQuantity ?? ""));
+      setResponseAction(action);
+    } finally {
+      responseLock.current = false;
+      setIsResponding(false);
+    }
+  };
+
+  const submitResponseAction = async () => {
+    if (!offerId || !responseAction || responseLock.current) return;
+    const action = responseAction;
+    const version = responseVersion;
+    const price = Number(responsePrice.trim());
+    const quantity = Number(responseQuantity.trim());
+    if (action === "counter" && !validOfferTerms(price, quantity)) {
+      setMessage({ type: "warning", text: "Vui lòng nhập giá và số lượng hợp lệ." });
+      return;
+    }
+    const generation = screenGeneration.current;
+    const isCurrent = () => generation === screenGeneration.current;
+    responseLock.current = true;
+    setIsResponding(true);
+    let succeeded = false;
+    try {
+      const latest = await fetchOffer();
+      if (!isCurrent()) return;
+      if (!latest || !canRespondToOffer(latest, action) ||
+        (action !== "reject" && (version === null || version !== getOfferVersion(latest)))) {
+        setResponseAction(null);
+        if (latest) setMessage({ type: "warning", text: "Đề nghị đã thay đổi. Vui lòng xem lại thông tin mới nhất trước khi phản hồi." });
+        return;
+      }
+      const result = action === "accept"
+        ? await offerApi.acceptOffer(offerId, version!)
+        : action === "reject"
+          ? await offerApi.rejectOffer(offerId)
+          : await offerApi.counterOffer(offerId, { offerPrice: price, offerQuantity: quantity, version: version! });
+      if (result?.isSuccess === false) throw result;
+      succeeded = true;
+      if (!isCurrent()) return;
+      setResponseAction(null);
+      setResponseVersion(null);
+      const refreshed = await fetchOffer();
+      if (!isCurrent()) return;
+      const negotiationId = String(unwrap(result)?.negotiationId ?? refreshed?.negotiationId ?? "").trim();
+      if (action !== "reject" && negotiationId) {
+        router.push(`/chat/${negotiationId}` as any);
+      } else {
+        setMessage({ type: refreshed ? "success" : "warning", text: !refreshed
+          ? "Đã xử lý đề nghị nhưng chưa tải lại được dữ liệu. Vui lòng làm mới, không gửi lại thao tác."
+          : action === "reject" ? "Đã từ chối đề nghị."
+            : "Đã xử lý đề nghị. Vui lòng mở lại chi tiết để đi tới trò chuyện." });
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      setResponseAction(null);
+      await fetchOffer();
+      if (!isCurrent()) return;
+      setMessage({ type: "warning", text: succeeded
+        ? "Đã xử lý đề nghị. Vui lòng mở lại chi tiết, không gửi lại thao tác."
+        : getOfferErrorCode(error) === "OFFER_TERMS_CHANGED"
+          ? "Đề nghị đã thay đổi ở nơi khác. Vui lòng kiểm tra dữ liệu mới nhất trước khi phản hồi."
+          : getApiErrorMessage(error, "Không thể xử lý đề nghị lúc này.") });
+    } finally {
+      responseLock.current = false;
+      setIsResponding(false);
+    }
+  };
+
   if (isLoading && !offer) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -384,11 +497,11 @@ export default function OfferDetailScreen() {
     );
   }
 
-  const pending =
-    normalizeStatus(offer.offerStatus) === "pending" ||
-    String(offer.offerStatus) === "0";
+  const pending = isPendingOffer(offer.offerStatus);
   const canUpdate = offer.canUpdate === true && pending;
   const canCancel = offer.canCancel === true && pending;
+  const responseActions = (["counter", "accept", "reject"] as const)
+    .filter((action) => canRespondToOffer(offer, action));
   const movedToNegotiation =
     (normalizeStatus(offer.offerStatus) === "accepted" ||
       String(offer.offerStatus) === "1") &&
@@ -427,7 +540,9 @@ export default function OfferDetailScreen() {
                   ? "Đề nghị đang chờ phản hồi; bạn có thể cập nhật giá hoặc số lượng."
                   : movedToNegotiation
                     ? "Đề nghị đã chuyển sang phiên thương lượng."
-                    : "Đề nghị này chỉ còn để xem."}
+                    : responseActions.length > 0
+                      ? "Đề nghị đang chờ phản hồi của bạn."
+                      : "Đề nghị này chỉ có thể xem."}
               </Text>
             </View>
           </View>
@@ -498,6 +613,16 @@ export default function OfferDetailScreen() {
             {message.text}
           </Text>
         ) : null}
+
+        {responseActions.length > 0 ? <View style={styles.actionRow}>
+          {responseActions.map((action) => (
+            <TouchableOpacity key={action} style={styles.secondaryButton}
+              disabled={isLoading || isResponding || isUpdating || isCancelling}
+              onPress={() => void openResponseAction(action)}>
+              <Text style={styles.secondaryButtonText}>{action === "counter" ? "Trao đổi" : action === "accept" ? "Đồng ý" : "Từ chối"}</Text>
+            </TouchableOpacity>
+          ))}
+        </View> : null}
 
         {movedToNegotiation ? (
           <TouchableOpacity
@@ -575,6 +700,37 @@ export default function OfferDetailScreen() {
           </TouchableOpacity>
         ) : null}
       </ScrollView>
+
+      <Modal visible={responseAction !== null} transparent animationType="fade" onRequestClose={closeResponseAction}>
+        <ModalBackdrop style={styles.modalOverlay} disabled={isResponding} onPress={closeResponseAction}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ModalSurface style={styles.modalCard}>
+              <Text style={styles.modalTitle}>{responseAction === "counter" ? "Trao đổi đề nghị" : responseAction === "accept" ? "Đồng ý đề nghị" : "Từ chối đề nghị"}</Text>
+              {responseAction === "counter" ? <>
+                <Text style={styles.inputLabel}>Giá đề xuất mới (VNĐ)</Text>
+                <TextInput style={styles.input} value={responsePrice} keyboardType="number-pad" editable={!isResponding}
+                  onChangeText={(value) => setResponsePrice(value.replace(/[^0-9]/g, ""))} />
+                <Text style={styles.inputLabel}>Số lượng</Text>
+                <TextInput style={styles.input} value={responseQuantity} keyboardType="number-pad" editable={!isResponding}
+                  onChangeText={(value) => setResponseQuantity(value.replace(/[^0-9]/g, ""))} />
+              </> : <Text style={styles.cardSubtitle}>{responseAction === "accept"
+                ? "Bạn có muốn đồng ý với đề nghị này và mở phiên thương lượng?"
+                : "Bạn có chắc muốn từ chối đề nghị này?"}</Text>}
+              {message ? <Text style={styles.errorText}>{message.text}</Text> : null}
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.secondaryButton} disabled={isResponding} onPress={closeResponseAction}>
+                  <Text style={styles.secondaryButtonText}>Quay lại</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.updateButton, styles.confirmActionButton]} disabled={isResponding} onPress={() => void submitResponseAction()}>
+                  {isResponding ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.updateButtonText}>
+                    {responseAction === "counter" ? "Gửi đề xuất" : responseAction === "accept" ? "Đồng ý" : "Từ chối"}
+                  </Text>}
+                </TouchableOpacity>
+              </View>
+            </ModalSurface>
+          </KeyboardAvoidingView>
+        </ModalBackdrop>
+      </Modal>
 
       <Modal
         visible={showEditModal}
