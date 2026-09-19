@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -14,9 +14,13 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const agreementApi = {
   getPreview: async (negotiationId: string) => {
@@ -59,6 +63,31 @@ const postApi = {
   getById: async (postId: string) => {
     const response = await apiClient.get(`/posts/get-by-id/${postId}`);
     return response.data;
+  },
+};
+
+// Tên đăng nhập của các bên trong thương lượng: Backend trả về trong Offer
+// (sender/receiver.displayName chính là username), dùng khi hợp đồng/bài đăng
+// chưa cho biết tên của bên còn lại.
+const negotiationParticipantApi = {
+  getUsernamesByNegotiation: async (
+    negotiationId: string,
+  ): Promise<Record<string, string>> => {
+    const negotiationRes = await apiClient.get(`/negotiations/${negotiationId}`);
+    const negotiation = unwrapResponse(negotiationRes.data);
+    const offerId = String(negotiation?.offerId || negotiation?.OfferId || "");
+    if (!offerId) return {};
+    const offerRes = await apiClient.get(`/offers/${offerId}`);
+    const offer = unwrapResponse(offerRes.data);
+    const result: Record<string, string> = {};
+    for (const participant of [offer?.sender, offer?.receiver, offer?.seller, offer?.buyer]) {
+      const userId = normalizeId(participant?.userId ?? participant?.UserId);
+      const username = String(
+        participant?.username ?? participant?.displayName ?? participant?.DisplayName ?? "",
+      ).trim();
+      if (userId && username) result[userId] = username;
+    }
+    return result;
   },
 };
 
@@ -112,7 +141,7 @@ type BankRequirementState = {
 } | null;
 
 export default function AgreementPreviewScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const agreementId = Array.isArray(params.agreementId)
@@ -128,11 +157,16 @@ export default function AgreementPreviewScreen() {
     : params.successMsg;
 
   const { user } = useAuth();
+  const { connection, reconnectVersion } = useChatRealtime();
+  const refreshRequestRef = useRef(0);
+  const [isStateInvalidated, setIsStateInvalidated] = useState(false);
   const currentUserId = normalizeId(user?.userId || user?.id);
 
   const [agreementData, setAgreementData] = useState<any>(null);
   const [previewInfo, setPreviewInfo] = useState<any>(null);
   const [postContext, setPostContext] = useState<any>(null);
+  const [participantUsernames, setParticipantUsernames] = useState<Record<string, string>>({});
+  const participantLookupRef = useRef<string>("");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -158,9 +192,10 @@ export default function AgreementPreviewScreen() {
   }>({ orderId: null, appointmentId: null });
 
   const resolvePostPaymentLinks = useCallback(
-    async (targetAgreementId: string) => {
+    async (targetAgreementId: string, request: number) => {
       try {
         const response = await orderApi.getByAgreement(targetAgreementId);
+        if (request !== refreshRequestRef.current) return;
         const raw = unwrapResponse(response);
         const order = raw?.order || raw;
         const resolvedOrderId =
@@ -190,6 +225,7 @@ export default function AgreementPreviewScreen() {
             : null,
         });
       } catch {
+        if (request !== refreshRequestRef.current) return;
         setPostPaymentLinks({ orderId: null, appointmentId: null });
       }
     },
@@ -198,6 +234,8 @@ export default function AgreementPreviewScreen() {
 
   const fetchAgreementDetails = useCallback(
     async (showLoader = true) => {
+      const request = ++refreshRequestRef.current;
+      setIsStateInvalidated(true);
       if (!agreementId || !negotiationId) {
         setIsLoading(false);
         setStatusMessage({
@@ -216,6 +254,7 @@ export default function AgreementPreviewScreen() {
           agreementApi.getAgreementById(agreementId),
           agreementApi.getPreview(negotiationId),
         ]);
+        if (request !== refreshRequestRef.current) return null;
 
         const agreement = unwrapResponse(detailRes);
         const preview = unwrapResponse(previewRes);
@@ -226,8 +265,10 @@ export default function AgreementPreviewScreen() {
         if (agreement?.postId) {
           try {
             const postResponse = await postApi.getById(String(agreement.postId));
+            if (request !== refreshRequestRef.current) return null;
             setPostContext(unwrapResponse(postResponse));
           } catch {
+            if (request !== refreshRequestRef.current) return null;
             setPostContext(null);
           }
         } else {
@@ -242,21 +283,24 @@ export default function AgreementPreviewScreen() {
           latestStatus === "completed";
 
         if (isPostPayment && agreementId) {
-          await resolvePostPaymentLinks(agreementId);
+          await resolvePostPaymentLinks(agreementId, request);
         } else {
           setPostPaymentLinks({ orderId: null, appointmentId: null });
         }
 
+        if (request !== refreshRequestRef.current) return null;
+        setIsStateInvalidated(false);
         return { agreement, preview };
       } catch (error) {
-        console.error("Lỗi tải chi tiết hợp đồng:", error);
+        if (request !== refreshRequestRef.current) return null;
+        devLog("Lỗi tải chi tiết hợp đồng:", error);
         setStatusMessage({
           type: "error",
           text: getApiErrorMessage(error, "Không thể tải chi tiết hợp đồng."),
         });
         return null;
       } finally {
-        if (showLoader) {
+        if (request === refreshRequestRef.current) {
           setIsLoading(false);
         }
       }
@@ -266,8 +310,52 @@ export default function AgreementPreviewScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void fetchAgreementDetails();
-    }, [fetchAgreementDetails]),
+      let active = true;
+      let running = false;
+      let pending = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const refresh = async (showLoader = false) => {
+        if (running || !active) return;
+        running = true;
+        do {
+          pending = false;
+          await fetchAgreementDetails(showLoader);
+          showLoader = false;
+        } while (active && pending);
+        running = false;
+      };
+      const invalidate = () => {
+        // Hide stale edit/confirm/pay actions immediately, including while an
+        // older REST request is still completing. Only a fresh GET unlocks them.
+        ++refreshRequestRef.current;
+        setIsStateInvalidated(true);
+        pending = true;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => { if (pending) void refresh(); }, 150);
+      };
+      const onConversation = (event: any) => {
+        if (normalizeId(event?.negotiationId ?? event?.NegotiationId) === normalizeId(negotiationId)) invalidate();
+      };
+      const onNotification = (event: any) => {
+        const type = normalizeTargetType(event?.targetType ?? event?.TargetType);
+        const targetId = normalizeId(event?.targetId ?? event?.TargetId);
+        if ((type === "agreement" && targetId === normalizeId(agreementId)) || type === "order") {
+          // A newly-created Order ID is not known yet. Resolve it through this
+          // Agreement's existing endpoint; never infer paid state from a toast.
+          invalidate();
+        }
+      };
+      connection?.on("ConversationUpdated", onConversation);
+      connection?.on("NotificationCreated", onNotification);
+      void refresh(true);
+      return () => {
+        active = false;
+        ++refreshRequestRef.current;
+        if (timer) clearTimeout(timer);
+        connection?.off("ConversationUpdated", onConversation);
+        connection?.off("NotificationCreated", onNotification);
+      };
+    }, [connection, reconnectVersion, agreementId, negotiationId, fetchAgreementDetails]),
   );
 
   const onRefresh = async () => {
@@ -707,6 +795,47 @@ export default function AgreementPreviewScreen() {
     );
   };
 
+  // Tra tên đăng nhập của bên còn lại (nếu hợp đồng/bài đăng chưa cho biết).
+  const lookupSellerId = normalizeId(
+    agreementData?.sellerId || agreementData?.sellerUserId || previewInfo?.sellerId || previewInfo?.sellerUserId,
+  );
+  const lookupBuyerId = normalizeId(
+    agreementData?.buyerId || agreementData?.buyerUserId || previewInfo?.buyerId || previewInfo?.buyerUserId,
+  );
+  const lookupOwnerId = normalizeId(postContext?.ownerId);
+  const lookupOwnerName = String(postContext?.ownerUsername || postContext?.ownerName || "").trim();
+  const needsParticipantLookup = Boolean(
+    agreementData &&
+      negotiationId &&
+      [lookupSellerId, lookupBuyerId].some(
+        (participantId) =>
+          participantId &&
+          participantId !== currentUserId &&
+          !(participantId === lookupOwnerId && lookupOwnerName) &&
+          !participantUsernames[participantId],
+      ),
+  );
+  useEffect(() => {
+    if (!needsParticipantLookup || !negotiationId) return;
+    const lookupKey = String(negotiationId);
+    if (participantLookupRef.current === lookupKey) return;
+    participantLookupRef.current = lookupKey;
+    let active = true;
+    void negotiationParticipantApi
+      .getUsernamesByNegotiation(lookupKey)
+      .then((usernames) => {
+        if (active && Object.keys(usernames).length > 0) {
+          setParticipantUsernames((current) => ({ ...current, ...usernames }));
+        }
+      })
+      .catch(() => {
+        // Không tra được tên: giữ nhãn dự phòng, không chặn màn hình.
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsParticipantLookup, negotiationId]);
+
   if (isLoading && !agreementData) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -782,22 +911,22 @@ export default function AgreementPreviewScreen() {
     currentUserId && buyerId && currentUserId === buyerId,
   );
   const postOwnerId = normalizeId(postContext?.ownerId);
+  // Hiển thị tên đăng nhập (username) cho các bên, cùng quy ước với Đơn hàng.
   const currentUserName = String(
-    user?.name || user?.displayName || user?.username || "Bạn",
+    user?.username || user?.name || user?.displayName || "Bạn",
   ).trim();
+  // PostResponse.ownerName do Backend ánh xạ từ Username của chủ bài đăng.
   const postOwnerName = String(
-    postContext?.ownerName || postContext?.ownerUsername || "",
+    postContext?.ownerUsername || postContext?.ownerName || "",
   ).trim();
-  const sellerName = isSeller
-    ? currentUserName
-    : sellerId && sellerId === postOwnerId && postOwnerName
-      ? postOwnerName
-      : "Đối tác";
-  const buyerName = isBuyer
-    ? currentUserName
-    : buyerId && buyerId === postOwnerId && postOwnerName
-      ? postOwnerName
-      : "Đối tác";
+  const resolveParticipantName = (participantId: string, isCurrentUser: boolean) => {
+    if (isCurrentUser && currentUserName) return currentUserName;
+    if (participantId && participantId === postOwnerId && postOwnerName) return postOwnerName;
+    const lookedUp = participantId ? participantUsernames[participantId] : "";
+    return lookedUp || "Chưa có tên người dùng";
+  };
+  const sellerName = resolveParticipantName(sellerId, isSeller);
+  const buyerName = resolveParticipantName(buyerId, isBuyer);
   const posterRoleLabel = getPosterRoleLabel(
     isBuyPostType(postContext?.postType),
   );
@@ -830,16 +959,18 @@ export default function AgreementPreviewScreen() {
       : false;
 
   const canEdit =
+    !isStateInvalidated &&
     isPending &&
     (previewInfo?.canEdit === true || (hasParticipantIds && isParticipant));
   const canAccept =
+    !isStateInvalidated &&
     isPending &&
     !currentSideConfirmed &&
     (previewInfo?.canConfirm === true || (hasParticipantIds && isParticipant));
 
   // Tạm ẩn quyền Yêu cầu chỉnh sửa
   // const canRequestEdit = isAwaitingPayment && isParticipant;
-  const canPay = isAwaitingPayment && (previewInfo?.canPay === true || isBuyer);
+  const canPay = !isStateInvalidated && isAwaitingPayment && (previewInfo?.canPay === true || isBuyer);
 
   const hasPendingAction = canEdit || canAccept;
   const hasAwaitingAction = /* canRequestEdit || */ canPay;
@@ -1162,7 +1293,7 @@ export default function AgreementPreviewScreen() {
         ) : null}
 
         {/* Xác nhận trước khi tiếp tục sau khi dữ liệu hợp đồng thay đổi. */}
-        {isConfirmingEditConflict ? (
+        {isConfirmingEditConflict && !isStateInvalidated && isPending ? (
           <View
             style={[
               styles.inlineConfirmation,
@@ -1208,7 +1339,10 @@ export default function AgreementPreviewScreen() {
         ) : null}
 
         {/* Chỉ render các nút bên dưới nếu KHÔNG phải đang hỏi xác nhận conflict */}
-        {!isConfirmingEditConflict && isPending && (
+        {isStateInvalidated ? <Text style={styles.waitingText}>
+          Đang cần cập nhật trạng thái hợp đồng. Vui lòng tải lại nếu kết nối bị gián đoạn.
+        </Text> : null}
+        {!isConfirmingEditConflict && !isStateInvalidated && isPending && (
           <View style={styles.actionRow}>
             {canEdit && (
               <TouchableOpacity
