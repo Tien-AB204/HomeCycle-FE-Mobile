@@ -174,6 +174,14 @@ export default function CheckoutScreen() {
   // Đã mở PayOS ở trình duyệt ngoài và chưa nhận được kết quả trong ứng dụng.
   const externalCheckoutPendingRef = useRef(false);
   const reconcileInFlightRef = useRef(false);
+  // Mỗi lần bấm thanh toán: tối đa MỘT yêu cầu tạo checkout và MỘT phiên trình duyệt.
+  const submitInFlightRef = useRef(false);
+  const browserSessionOpenRef = useRef(false);
+  // Callback từ PayOS (deep link + kết quả phiên trình duyệt) chỉ xử lý một lần
+  // cho mỗi lần quay về; điều hướng sang màn thành công cũng chỉ một lần.
+  const handledReturnKeyRef = useRef<string | null>(null);
+  const navigatedToSuccessRef = useRef(false);
+  const lastReconcileAtRef = useRef(0);
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
@@ -278,13 +286,18 @@ export default function CheckoutScreen() {
   // Người dùng có thể thanh toán xong ở PayOS rồi tự quay lại ứng dụng mà không
   // bấm liên kết trở về: đối chiếu trạng thái với Backend khi màn hình được
   // focus lại hoặc ứng dụng trở lại foreground (một lần cho mỗi sự kiện, không polling).
-  const reconcileExternalCheckout = useCallback(async () => {
-    if (
-      !agreementId ||
-      !externalCheckoutPendingRef.current ||
-      reconcileInFlightRef.current
-    ) {
+  // source "return"/"cancel": PayOS đã gọi returnUrl/cancelUrl (deep link về màn này);
+  // trạng thái vẫn chỉ lấy từ Backend, không kết luận từ URL. Callback và
+  // foreground/focus sát nhau chỉ tạo một lần đối chiếu.
+  const reconcileExternalCheckout = useCallback(async (
+    source: "return" | "cancel" | "resume" = "resume",
+  ) => {
+    if (!agreementId || reconcileInFlightRef.current || navigatedToSuccessRef.current) {
       return;
+    }
+    if (source === "resume") {
+      if (!externalCheckoutPendingRef.current) return;
+      if (Date.now() - lastReconcileAtRef.current < 1500) return;
     }
     reconcileInFlightRef.current = true;
     try {
@@ -295,8 +308,11 @@ export default function CheckoutScreen() {
         statusData?.status ??
         statusData?.payment?.paymentStatus ??
         statusData?.payment?.status;
+      lastReconcileAtRef.current = Date.now();
 
       if (isCompletedPaymentStatus(rawStatus)) {
+        if (navigatedToSuccessRef.current) return;
+        navigatedToSuccessRef.current = true;
         externalCheckoutPendingRef.current = false;
         setIsPaymentCompleted(true);
         clearFeedback();
@@ -311,7 +327,9 @@ export default function CheckoutScreen() {
       // phản ánh dữ liệu hiện tại; không tự tạo phiên thanh toán mới.
       clearFeedback();
       showInfo(
-        "Chưa ghi nhận thanh toán cho hợp đồng này. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
+        source === "cancel"
+          ? "Bạn đã hủy hoặc đóng phiên thanh toán. Hợp đồng chưa được thanh toán; bạn có thể thanh toán lại khi sẵn sàng."
+          : "Chưa ghi nhận thanh toán cho hợp đồng này. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
       );
       await fetchCheckoutData();
     } catch (error) {
@@ -321,6 +339,23 @@ export default function CheckoutScreen() {
       reconcileInFlightRef.current = false;
     }
   }, [agreementId, clearFeedback, fetchCheckoutData, router, showInfo]);
+
+  // PayOS quay về ứng dụng qua deep link /payments/checkout?payos=return|cancel
+  // (cả khi ứng dụng đang mở lẫn khi khởi động lại từ liên kết).
+  const payosReturnKind = String(
+    Array.isArray(params.payos) ? params.payos[0] : params.payos ?? "",
+  );
+  const handleExternalReturn = useCallback((kind: string) => {
+    if (kind !== "return" && kind !== "cancel") return;
+    const key = `${agreementId}:${kind}`;
+    if (handledReturnKeyRef.current === key) return;
+    handledReturnKeyRef.current = key;
+    void reconcileExternalCheckout(kind);
+  }, [agreementId, reconcileExternalCheckout]);
+
+  useEffect(() => {
+    handleExternalReturn(payosReturnKind);
+  }, [handleExternalReturn, payosReturnKind]);
 
   useFocusEffect(
     useCallback(() => {
@@ -394,13 +429,33 @@ export default function CheckoutScreen() {
       return;
     }
 
+    if (browserSessionOpenRef.current) return;
+    browserSessionOpenRef.current = true;
     externalCheckoutPendingRef.current = true;
-    const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+    handledReturnKeyRef.current = null;
+    try {
+      // Phiên trình duyệt có redirect về app scheme: khi PayOS gọi returnUrl/cancelUrl
+      // (homecycle://payments/checkout?...) phiên tự kết thúc (iOS đóng sheet; Android
+      // nhận sự kiện liên kết) và ứng dụng đối chiếu trạng thái với Backend.
+      const result = await WebBrowser.openAuthSessionAsync(
+        checkoutUrl,
+        Linking.createURL("/payments/checkout"),
+      );
 
-    // Trình duyệt ngoài đã đóng (người dùng tự quay lại): đối chiếu với Backend
-    // thay vì giữ thông báo "Đang mở trang thanh toán PayOS...".
-    if (result.type === "cancel" || result.type === "dismiss") {
-      await reconcileExternalCheckout();
+      if (result.type === "success") {
+        const returnedUrl = String((result as { url?: string }).url ?? "");
+        const kind = /[?&]payos=cancel(?:&|$)/.test(returnedUrl) ? "cancel" : "return";
+        handleExternalReturn(kind);
+        return;
+      }
+
+      // Trình duyệt ngoài đã đóng (người dùng tự quay lại): đối chiếu với Backend
+      // thay vì giữ thông báo "Đang mở trang thanh toán PayOS...".
+      if (result.type === "cancel" || result.type === "dismiss") {
+        await reconcileExternalCheckout();
+      }
+    } finally {
+      browserSessionOpenRef.current = false;
     }
   };
 
@@ -446,9 +501,11 @@ export default function CheckoutScreen() {
       return;
     }
 
+    if (submitInFlightRef.current) return;
     clearFeedback();
 
     try {
+      submitInFlightRef.current = true;
       setIsProcessing(true);
 
       if (paymentMethod === "wallet") {
@@ -461,18 +518,20 @@ export default function CheckoutScreen() {
         return;
       }
 
+      // Native: PayOS quay về chính màn thanh toán; màn này đối chiếu trạng thái
+      // với Backend rồi mới chuyển sang màn thành công (không tin URL).
       const returnUrl =
         Platform.OS === "web"
           ? `${window.location.origin}/payments/success?agreementId=${agreementId}`
-          : Linking.createURL("/payments/success", {
-              queryParams: { agreementId },
+          : Linking.createURL("/payments/checkout", {
+              queryParams: { agreementId, payos: "return" },
             });
 
       const cancelUrl =
         Platform.OS === "web"
           ? `${window.location.origin}/payments/success?agreementId=${agreementId}&cancel=true`
-          : Linking.createURL("/payments/success", {
-              queryParams: { agreementId, cancel: "true" },
+          : Linking.createURL("/payments/checkout", {
+              queryParams: { agreementId, payos: "cancel" },
             });
 
       const response = await paymentApi.checkoutWithPayOS(agreementId, {
@@ -562,6 +621,7 @@ export default function CheckoutScreen() {
         ),
       );
     } finally {
+      submitInFlightRef.current = false;
       setIsProcessing(false);
     }
   };
