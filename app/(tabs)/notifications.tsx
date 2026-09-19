@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -33,6 +33,8 @@ import {
   type NotificationItem,
 } from "../../src/services/notifications/notificationTargets";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -47,7 +49,7 @@ const notificationApi = {
 };
 
 export default function NotificationsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
   const { user } = useAuth();
@@ -68,6 +70,7 @@ export default function NotificationsScreen() {
   const [openingNotificationId, setOpeningNotificationId] =
     useState<string | null>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
   const [isScreenFocused, setIsScreenFocused] = useState(false);
   const realtimeNotificationIdsRef = useRef<Set<string>>(new Set());
   const handledReconnectVersionRef = useRef(0);
@@ -573,13 +576,23 @@ export default function NotificationsScreen() {
                       </Text>
 
                       <Text
-                        style={styles.notificationMessage}
+                        style={[
+                          styles.notificationMessage,
+                          !item.isRead
+                            ? styles.notificationMessageUnread
+                            : undefined,
+                        ]}
                         numberOfLines={2}
                       >
                         {item.message}
                       </Text>
 
-                      <Text style={styles.timeAgo}>
+                      <Text
+                        style={[
+                          styles.timeAgo,
+                          !item.isRead ? styles.timeAgoUnread : undefined,
+                        ]}
+                      >
                         {formatTimeAgo(item.createdAt)}
                       </Text>
                     </View>
@@ -783,9 +796,17 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 5,
   },
+  notificationMessageUnread: {
+    color: COLORS.text,
+    fontWeight: "600",
+  },
   timeAgo: {
     fontSize: 11,
     color: COLORS.textLight,
+  },
+  timeAgoUnread: {
+    color: COLORS.primary,
+    fontWeight: "700",
   },
   unreadDot: {
     width: 9,

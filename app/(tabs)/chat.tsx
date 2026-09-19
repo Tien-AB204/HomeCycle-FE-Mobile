@@ -1,11 +1,6 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useFocusEffect,
-  useLocalSearchParams,
-  useRootNavigationState,
-  useRouter,
-} from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRootNavigationState } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -29,6 +24,8 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type FeedbackTarget = { type: "page" } | null;
 
@@ -120,7 +117,7 @@ function InlineFeedback({
 }
 
 export default function ChatListScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const rootNavigationState = useRootNavigationState();
   const params = useLocalSearchParams();
   const legacyTabParam = Array.isArray(params.tab)
@@ -166,6 +163,7 @@ export default function ChatListScreen() {
 
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
+  useAutoDismissFeedback(feedbackTarget?.type === "page" ? null : feedback, () => setFeedback(null));
 
   const clearFeedback = useCallback(() => setFeedback(null), []);
   const showError = useCallback(
@@ -273,13 +271,21 @@ export default function ChatListScreen() {
           <Image source={{ uri: avatarUri }} style={styles.negotiationAvatar} />
           <View style={styles.flex}>
             <View style={styles.negotiationHeader}>
-              <Text style={styles.offerName} numberOfLines={1}>
+              <Text
+                style={[styles.offerName, unreadCount > 0 ? styles.offerNameUnread : styles.offerNameRead]}
+                numberOfLines={1}
+              >
                 {partnerName}
               </Text>
-              <Text style={styles.offerTime}>{timeString}</Text>
+              <Text style={[styles.offerTime, unreadCount > 0 ? styles.offerTimeUnread : undefined]}>
+                {timeString}
+              </Text>
             </View>
             <View style={styles.negotiationPreviewRow}>
-              <Text style={styles.negotiationPrice} numberOfLines={1}>
+              <Text
+                style={[styles.negotiationPrice, unreadCount > 0 ? styles.negotiationPreviewUnread : undefined]}
+                numberOfLines={1}
+              >
                 {preview}
               </Text>
               {unreadCount > 0 ? (
@@ -506,6 +512,7 @@ const styles = StyleSheet.create({
   },
   negotiationPreviewRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   negotiationPrice: { flex: 1, color: COLORS.textLight, fontSize: 13 },
+  negotiationPreviewUnread: { color: COLORS.text, fontWeight: "700" },
   negotiationPriceValue: { color: COLORS.primary, fontWeight: "bold" },
   unreadBadge: {
     minWidth: 20,
@@ -518,5 +525,8 @@ const styles = StyleSheet.create({
   },
   unreadBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: "800" },
   offerName: { color: COLORS.text, fontSize: 15, fontWeight: "bold" },
+  offerNameUnread: { fontWeight: "800", color: "#172830" },
+  offerNameRead: { fontWeight: "600" },
   offerTime: { marginTop: 2, color: COLORS.textLight, fontSize: 12 },
+  offerTimeUnread: { color: COLORS.primary, fontWeight: "700" },
 });
