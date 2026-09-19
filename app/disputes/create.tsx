@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -16,11 +17,14 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 // Dispute category is dynamic (BE-owned), never a hard-coded enum/list.
 // Order Detail's actions.allowedDisputeCategories already carries the
@@ -122,7 +126,7 @@ const appendEvidenceImage = async (
 };
 
 export default function CreateDisputeScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const orderId = getSingleParam(params.orderId as string | string[] | undefined);
   const orderCode = getSingleParam(params.orderCode as string | string[] | undefined);
@@ -132,10 +136,13 @@ export default function CreateDisputeScreen() {
   const [description, setDescription] = useState("");
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
+  const submitInFlightRef = useRef(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
   const [isCheckingDisputeEligibility, setIsCheckingDisputeEligibility] = useState(
     Boolean(orderId),
   );
@@ -448,6 +455,19 @@ export default function CreateDisputeScreen() {
     }
   };
 
+  const confirmSubmit = async () => {
+    if (!showSubmitConfirmation || submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
+    setShowSubmitConfirmation(false);
+    setIsSubmitting(true);
+    try {
+      await submit();
+    } finally {
+      submitInFlightRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -514,7 +534,8 @@ export default function CreateDisputeScreen() {
                     key={item.disputeCategoryId}
                     style={[styles.categoryItem, selected && styles.categoryItemSelected]}
                     onPress={() => {
-                      setCategory(item.disputeCategoryId);
+                      // Chạm lại lựa chọn hiện tại để bỏ chọn.
+                      setCategory(selected ? null : item.disputeCategoryId);
                       setCategoryError(null);
                       clearMessage();
                     }}
@@ -601,7 +622,9 @@ export default function CreateDisputeScreen() {
               isDisputeSubmitDisabled && styles.submitButtonDisabled,
             ]}
             disabled={isDisputeSubmitDisabled}
-            onPress={() => void submit()}
+            onPress={() => {
+              if (!submitInFlightRef.current && validate()) setShowSubmitConfirmation(true);
+            }}
           >
             {isSubmitting ? (
               <ActivityIndicator size="small" color={COLORS.white} />
@@ -614,11 +637,32 @@ export default function CreateDisputeScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal visible={showSubmitConfirmation} transparent animationType="fade"
+        onRequestClose={() => setShowSubmitConfirmation(false)}>
+        <ModalBackdrop style={styles.confirmBackdrop} onPress={() => setShowSubmitConfirmation(false)}>
+          <ModalSurface style={styles.confirmCard}>
+            <Text style={styles.sectionTitle}>Bạn có chắc muốn gửi khiếu nại này?</Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setShowSubmitConfirmation(false)}>
+                <Text style={styles.pickButtonText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitButton, styles.flex]} disabled={isDisputeSubmitDisabled}
+                onPress={() => void confirmSubmit()}>
+                <Text style={styles.submitButtonText}>Gửi khiếu nại</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  confirmBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center", padding: 20 },
+  confirmCard: { width: "100%", maxWidth: 420, padding: 20, borderRadius: 16, backgroundColor: COLORS.white },
+  confirmActions: { flexDirection: "row", gap: 10, marginTop: 12 },
+  confirmCancel: { flex: 1, minHeight: 50, borderWidth: 1, borderColor: COLORS.border, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   flex: { flex: 1 },
   safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   scrollContent: { padding: 16, paddingBottom: 36 },
