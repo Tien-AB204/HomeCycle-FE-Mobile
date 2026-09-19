@@ -36,6 +36,9 @@ const POSTS_PER_PAGE = 4;
 const CARD_GAP = 12;
 const SECTION_HORIZONTAL_PADDING = 20;
 const HOME_POST_PAGE_SIZE = 100;
+// Trang chủ Doanh nghiệp: Backend tự lọc theo khảo sát thu mua (khu vực, loại
+// sản phẩm, mức hư hỏng, tình trạng, quy mô); FE không gửi tiêu chí và không lọc lại.
+const BUSINESS_DISCOVER_PAGE_SIZE = 12;
 
 const postApi = {
   getAllActivePosts: async (params?: any) => {
@@ -56,7 +59,29 @@ const postApi = {
       return { items: [] };
     }
   },
+  // GET /posts/discover/business — chỉ Business đã đăng nhập; không swallow lỗi
+  // vì 409 SURVEY_REQUIRED là một trạng thái màn hình, không phải lỗi mạng.
+  getBusinessDiscoverPosts: async ({
+    pageNumber = 1,
+    pageSize = BUSINESS_DISCOVER_PAGE_SIZE,
+  }: { pageNumber?: number; pageSize?: number } = {}) => {
+    const res = await apiClient.get("/posts/discover/business", {
+      params: { pageNumber, pageSize },
+    });
+    return res.data;
+  },
 };
+
+type BusinessDiscoverState =
+  | { status: "idle" | "loading" | "ready" | "empty" | "survey-required" }
+  | { status: "error"; message: string };
+
+const readErrorCode = (error: unknown) =>
+  String(
+    (error as any)?.response?.data?.code ??
+      (error as any)?.response?.data?.error?.code ??
+      "",
+  ).trim().toUpperCase();
 
 type HomeProductType = {
   productTypeId: string;
@@ -110,6 +135,10 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasRedirectedSurvey, setHasRedirectedSurvey] = useState(false);
+  const [businessDiscover, setBusinessDiscover] = useState<BusinessDiscoverState>({ status: "idle" });
+  // Mục "Phù hợp với nhu cầu" (Doanh nghiệp) — tách khỏi lô tin bán chung.
+  const [discoverPosts, setDiscoverPosts] = useState<any[]>([]);
+  const homeRequestVersion = useRef(0);
   const [cartPostIds, setCartPostIds] = useState<Set<string>>(new Set());
   const [addingPostId, setAddingPostId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<HomeFeedback>(null);
@@ -150,19 +179,59 @@ export default function HomeScreen() {
 
   const fetchHomeData = useCallback(
     async (isRefresh = false) => {
+      const version = ++homeRequestVersion.current;
       try {
         if (!isRefresh) setIsLoading(true);
 
         // Hai yêu cầu có giới hạn cho toàn bộ Trang chủ: một lô tin đang hoạt động
         // và một trang loại sản phẩm; các mục theo loại được gom từ lô tin này,
         // không gọi tìm kiếm riêng cho từng loại.
-        const [postsRes, typesRes] = await Promise.all([
+        // Doanh nghiệp: gọi thêm mục "Phù hợp với nhu cầu" song song (Backend lọc
+        // theo khảo sát); lô tin bán chung vẫn tải và hiển thị như cũ.
+        if (isBusiness) setBusinessDiscover({ status: "loading" });
+        const [postsRes, typesRes, discoverResult] = await Promise.all([
           postApi.getAllActivePosts({
             PageNumber: 1,
             PageSize: HOME_POST_PAGE_SIZE,
           }),
           postApi.getProductTypes(),
+          isBusiness
+            ? postApi
+                .getBusinessDiscoverPosts({ pageNumber: 1, pageSize: BUSINESS_DISCOVER_PAGE_SIZE })
+                .then((value) => ({ status: "fulfilled" as const, value }))
+                .catch((reason: unknown) => ({ status: "rejected" as const, reason }))
+            : Promise.resolve(null),
         ]);
+        if (version !== homeRequestVersion.current) return;
+
+        if (!isBusiness) {
+          setDiscoverPosts([]);
+          setBusinessDiscover({ status: "idle" });
+        } else if (discoverResult?.status === "fulfilled") {
+          const paged = discoverResult.value;
+          const items = paged?.items || paged?.data?.items || [];
+          const seen = new Set<string>();
+          const posts = (Array.isArray(items) ? items : []).filter((post: any) => {
+            const id = normalizeId(post?.postId);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+          setDiscoverPosts(posts);
+          setBusinessDiscover({ status: posts.length > 0 ? "ready" : "empty" });
+        } else if (discoverResult?.status === "rejected") {
+          const error = discoverResult.reason;
+          setDiscoverPosts([]);
+          if (readErrorCode(error) === "SURVEY_REQUIRED") {
+            setBusinessDiscover({ status: "survey-required" });
+          } else {
+            devLog("[home] Không tải được mục phù hợp với nhu cầu:", error);
+            setBusinessDiscover({
+              status: "error",
+              message: getApiErrorMessage(error, "Không thể tải bài đăng phù hợp lúc này."),
+            });
+          }
+        }
 
         const fetchedTypes = typesRes?.data?.items || typesRes?.items || typesRes?.data || typesRes || [];
         setProductTypes(
@@ -206,8 +275,10 @@ export default function HomeScreen() {
             : visiblePosts.filter((post: any) => post.postType === "Buy"),
         );
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (version === homeRequestVersion.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
     [currentUserId, isBusiness, showOwnPostsInDiscovery],
@@ -492,10 +563,11 @@ export default function HomeScreen() {
     key: string,
     title: string,
     posts: any[],
-    onSeeMore: () => void,
+    onSeeMore: (() => void) | null,
+    previewLimit: number = MAX_SECTION_PREVIEW,
   ) => {
     if (posts.length === 0) return null;
-    const previewPosts = posts.slice(0, MAX_SECTION_PREVIEW);
+    const previewPosts = posts.slice(0, previewLimit);
     const pages = chunkPosts(previewPosts, POSTS_PER_PAGE);
 
     return (
@@ -504,9 +576,11 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle} numberOfLines={1}>
             {title}
           </Text>
-          <TouchableOpacity onPress={onSeeMore} hitSlop={6}>
-            <Text style={styles.seeAllText}>Xem thêm</Text>
-          </TouchableOpacity>
+          {onSeeMore ? (
+            <TouchableOpacity onPress={onSeeMore} hitSlop={6}>
+              <Text style={styles.seeAllText}>Xem thêm</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         <FlatList
           horizontal
@@ -648,6 +722,54 @@ export default function HomeScreen() {
                 )
               : null}
 
+            {isBusiness ? (
+              <>
+                {renderPagedSection(
+                  "business-discover",
+                  "Phù hợp với nhu cầu",
+                  discoverPosts,
+                  null,
+                  BUSINESS_DISCOVER_PAGE_SIZE,
+                )}
+                {businessDiscover.status === "empty" ? (
+                  <View style={styles.discoverStateCard}>
+                    <Ionicons name="search-outline" size={22} color={COLORS.textLight} />
+                    <Text style={styles.discoverStateText}>
+                      Chưa có bài đăng phù hợp với nhu cầu doanh nghiệp của bạn.
+                    </Text>
+                  </View>
+                ) : null}
+                {businessDiscover.status === "survey-required" ? (
+                  <View style={styles.discoverStateCard}>
+                    <Ionicons name="clipboard-outline" size={22} color={COLORS.primary} />
+                    <Text style={styles.discoverStateText}>
+                      Hoàn thành khảo sát nhu cầu để xem các bài đăng phù hợp.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.discoverStateButton}
+                      accessibilityRole="button"
+                      onPress={() => router.push("/profile/business-survey" as any)}
+                    >
+                      <Text style={styles.discoverStateButtonText}>Làm khảo sát nhu cầu</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {businessDiscover.status === "error" ? (
+                  <View style={styles.discoverStateCard}>
+                    <Ionicons name="alert-circle-outline" size={22} color={COLORS.error} />
+                    <Text style={styles.discoverStateText}>{businessDiscover.message}</Text>
+                    <TouchableOpacity
+                      style={styles.discoverStateButton}
+                      accessibilityRole="button"
+                      onPress={() => void fetchHomeData()}
+                    >
+                      <Text style={styles.discoverStateButtonText}>Thử lại</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
             {renderPagedSection(
               "sell-posts",
               "Tin đăng bán mới nhất",
@@ -751,6 +873,28 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 14,
   },
+  discoverStateCard: {
+    marginHorizontal: SECTION_HORIZONTAL_PADDING,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: "center",
+    gap: 8,
+  },
+  discoverStateText: { textAlign: "center", color: COLORS.text, fontSize: 14, lineHeight: 20 },
+  discoverStateButton: {
+    marginTop: 4,
+    minHeight: 40,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  discoverStateButtonText: { color: COLORS.white, fontWeight: "700", fontSize: 14 },
   productTypeSection: { marginBottom: 20 },
   productTypeStrip: { paddingHorizontal: SECTION_HORIZONTAL_PADDING, gap: 8 },
   productTypeColumn: { gap: 8 },
