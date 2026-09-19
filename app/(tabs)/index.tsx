@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -23,7 +23,19 @@ import {
   useDiscoveryPreferences,
 } from "../../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { devLog } from "../../src/utils/devLog";
 import { isBuyPostType } from "../../src/utils/postType";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
+
+// Mỗi mục trên Trang chủ chỉ xem trước tối đa 8 tin (2 trang x 4 tin); phần
+// còn lại xem qua "Xem thêm". Không dùng dải cuộn ngang vô tận.
+const MAX_SECTION_PREVIEW = 8;
+const POSTS_PER_PAGE = 4;
+const CARD_GAP = 12;
+const SECTION_HORIZONTAL_PADDING = 20;
+const HOME_POST_PAGE_SIZE = 100;
 
 const postApi = {
   getAllActivePosts: async (params?: any) => {
@@ -34,9 +46,9 @@ const postApi = {
       return { items: [] };
     }
   },
-  getActiveCategories: async () => {
+  getProductTypes: async () => {
     try {
-      const res = await apiClient.get("/categories/active", {
+      const res = await apiClient.get("/product-types/get-all", {
         params: { PageSize: 100, PageNumber: 1 },
       });
       return res.data;
@@ -46,21 +58,63 @@ const postApi = {
   },
 };
 
+type HomeProductType = {
+  productTypeId: string;
+  categoryId: string;
+  productTypeName: string;
+};
+
+// Chuẩn hóa tên để ghép tin bán với loại sản phẩm (không dấu, chữ thường).
+const normalizeName = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .trim()
+    .toLowerCase();
+
+const MAX_PRODUCT_TYPE_TILES = 12;
+const MAX_PRODUCT_TYPE_SECTIONS = 6;
+const MIN_POSTS_PER_PRODUCT_TYPE_SECTION = 2;
+
+const cartApi = {
+  getCart: () => apiClient.get("/cart").then((response) => response.data),
+  addToCart: (postId: string, quantity: number) =>
+    apiClient.post(`/cart/${postId}`, { quantity }).then((response) => response.data),
+};
+
+const normalizeId = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+const chunkPosts = (posts: any[], size: number) => {
+  const pages: any[][] = [];
+  for (let index = 0; index < posts.length; index += size) {
+    pages.push(posts.slice(index, index + size));
+  }
+  return pages;
+};
+
+type HomeFeedback = { type: "success" | "error"; text: string } | null;
+
 export default function HomeScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
   const { user } = useAuth();
   const { showOwnPostsInDiscovery } = useDiscoveryPreferences();
   const currentUserId = user?.userId || user?.id;
 
-  const [categories, setCategories] = useState<any[]>([]);
+  const [productTypes, setProductTypes] = useState<HomeProductType[]>([]);
   const [sellPosts, setSellPosts] = useState<any[]>([]);
   const [buyPosts, setBuyPosts] = useState<any[]>([]);
-  const [activeCategoryName, setActiveCategoryName] = useState<string>("Tất cả");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasRedirectedSurvey, setHasRedirectedSurvey] = useState(false);
+  const [cartPostIds, setCartPostIds] = useState<Set<string>>(new Set());
+  const [addingPostId, setAddingPostId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<HomeFeedback>(null);
+  useAutoDismissFeedback(feedback, () => setFeedback(null));
+  const cartRequestVersion = useRef(0);
 
   const isBusiness = user?.role === "business";
 
@@ -99,17 +153,33 @@ export default function HomeScreen() {
       try {
         if (!isRefresh) setIsLoading(true);
 
-        const postsRes = await postApi.getAllActivePosts({
-          PageNumber: 1,
-          PageSize: 50,
-        });
-        const catRes = await postApi.getActiveCategories();
-
-        const fetchedCats = catRes?.data?.items || catRes?.items || catRes || [];
-        setCategories([
-          { categoryId: "all", categoryName: "Tất cả" },
-          ...fetchedCats,
+        // Hai yêu cầu có giới hạn cho toàn bộ Trang chủ: một lô tin đang hoạt động
+        // và một trang loại sản phẩm; các mục theo loại được gom từ lô tin này,
+        // không gọi tìm kiếm riêng cho từng loại.
+        const [postsRes, typesRes] = await Promise.all([
+          postApi.getAllActivePosts({
+            PageNumber: 1,
+            PageSize: HOME_POST_PAGE_SIZE,
+          }),
+          postApi.getProductTypes(),
         ]);
+
+        const fetchedTypes = typesRes?.data?.items || typesRes?.items || typesRes?.data || typesRes || [];
+        setProductTypes(
+          (Array.isArray(fetchedTypes) ? fetchedTypes : [])
+            .filter(
+              (item: any) =>
+                item?.isActive !== false &&
+                typeof item?.productTypeId === "string" &&
+                typeof item?.categoryId === "string" &&
+                String(item?.productTypeName || "").trim(),
+            )
+            .map((item: any) => ({
+              productTypeId: String(item.productTypeId),
+              categoryId: String(item.categoryId),
+              productTypeName: String(item.productTypeName).trim(),
+            })),
+        );
 
         const allPosts =
           postsRes?.items || postsRes?.data?.items || postsRes?.data || [];
@@ -119,7 +189,7 @@ export default function HomeScreen() {
         // - Buy Post chỉ do Business tạo và chỉ Personal được tương tác.
         // Vì vậy Business không nhìn thấy Buy Post của Business khác trong discovery.
         const discoveryPosts = filterDiscoveryPosts(
-          allPosts,
+          Array.isArray(allPosts) ? allPosts : [],
           currentUserId,
           showOwnPostsInDiscovery,
         );
@@ -143,26 +213,97 @@ export default function HomeScreen() {
     [currentUserId, isBusiness, showOwnPostsInDiscovery],
   );
 
+  // Trạng thái giỏ hàng thật để biểu tượng giỏ trên thẻ phản ánh đúng
+  // (không thêm trùng, không suy đoán từ lỗi Backend).
+  const fetchCartMembership = useCallback(async () => {
+    const version = ++cartRequestVersion.current;
+    if (!user) {
+      setCartPostIds(new Set());
+      return;
+    }
+    try {
+      const response = await cartApi.getCart();
+      if (version !== cartRequestVersion.current) return;
+      const data = response?.data || response || {};
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setCartPostIds(
+        new Set(
+          items
+            .map((item: any) => normalizeId(item?.postId || item?.post?.postId))
+            .filter(Boolean),
+        ),
+      );
+    } catch (error) {
+      devLog("[home] Không đọc được giỏ hàng:", error);
+    }
+  }, [user]);
+
   useFocusEffect(
     useCallback(() => {
       void fetchHomeData();
-    }, [fetchHomeData]),
+      void fetchCartMembership();
+      return () => {
+        cartRequestVersion.current += 1;
+      };
+    }, [fetchCartMembership, fetchHomeData]),
   );
+
+  const showFeedback = (next: HomeFeedback) => setFeedback(next);
 
   const onRefresh = () => {
     setIsRefreshing(true);
     void fetchHomeData(true);
+    void fetchCartMembership();
   };
 
-  const displayedSells =
-    activeCategoryName === "Tất cả"
-      ? sellPosts
-      : sellPosts.filter((post) => post.categoryName === activeCategoryName);
+  const displayedSells = sellPosts;
+  const displayedBuys = buyPosts;
 
-  const displayedBuys =
-    activeCategoryName === "Tất cả"
-      ? buyPosts
-      : buyPosts.filter((post) => post.categoryName === activeCategoryName);
+  // Ghép tin bán với loại sản phẩm (theo tên đã chuẩn hóa) để có ProductTypeId.
+  const productTypeGroups = useMemo(() => {
+    const byName = new Map<string, HomeProductType>();
+    for (const type of productTypes) {
+      byName.set(normalizeName(type.productTypeName), type);
+    }
+    const groups = new Map<string, { type: HomeProductType; posts: any[] }>();
+    for (const post of sellPosts) {
+      const type = byName.get(normalizeName(post?.productTypeName));
+      if (!type) continue;
+      const group = groups.get(type.productTypeId) ?? { type, posts: [] };
+      group.posts.push(post);
+      groups.set(type.productTypeId, group);
+    }
+    return [...groups.values()].sort((a, b) => b.posts.length - a.posts.length);
+  }, [productTypes, sellPosts]);
+
+  // Ô loại sản phẩm: ưu tiên loại đang có tin; bù thêm loại đang hoạt động
+  // khác để lưới không quá thưa. Chạm → tìm kiếm theo ProductTypeId thật.
+  const productTypeTiles = useMemo(() => {
+    const withPosts = productTypeGroups.map((group) => group.type);
+    const seen = new Set(withPosts.map((type) => type.productTypeId));
+    const filler = productTypes.filter((type) => !seen.has(type.productTypeId));
+    return [...withPosts, ...filler].slice(0, MAX_PRODUCT_TYPE_TILES);
+  }, [productTypeGroups, productTypes]);
+
+  // Mục theo loại: chỉ loại có đủ tin, số mục có giới hạn.
+  const productTypeSections = useMemo(
+    () =>
+      productTypeGroups
+        .filter((group) => group.posts.length >= MIN_POSTS_PER_PRODUCT_TYPE_SECTION)
+        .slice(0, MAX_PRODUCT_TYPE_SECTIONS),
+    [productTypeGroups],
+  );
+
+  const openProductTypeSearch = (type: HomeProductType) =>
+    router.push({
+      pathname: "/search",
+      params: {
+        autoSearch: "true",
+        postType: "Bán",
+        categoryId: type.categoryId,
+        productTypeId: type.productTypeId,
+      },
+    });
 
   const formatPrice = (price: number) => {
     if (!price) return "0 đ";
@@ -182,95 +323,249 @@ export default function HomeScreen() {
   const getFullAddress = (post: any) =>
     [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
 
-  const renderCard = ({ item: post }: { item: any }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/posts/${post.postId}`)}
-      activeOpacity={0.8}
-    >
-      {!isBuyPostType(post.postType) ? (
-        <View style={styles.imageWrapper}>
-          <Image source={getCoverImage(post)} style={styles.productImage} />
-          <View style={styles.topBadgeRow}>
-            {post.categoryName ? (
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                  {post.categoryName}
-                </Text>
-              </View>
-            ) : null}
-            <View style={[styles.postTypeBadge, styles.sellPostBadge]}>
-              <Text style={styles.postTypeBadgeText}>Tin bán</Text>
-            </View>
-          </View>
-        </View>
-      ) : null}
+  // Điều kiện hiển thị nút thêm nhanh vào giỏ: chỉ Tin bán, còn hoạt động,
+  // còn số lượng và không phải bài của chính mình. Tin mua không bao giờ có.
+  const getQuickCartState = (post: any) => {
+    if (isBuyPostType(post.postType) || post.postType !== "Sell") return "hidden";
+    if (post.status && post.status !== "Active") return "hidden";
+    const remaining = Number(post.remainingQuantity ?? post.quantity ?? 0);
+    if (!(remaining > 0)) return "hidden";
+    if (currentUserId && post.ownerId && normalizeId(currentUserId) === normalizeId(post.ownerId)) {
+      return "hidden";
+    }
+    if (cartPostIds.has(normalizeId(post.postId))) return "inCart";
+    return "available";
+  };
 
-      <View style={styles.infoWrapper}>
-        {isBuyPostType(post.postType) ? (
-          <View style={styles.textBadgeRow}>
-            {post.categoryName ? (
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                  {post.categoryName}
-                </Text>
+  const handleQuickAddToCart = async (post: any) => {
+    const postId = String(post?.postId || "");
+    if (!postId) return;
+
+    if (!user) {
+      router.push({
+        pathname: "/(auth)/login",
+        params: { returnUrl: "/(tabs)" },
+      });
+      return;
+    }
+
+    if (cartPostIds.has(normalizeId(postId))) {
+      router.push("/(tabs)/cart");
+      return;
+    }
+
+    if (addingPostId) return;
+
+    try {
+      setAddingPostId(postId);
+      const response = await cartApi.addToCart(postId, 1);
+      if (response?.isSuccess === false) {
+        throw new Error(response?.error?.message || "Không thể thêm sản phẩm vào giỏ hàng.");
+      }
+      setCartPostIds((current) => new Set(current).add(normalizeId(postId)));
+      showFeedback({ type: "success", text: "Đã thêm sản phẩm vào giỏ hàng." });
+    } catch (error) {
+      devLog("[home] Thêm nhanh vào giỏ thất bại:", error);
+      showFeedback({
+        type: "error",
+        text: getApiErrorMessage(error, "Không thể thêm sản phẩm vào giỏ hàng."),
+      });
+    } finally {
+      setAddingPostId(null);
+    }
+  };
+
+  const cardWidth =
+    (width - SECTION_HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
+
+  const renderCard = (post: any) => {
+    const quickCartState = getQuickCartState(post);
+    const isAdding = addingPostId === String(post.postId);
+
+    return (
+      <TouchableOpacity
+        key={String(post.postId)}
+        style={[styles.card, { width: cardWidth }]}
+        onPress={() => router.push(`/posts/${post.postId}`)}
+        activeOpacity={0.8}
+      >
+        {!isBuyPostType(post.postType) ? (
+          <View style={styles.imageWrapper}>
+            <Image source={getCoverImage(post)} style={styles.productImage} />
+            <View style={styles.topBadgeRow}>
+              {post.categoryName ? (
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                    {post.categoryName}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={[styles.postTypeBadge, styles.sellPostBadge]}>
+                <Text style={styles.postTypeBadgeText}>Tin bán</Text>
               </View>
-            ) : null}
-            <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
-              <Text style={styles.postTypeBadgeText}>Tin mua</Text>
             </View>
           </View>
         ) : null}
-        {post.brandName ? (
-          <View style={styles.brandBadgeWhite}>
-            <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
-          </View>
-        ) : null}
 
-        <Text style={styles.productName} numberOfLines={2}>
-          {post.productName || post.description || "Sản phẩm"}
-        </Text>
+        <View style={styles.infoWrapper}>
+          {isBuyPostType(post.postType) ? (
+            <View style={styles.textBadgeRow}>
+              {post.categoryName ? (
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText} numberOfLines={1}>
+                    {post.categoryName}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
+                <Text style={styles.postTypeBadgeText}>Tin mua</Text>
+              </View>
+            </View>
+          ) : null}
+          {post.brandName ? (
+            <View style={styles.brandBadgeWhite}>
+              <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
+            </View>
+          ) : null}
 
-        <View style={styles.priceRow}>
-          <Text style={styles.productPrice}>
-            {formatPrice(post.basePrice || post.expectedPrice)}
+          <Text style={styles.productName} numberOfLines={2}>
+            {post.productName || post.description || "Sản phẩm"}
           </Text>
-          <Text style={styles.quantityText}>
-            SL: {post.remainingQuantity ?? post.quantity ?? 1}/
-            {post.quantity ?? 1}
-          </Text>
-        </View>
 
-        <View style={styles.footerRow}>
-          <View style={styles.locationContainer}>
-            <Ionicons
-              name="location-outline"
-              size={13}
-              color={COLORS.textLight}
-            />
-            <Text style={styles.locationText} numberOfLines={1}>
-              {getFullAddress(post) || "Chưa cập nhật"}
+          <View style={styles.priceRow}>
+            <Text style={styles.productPrice} numberOfLines={1}>
+              {formatPrice(post.basePrice || post.expectedPrice)}
+            </Text>
+            <Text style={styles.quantityText}>
+              {isBuyPostType(post.postType)
+                ? `Cần thu mua: ${post.quantity ?? 1}`
+                : `SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
             </Text>
           </View>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
 
-  const getCategoryIcon = (categoryName: string) => {
-    if (!categoryName) return "grid-outline";
-    const name = categoryName.toLowerCase();
-    if (name === "tất cả") return "apps-outline";
-    if (name.includes("điện máy")) return "tv-outline";
-    if (name.includes("nội thất")) return "bed-outline";
-    if (name.includes("sinh hoạt")) return "basket-outline";
-    return "grid-outline";
+          <View style={styles.footerRow}>
+            <View style={styles.locationContainer}>
+              <Ionicons
+                name="location-outline"
+                size={13}
+                color={COLORS.textLight}
+              />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {getFullAddress(post) || "Chưa cập nhật"}
+              </Text>
+            </View>
+            {quickCartState !== "hidden" ? (
+              <TouchableOpacity
+                style={[
+                  styles.quickCartButton,
+                  quickCartState === "inCart" ? styles.quickCartButtonInCart : undefined,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  quickCartState === "inCart" ? "Xem giỏ hàng" : "Thêm vào giỏ hàng"
+                }
+                hitSlop={6}
+                disabled={isAdding}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void handleQuickAddToCart(post);
+                }}
+              >
+                {isAdding ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons
+                    name={quickCartState === "inCart" ? "cart" : "cart-outline"}
+                    size={16}
+                    color={COLORS.white}
+                  />
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderPagedSection = (
+    key: string,
+    title: string,
+    posts: any[],
+    onSeeMore: () => void,
+  ) => {
+    if (posts.length === 0) return null;
+    const previewPosts = posts.slice(0, MAX_SECTION_PREVIEW);
+    const pages = chunkPosts(previewPosts, POSTS_PER_PAGE);
+
+    return (
+      <View key={key} style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <TouchableOpacity onPress={onSeeMore} hitSlop={6}>
+            <Text style={styles.seeAllText}>Xem thêm</Text>
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          horizontal
+          pagingEnabled
+          data={pages}
+          keyExtractor={(_, index) => `${key}-page-${index}`}
+          renderItem={({ item: page }) => (
+            <View style={[styles.gridPage, { width }]}>
+              {page.map(renderCard)}
+            </View>
+          )}
+          showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          initialNumToRender={2}
+          getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        />
+        {pages.length > 1 ? (
+          <View style={styles.pageDots}>
+            {pages.map((_, index) => (
+              <View key={`${key}-dot-${index}`} style={styles.pageDot} />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.mobileWrapper, { width }]}>
-        <MainHeader title="HomeCycle" />
+        <MainHeader variant="home" />
+
+        {feedback ? (
+          <View
+            style={[
+              styles.feedbackBar,
+              feedback.type === "error" ? styles.feedbackBarError : styles.feedbackBarSuccess,
+            ]}
+          >
+            <Ionicons
+              name={feedback.type === "error" ? "alert-circle-outline" : "checkmark-circle-outline"}
+              size={18}
+              color={feedback.type === "error" ? "#7A1012" : "#2F765D"}
+            />
+            <Text
+              style={[
+                styles.feedbackText,
+                feedback.type === "error" ? styles.feedbackTextError : styles.feedbackTextSuccess,
+              ]}
+            >
+              {feedback.text}
+            </Text>
+            {feedback.type === "success" ? (
+              <TouchableOpacity onPress={() => router.push("/(tabs)/cart")} hitSlop={6}>
+                <Text style={styles.feedbackLink}>Xem giỏ</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -288,22 +583,6 @@ export default function HomeScreen() {
               />
             }
           >
-            <View style={styles.searchContainer}>
-              <TouchableOpacity
-                style={styles.searchInput}
-                onPress={() => router.push("/search")}
-              >
-                <Ionicons
-                  name="search"
-                  size={20}
-                  color={COLORS.textLight}
-                />
-                <Text style={styles.searchPlaceholder}>
-                  Bạn đang tìm món đồ cũ nào?
-                </Text>
-              </TouchableOpacity>
-            </View>
-
             <View style={styles.bannerContainer}>
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>
@@ -320,97 +599,77 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.sectionContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoriesRow}
-              >
-                {categories.map((cat) => {
-                  const isActive = activeCategoryName === cat.categoryName;
-                  return (
-                    <TouchableOpacity
-                      key={cat.categoryId || "all"}
-                      style={styles.categoryItem}
-                      onPress={() => setActiveCategoryName(cat.categoryName)}
-                    >
-                      <View
-                        style={[
-                          styles.categoryIconBox,
-                          isActive ? styles.categoryIconBoxActive : undefined,
-                        ]}
-                      >
-                        <Ionicons
-                          name={getCategoryIcon(cat.categoryName) as any}
-                          size={24}
-                          color={isActive ? COLORS.white : COLORS.primary}
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.categoryText,
-                          isActive ? styles.categoryTextActive : undefined,
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {cat.categoryName}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            {!isBusiness && displayedBuys.length > 0 ? (
-              <View style={styles.sectionContainer}>
+            {productTypeTiles.length > 0 ? (
+              <View style={styles.productTypeSection}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>
-                    Tin thu mua từ Doanh nghiệp
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      router.push({
-                        pathname: "/search",
-                        params: { autoSearch: "true", postType: "Mua" },
-                      })
-                    }
-                  >
-                    <Text style={styles.seeAllText}>Xem tất cả</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.sectionTitle}>Khám phá theo loại sản phẩm</Text>
                 </View>
-                <FlatList
+                <ScrollView
                   horizontal
-                  data={displayedBuys}
-                  renderItem={renderCard}
-                  contentContainerStyle={styles.horizontalListContent}
                   showsHorizontalScrollIndicator={false}
-                />
+                  contentContainerStyle={styles.productTypeStrip}
+                >
+                  {chunkPosts(productTypeTiles, 2).map((column, columnIndex) => (
+                    <View key={`pt-col-${columnIndex}`} style={styles.productTypeColumn}>
+                      {column.map((type: HomeProductType) => (
+                        <TouchableOpacity
+                          key={type.productTypeId}
+                          style={styles.productTypeTile}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Tìm ${type.productTypeName}`}
+                          onPress={() => openProductTypeSearch(type)}
+                        >
+                          <Text
+                            style={styles.productTypeText}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {type.productTypeName}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ))}
+                </ScrollView>
               </View>
             ) : null}
 
-            {displayedSells.length > 0 ? (
-              <View style={styles.sectionContainer}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Tin đăng bán mới nhất</Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      router.push({
-                        pathname: "/search",
-                        params: { autoSearch: "true", postType: "Bán" },
-                      })
-                    }
-                  >
-                    <Text style={styles.seeAllText}>Xem tất cả</Text>
-                  </TouchableOpacity>
-                </View>
-                <FlatList
-                  horizontal
-                  data={displayedSells}
-                  renderItem={renderCard}
-                  contentContainerStyle={styles.horizontalListContent}
-                  showsHorizontalScrollIndicator={false}
-                />
-              </View>
+            {!isBusiness
+              ? renderPagedSection(
+                  "buy-posts",
+                  "Tin thu mua từ Doanh nghiệp",
+                  displayedBuys,
+                  () =>
+                    router.push({
+                      pathname: "/search",
+                      params: { autoSearch: "true", postType: "Mua" },
+                    }),
+                )
+              : null}
+
+            {renderPagedSection(
+              "sell-posts",
+              "Tin đăng bán mới nhất",
+              displayedSells,
+              () =>
+                router.push({
+                  pathname: "/search",
+                  params: { autoSearch: "true", postType: "Bán" },
+                }),
+            )}
+
+            {productTypeSections.map((section) =>
+              renderPagedSection(
+                `product-type-${section.type.productTypeId}`,
+                section.type.productTypeName,
+                section.posts,
+                () => openProductTypeSearch(section.type),
+              ),
+            )}
+
+            {displayedBuys.length === 0 && displayedSells.length === 0 ? (
+              <Text style={styles.emptyText}>Chưa có tin đăng phù hợp.</Text>
             ) : null}
 
             <View style={{ height: 40 }} />
@@ -432,56 +691,92 @@ const styles = StyleSheet.create({
   },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   container: { flex: 1, backgroundColor: "#F8F9FA" },
-  searchContainer: {
+  feedbackBar: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  searchInput: {
-    flex: 1,
-    height: 50,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: "row",
-    alignItems: "center",
   },
-  searchPlaceholder: { marginLeft: 8, color: COLORS.textLight, fontSize: 14 },
-  sectionContainer: { marginBottom: 32 },
+  feedbackBarSuccess: {
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
+    borderColor: "rgba(47, 118, 93, 0.24)",
+  },
+  feedbackBarError: {
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
+    borderColor: "rgba(122, 16, 18, 0.22)",
+  },
+  feedbackText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  feedbackTextSuccess: { color: "#2F765D" },
+  feedbackTextError: { color: "#7A1012" },
+  feedbackLink: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
+  sectionContainer: { marginBottom: 28 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingHorizontal: SECTION_HORIZONTAL_PADDING,
+    marginBottom: 14,
+    gap: 12,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#172830" },
+  sectionTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: "#172830" },
   seeAllText: { fontSize: 14, color: "#547B7D", fontWeight: "600" },
-  categoriesRow: { paddingHorizontal: 20, gap: 24, paddingRight: 40 },
-  categoryItem: { alignItems: "center", gap: 8, width: 72 },
-  categoryIconBox: {
-    width: 56,
-    height: 56,
-    backgroundColor: "rgba(84, 123, 125, 0.08)",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
+  gridPage: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: SECTION_HORIZONTAL_PADDING,
+    columnGap: CARD_GAP,
+    rowGap: CARD_GAP,
   },
-  categoryIconBoxActive: { backgroundColor: COLORS.primary },
-  categoryText: {
+  pageDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+  },
+  pageDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(84, 123, 125, 0.35)",
+  },
+  emptyText: {
+    marginTop: 12,
+    marginHorizontal: SECTION_HORIZONTAL_PADDING,
+    textAlign: "center",
+    color: COLORS.textLight,
+    fontSize: 14,
+  },
+  productTypeSection: { marginBottom: 20 },
+  productTypeStrip: { paddingHorizontal: SECTION_HORIZONTAL_PADDING, gap: 8 },
+  productTypeColumn: { gap: 8 },
+  // Ô cố định kích thước: chữ không bao giờ làm đổi chiều cao/chiều rộng ô.
+  productTypeTile: {
+    width: 112,
+    height: 46,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: "#F8F9FA",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  productTypeText: {
     fontSize: 12,
+    lineHeight: 15,
     color: COLORS.text,
-    fontWeight: "500",
+    fontWeight: "600",
     textAlign: "center",
   },
-  categoryTextActive: { color: COLORS.primary, fontWeight: "bold" },
   bannerContainer: {
     marginHorizontal: 20,
-    marginBottom: 32,
+    marginTop: 16,
+    marginBottom: 28,
     backgroundColor: COLORS.primary,
     borderRadius: 20,
     padding: 24,
@@ -502,13 +797,10 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
-  horizontalListContent: { paddingHorizontal: 20, gap: 16 },
   card: {
     backgroundColor: COLORS.white,
-    width: 170,
     borderRadius: 12,
     overflow: "hidden",
-    marginBottom: 4,
     borderWidth: 1,
     borderColor: "#BAC2C1",
     elevation: 2,
@@ -573,13 +865,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 4,
+    gap: 6,
   },
-  productPrice: { fontSize: 14, fontWeight: "bold", color: "#7A1012" },
+  productPrice: { flexShrink: 1, fontSize: 14, fontWeight: "bold", color: "#7A1012" },
   quantityText: { fontSize: 11, color: "#547B7D", fontWeight: "600" },
   footerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 6,
   },
   locationContainer: {
     flexDirection: "row",
@@ -588,4 +882,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   locationText: { fontSize: 11, color: "#547B7D", flex: 1 },
+  quickCartButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickCartButtonInCart: { backgroundColor: "#2F765D" },
 });

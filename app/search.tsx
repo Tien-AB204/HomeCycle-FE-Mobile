@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
@@ -24,6 +24,7 @@ import {
 import apiClient from "../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
 import { isBuyPostType } from "../src/utils/postType";
+import { useGuardedRouter } from "../src/utils/tapGuard";
 
 const locationApi = {
   getProvinces: async () => {
@@ -116,7 +117,7 @@ type FilterableAttribute = {
 };
 
 export default function SearchScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
   const { showOwnPostsInDiscovery } = useDiscoveryPreferences();
@@ -131,6 +132,22 @@ export default function SearchScreen() {
   const routePostTypeParam = Array.isArray(params.postType)
     ? params.postType[0]
     : params.postType;
+  const routeCategoryIdParam = Array.isArray(params.categoryId)
+    ? params.categoryId[0]
+    : params.categoryId;
+  const initialCategoryId =
+    typeof routeCategoryIdParam === "string" && routeCategoryIdParam.trim()
+      ? routeCategoryIdParam.trim()
+      : null;
+  const routeProductTypeIdParam = Array.isArray(params.productTypeId)
+    ? params.productTypeId[0]
+    : params.productTypeId;
+  const initialProductTypeId =
+    initialCategoryId &&
+    typeof routeProductTypeIdParam === "string" &&
+    routeProductTypeIdParam.trim()
+      ? routeProductTypeIdParam.trim()
+      : null;
   const isAutoSearchEntry = autoSearchParam === "true";
   const initialPostType =
     routePostTypeParam === "Bán" || routePostTypeParam === "Ban"
@@ -151,10 +168,10 @@ export default function SearchScreen() {
 
   const [postType, setPostType] = useState(initialPostType);
   const [filterCategories, setFilterCategories] = useState<any[]>([]);
-  const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  const [selectedCat, setSelectedCat] = useState<string | null>(initialCategoryId);
   const [productTypes, setProductTypes] = useState<ProductTypeOption[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<string | null>(
-    null,
+    initialProductTypeId,
   );
   const [filterableAttributes, setFilterableAttributes] = useState<
     FilterableAttribute[]
@@ -582,6 +599,10 @@ export default function SearchScreen() {
     if (!isAutoSearchEntry || autoSearchStartedRef.current) return;
 
     autoSearchStartedRef.current = true;
+    // Đi từ Trang chủ theo loại sản phẩm: nạp danh sách loại của danh mục
+    // để bộ lọc hiển thị đúng lựa chọn đang áp dụng.
+    if (initialCategoryId) void loadProductTypes(initialCategoryId);
+    if (initialProductTypeId) void loadFilterableAttributes(initialProductTypeId);
     void executeSearch();
   }, [isAutoSearchEntry]);
 
@@ -1641,8 +1662,9 @@ export default function SearchScreen() {
                       {formatPrice(post.basePrice)}
                     </Text>
                     <Text style={styles.quantityText}>
-                      SL: {post.remainingQuantity ?? post.quantity ?? 1}/
-                      {post.quantity ?? 1}
+                      {isBuyPostType(post.postType)
+                        ? `Cần thu mua: ${post.quantity ?? 1}`
+                        : `SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
                     </Text>
                   </View>
 

@@ -1,6 +1,6 @@
 import { DEFAULT_AVATAR_URI } from "../../utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
 import React, { useEffect, useState } from "react";
 import {
   Image,
@@ -13,6 +13,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useChatRealtime } from "../../contexts/ChatRealtimeContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import Header from "./Header";
+import { useGuardedRouter } from "../../utils/tapGuard";
 
 const getRobustUrl = (url: string) => {
   if (url?.includes("googleusercontent.com")) {
@@ -25,12 +26,15 @@ export default function MainHeader({
   title,
   showBack,
   centerContent,
+  variant,
 }: {
   title?: string;
   showBack?: boolean;
   centerContent?: React.ReactNode;
+  // "home": logo dạng biểu tượng + ô tìm kiếm gọn ở giữa (Trang chủ).
+  variant?: "default" | "home";
 }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
   const { chatUnreadCount } = useChatRealtime();
@@ -196,9 +200,17 @@ export default function MainHeader({
     );
   };
 
-  const isHome = title === "HomeCycle";
+  const isHomeVariant = variant === "home";
+  const isLegacyHome = !isHomeVariant && title === "HomeCycle";
 
-  const renderLeft = isHome ? (
+  const renderLeft = isHomeVariant ? (
+    <Image
+      source={require("../../assets/images/logo-icon-dark-transparent.png")}
+      style={{ width: 32, height: 32 }}
+      resizeMode="contain"
+      accessibilityLabel="HomeCycle"
+    />
+  ) : isLegacyHome ? (
     <Image
       source={require("../../assets/images/logo-dark-transparent.png")}
       style={{ width: 140, height: 32, marginLeft: 4 }}
@@ -206,11 +218,37 @@ export default function MainHeader({
     />
   ) : null;
 
+  const homeSearch = isHomeVariant ? (
+    <TouchableOpacity
+      onPress={() => router.push("/search")}
+      accessibilityRole="search"
+      accessibilityLabel="Tìm kiếm"
+      style={{
+        height: 38,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 12,
+        borderRadius: 19,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: "#F8F9FA",
+      }}
+    >
+      <Ionicons name="search" size={18} color={COLORS.textLight} />
+      <Text
+        numberOfLines={1}
+        style={{ marginLeft: 6, flex: 1, color: COLORS.textLight, fontSize: 13 }}
+      >
+        Tìm món đồ cũ...
+      </Text>
+    </TouchableOpacity>
+  ) : null;
+
   return (
     <Header
-      title={isHome ? undefined : title}
+      title={isHomeVariant || isLegacyHome ? undefined : title}
       showBack={showBack}
-      centerContent={centerContent}
+      centerContent={isHomeVariant ? homeSearch : centerContent}
       leftContent={renderLeft}
       rightContent={renderRightButtons()}
     />

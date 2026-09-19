@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -27,6 +27,8 @@ import {
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 import { isBuyPostType } from "../../src/utils/postType";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type PostTab = "all" | "active" | "closed";
 type PostSection = "posts" | "offers";
@@ -71,7 +73,7 @@ const postApi = {
 };
 
 export default function PostsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams<{ section?: string; tab?: string }>();
   const requestedSection: PostSection =
     readParam(params.section) === "offers" ? "offers" : "posts";
@@ -112,6 +114,7 @@ export default function PostsScreen() {
   const [processingPostId, setProcessingPostId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
   const [postMessage, setPostMessage] = useState<PostMessage>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -424,7 +427,9 @@ export default function PostsScreen() {
               </View>
               <View style={styles.tag}>
                 <Text style={styles.tagText}>
-                  Số lượng: {post.remainingQuantity ?? 0} / {post.quantity ?? 0}
+                  {post.postType === "Buy"
+                    ? `Cần thu mua: ${post.quantity ?? 0}`
+                    : `Số lượng: ${post.remainingQuantity ?? 0} / ${post.quantity ?? 0}`}
                 </Text>
               </View>
             </View>
