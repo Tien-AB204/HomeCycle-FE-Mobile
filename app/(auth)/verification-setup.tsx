@@ -1,7 +1,7 @@
 // app/(auth)/verification-setup.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,7 +29,8 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { authApi } from "../../src/services/apis/authApi";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -120,7 +121,7 @@ const isRegistrationSessionExpiredError = (
 };
 
 export default function VerificationSetupScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { login } = useAuth();
 
   const {
@@ -135,6 +136,7 @@ export default function VerificationSetupScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const emailValue = getStringParam(email);
@@ -187,7 +189,6 @@ export default function VerificationSetupScreen() {
   const [bankAccount, setBankAccount] = useState("");
   const bankAccountName = legalName;
 
-
   const hasVerificationData = useMemo(
     () =>
       Boolean(
@@ -228,8 +229,6 @@ export default function VerificationSetupScreen() {
     }));
     setMessage(null);
   };
-
-
 
   const pickImage = async (side: "front" | "back") => {
     try {
@@ -511,8 +510,38 @@ export default function VerificationSetupScreen() {
       setNeedsReverification(false);
       setPendingIncludeVerification(null);
 
+      const registrationData =
+        response.data?.data ??
+        response.data ??
+        response;
+
+      const registeredUser = registrationData?.user;
+      const accessToken = registrationData?.accessToken;
+      const refreshToken = registrationData?.refreshToken;
+
+      if (
+        accessToken &&
+        registeredUser &&
+        typeof registeredUser === "object" &&
+        !Array.isArray(registeredUser)
+      ) {
+        await login(
+          undefined,
+          undefined,
+          {
+            ...registeredUser,
+            role: registeredUser.role || "personal",
+          },
+          accessToken,
+          refreshToken,
+        );
+
+        router.replace("/(tabs)");
+        return;
+      }
+
       const realEmail =
-        response.data?.data?.user?.email ||
+        registeredUser?.email ||
         emailValue;
 
       if (!realEmail || !password) {
