@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -20,8 +20,11 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 // Primary structural perspective: which side of the transaction.
 type OrderTypeTab = "all" | "buyer" | "seller";
@@ -50,7 +53,7 @@ type OrderItem = {
   roleKey: "buyer" | "seller";
   statusCode: number;
   orderStatusText: string;
-  createdAt: string;
+  quantity: number;
 };
 
 const orderApi = {
@@ -102,10 +105,12 @@ const translateOrderStatus = (status: number | string | null | undefined) => {
 };
 
 export default function OrdersScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
   const { user } = useAuth();
+  const { connection, reconnectVersion } = useChatRealtime();
+  const requestRef = useRef(0);
   const currentUserId = user?.userId || user?.id;
 
   const [typeTab, setTypeTab] = useState<OrderTypeTab>("all");
@@ -123,6 +128,7 @@ export default function OrdersScreen() {
 
   const fetchOrders = useCallback(
     async (isRefresh = false) => {
+      const request = ++requestRef.current;
       if (!currentUserId) {
         setOrders([]);
         setIsLoading(false);
@@ -138,6 +144,7 @@ export default function OrdersScreen() {
           orderApi.getBuyerOrders({ PageSize: 50, PageNumber: 1 }),
           orderApi.getSellerOrders({ PageSize: 50, PageNumber: 1 }),
         ]);
+        if (request !== requestRef.current) return;
 
         const rawOrders: any[] = [];
         const failedMessages: string[] = [];
@@ -197,14 +204,12 @@ export default function OrdersScreen() {
             roleKey: order.roleKey,
             statusCode: Number(order.orderStatus ?? -1),
             orderStatusText: translateOrderStatus(order.orderStatus),
-            createdAt: String(order.createdAt || ""),
+            quantity: Number(order.quantity ?? 0),
           }))
           .filter((order) => Boolean(order.id));
 
-        mappedOrders.sort(
-          (first, second) =>
-            new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
-        );
+        // Danh sách không có ngày tạo từ Backend: giữ nguyên thứ tự máy chủ,
+        // không tự dựng ngày.
         setOrders(mappedOrders);
 
         if (failedMessages.length > 0) {
@@ -213,13 +218,16 @@ export default function OrdersScreen() {
           );
         }
       } catch (error: unknown) {
+        if (request !== requestRef.current) return;
         setOrders([]);
         setPageError(
           getApiErrorMessage(error, "Không thể tải danh sách đơn hàng."),
         );
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (request === requestRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
     [currentUserId],
@@ -227,8 +235,35 @@ export default function OrdersScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void fetchOrders(false);
-    }, [fetchOrders]),
+      let active = true;
+      let pending = false;
+      let running = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const refresh = async (initial = false) => {
+        if (!active || running) return;
+        running = true;
+        do {
+          pending = false;
+          await fetchOrders(!initial);
+          initial = false;
+        } while (active && pending);
+        running = false;
+      };
+      const onNotification = (event: any) => {
+        if (normalizeTargetType(event?.targetType ?? event?.TargetType) !== "order") return;
+        pending = true;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => { if (pending) void refresh(); }, 150);
+      };
+      connection?.on("NotificationCreated", onNotification);
+      void refresh(true);
+      return () => {
+        active = false;
+        ++requestRef.current;
+        if (timer) clearTimeout(timer);
+        connection?.off("NotificationCreated", onNotification);
+      };
+    }, [connection, reconnectVersion, fetchOrders]),
   );
 
   const onRefresh = () => {
@@ -391,10 +426,20 @@ export default function OrdersScreen() {
               filteredOrders.map((order) => {
                 const badge = getStatusColor(order.statusCode);
                 return (
-                  <View key={`${order.roleKey}-${order.id}`} style={styles.card}>
+                  // Một vùng chạm duy nhất cho mỗi đơn (đã có chống chạm lặp).
+                  <TouchableOpacity
+                    key={`${order.roleKey}-${order.id}`}
+                    style={styles.card}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Đơn ${order.orderCode}, ${order.orderStatusText}`}
+                    onPress={() => router.push(`/orders/${order.id}` as any)}
+                  >
                     <View style={styles.cardHeader}>
-                      <View>
-                        <Text style={styles.orderCode}>Mã: {order.orderCode}</Text>
+                      <View style={styles.cardHeaderLeft}>
+                        <Text style={styles.orderCode} numberOfLines={1}>
+                          Mã: {order.orderCode}
+                        </Text>
                         <Text style={styles.orderRole}>{order.role}</Text>
                       </View>
                       <View
@@ -409,33 +454,35 @@ export default function OrdersScreen() {
                       </View>
                     </View>
 
-                    <TouchableOpacity
-                      style={styles.cardBody}
-                      activeOpacity={0.7}
-                      onPress={() => router.push(`/orders/${order.id}` as any)}
-                    >
+                    <View style={styles.cardBody}>
                       {order.imageUrl ? (
                         <Image source={{ uri: order.imageUrl }} style={styles.productImg} />
                       ) : (
                         <View style={[styles.productImg, styles.imagePlaceholder]}>
-                          <Ionicons name="image-outline" size={25} color="#547B7D" />
+                          <Ionicons name="image-outline" size={22} color="#547B7D" />
                         </View>
                       )}
                       <View style={styles.productInfo}>
                         <Text style={styles.productName} numberOfLines={2}>
                           {order.productName}
                         </Text>
-                        <Text style={styles.productPrice}>{formatCurrency(order.price)}</Text>
+                        {order.quantity > 0 ? (
+                          <Text style={styles.quantityText}>SL: {order.quantity}</Text>
+                        ) : null}
                       </View>
-                    </TouchableOpacity>
+                    </View>
 
-                    <TouchableOpacity
-                      style={styles.primaryBtn}
-                      onPress={() => router.push(`/orders/${order.id}` as any)}
-                    >
-                      <Text style={styles.primaryBtnText}>Chi tiết đơn hàng</Text>
-                    </TouchableOpacity>
-                  </View>
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.totalLabel}>
+                        Tổng thanh toán:{" "}
+                        <Text style={styles.totalValue}>{formatCurrency(order.price)}</Text>
+                      </Text>
+                      <View style={styles.detailLink}>
+                        <Text style={styles.detailLinkText}>Xem chi tiết</Text>
+                        <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
                 );
               })
             ) : (
@@ -651,50 +698,64 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   card: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     backgroundColor: COLORS.white,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   cardHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F2F2",
   },
-  orderCode: { color: COLORS.text, fontSize: 14, fontWeight: "bold" },
-  orderRole: { marginTop: 4, color: COLORS.primary, fontSize: 12, fontWeight: "bold" },
+  cardHeaderLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  orderCode: { flexShrink: 1, color: COLORS.text, fontSize: 13, fontWeight: "700" },
+  orderRole: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+  },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, fontWeight: "bold" },
-  cardBody: { flexDirection: "row", alignItems: "center" },
+  cardBody: { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
   productImg: {
-    width: 70,
-    height: 70,
-    marginRight: 12,
+    width: 56,
+    height: 56,
+    marginRight: 10,
     borderRadius: 8,
     backgroundColor: "#F8F9FA",
   },
   imagePlaceholder: { alignItems: "center", justifyContent: "center" },
   productInfo: { flex: 1 },
   productName: {
-    marginBottom: 8,
     color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "bold",
-    lineHeight: 20,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 19,
   },
-  productPrice: { color: COLORS.error, fontSize: 15, fontWeight: "bold" },
-  primaryBtn: {
+  quantityText: { marginTop: 3, color: COLORS.textLight, fontSize: 12 },
+  cardFooter: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 14,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: COLORS.primary,
+    justifyContent: "space-between",
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F2F2",
   },
-  primaryBtnText: { color: COLORS.white, fontSize: 14, fontWeight: "bold" },
+  totalLabel: { flex: 1, color: COLORS.textLight, fontSize: 12 },
+  totalValue: { color: COLORS.error, fontSize: 14, fontWeight: "800" },
+  detailLink: { flexDirection: "row", alignItems: "center", gap: 2 },
+  detailLinkText: { color: COLORS.primary, fontSize: 13, fontWeight: "700" },
 });

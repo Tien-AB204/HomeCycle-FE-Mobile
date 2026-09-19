@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import {
   ActivityIndicator,
@@ -23,6 +23,9 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
+import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
   type: "error" | "warning" | "info" | "success";
@@ -155,6 +158,28 @@ const filterOrderTimelineForDisplay = (steps: any[]): any[] =>
       };
     });
 
+// Presentation only: omit an unconfirmed seller action once pickup has moved
+// past it. Never infer completion or change authoritative status/timestamps.
+const normalizePickupTimelineForDisplay = (
+  steps: any[], completed: boolean, sellerHandoverConfirmedAt: unknown,
+): any[] => {
+  if (sellerHandoverConfirmedAt != null) return steps;
+  const hasCompletedHandover = (items: any[]): boolean => items.some(step =>
+    (["buyerreceived", "handover", "ordercompleted"].includes(normalizeStatus(step?.code)) &&
+      isTimelineCompletedStatus(step?.status)) ||
+    (Array.isArray(step?.subSteps) && hasCompletedHandover(step.subSteps)),
+  );
+  const handoverCompleted = completed || hasCompletedHandover(steps);
+  if (!handoverCompleted) return steps;
+  const copy = (items: any[]): any[] => items
+    .filter(step => normalizeStatus(step?.code) !== "sellerhandover")
+    .map(step => ({
+    ...step,
+    ...(Array.isArray(step?.subSteps) ? { subSteps: copy(step.subSteps) } : {}),
+  }));
+  return copy(steps);
+};
+
 const translateRelatedAppointmentStatus = (value: unknown) => {
   switch (normalizeStatus(value)) {
     case "0":
@@ -228,7 +253,7 @@ const translateCreationStatus = (status: string) => {
 };
 
 export default function OrderDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user } = useAuth();
   const params = useLocalSearchParams();
   const orderId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -252,11 +277,16 @@ export default function OrderDetailScreen() {
   const [trackingData, setTrackingData] = useState<any>(null);
   const [isTrackingLoading, setIsTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
+  const trackingRequestInFlightRef = useRef(false);
+  const trackingRequestGenerationRef = useRef(0);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isSellerReadyLoading, setIsSellerReadyLoading] = useState(false);
   const [isOrderTimelineExpanded, setOrderTimelineExpanded] = useState(true);
+  const [showDisputeConfirmation, setShowDisputeConfirmation] = useState(false);
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
   const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction>(null);
   const [isLifecycleActionLoading, setIsLifecycleActionLoading] = useState(false);
   const [lifecycleActionError, setLifecycleActionError] = useState<string | null>(null);
@@ -285,7 +315,6 @@ export default function OrderDetailScreen() {
                 order: rawOrder,
                 counterpartyName:
                   rawOrder?.counterparty?.username ||
-                  rawOrder?.counterparty?.name ||
                   "Đối tác",
               }
             : rawOrder;
@@ -341,21 +370,9 @@ export default function OrderDetailScreen() {
         setTransactionRole(null);
       }
 
-      if (nextDeliveryMethod === "GhnDelivery") {
-        setIsTrackingLoading(true);
-        try {
-          const trackResponse = await orderApi.getShipmentTracking(orderId);
-          setTrackingData(unwrap(trackResponse));
-        } catch {
-          setTrackingData(null);
-          setTrackingError(
-            "Không thể đồng bộ GHN lúc này. Thông tin đơn hàng vẫn được giữ nguyên.",
-          );
-        } finally {
-          setIsTrackingLoading(false);
-        }
-      } else {
+      if (nextDeliveryMethod !== "GhnDelivery") {
         setTrackingData(null);
+        setTrackingError(null);
         setIsTrackingLoading(false);
       }
     } catch (error: any) {
@@ -377,6 +394,82 @@ export default function OrderDetailScreen() {
     }
   }, [currentUserId, orderId]);
 
+  useEffect(() => {
+    const targetOrderId = String(orderId || "").trim();
+    const generation = ++trackingRequestGenerationRef.current;
+
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    if (!targetOrderId || deliveryMethod !== "GhnDelivery" || !data) {
+      if (deliveryMethod !== "GhnDelivery") {
+        setTrackingData(null);
+        setTrackingError(null);
+      }
+      setIsTrackingLoading(false);
+
+      return () => {
+        active = false;
+        if (timer) clearTimeout(timer);
+      };
+    }
+
+    // Base Order Detail renders first. Wait for GHN/worker state to settle.
+    setIsTrackingLoading(true);
+    setTrackingError(null);
+
+    const runTrackingRequest = async () => {
+      if (!active || generation !== trackingRequestGenerationRef.current) {
+        return;
+      }
+
+      if (trackingRequestInFlightRef.current) {
+        timer = setTimeout(() => {
+          void runTrackingRequest();
+        }, 500);
+        return;
+      }
+
+      trackingRequestInFlightRef.current = true;
+
+      try {
+        const trackResponse =
+          await orderApi.getShipmentTracking(targetOrderId);
+
+        if (!active || generation !== trackingRequestGenerationRef.current) {
+          return;
+        }
+
+        setTrackingData(unwrap(trackResponse));
+        setTrackingError(null);
+      } catch {
+        if (!active || generation !== trackingRequestGenerationRef.current) {
+          return;
+        }
+
+        setTrackingData(null);
+        setTrackingError(
+          "Không thể đồng bộ GHN lúc này. Thông tin đơn hàng vẫn được giữ nguyên.",
+        );
+      } finally {
+        trackingRequestInFlightRef.current = false;
+
+        if (active && generation === trackingRequestGenerationRef.current) {
+          setIsTrackingLoading(false);
+        }
+      }
+    };
+
+    timer = setTimeout(() => {
+      void runTrackingRequest();
+    }, 4000);
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [data, deliveryMethod, orderId]);
+
   useFocusEffect(
     useCallback(() => {
       void fetchOrderDetail();
@@ -387,6 +480,29 @@ export default function OrderDetailScreen() {
     if (!connection || !orderId) return;
 
     const currentOrderId = String(orderId).trim().toLowerCase();
+    let active = true;
+    let pending = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      if (running || !active) return;
+      running = true;
+      do {
+        pending = false;
+        await fetchOrderDetail();
+      } while (active && pending);
+      running = false;
+    };
+    const scheduleRefresh = () => {
+      pending = true;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { if (pending) void refresh(); }, 150);
+    };
+    const handleNotification = (event: any) => {
+      if (normalizeTargetType(event?.targetType ?? event?.TargetType) !== "order") return;
+      if (String(event?.targetId ?? event?.TargetId ?? "").trim().toLowerCase() !== currentOrderId) return;
+      scheduleRefresh();
+    };
 
     const handleOrderTrackingUpdated = (payload: {
       orderId?: string;
@@ -402,19 +518,23 @@ export default function OrderDetailScreen() {
         return;
       }
 
-      void fetchOrderDetail();
+      scheduleRefresh();
     };
 
     connection.on(
       "OrderTrackingUpdated",
       handleOrderTrackingUpdated,
     );
+    connection.on("NotificationCreated", handleNotification);
 
     void joinOrder(String(orderId)).catch(() => {
       // Order Detail vẫn dùng dữ liệu API nếu realtime tạm thời chưa join được.
     });
 
     return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      connection.off("NotificationCreated", handleNotification);
       connection.off(
         "OrderTrackingUpdated",
         handleOrderTrackingUpdated,
@@ -658,7 +778,7 @@ export default function OrderDetailScreen() {
   const thumbnailUrl = data.thumbnailUrl;
   const productName =
     order.productName || data.postDescription || "Sản phẩm giao dịch";
-  const counterpartyName = data.counterpartyName || "Đối tác";
+  const counterpartyName = data?.counterparty?.username || order?.counterparty?.username || "Chưa có tên người dùng";
   const negotiationId = data.negotiationId;
   const postId = order.postId;
   const isBuyPost = isBuyPostType(postContext?.postType);
@@ -693,7 +813,10 @@ export default function OrderDetailScreen() {
       ? order.timeline
       : [];
 
-  const orderTimeline = filterOrderTimelineForDisplay(rawOrderTimeline).flatMap(
+  const displayTimeline = deliveryMethod === "BuyerPickUp"
+    ? normalizePickupTimelineForDisplay(rawOrderTimeline, isCompleted, order.sellerHandoverConfirmedAt)
+    : rawOrderTimeline;
+  const orderTimeline = filterOrderTimelineForDisplay(displayTimeline).flatMap(
     (step: any) =>
       deliveryMethod === "BuyerPickUp" &&
       normalizeStatus(step?.code) === "handover" &&
@@ -717,7 +840,7 @@ export default function OrderDetailScreen() {
     disputeStatusKey === "0" || disputeStatusKey === "pending"
       ? "Đang chờ xử lý"
       : disputeStatusKey === "4" || disputeStatusKey === "underreview"
-        ? "Moderator đang xem xét"
+        ? "Đang được bộ phận kiểm duyệt xem xét"
         : disputeStatusKey === "5" || disputeStatusKey === "awaitingreturn"
           ? "Đang chờ hoàn trả"
           : null;
@@ -778,7 +901,7 @@ export default function OrderDetailScreen() {
   const postOwnerId = String(postContext?.ownerId || "").trim().toLowerCase();
   const counterpartyId = String(data?.counterparty?.userId || "").trim().toLowerCase();
   const currentUserName = String(
-    user?.name || user?.displayName || user?.username || "Bạn",
+    user?.username || "Bạn",
   ).trim();
   const posterRoleLabel = getPosterRoleLabel(isBuyPost);
   const currentPartyRoles = transactionRole
@@ -791,6 +914,83 @@ export default function OrderDetailScreen() {
       ? [posterRoleLabel]
       : [transactionRole === "seller" ? "Người mua" : "Người bán"]
     : [];
+
+  const reviewSummary = data?.review ?? order?.review ?? {};
+  const orderReviews = Array.isArray(data?.reviews)
+    ? data.reviews
+    : Array.isArray(order?.reviews)
+      ? order.reviews
+      : [];
+
+  const ownReviewFromList = orderReviews.find(
+    (review: any) =>
+      String(review?.reviewerId ?? review?.ReviewerId ?? "")
+        .trim()
+        .toLowerCase() === currentUserId,
+  );
+
+  const ownReviewId = String(
+    reviewSummary?.reviewId ??
+      reviewSummary?.ReviewId ??
+      ownReviewFromList?.reviewId ??
+      ownReviewFromList?.ReviewId ??
+      "",
+  ).trim();
+
+  const hasOwnReview =
+    reviewSummary?.hasReviewed === true || Boolean(ownReviewId);
+
+  const receivedReview = orderReviews.find(
+    (review: any) =>
+      String(review?.revieweeId ?? review?.RevieweeId ?? "")
+        .trim()
+        .toLowerCase() === currentUserId &&
+      String(review?.reviewerId ?? review?.ReviewerId ?? "")
+        .trim()
+        .toLowerCase() !== currentUserId,
+  );
+
+  const receivedReviewId = String(
+    receivedReview?.reviewId ?? receivedReview?.ReviewId ?? "",
+  ).trim();
+
+  const isSellBuyer =
+    transactionRole === "buyer" &&
+    Boolean(currentUserId) &&
+    Boolean(postOwnerId) &&
+    currentUserId !== postOwnerId;
+
+  const isSellSeller =
+    transactionRole === "seller" &&
+    Boolean(currentUserId) &&
+    Boolean(postOwnerId) &&
+    currentUserId === postOwnerId;
+
+  const reviewAction =
+    isCompleted && orderId
+      ? isSellBuyer
+        ? {
+            label: hasOwnReview ? "Xem đánh giá" : "Đánh giá",
+            description: hasOwnReview
+              ? "Bạn đã đánh giá giao dịch này. Bạn có thể xem lại đánh giá của mình."
+              : "Đơn hàng đã hoàn thành. Bạn có thể đánh giá người đăng bài từ 1–5 sao, thêm nhận xét và tối đa 3 ảnh.",
+            onPress: () =>
+              router.push(
+                hasOwnReview
+                  ? (`/reviews/order/${orderId}?mode=view-own` as any)
+                  : (`/reviews/order/${orderId}?mode=create` as any),
+              ),
+          }
+        : isSellSeller && receivedReviewId
+          ? {
+              label: "Xem đánh giá",
+              description:
+                "Người mua đã đánh giá giao dịch này. Bạn có thể xem đánh giá đã nhận.",
+              onPress: () =>
+                router.push(`/reviews/${receivedReviewId}` as any),
+            }
+          : null
+      : null;
 
   const renderDeliveryInfo = () => (
     <>
@@ -871,16 +1071,52 @@ export default function OrderDetailScreen() {
     </>
   );
 
+  const overflowActions: { key: string; label: string; icon: React.ComponentProps<typeof Ionicons>["name"]; destructive?: boolean; onPress: () => void }[] = [];
+  if (canOpenDispute) {
+    overflowActions.push({
+      key: "view-dispute",
+      label: "Xem tranh chấp",
+      icon: "document-text-outline",
+      onPress: () => router.push(`/disputes/${latestDisputeId}` as any),
+    });
+  } else if (canCreateDispute) {
+    overflowActions.push({
+      key: "create-dispute",
+      label: "Gửi khiếu nại",
+      icon: "alert-circle-outline",
+      destructive: true,
+      onPress: () => setShowDisputeConfirmation(true),
+    });
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <Header title="Chi tiết Đơn hàng" showBack />
+      <Header
+        title="Chi tiết Đơn hàng"
+        showBack
+        rightContent={
+          overflowActions.length > 0 ? (
+            <TouchableOpacity
+              style={styles.overflowButton}
+              accessibilityRole="button"
+              accessibilityLabel="Tùy chọn khác"
+              hitSlop={8}
+              onPress={() => setShowOverflowMenu(true)}
+            >
+              <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerStatusCard}>
-          <Text style={styles.headerCardTitle}>Đơn hàng giao dịch</Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerCardTitle}>Đơn hàng giao dịch</Text>
+          </View>
           <Text style={styles.orderCodeText}>
             Mã đơn: <Text style={styles.boldText}>{order.orderCode}</Text>
           </Text>
@@ -1357,27 +1593,25 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
-        {isCompleted && orderId ? (
+        {reviewAction ? (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Đánh giá giao dịch</Text>
             <Text style={styles.reviewDescription}>
-              Đơn hàng đã hoàn thành. Bạn có thể đánh giá đối tác từ 1–5 sao,
-              thêm nhận xét và tối đa 3 ảnh.
+              {reviewAction.description}
             </Text>
             <TouchableOpacity
               style={styles.reviewButton}
-              onPress={() => router.push(`/reviews/order/${orderId}` as any)}
+              onPress={reviewAction.onPress}
             >
               <Ionicons name="star-outline" size={20} color={COLORS.white} />
-              <Text style={styles.reviewButtonText}>Đánh giá / Xem đánh giá</Text>
+              <Text style={styles.reviewButtonText}>{reviewAction.label}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
       </ScrollView>
 
-      {canCreateDispute || canOpenDispute ? (
+      {canOpenDispute ? (
         <View style={styles.bottomBar}>
-          {canOpenDispute ? (
             <TouchableOpacity
               style={styles.outlineBtnWarning}
               onPress={() => router.push(`/disputes/${latestDisputeId}` as any)}
@@ -1387,28 +1621,72 @@ export default function OrderDetailScreen() {
                 size={18}
                 color="#7A1012"
               />
-              <Text style={styles.outlineBtnWarningText}>Xem Tranh Chấp</Text>
+              <Text style={styles.outlineBtnWarningText}>Xem tranh chấp</Text>
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.outlineBtnWarning}
-              onPress={() =>
-                router.push({
-                  pathname: "/disputes/create",
-                  params: {
-                    orderId,
-                    orderCode: order.orderCode || "",
-                    productName,
-                  },
-                } as any)
-              }
-            >
-              <Ionicons name="warning-outline" size={18} color="#7A1012" />
-              <Text style={styles.outlineBtnWarningText}>Gửi Khiếu Nại</Text>
-            </TouchableOpacity>
-          )}
         </View>
       ) : null}
+
+      <Modal
+        visible={showOverflowMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOverflowMenu(false)}
+      >
+        <ModalBackdrop style={styles.overflowBackdrop} onPress={() => setShowOverflowMenu(false)}>
+          <ModalSurface style={styles.overflowSheet}>
+            <Text style={styles.overflowSheetTitle}>Tùy chọn đơn hàng</Text>
+            {overflowActions.map((action) => (
+              <TouchableOpacity
+                key={action.key}
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflowMenu(false);
+                  action.onPress();
+                }}
+              >
+                <Ionicons
+                  name={action.icon}
+                  size={20}
+                  color={action.destructive ? COLORS.error : COLORS.text}
+                />
+                <Text
+                  style={[
+                    styles.overflowItemText,
+                    action.destructive ? styles.overflowItemTextDanger : undefined,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal visible={showDisputeConfirmation} transparent animationType="fade"
+        onRequestClose={() => setShowDisputeConfirmation(false)}>
+        <ModalBackdrop style={styles.lifecycleModalBackdrop} onPress={() => setShowDisputeConfirmation(false)}>
+          <ModalSurface style={styles.lifecycleModalCard}>
+            <Text style={styles.lifecycleModalTitle}>Bạn muốn khiếu nại đơn hàng?</Text>
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity style={styles.cancelConfirmBtn} onPress={() => setShowDisputeConfirmation(false)}>
+                <Text style={styles.cancelConfirmText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.primaryConfirmBtn, styles.primaryConfirmBtnDanger]}
+                disabled={!canCreateDispute || canOpenDispute}
+                onPress={() => {
+                  setShowDisputeConfirmation(false);
+                  if (!canCreateDispute || canOpenDispute) return;
+                  router.push({ pathname: "/disputes/create",
+                    params: { orderId, orderCode: order.orderCode || "", productName },
+                  } as any);
+                }}>
+                <Text style={styles.primaryConfirmText}>Tiếp tục</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
 
       <Modal
         visible={lifecycleAction !== null}
@@ -1638,8 +1916,7 @@ function OrderTimelineItem({
   const title = sanitizeTimelineText(step?.title) || "Cập nhật đơn hàng";
   const occurredAt = formatTimelineDate(step?.occurredAt);
 
-  // Không tự suy diễn trạng thái bước con (vd. bàn giao) từ bước khác;
-  // hiển thị đúng dữ liệu Backend trả về.
+  // Receive display-only normalization; timestamps remain Backend-provided.
   const subSteps = Array.isArray(step?.subSteps)
     ? step.subSteps
     : [];
@@ -1811,10 +2088,45 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   headerCardTitle: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: "bold",
     color: COLORS.white,
   },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  overflowButton: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: "center", justifyContent: "center",
+  },
+  overflowBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(23, 40, 48, 0.48)",
+  },
+  overflowSheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  overflowSheetTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  overflowItem: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  overflowItemText: { fontSize: 15, fontWeight: "600", color: COLORS.text },
+  overflowItemTextDanger: { color: COLORS.error },
   orderCodeText: {
     fontSize: 13,
     color: COLORS.white,
