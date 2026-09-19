@@ -1,6 +1,6 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -33,8 +33,11 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import conversationApi from "../../src/services/apis/conversationApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { compareChatTimeline } from "../../src/utils/chatTimeline";
+import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
-
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const agreementApi = {
   getPreview: (negotiationId: string) =>
@@ -248,6 +251,44 @@ const normalizeAgreementUiText = (
   return normalized;
 };
 
+// Bản xem trước một dòng của tin nhắn mới nhất cho bộ chọn phiên. Dùng chung cho
+// kết quả GET /Messages (PageSize=1) và payload realtime; không lộ enum/DTO/JSON.
+const NO_MESSAGE_PREVIEW = "Chưa có tin nhắn";
+const toSingleLine = (value: unknown) =>
+  String(value ?? "").replace(/\s+/g, " ").trim();
+const looksTechnical = (text: string) =>
+  /^[[{].*[\]}]$/s.test(text) ||
+  /exception|stack ?trace|nullreference|traceback|\bdto\b/i.test(text);
+const formatPreviewCurrency = (value: number) =>
+  `${Math.round(value).toLocaleString("vi-VN")}đ`;
+const buildMessagePreview = (message: any): string => {
+  if (!message || typeof message !== "object") return NO_MESSAGE_PREVIEW;
+  const rawType = message.messageType ?? message.MessageType;
+  const type = String(rawType ?? "").trim().toLowerCase();
+  const content = toSingleLine(message.messageContent ?? message.MessageContent);
+  const offerPrice = Number(message.offerPrice ?? message.OfferPrice ?? 0);
+  const offerQuantity = Number(message.offerQuantity ?? message.OfferQuantity ?? 0);
+
+  if (type === "media" || type === "1" || (!content && (message.mediaUrl ?? message.MediaUrl))) {
+    return "[Hình ảnh]";
+  }
+  if (type === "offer" || type === "counteroffer" || type === "2" || type === "3" || offerPrice > 0) {
+    return offerPrice > 0
+      ? `Đề nghị ${formatPreviewCurrency(offerPrice)} × ${offerQuantity > 0 ? offerQuantity : 1}`
+      : "Đề nghị mới";
+  }
+  if (type === "system" || type === "4") {
+    const text = normalizeSystemUiText(content);
+    return looksTechnical(text) ? "Cập nhật phiên thương lượng." : text;
+  }
+  if (type === "agreement" || type === "5") {
+    const text = toSingleLine(normalizeAgreementUiText(content));
+    return looksTechnical(text) ? "Cập nhật hợp đồng giao dịch." : text;
+  }
+  if (!content) return message.mediaUrl || message.MediaUrl ? "[Hình ảnh]" : "[Tin nhắn]";
+  return looksTechnical(content) ? "[Tin nhắn]" : content;
+};
+
 const normalizeSystemUiText = (text?: string | null) => {
   const normalized = String(text || "").trim();
 
@@ -338,8 +379,6 @@ const mergeTimelineMessages = (
   incoming: any[],
   authority: TimelineMergeAuthority,
 ) => {
-  if (existing.length === 0) return incoming;
-
   const incomingById = new Map(
     incoming.map((message) => [String(message.id), message]),
   );
@@ -354,18 +393,7 @@ const mergeTimelineMessages = (
     if (!existingIds.has(String(message.id))) merged.push(message);
   });
 
-  return merged
-    .sort((first, second) => {
-      const createdAtDifference =
-        getTimelineTime(first.createdAt) - getTimelineTime(second.createdAt);
-      if (createdAtDifference !== 0) return createdAtDifference;
-
-      const sourceMessageDifference = String(first.sourceMessageId || first.id)
-        .localeCompare(String(second.sourceMessageId || second.id));
-      if (sourceMessageDifference !== 0) return sourceMessageDifference;
-
-      return Number(first.timelineItemOrder || 0) - Number(second.timelineItemOrder || 0);
-    });
+  return merged.sort(compareChatTimeline);
 };
 
 const markLatestAgreementCard = (items: any[]) => {
@@ -382,7 +410,7 @@ const markLatestAgreementCard = (items: any[]) => {
 };
 
 const applyTimelineGrouping = (items: any[]) => {
-  const grouped = items.map((item) => ({
+  const grouped = [...items].sort(compareChatTimeline).map((item) => ({
     ...item,
     groupWithPrevious: false,
     groupWithNext: false,
@@ -439,7 +467,7 @@ const applyTimelineGrouping = (items: any[]) => {
 };
 
 export default function ChatDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const insets = useSafeAreaInsets();
 
   const [isKeyboardVisible, setIsKeyboardVisible] =
@@ -498,6 +526,17 @@ export default function ChatDetailScreen() {
     useState(false);
   const [negotiationLabels, setNegotiationLabels] =
     useState<Record<string, string>>({});
+  // Xem trước tin nhắn mới nhất theo negotiationId (nguồn: GET /Messages PageSize=1,
+  // realtime, hoặc trang 1 của phiên đang mở). lastMessageAt dùng để phát hiện cũ.
+  const [negotiationPreviews, setNegotiationPreviews] =
+    useState<Record<string, string>>({});
+  const previewCacheRef = useRef<
+    Map<string, { text: string; lastMessageAt: number | null; resolved: boolean }>
+  >(new Map());
+  const stalePreviewIdsRef = useRef<Set<string>>(new Set());
+  const [isPreparingPicker, setIsPreparingPicker] = useState(false);
+  const pickerPrepareInFlightRef = useRef(false);
+  const pickerGenerationRef = useRef(0);
 
   const negotiationInfoRef = useRef<any>(null);
   const isScreenFocusedRef = useRef(false);
@@ -636,6 +675,10 @@ export default function ChatDetailScreen() {
     setRevealedSystemMessageIds(new Set());
     setLoadError(null);
     setNegotiationPickerVisible(false);
+    // Kết quả chuẩn bị bộ chọn của phiên/cuộc trò chuyện cũ không được áp dụng nữa.
+    pickerGenerationRef.current += 1;
+    pickerPrepareInFlightRef.current = false;
+    setIsPreparingPicker(false);
     shouldScrollToLatestRef.current = true;
     animateNextScrollToLatestRef.current = false;
     isNearLatestRef.current = true;
@@ -747,7 +790,7 @@ export default function ChatDetailScreen() {
         };
       }
     } catch (error) {
-      console.error(
+      devLog(
         "Lỗi xác định cuộc trò chuyện:",
         error,
       );
@@ -914,10 +957,14 @@ export default function ChatDetailScreen() {
 
     const resolvedLabels: Record<string, string> = {};
 
-    results.forEach((result) => {
+    results.forEach((result, index) => {
       if (result.status === "fulfilled" && result.value.label) {
         resolvedLabels[result.value.postId] = result.value.label;
+        return;
       }
+      // Thất bại/không có tên: cho phép thử lại ở lần mở sau, không kẹt nhãn tạm.
+      const failedPostId = String(targets[index]?.postId ?? "");
+      if (failedPostId) hydratedPostIdsRef.current.delete(failedPostId);
     });
 
     if (Object.keys(resolvedLabels).length > 0) {
@@ -927,6 +974,103 @@ export default function ChatDetailScreen() {
       }));
     }
   }, []);
+
+  const parseTimestamp = (value: unknown): number | null => {
+    const parsed = value ? Date.parse(String(value)) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const storeNegotiationPreview = useCallback(
+    (targetNegotiationId: string, text: string, lastMessageAt: number | null, resolved = true) => {
+      const key = targetNegotiationId.toLowerCase();
+      if (!key) return;
+      previewCacheRef.current.set(key, { text, lastMessageAt, resolved });
+      stalePreviewIdsRef.current.delete(key);
+      setNegotiationPreviews((current) =>
+        current[key] === text ? current : { ...current, [key]: text },
+      );
+    },
+    [],
+  );
+
+  const markNegotiationPreviewStale = useCallback((targetNegotiationId: unknown) => {
+    const key = String(targetNegotiationId ?? "").toLowerCase();
+    if (key) stalePreviewIdsRef.current.add(key);
+  }, []);
+
+  // Cập nhật rẻ từ tin nhắn thật (REST trang 1 hoặc realtime) — không cần gọi lại API.
+  const updatePreviewFromMessage = useCallback(
+    (targetNegotiationId: unknown, message: any) => {
+      const key = String(targetNegotiationId ?? "").toLowerCase();
+      if (!key || !message) return;
+      const createdAt = parseTimestamp(message.createdAt ?? message.CreatedAt);
+      const cached = previewCacheRef.current.get(key);
+      if (cached?.lastMessageAt && createdAt && createdAt < cached.lastMessageAt) return;
+      storeNegotiationPreview(key, buildMessagePreview(message), createdAt);
+    },
+    [storeNegotiationPreview],
+  );
+
+  const isPreviewCurrent = useCallback((item: any) => {
+    const key = String(item?.negotiationId ?? "").toLowerCase();
+    if (!key) return true;
+    const cached = previewCacheRef.current.get(key);
+    if (!cached || !cached.resolved || stalePreviewIdsRef.current.has(key)) return false;
+    const listedAt = parseTimestamp(item?.lastMessageAt ?? item?.LastMessageAt);
+    // Danh sách phiên báo có tin mới hơn bản đã lưu → cần tải lại.
+    if (listedAt && cached.lastMessageAt && listedAt > cached.lastMessageAt + 1000) return false;
+    if (listedAt && !cached.lastMessageAt && cached.text === NO_MESSAGE_PREVIEW) return false;
+    return true;
+  }, []);
+
+  // Mỗi phiên hiển thị chỉ cần đúng MỘT tin mới nhất: GET /Messages PageNumber=1, PageSize=1.
+  const hydrateNegotiationPreviews = useCallback(
+    async (items: any[]) => {
+      const targets = items.filter((item) => !isPreviewCurrent(item));
+      if (targets.length === 0) return;
+
+      const results = await Promise.allSettled(
+        targets.map(async (item) => {
+          const targetNegotiationId = String(item?.negotiationId ?? "");
+          const response = await messageApi.getMessages({
+            negotiationId: targetNegotiationId,
+            PageNumber: 1,
+            PageSize: 1,
+          });
+          const data = response?.data ?? response;
+          const list = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.items)
+              ? data.items
+              : Array.isArray(data?.Items)
+                ? data.Items
+                : [];
+          return { targetNegotiationId, latest: list[0] ?? null };
+        }),
+      );
+
+      results.forEach((result, index) => {
+        const targetNegotiationId = String(targets[index]?.negotiationId ?? "");
+        if (result.status === "fulfilled") {
+          const { latest } = result.value;
+          storeNegotiationPreview(
+            targetNegotiationId,
+            latest ? buildMessagePreview(latest) : NO_MESSAGE_PREVIEW,
+            latest ? parseTimestamp(latest.createdAt ?? latest.CreatedAt) : null,
+          );
+        } else {
+          // Dự phòng ổn định, không ghi vào bộ nhớ đệm để lần mở sau thử lại.
+          storeNegotiationPreview(
+            targetNegotiationId,
+            "Chưa tải được tin nhắn gần nhất",
+            null,
+            false,
+          );
+        }
+      });
+    },
+    [isPreviewCurrent, storeNegotiationPreview],
+  );
 
   const fetchBaseInfo = useCallback(async (
     targetNegotiationId?: string,
@@ -959,9 +1103,9 @@ export default function ChatDetailScreen() {
         partnerName: info?.otherPartyName,
         partnerAvatar: info?.otherPartyAvatarUrl,
         myName:
+          user?.username ||
           user?.name ||
           user?.displayName ||
-          user?.username ||
           "Bạn",
         myAvatar: user?.avatarUrl || user?.avatar,
         myUserId: currentUserId,
@@ -1013,8 +1157,8 @@ export default function ChatDetailScreen() {
               null;
 
             productDetails.myName =
-              currentUserData?.displayName ||
               currentUserData?.username ||
+              currentUserData?.displayName ||
               currentUserData?.name ||
               productDetails.myName;
 
@@ -1025,8 +1169,8 @@ export default function ChatDetailScreen() {
 
             if (partnerData) {
               productDetails.partnerName =
-                partnerData.displayName ||
                 partnerData.username ||
+                partnerData.displayName ||
                 productDetails.partnerName;
 
               productDetails.partnerAvatar =
@@ -1079,10 +1223,7 @@ export default function ChatDetailScreen() {
             }
           }
         } catch (error) {
-          console.log(
-            "Lỗi tải thông tin offer/post:",
-            error,
-          );
+          devLog("[chat] Không tải được thông tin offer/post:", error);
         }
       }
 
@@ -1236,18 +1377,12 @@ export default function ChatDetailScreen() {
                     null;
                 }
               } catch (error) {
-                console.log(
-                  "Lỗi tải Order/Appointment từ Agreement:",
-                  error,
-                );
+                devLog("[chat] Không tải được Order/Appointment từ hợp đồng:", error);
               }
             }
           }
         } catch (error) {
-          console.log(
-            "Lỗi tải Agreement Preview:",
-            error,
-          );
+          devLog("[chat] Không tải được bản xem trước hợp đồng:", error);
         }
       }
 
@@ -1258,7 +1393,7 @@ export default function ChatDetailScreen() {
 
       return combinedInfo;
     } catch (error) {
-      console.error(
+      devLog(
         "Lỗi tải thông tin thương lượng:",
         error,
       );
@@ -1366,115 +1501,14 @@ export default function ChatDetailScreen() {
           return false;
         }
 
-        const getMessageTypeOrder = (
-          messageType: unknown,
-        ) => {
-          const normalizedType = String(
-            messageType ?? "",
-          )
-            .trim()
-            .toLowerCase();
-
-          if (
-            normalizedType === "offer" ||
-            normalizedType === "2"
-          ) {
-            return 0;
-          }
-
-          if (
-            normalizedType ===
-              "counteroffer" ||
-            normalizedType === "3"
-          ) {
-            return 1;
-          }
-
-          if (
-            normalizedType ===
-            "agreement"
-          ) {
-            return 3;
-          }
-
-          return 2;
-        };
-
-        const sortedMessages = [
-          ...rawMessages,
-        ].sort(
-          (
-            firstMessage,
-            secondMessage,
-          ) => {
-            const firstCreatedTime =
-              new Date(
-                firstMessage.createdAt || 0,
-              ).getTime();
-
-            const secondCreatedTime =
-              new Date(
-                secondMessage.createdAt || 0,
-              ).getTime();
-
-            if (
-              firstCreatedTime !==
-              secondCreatedTime
-            ) {
-              return (
-                firstCreatedTime -
-                secondCreatedTime
-              );
-            }
-
-            const messageTypeDifference =
-              getMessageTypeOrder(
-                firstMessage.messageType,
-              ) -
-              getMessageTypeOrder(
-                secondMessage.messageType,
-              );
-
-            if (
-              messageTypeDifference !== 0
-            ) {
-              return messageTypeDifference;
-            }
-
-            const firstUpdatedTime =
-              new Date(
-                firstMessage.updatedAt ||
-                  firstMessage.createdAt ||
-                  0,
-              ).getTime();
-
-            const secondUpdatedTime =
-              new Date(
-                secondMessage.updatedAt ||
-                  secondMessage.createdAt ||
-                  0,
-              ).getTime();
-
-            if (
-              firstUpdatedTime !==
-              secondUpdatedTime
-            ) {
-              return (
-                firstUpdatedTime -
-                secondUpdatedTime
-              );
-            }
-
-            return String(
-              firstMessage.messageId || "",
-            ).localeCompare(
-              String(
-                secondMessage.messageId ||
-                  "",
-              ),
-            );
-          },
-        );
+        const sortedMessages = [...rawMessages].sort(compareChatTimeline);
+        if (pageNumber === 1) {
+          // Phiên đang mở: tin mới nhất trong bộ nhớ là nguồn xem trước, khỏi gọi lại.
+          updatePreviewFromMessage(
+            effectiveNegotiationId,
+            sortedMessages[sortedMessages.length - 1],
+          );
+        }
 
         const formattedMessages: any[] = [];
 
@@ -1515,6 +1549,7 @@ export default function ChatDetailScreen() {
               const agreementCardMessage = {
                 id: `card-${message.messageId}`,
                 sourceMessageId: String(message.messageId || index),
+                sourceMessageType: message.messageType,
                 timelineItemOrder: 1,
                 type: "agreement_card",
                 agreementId: info.agreementData.agreementId,
@@ -1535,6 +1570,7 @@ export default function ChatDetailScreen() {
               const agreementSystemMessage = {
                 id: message.messageId,
                 sourceMessageId: String(message.messageId || index),
+                sourceMessageType: message.messageType,
                 timelineItemOrder: 0,
                 type: "system",
                 text: agreementUiText,
@@ -1575,6 +1611,7 @@ export default function ChatDetailScreen() {
                   message.messageId ||
                   "system-" + index,
                 sourceMessageId: String(message.messageId || index),
+                sourceMessageType: message.messageType,
                 timelineItemOrder: 0,
                 type: "system",
                 text: systemUiText,
@@ -1596,6 +1633,7 @@ export default function ChatDetailScreen() {
                 formattedMessages.push({
                   id: `paid-card-${message.messageId || index}`,
                   sourceMessageId: String(message.messageId || index),
+                  sourceMessageType: message.messageType,
                   timelineItemOrder: 1,
                   type: "agreement_card",
                   agreementId: info.agreementData.agreementId,
@@ -1636,6 +1674,7 @@ export default function ChatDetailScreen() {
                 message.messageId ||
                 String(index),
               sourceMessageId: String(message.messageId || index),
+              sourceMessageType: message.messageType,
               timelineItemOrder: 0,
               type: isOfferType
                 ? "offer"
@@ -1680,34 +1719,6 @@ export default function ChatDetailScreen() {
               formattedMessage,
             );
 
-            if (
-              isOfferType &&
-              formattedMessage.status ===
-                "accepted"
-            ) {
-              const currentUserAccepted =
-                !isMe;
-
-              const accepterName =
-                currentUserAccepted
-                  ? info.myName || "Bạn"
-                  : info.partnerName || "Đối tác giao dịch";
-
-              formattedMessages.push({
-                id: `system-agreed-${formattedMessage.id}`,
-                sourceMessageId: String(message.messageId || index),
-                timelineItemOrder: 1,
-                type: "system",
-                text: `${accepterName} đã chấp nhận thương lượng`,
-                createdAt: message.createdAt || null,
-                avatar:
-                  currentUserAccepted
-                    ? info.myAvatar
-                    : info.partnerAvatar,
-                actorName: accepterName,
-                hideAvatar: false,
-              });
-            }
           },
         );
 
@@ -1773,7 +1784,7 @@ export default function ChatDetailScreen() {
         setHasOlderMessages(latestPageState.hasOlderMessages);
         return true;
       } catch (error) {
-        console.error(
+        devLog(
           "Lỗi tải tin nhắn:",
           error,
         );
@@ -1786,6 +1797,7 @@ export default function ChatDetailScreen() {
         }
       }
     }, [
+      updatePreviewFromMessage,
       currentUserId,
       negotiationId,
     ]);
@@ -1946,6 +1958,33 @@ export default function ChatDetailScreen() {
     }
 
     let isMounted = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let refreshing = false;
+    let refreshPending = false;
+    let lastConversationActivity = "";
+    const refreshTransaction = async () => {
+      if (refreshing || !isMounted) return;
+      refreshing = true;
+      do {
+        refreshPending = false;
+        await fetchBaseInfo();
+        if (isMounted) await fetchMessagesOnly();
+      } while (isMounted && refreshPending);
+      refreshing = false;
+    };
+    const scheduleTransactionRefresh = () => {
+      refreshPending = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => { if (refreshPending) void refreshTransaction(); }, 150);
+    };
+    const handleTransactionNotification = (event: any) => {
+      const type = normalizeTargetType(event?.targetType ?? event?.TargetType);
+      const targetId = String(event?.targetId ?? event?.TargetId ?? "").toLowerCase();
+      const agreementId = String(negotiationInfoRef.current?.agreementPreview?.agreementId ?? "").toLowerCase();
+      if ((type === "agreement" && agreementId && targetId === agreementId) || type === "order") {
+        scheduleTransactionRefresh();
+      }
+    };
 
     const isForActiveNegotiation = (payload: any) => {
       const eventNegotiationId =
@@ -2034,6 +2073,11 @@ export default function ChatDetailScreen() {
         });
       }
 
+      updatePreviewFromMessage(
+        newMsg?.negotiationId ?? newMsg?.NegotiationId ?? negotiationId,
+        newMsg,
+      );
+
       const normalizedNewMessageType = String(
         eventMessageType ?? "",
       )
@@ -2057,8 +2101,7 @@ export default function ChatDetailScreen() {
             .includes("đã chỉnh sửa hợp đồng"));
 
       if (isSpecialEvent) {
-        await fetchBaseInfo();
-        await fetchMessagesOnly();
+        scheduleTransactionRefresh();
       } else {
         setMessages((prev) => {
           if (
@@ -2082,6 +2125,7 @@ export default function ChatDetailScreen() {
             sourceMessageId: String(
               newMsg.messageId || newMsg.MessageId || "",
             ),
+            sourceMessageType: eventMessageType,
             timelineItemOrder: 0,
             type: "text",
             text:
@@ -2132,7 +2176,7 @@ export default function ChatDetailScreen() {
         return;
       }
 
-      await fetchMessagesOnly();
+      scheduleTransactionRefresh();
     };
 
     const handleMessagesRead = (payload?: any) => {
@@ -2155,11 +2199,11 @@ export default function ChatDetailScreen() {
       }
 
       setMessages((prev) =>
-        prev.map((message) =>
+        applyTimelineGrouping(prev.map((message) =>
           message.sender === "me"
             ? { ...message, isRead: true }
             : message,
-        ),
+        )),
       );
     };
 
@@ -2185,11 +2229,11 @@ export default function ChatDetailScreen() {
       }
 
       setMessages((prev) =>
-        prev.map((message) =>
+        applyTimelineGrouping(prev.map((message) =>
           message.sender === "me"
             ? { ...message, isRead: true }
             : message,
-        ),
+        )),
       );
     };
 
@@ -2207,6 +2251,28 @@ export default function ChatDetailScreen() {
         payload?.negotiationId ??
         payload?.NegotiationId;
 
+      // Xem trước của phiên khác trong cùng cuộc trò chuyện: cập nhật rẻ từ payload
+      // khi đủ dữ liệu, nếu không thì đánh dấu cũ để tải lại lúc mở bộ chọn.
+      if (updatedNegotiationId) {
+        const lastType = payload?.lastMessageType ?? payload?.LastMessageType;
+        const lastPreview = payload?.lastMessagePreview ?? payload?.LastMessagePreview;
+        const lastAt = payload?.lastMessageAt ?? payload?.LastMessageAt;
+        const lastTypeText = String(lastType ?? "").trim().toLowerCase();
+        const isOfferLike = lastTypeText === "offer" || lastTypeText === "counteroffer" || lastTypeText === "2" || lastTypeText === "3";
+        const offerPrice = Number(payload?.currentOfferPrice ?? payload?.CurrentOfferPrice ?? 0);
+        if (lastType !== undefined && lastType !== null && (lastPreview != null || (isOfferLike && offerPrice > 0))) {
+          updatePreviewFromMessage(updatedNegotiationId, {
+            messageType: lastType,
+            messageContent: isOfferLike ? "" : lastPreview,
+            offerPrice: isOfferLike ? offerPrice : 0,
+            offerQuantity: payload?.currentOfferQuantity ?? payload?.CurrentOfferQuantity ?? 1,
+            createdAt: lastAt,
+          });
+        } else {
+          markNegotiationPreviewStale(updatedNegotiationId);
+        }
+      }
+
       if (
         updatedNegotiationId &&
         String(updatedNegotiationId).toLowerCase() !==
@@ -2215,8 +2281,19 @@ export default function ChatDetailScreen() {
         return;
       }
 
-      await fetchBaseInfo();
-      await fetchMessagesOnly();
+      // Read-count updates can repeat the same conversation activity. They
+      // must not trigger a REST -> mark-read -> realtime -> REST refresh loop.
+      const activity = JSON.stringify([
+        updatedNegotiationId,
+        payload?.lastMessageAt ?? payload?.LastMessageAt,
+        payload?.lastMessageType ?? payload?.LastMessageType,
+        payload?.lastMessagePreview ?? payload?.LastMessagePreview,
+        payload?.negotiationStatus ?? payload?.NegotiationStatus,
+        payload?.currentOfferVersion ?? payload?.CurrentOfferVersion,
+      ]);
+      if (activity === lastConversationActivity) return;
+      lastConversationActivity = activity;
+      scheduleTransactionRefresh();
     };
 
     const joinRooms = async () => {
@@ -2263,9 +2340,12 @@ export default function ChatDetailScreen() {
     );
 
     void joinRooms();
+    connection.on("NotificationCreated", handleTransactionNotification);
 
     return () => {
       isMounted = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      connection.off("NotificationCreated", handleTransactionNotification);
 
       connection.off(
         "MessageCreated",
@@ -2307,6 +2387,8 @@ export default function ChatDetailScreen() {
       }
     };
   }, [
+    markNegotiationPreviewStale,
+    updatePreviewFromMessage,
     connection,
     conversationId,
     currentUserId,
@@ -2708,13 +2790,43 @@ export default function ChatDetailScreen() {
     }
   };
 
-  const openNegotiationPicker = () => {
-    if (conversationNegotiations.length <= 1) {
+  // Chỉ mở bộ chọn khi mọi dòng đã có tên sản phẩm và xem trước tin nhắn cuối
+  // (hoặc dự phòng xác định) — không hiển thị "Phiên 2/3…" tạm thời.
+  const openNegotiationPicker = async () => {
+    if (conversationNegotiations.length <= 1) return;
+    if (pickerPrepareInFlightRef.current || isNegotiationPickerVisible) return;
+
+    const items = conversationNegotiations;
+    const activeId = String(negotiationId ?? "").toLowerCase();
+    const needsLabels = items.some((item) => {
+      const itemPostId = String(item?.postId ?? "");
+      const isActive = String(item?.negotiationId ?? "").toLowerCase() === activeId;
+      return itemPostId && !negotiationLabels[itemPostId] && !(isActive && negotiationInfo?.name);
+    });
+    const needsPreviews = items.some((item) => !isPreviewCurrent(item));
+
+    if (!needsLabels && !needsPreviews) {
+      setNegotiationPickerVisible(true);
       return;
     }
 
-    setNegotiationPickerVisible(true);
-    void hydrateNegotiationLabels(conversationNegotiations);
+    pickerPrepareInFlightRef.current = true;
+    const generation = ++pickerGenerationRef.current;
+    setIsPreparingPicker(true);
+    try {
+      await Promise.allSettled([
+        needsLabels ? hydrateNegotiationLabels(items) : Promise.resolve(),
+        needsPreviews ? hydrateNegotiationPreviews(items) : Promise.resolve(),
+      ]);
+      // Đổi phiên/cuộc trò chuyện hoặc rời màn hình trong lúc chuẩn bị: bỏ kết quả.
+      if (generation !== pickerGenerationRef.current) return;
+      setNegotiationPickerVisible(true);
+    } finally {
+      if (generation === pickerGenerationRef.current) {
+        pickerPrepareInFlightRef.current = false;
+        setIsPreparingPicker(false);
+      }
+    }
   };
 
   const selectNegotiation = (item: any) => {
@@ -2859,14 +2971,20 @@ export default function ChatDetailScreen() {
         {conversationNegotiations.length > 1 ? (
           <TouchableOpacity
             style={styles.headerNegotiationButton}
-            onPress={openNegotiationPicker}
+            onPress={() => void openNegotiationPicker()}
             activeOpacity={0.75}
+            disabled={isPreparingPicker}
+            accessibilityState={{ busy: isPreparingPicker }}
           >
-            <Ionicons
-              name="layers-outline"
-              size={14}
-              color={COLORS.primary}
-            />
+            {isPreparingPicker ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Ionicons
+                name="layers-outline"
+                size={14}
+                color={COLORS.primary}
+              />
+            )}
             <Text style={styles.headerNegotiationButtonText}>
               {conversationNegotiations.length} phiên
             </Text>
@@ -3809,10 +3927,23 @@ export default function ChatDetailScreen() {
                   const isActive =
                     itemNegotiationId.toLowerCase() ===
                     String(negotiationId ?? "").toLowerCase();
+                  // Bộ chọn chỉ mở sau khi đã tải xong; nhãn số chỉ là dự phòng cuối cùng
+                  // khi Backend không có tên sản phẩm cho bài đăng đó.
                   const itemLabel =
                     negotiationLabels[itemPostId] ||
                     (isActive ? negotiationInfo?.name : "") ||
-                    `Phiên ${index + 1}`;
+                    `Phiên thương lượng ${index + 1}`;
+                  const itemPreview =
+                    negotiationPreviews[itemNegotiationId.toLowerCase()] ||
+                    NO_MESSAGE_PREVIEW;
+                  const itemLastMessageTime = item?.lastMessageAt
+                    ? new Date(item.lastMessageAt).toLocaleString("vi-VN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        day: "2-digit",
+                        month: "2-digit",
+                      })
+                    : "";
                   const unreadCount = Math.max(
                     0,
                     Number(item?.unreadCount ?? 0),
@@ -3833,30 +3964,21 @@ export default function ChatDetailScreen() {
                         >
                           {itemLabel}
                         </Text>
-                        <Text style={styles.negotiationPickerItemMeta}>
+                        <Text style={styles.negotiationPickerItemMeta} numberOfLines={1}>
                           {getNegotiationStatusLabel(item?.negotiationStatus)}
                           {Number(item?.currentOfferPrice ?? 0) > 0
                             ? ` • ${formatCurrency(Number(item.currentOfferPrice))}`
                             : ""}
+                          {itemLastMessageTime ? ` • ${itemLastMessageTime}` : ""}
                         </Text>
 
-                        {item?.lastMessageAt ? (
-                          <Text
-                            style={styles.negotiationPickerItemLastMessage}
-                          >
-                            Tin nhắn gần nhất:{" "}
-                            {new Date(item.lastMessageAt).toLocaleString(
-                              "vi-VN",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                              },
-                            )}
-                          </Text>
-                        ) : null}
+                        <Text
+                          style={styles.negotiationPickerItemLastMessage}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          Tin nhắn gần nhất: {itemPreview}
+                        </Text>
                       </View>
 
                       {unreadCount > 0 ? (
@@ -3901,10 +4023,8 @@ export default function ChatDetailScreen() {
             style={[
               styles.menuSheetContent,
               {
-                paddingBottom:
-                  Platform.OS === "android"
-                    ? Math.max(insets.bottom, 20)
-                    : 40,
+                // Android: ModalBackdrop đã chừa thanh điều hướng hệ thống.
+                paddingBottom: Platform.OS === "android" ? 20 : 40,
               },
             ]}
           >
@@ -4141,8 +4261,7 @@ export default function ChatDetailScreen() {
             style={[
               styles.modalContent,
               {
-                paddingBottom:
-                  24 + (Platform.OS === "android" ? insets.bottom : 0),
+                paddingBottom: 24,
               },
             ]}
           >
