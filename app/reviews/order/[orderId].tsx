@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import {
   normalizeReviewStatus,
 } from "../../../src/services/reviews/reviewStatus";
 import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../../src/utils/tapGuard";
 
 const reviewApi = {
   getMine: (orderId: string) =>
@@ -111,11 +112,13 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export default function OrderReviewScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const orderId = Array.isArray(params.orderId)
     ? params.orderId[0]
     : params.orderId;
+  const modeParam = Array.isArray(params.mode) ? params.mode[0] : params.mode;
+  const mode = modeParam === "create" ? "create" : "view-own";
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,7 +142,7 @@ export default function OrderReviewScreen() {
   const canEditReview = myReview?.canEdit === true && !isUnavailableReview;
 
   const loadReviewData = useCallback(
-    async (preserveMessage = false) => {
+    async (preserveMessage = false, forceMine = false) => {
       if (!orderId) {
         setMessage({ type: "error", text: "Không tìm thấy mã đơn hàng." });
         setIsLoading(false);
@@ -153,27 +156,35 @@ export default function OrderReviewScreen() {
         const orderResult = await orderApi.getDetail(orderId);
         setOrderData(unwrap(orderResult));
 
-        try {
-          const mineResult = await reviewApi.getMine(orderId);
-          const mine = unwrap(mineResult);
-          setMyReview(mine || null);
-          setRating(Number(mine?.rating || 0));
-          setComment(String(mine?.comment || ""));
-          setImages([]);
-          setIsEditing(false);
-        } catch (error: any) {
-          const status = Number(error?.response?.status || 0);
-          const code = getErrorCode(error);
-
-          if (status === 404 || code === "Review.NotFound") {
-            setMyReview(null);
-            setRating(0);
-            setComment("");
+        if (mode === "view-own" || forceMine) {
+          try {
+            const mineResult = await reviewApi.getMine(orderId);
+            const mine = unwrap(mineResult);
+            setMyReview(mine || null);
+            setRating(Number(mine?.rating || 0));
+            setComment(String(mine?.comment || ""));
             setImages([]);
             setIsEditing(false);
-          } else {
-            throw error;
+          } catch (error: any) {
+            const status = Number(error?.response?.status || 0);
+            const code = getErrorCode(error);
+
+            if (status === 404 || code === "Review.NotFound") {
+              setMyReview(null);
+              setRating(0);
+              setComment("");
+              setImages([]);
+              setIsEditing(false);
+            } else {
+              throw error;
+            }
           }
+        } else {
+          setMyReview(null);
+          setRating(0);
+          setComment("");
+          setImages([]);
+          setIsEditing(false);
         }
       } catch (error: any) {
         setMessage({
@@ -184,7 +195,7 @@ export default function OrderReviewScreen() {
         setIsLoading(false);
       }
     },
-    [orderId],
+    [mode, orderId],
   );
 
   useFocusEffect(
@@ -300,7 +311,7 @@ export default function OrderReviewScreen() {
       }
 
       await reviewApi.create(orderId, formData);
-      await loadReviewData(true);
+      await loadReviewData(true, true);
       setMessage({ type: "success", text: "Đã gửi đánh giá thành công." });
     } catch (error: any) {
       const code = getErrorCode(error);
