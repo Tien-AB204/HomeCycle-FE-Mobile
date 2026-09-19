@@ -1,8 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import {
   useEffect,
   useRef,
@@ -25,6 +22,8 @@ import {
 import { COLORS } from "../../src/constants/theme";
 import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const OTP_LENGTH = 6;
 const INITIAL_TIME = 118;
@@ -44,7 +43,7 @@ const getStringParam = (
 };
 
 export default function OTPScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);
@@ -235,7 +234,7 @@ export default function OTPScreen() {
         "Luồng xác thực không hợp lệ. Vui lòng quay lại và thử lại.",
       );
     } catch (error: unknown) {
-      console.error(
+      devLog(
         "Lỗi xác thực OTP:",
         error,
       );

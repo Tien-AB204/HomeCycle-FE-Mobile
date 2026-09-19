@@ -1,8 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import {
   Image,
   KeyboardAvoidingView,
@@ -24,6 +21,7 @@ import {
   PASSWORD_MAX_LENGTH,
   validatePassword,
 } from "../../src/utils/formValidation";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -34,7 +32,7 @@ const getStringParam = (
 };
 
 export default function ResetPasswordScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);

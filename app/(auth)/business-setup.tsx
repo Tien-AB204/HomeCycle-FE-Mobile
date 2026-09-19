@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -39,7 +39,7 @@ import {
   FULL_NAME_MAX_LENGTH,
   validateFullName,
 } from "../../src/utils/formValidation";
-
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const OPERATING_SCOPE_OPTIONS = [
   "Toàn quốc",
@@ -122,7 +122,7 @@ const appendFileToForm = async (
 };
 
 export default function BusinessSetupScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   // CHỈ LẤY ISREJECTED ĐỂ FETCH DATA EDIT
   const { isRejected } = useLocalSearchParams();
@@ -299,7 +299,6 @@ export default function BusinessSetupScreen() {
     };
     fetchOldData();
   }, [isRejected]);
-
 
   const setUploadError = (
     type: "license" | "front" | "back" | "authorization",

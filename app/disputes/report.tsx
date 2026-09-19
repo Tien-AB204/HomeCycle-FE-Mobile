@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +21,8 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type ContentReportTargetType = "Post" | "Review";
 
@@ -225,7 +227,7 @@ const TARGET_TYPE_TITLE: Record<ContentReportTargetType, string> = {
 };
 
 export default function ContentReportScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const rawTargetType = getSingleParam(
@@ -267,6 +269,7 @@ export default function ContentReportScreen() {
   );
   const [imageError, setImageError] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
 
   const loadCategories = useCallback(async () => {
     if (!targetType) return;

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +23,7 @@ import {
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 import { isBuyPostType } from "../../src/utils/postType";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type CartPost = {
   postId: string;
@@ -90,7 +91,7 @@ const getPostImage = (post?: CartPost) => {
 };
 
 export default function CartScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
 
   const [cartData, setCartData] = useState<CartData>(EMPTY_CART);

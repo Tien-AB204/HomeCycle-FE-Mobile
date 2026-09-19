@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,12 +13,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SensitiveValue from "../../src/components/shared/SensitiveValue";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 export default function BusinessPendingScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
+  // Modal toàn màn hình là cửa sổ riêng trên Android: tự chừa thanh trạng thái/điều hướng.
+  const insets = useSafeAreaInsets();
+  const fullScreenModalInsets =
+    Platform.OS === "android"
+      ? { paddingTop: insets.top, paddingBottom: insets.bottom }
+      : undefined;
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [loadError, setLoadError] = useState("");
@@ -126,7 +135,7 @@ export default function BusinessPendingScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.pendingBanner}>
           <Ionicons name="time" size={48} color="#9A6418" />
-          <Text style={styles.bannerTitle}>Đang chờ Moderator xét duyệt</Text>
+          <Text style={styles.bannerTitle}>Đang chờ bộ phận kiểm duyệt xét duyệt</Text>
           <Text style={styles.bannerText}>
             Hồ sơ doanh nghiệp của bạn đang trong hàng đợi kiểm tra pháp lý.
             Thời gian xử lý từ 24h - 48h làm việc.
@@ -170,7 +179,7 @@ export default function BusinessPendingScreen() {
         transparent={false}
         onRequestClose={() => setShowDetailsModal(false)}
       >
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={[styles.safeArea, fullScreenModalInsets]}>
           <View style={styles.header}>
             <TouchableOpacity
               onPress={() => setShowDetailsModal(false)}

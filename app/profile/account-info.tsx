@@ -1,7 +1,7 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -42,9 +42,9 @@ import {
   capitalizeWordInitials,
   toUppercaseText,
 } from "../../src/utils/textFormat";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const PLACEHOLDER_COLOR = "#547B7D";
-
 
 const getRobustUrl = (url: string) => {
   if (url?.includes("googleusercontent.com")) {
@@ -86,7 +86,7 @@ type SaveMessage = {
 type PersonalSection = "profile" | "identity" | "bank";
 
 export default function AccountInfoScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user, reloadUser } = useAuth();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -113,8 +113,6 @@ export default function AccountInfoScreen() {
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
-
-
 
   useEffect(() => {
     setImageError(false);
@@ -229,7 +227,6 @@ export default function AccountInfoScreen() {
     }
   };
 
-
   const pickImage = async (type: "avatar" | "front" | "back") => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -263,7 +260,6 @@ export default function AccountInfoScreen() {
       });
     }
   };
-
 
   const handleAvatarPress = (event: any) => {
     event.stopPropagation();

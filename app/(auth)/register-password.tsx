@@ -1,9 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import {
   Image,
   KeyboardAvoidingView,
@@ -25,6 +22,8 @@ import {
   PASSWORD_MAX_LENGTH,
   validatePassword as validatePasswordValue,
 } from "../../src/utils/formValidation";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -35,7 +34,7 @@ const getStringParam = (
 };
 
 export default function RegisterPasswordScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);
@@ -206,7 +205,7 @@ export default function RegisterPasswordScreen() {
         },
       });
     } catch (error: unknown) {
-      console.error(
+      devLog(
         "Lỗi tạo tài khoản business:",
         error,
       );

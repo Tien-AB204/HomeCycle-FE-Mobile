@@ -1,9 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import {
   useRef,
   useState,
@@ -34,6 +31,8 @@ import {
   validateVietnamPhone,
 } from "../../src/utils/formValidation";
 import { capitalizeWordInitials } from "../../src/utils/textFormat";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -44,7 +43,7 @@ const getStringParam = (
 };
 
 export default function ProfileSetupScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);
@@ -101,7 +100,7 @@ export default function ProfileSetupScreen() {
         setAvatarError("");
       }
     } catch (error: unknown) {
-      console.error("Lỗi chọn ảnh đại diện:", error);
+      devLog("Lỗi chọn ảnh đại diện:", error);
       setAvatarError(
         getApiErrorMessage(error, "Không thể mở thư viện ảnh."),
       );

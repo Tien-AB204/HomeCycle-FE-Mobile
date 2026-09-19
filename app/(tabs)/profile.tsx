@@ -1,6 +1,6 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +21,8 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const profileApi = {
   getPostCount: (userId: string) =>
@@ -75,7 +77,7 @@ const formatCurrency = (value: unknown) =>
   }).format(Number(value || 0));
 
 export default function ProfileScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
   const { user, logout, isLoading, reloadUser } = useAuth();
@@ -88,6 +90,7 @@ export default function ProfileScreen() {
   const [bizStatus, setBizStatus] = useState<string | null>(null);
   const [wallet, setWallet] = useState<any>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -365,7 +368,19 @@ export default function ProfileScreen() {
             <View style={styles.statsBadge}>
               <Text style={styles.statsStrong}>Điểm uy tín: {user.reputationScore ?? 0}</Text>
               <Text style={styles.statsDivider}>|</Text>
-              <Text style={styles.statsStrong}>
+              <Text
+                style={styles.statsStrong}
+                accessibilityRole="link"
+                onPress={() => {
+                  const profileUserId = String(
+                    user?.userId || user?.id || "",
+                  ).trim();
+
+                  if (profileUserId) {
+                    router.push(`/reviews/user/${profileUserId}` as any);
+                  }
+                }}
+              >
                 {Number(user.displayStarRating ?? 0) > 0
                   ? `★ ${Number(user.displayStarRating).toFixed(1)}`
                   : "Chưa có đánh giá"}

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +23,7 @@ import {
   WithdrawalStatus,
 } from "../../../src/services/apis/withdrawalApi";
 import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../../src/utils/tapGuard";
 
 const PAGE_SIZE = 10;
 
@@ -101,7 +102,7 @@ const isRejectReasonRelevant = (status: unknown) => {
 };
 
 export default function WithdrawalHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const requestGeneration = useRef(0);
   const [items, setItems] = useState<WithdrawalListItem[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<WithdrawalStatus | undefined>();

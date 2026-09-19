@@ -1,6 +1,6 @@
 import { getAvatarSource } from "../../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import apiClient from "../../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../../src/utils/tapGuard";
 
 const PAGE_SIZE = 10;
 
@@ -45,7 +46,7 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export default function UserReviewsScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const userId = Array.isArray(params.userId) ? params.userId[0] : params.userId;
 

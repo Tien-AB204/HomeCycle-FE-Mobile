@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const paymentApi = {
   getStatus: (agreementId: string) =>
@@ -49,7 +50,7 @@ const normalizeStatus = (value: unknown) =>
 const unwrap = (value: any) => value?.data ?? value;
 
 export default function PaymentSuccessScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
 
   const agreementId = Array.isArray(params.agreementId)

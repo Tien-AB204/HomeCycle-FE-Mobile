@@ -1,8 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -39,6 +36,7 @@ import inspectionFormApi, {
   type ScheduleInspectionCollectionRequest,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type Notice = {
   type: "error" | "info" | "success";
@@ -721,7 +719,7 @@ function PartyFields({
 }
 
 export default function InspectionCollectionScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   const params =
     useLocalSearchParams();
@@ -1668,6 +1666,7 @@ export default function InspectionCollectionScreen() {
             value={collectionDate}
             onChange={setCollectionDate}
             placeholder="Chọn ngày giao nhận"
+            clearable
             defaultViewDate={
               collectionDate
             }

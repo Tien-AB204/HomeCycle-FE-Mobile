@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -24,6 +24,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 450;
@@ -183,7 +184,7 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export default function DisputeHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { user } = useAuth();
   const currentUserId = String(user?.userId || user?.id || "").toLowerCase();
 

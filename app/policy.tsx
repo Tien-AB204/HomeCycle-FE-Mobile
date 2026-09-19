@@ -1,11 +1,12 @@
-import { useRouter } from "expo-router";
+
 import React from "react";
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
+import { useGuardedRouter } from "../src/utils/tapGuard";
 
 export default function PolicyScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -56,7 +57,7 @@ export default function PolicyScreen() {
               <Text style={styles.boldText}>Tài khoản Doanh nghiệp: </Text>
               Yêu cầu cung cấp đầy đủ và chính xác Giấy phép kinh doanh, CCCD
               người đại diện pháp luật. Mọi thay đổi về thông tin pháp lý đều
-              phải thông qua sự xét duyệt của Ban quản trị (Moderator).
+              phải thông qua sự xét duyệt của Ban quản trị.
             </Text>
           </View>
         </View>
@@ -270,7 +271,7 @@ export default function PolicyScreen() {
               <Text style={styles.boldText}>Khiếu nại đánh giá: </Text>
               Nếu nhận thấy đánh giá có nội dung công kích cá nhân, sai sự thật
               hoặc quấy rối, bạn có thể gửi yêu cầu khiếu nại đánh giá để Kiểm
-              duyệt viên (Moderator) xem xét ẩn/xóa.
+              duyệt viên xem xét ẩn/xóa.
             </Text>
           </View>
           <View style={styles.bulletItem}>

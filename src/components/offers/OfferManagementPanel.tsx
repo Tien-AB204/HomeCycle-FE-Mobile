@@ -1,10 +1,7 @@
 import { DEFAULT_AVATAR_URI } from "../../utils/avatar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useFocusEffect,
-  useRouter,
-} from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -35,6 +32,8 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../utils/tapGuard";
 
 type OfferTab = "received" | "sent";
 type ActiveTab = OfferTab;
@@ -304,7 +303,7 @@ export default function OfferManagementPanel({
 }: {
   initialTab?: OfferTab;
 }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const requestedTabParam = initialTab;
   const requestedTab: ActiveTab =
     initialTab === "sent" ? "sent" : "received";
@@ -352,6 +351,7 @@ export default function OfferManagementPanel({
 
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget>(null);
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
+  useAutoDismissFeedback(feedbackTarget?.type === "page" ? null : feedback, () => setFeedback(null));
 
   const { confirm, confirmationModal } = useLocalConfirm();
 
@@ -993,7 +993,6 @@ export default function OfferManagementPanel({
       setIsProcessingAction(false);
     }
   };
-
 
   const filteredOffers = useMemo(() => {
     const myUserId = String(currentUserId ?? "");

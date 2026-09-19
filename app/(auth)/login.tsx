@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -24,9 +24,10 @@ import {
   validateEmail,
   validatePassword,
 } from "../../src/utils/formValidation";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 export default function LoginScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { returnUrl } = useLocalSearchParams();
   const { login } = useAuth();
 

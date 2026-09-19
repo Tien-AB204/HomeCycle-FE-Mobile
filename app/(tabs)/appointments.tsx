@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +19,8 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 // Data-level type — every fetched AppointmentItem is exactly one of these.
 type AppointmentTab = "inspection" | "collection";
@@ -256,7 +258,7 @@ const translateDeliveryMethod = (value: unknown) => {
 };
 
 export default function ScheduleScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
 
@@ -477,7 +479,7 @@ export default function ScheduleScreen() {
         let successfulFeeds = 0;
         feedResults.forEach((result, index) => {
           if (result.status !== "fulfilled") {
-            console.error(
+            devLog(
               `Không thể tải nguồn lịch hẹn ${feeds[index].typeKey}/${feeds[index].roleKey}:`,
               result.reason,
             );
@@ -486,7 +488,7 @@ export default function ScheduleScreen() {
 
           successfulFeeds += 1;
           if (result.value.wasLimited) {
-            console.warn(
+            devLog(
               `Nguồn lịch hẹn ${result.value.typeKey}/${result.value.roleKey} vượt giới hạn an toàn ${MAX_APPOINTMENT_PAGES_PER_FEED} trang.`,
             );
           }
@@ -519,7 +521,7 @@ export default function ScheduleScreen() {
         setAppointments(uniqueAppointments);
       } catch (error) {
         if (appointmentLoadVersion.current === loadVersion) {
-          console.error("Lỗi tải lịch hẹn:", error);
+          devLog("Lỗi tải lịch hẹn:", error);
         }
       } finally {
         if (appointmentLoadVersion.current === loadVersion) {

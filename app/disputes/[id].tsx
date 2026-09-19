@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +21,8 @@ import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
   type: "error" | "success";
@@ -136,7 +138,7 @@ const reviewStatusLabels: Record<string, string> = {
 };
 
 export default function DisputeDetailScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const disputeId = getSingleParam(params.id as string | string[] | undefined);
 
@@ -144,6 +146,7 @@ export default function DisputeDetailScreen() {
   const [detail, setDetail] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(actionMessage, () => setActionMessage(null));
   const [isCloseModalVisible, setIsCloseModalVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);

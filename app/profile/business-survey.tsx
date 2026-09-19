@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,6 +18,8 @@ import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const DAMAGE_OPTIONS = [
   { value: 0, label: "Không hư hại" },
@@ -119,12 +121,13 @@ const mapLabel = (
 ) => options.find((option) => option.value === value)?.label || `Giá trị ${value}`;
 
 export default function BusinessSurveyScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSetupMode, setIsSetupMode] = useState(false);
   const [message, setMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(message, () => setMessage(null));
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const [productTypes, setProductTypes] = useState<ProductTypeItem[]>([]);
@@ -387,6 +390,10 @@ export default function BusinessSurveyScreen() {
                   clearError("cities");
                 }}
                 placeholder="Chọn một tỉnh/thành cần thu mua"
+                onClear={() => {
+                  setCityPickerValue("");
+                  setCitySelection(null);
+                }}
                 hasError={Boolean(errors.cities)}
               />
               <TouchableOpacity style={styles.addCityButton} onPress={addCityFromPicker}>

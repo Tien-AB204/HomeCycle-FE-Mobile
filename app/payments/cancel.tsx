@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const agreementApi = {
   getAgreementById: (agreementId: string) =>
@@ -21,7 +22,7 @@ const agreementApi = {
 };
 
 export default function PaymentCancelScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { agreementId } = useLocalSearchParams();
   const [negotiationId, setNegotiationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

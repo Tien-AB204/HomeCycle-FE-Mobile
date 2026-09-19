@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -46,6 +46,8 @@ import inspectionFormApi, {
   type InspectionImageAsset,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -96,7 +98,7 @@ const toImageAsset = (
 });
 
 export default function InspectionFormScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const params = useLocalSearchParams();
   const appointmentId = Array.isArray(params.appointmentId)
     ? params.appointmentId[0]
@@ -105,6 +107,7 @@ export default function InspectionFormScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
 
   const [canCreateInspectionForm, setCanCreateInspectionForm] =
     useState(false);
@@ -268,9 +271,9 @@ export default function InspectionFormScreen() {
     setNewImages([]);
   };
 
-  const handleSelectConclusion = (value: number) => {
+  const handleSelectConclusion = (value: number | null) => {
     setConclusion(value);
-    if (!isPriceAdjustmentConclusion(value)) {
+    if (value === null || !isPriceAdjustmentConclusion(value)) {
       setSuggestedPrice("");
     }
     setIsDirty(true);
@@ -1075,7 +1078,7 @@ function EnumChipGroup<T extends number>({
   label: string;
   options: readonly T[];
   value: T | null;
-  onSelect: (value: T) => void;
+  onSelect: (value: T | null) => void;
   translate: (value: T) => string | null;
 }) {
   return (
@@ -1088,7 +1091,8 @@ function EnumChipGroup<T extends number>({
             <TouchableOpacity
               key={option}
               style={[styles.chip, selected ? styles.chipSelected : undefined]}
-              onPress={() => onSelect(option)}
+              // Chạm lại lựa chọn hiện tại để bỏ chọn.
+              onPress={() => onSelect(selected ? null : option)}
             >
               <Text
                 style={[

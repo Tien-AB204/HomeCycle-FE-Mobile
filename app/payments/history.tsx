@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const PAGE_SIZE = 20;
 
@@ -110,7 +111,7 @@ const translateStatus = (value: number | string) => {
 };
 
 export default function PaymentHistoryScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [items, setItems] = useState<PaymentHistoryItem[]>([]);
   const [pageNumber, setPageNumber] = useState(1);
   const [totalPages, setTotalPages] = useState(1);

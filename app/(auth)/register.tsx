@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -23,11 +23,13 @@ import {
   EMAIL_MAX_LENGTH,
   validateEmail,
 } from "../../src/utils/formValidation";
+import { devLog } from "../../src/utils/devLog";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type RegistrationRole = "personal" | "business";
 
 export default function RegisterScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   const [role, setRole] =
     useState<RegistrationRole>("personal");
@@ -149,7 +151,7 @@ export default function RegisterScreen() {
         },
       });
     } catch (error: unknown) {
-      console.error("Lỗi gửi OTP:", error);
+      devLog("Lỗi gửi OTP:", error);
 
       setSubmitError(
         getApiErrorMessage(

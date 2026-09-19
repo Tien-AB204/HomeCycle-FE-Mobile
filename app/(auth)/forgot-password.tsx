@@ -1,5 +1,5 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
 import { useState } from "react";
 import {
   Image,
@@ -18,9 +18,10 @@ import {
   EMAIL_MAX_LENGTH,
   validateEmail,
 } from "../../src/utils/formValidation";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 export default function ForgotPasswordScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");

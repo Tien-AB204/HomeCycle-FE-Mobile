@@ -1,7 +1,7 @@
 import { getAvatarSource } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -47,6 +47,7 @@ import {
   capitalizeWordInitials,
   toUppercaseText,
 } from "../../src/utils/textFormat";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const OPERATING_SCOPE_OPTIONS = [
   "Toàn quốc",
@@ -216,7 +217,7 @@ function InlineMessage({ message }: { message: MessageState }) {
 }
 
 export default function BusinessAccountInfoScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const { reloadUser } = useAuth();
   const [data, setData] = useState<any>(null);
   const [wallet, setWallet] = useState<any>(null);
@@ -1192,6 +1193,10 @@ export default function BusinessAccountInfoScreen() {
                 clearFieldError("businessAddress", "registration");
               }}
               placeholder="Chọn địa chỉ trụ sở"
+              onClear={() => {
+                setBusinessAddress("");
+                setBusinessAddressSelection(null);
+              }}
               hasError={Boolean(errors.businessAddress)}
               disabled={
                 !isEditing("registration") || savingSection === "registration"
@@ -1263,7 +1268,6 @@ export default function BusinessAccountInfoScreen() {
               />
             ) : null}
           </Pressable>
-
 
           </Pressable>
 
@@ -1348,6 +1352,7 @@ export default function BusinessAccountInfoScreen() {
                 clearFieldError("identityDob", "identity");
               }}
               maximumDate={new Date()}
+              clearable
               hasError={Boolean(errors.identityDob)}
               placeholder="Chọn ngày sinh"
               disabled={!isEditing("identity") || savingSection === "identity"}
@@ -1360,6 +1365,10 @@ export default function BusinessAccountInfoScreen() {
                 setIdentityAddress(value);
                 setIdentityAddressSelection(selection);
                 clearFieldError("identityAddress", "identity");
+              }}
+              onClear={() => {
+                setIdentityAddress("");
+                setIdentityAddressSelection(null);
               }}
               hasError={Boolean(errors.identityAddress)}
               placeholder="Chọn địa chỉ thường trú"
@@ -1440,7 +1449,6 @@ export default function BusinessAccountInfoScreen() {
               />
             ) : null}
           </Pressable>
-
 
           </Pressable>
 
@@ -1548,6 +1556,10 @@ export default function BusinessAccountInfoScreen() {
                 setServiceAreaValue(value);
                 setServiceAreaSelection(selection);
                 clearFieldError("serviceArea", "serviceArea");
+              }}
+              onClear={() => {
+                setServiceAreaValue("");
+                setServiceAreaSelection(null);
               }}
               hasError={Boolean(errors.serviceArea)}
               placeholder="Chọn khu vực dịch vụ"
@@ -1675,7 +1687,6 @@ export default function BusinessAccountInfoScreen() {
               />
             ) : null}
           </Pressable>
-
 
           </Pressable>
 
