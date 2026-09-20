@@ -54,8 +54,10 @@ export default function ResetPasswordScreen() {
   // Đếm ngược hiệu lực OTP (hiển thị); Backend vẫn là nơi quyết định hết hạn/giới hạn gửi lại.
   const [otpExpiresAt, setOtpExpiresAt] = useState<number>(() => Date.now() + OTP_LIFETIME_SECONDS * 1000);
   const [secondsLeft, setSecondsLeft] = useState(OTP_LIFETIME_SECONDS);
-  const submitInFlightRef = useRef(false);
-  const resendInFlightRef = useRef(false);
+  // Khóa đồng bộ DUY NHẤT cho cả hai hành động mạng của màn này (đặt lại mật khẩu
+  // và gửi lại OTP): không bao giờ để hai yêu cầu chạy song song, kể cả chéo nhau.
+  // isSubmitting / isResending chỉ phục vụ hiển thị (state cập nhật bất đồng bộ).
+  const authActionInFlightRef = useRef(false);
 
   useEffect(() => {
     const tick = () => setSecondsLeft(Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000)));
@@ -97,6 +99,10 @@ export default function ResetPasswordScreen() {
 
   const confirmPasswordRef =
     useRef<TextInput | null>(null);
+
+  // Đang có hành động mạng (đặt lại hoặc gửi lại OTP): khóa toàn bộ điều khiển
+  // có thể làm lệch trạng thái OTP/mật khẩu.
+  const isBusy = isSubmitting || isResending;
 
   const handleNewPasswordChange = (
     value: string,
@@ -164,7 +170,7 @@ export default function ResetPasswordScreen() {
     return isValid;
   };
   const handleReset = async () => {
-    if (submitInFlightRef.current) return;
+    if (authActionInFlightRef.current) return;
     if (!validateForm()) {
       return;
     }
@@ -173,7 +179,7 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    submitInFlightRef.current = true;
+    authActionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
       await authApi.resetPassword({
@@ -195,15 +201,15 @@ export default function ResetPasswordScreen() {
         ),
       );
     } finally {
-      submitInFlightRef.current = false;
+      authActionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   // Gửi lại OTP đặt lại mật khẩu (KHÔNG dùng send-otp của đăng ký).
   const handleResendOtp = async () => {
-    if (resendInFlightRef.current || isSubmitting || !email) return;
-    resendInFlightRef.current = true;
+    if (authActionInFlightRef.current || !email) return;
+    authActionInFlightRef.current = true;
     setIsResending(true);
     setResendNotice("");
     setSubmitError("");
@@ -221,7 +227,7 @@ export default function ResetPasswordScreen() {
         ),
       );
     } finally {
-      resendInFlightRef.current = false;
+      authActionInFlightRef.current = false;
       setIsResending(false);
     }
   };
@@ -255,7 +261,7 @@ export default function ResetPasswordScreen() {
               styles.logoCenterContainer
             }
           >
-            {/* Logo thß║¡t cß╗ºa HomeCycle. */}
+            {/* Logo thật của HomeCycle. */}
             <Image
               source={require("../../src/assets/images/logo-dark-transparent.png")}
               style={styles.logoImage}
@@ -263,12 +269,12 @@ export default function ResetPasswordScreen() {
             />
 
             <Text style={styles.title}>
-              ─Éß║╖t lß║íi mß║¡t khß║⌐u mß╗¢i
+              Đặt lại mật khẩu mới
             </Text>
 
             <Text style={styles.subtitle}>
-              Vui l├▓ng tß║ío mß║¡t khß║⌐u mß╗¢i ─æß╗â
-              bß║úo vß╗ç t├ái khoß║ún cß╗ºa bß║ín.
+              Vui lòng tạo mật khẩu mới để
+              bảo vệ tài khoản của bạn.
             </Text>
 
             {email ? (
@@ -330,7 +336,7 @@ export default function ResetPasswordScreen() {
               autoCorrect={false}
               autoComplete="one-time-code"
               textContentType="oneTimeCode"
-              editable={!isSubmitting}
+              editable={!isBusy}
             />
           </View>
 
@@ -366,15 +372,15 @@ export default function ResetPasswordScreen() {
               onPress={() => {
                 void handleResendOtp();
               }}
-              disabled={isResending || isSubmitting}
+              disabled={isBusy}
               accessibilityRole="button"
-              accessibilityState={{ disabled: isResending || isSubmitting, busy: isResending }}
+              accessibilityState={{ disabled: isBusy, busy: isResending }}
               hitSlop={6}
             >
               <Text
                 style={[
                   styles.resendText,
-                  isResending || isSubmitting ? styles.resendTextDisabled : undefined,
+                  isBusy ? styles.resendTextDisabled : undefined,
                 ]}
               >
                 {isResending ? "Đang gửi..." : "Gửi lại mã"}
@@ -392,7 +398,7 @@ export default function ResetPasswordScreen() {
           ) : null}
 
           <Text style={styles.label}>
-            Mß║¼T KHß║¿U Mß╗ÜI
+            MẬT KHẨU MỚI
           </Text>
 
           <View
@@ -424,7 +430,7 @@ export default function ResetPasswordScreen() {
                     } as any)
                   : undefined,
               ]}
-              placeholder="Nhß║¡p mß║¡t khß║⌐u mß╗¢i..."
+              placeholder="Nhập mật khẩu mới..."
               placeholderTextColor={
                 COLORS.textLight
               }
@@ -440,8 +446,9 @@ export default function ResetPasswordScreen() {
               autoCorrect={false}
               autoComplete="new-password"
               textContentType="newPassword"
+              editable={!isBusy}
 
-              // Enter ß╗ƒ ├┤ ─æß║ºu chuyß╗ân sang ├┤ x├íc nhß║¡n.
+              // Enter ở ô đầu chuyển sang ô xác nhận.
               returnKeyType="next"
               blurOnSubmit={false}
               onSubmitEditing={() => {
@@ -492,7 +499,7 @@ export default function ResetPasswordScreen() {
           ) : null}
 
           <Text style={styles.label}>
-            X├üC NHß║¼N Mß║¼T KHß║¿U Mß╗ÜI
+            XÁC NHẬN MẬT KHẨU MỚI
           </Text>
 
           <View
@@ -525,7 +532,7 @@ export default function ResetPasswordScreen() {
                     } as any)
                   : undefined,
               ]}
-              placeholder="Nhß║¡p lß║íi mß║¡t khß║⌐u mß╗¢i..."
+              placeholder="Nhập lại mật khẩu mới..."
               placeholderTextColor={
                 COLORS.textLight
               }
@@ -541,10 +548,11 @@ export default function ResetPasswordScreen() {
               autoCorrect={false}
               autoComplete="new-password"
               textContentType="newPassword"
+              editable={!isBusy}
 
               /*
-               * Enter ß╗ƒ ├┤ cuß╗æi gß╗ìi thß║│ng
-               * handleReset giß╗æng n├║t x├íc nhß║¡n.
+               * Enter ở ô cuối gọi thẳng
+               * handleReset giống nút xác nhận.
                */
               returnKeyType="done"
               blurOnSubmit
@@ -610,7 +618,7 @@ export default function ResetPasswordScreen() {
                   styles.requirementText
                 }
               >
-                Tß╗æi thiß╗âu 6 k├╜ tß╗▒
+                Tối thiểu 6 ký tự
               </Text>
             </View>
           </View>
@@ -640,14 +648,14 @@ export default function ResetPasswordScreen() {
           <TouchableOpacity
             style={[
               styles.primaryButton,
-              isSubmitting ? styles.primaryButtonDisabled : undefined,
+              isBusy ? styles.primaryButtonDisabled : undefined,
             ]}
             onPress={() => {
               void handleReset();
             }}
-            disabled={isSubmitting}
+            disabled={isBusy}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+            accessibilityState={{ disabled: isBusy, busy: isSubmitting }}
           >
             {isSubmitting ? (
               <ActivityIndicator color={COLORS.white} />
@@ -657,7 +665,7 @@ export default function ResetPasswordScreen() {
                 styles.primaryButtonText
               }
             >
-              X├üC NHß║¼N ─Éß╗öI Mß║¼T KHß║¿U
+              XÁC NHẬN ĐỔI MẬT KHẨU
             </Text>
             )}
           </TouchableOpacity>
