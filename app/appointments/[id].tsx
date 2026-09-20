@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AppState,
+  type AppStateStatus,
   ActivityIndicator,
   Modal,
   SafeAreaView,
@@ -21,6 +23,8 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import inspectionFormApi, {
   translateConclusion,
@@ -190,18 +194,64 @@ export default function AppointmentDetailScreen() {
   const [isLifecycleSubmitting, setIsLifecycleSubmitting] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
+  const { appointmentRefreshSignal } = useNotifications();
+  const { connection, reconnectVersion, joinOrder, leaveOrder } =
+    useChatRealtime();
+
+  // Thẩm quyền đồng thời là ref (state React cập nhật bất đồng bộ):
+  // - detailInFlightRef + pendingSilentRefreshRef: không tải chồng; tín hiệu đến
+  //   trong lúc đang tải được gộp thành đúng MỘT lượt tải ngầm bổ sung.
+  // - detailLoadVersionRef + appointmentIdRef: GET lịch hẹn/phiếu kiểm định của
+  //   lượt cũ (hoặc mã lịch hẹn cũ) không bao giờ ghi đè trạng thái mới hơn.
+  // - appointmentActionInFlightRef: khóa chung cho MỌI hành động ghi của màn này.
+  const detailLoadVersionRef = useRef(0);
+  const detailInFlightRef = useRef(false);
+  const pendingSilentRefreshRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const isFocusedRef = useRef(false);
+  const appointmentIdRef = useRef(appointmentId);
+  appointmentIdRef.current = appointmentId;
+  // Mã lịch hẹn đã tải xong gần nhất: quay lại màn hình chỉ làm mới ngầm,
+  // loader toàn màn chỉ dành cho lần tải đầu của một mã lịch hẹn.
+  const loadedAppointmentIdRef = useRef<string | null>(null);
+  const dataRef = useRef<any>(null);
+  dataRef.current = data;
+  const fetchDetailRef = useRef<
+    (showLoading?: boolean, quiet?: boolean) => Promise<void>
+  >(async () => {});
+  const appointmentActionInFlightRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const handledRefreshSignalVersionRef = useRef(0);
+  const handledReconnectVersionRef = useRef(0);
+
+  // "quiet": làm mới ngầm do realtime/reconnect/foreground — giữ nguyên nội dung,
+  // không lặp lại thông báo trạng thái đã biết (vd. chưa có phiếu kiểm định).
   const fetchDetail = useCallback(
-    async (showLoading = true) => {
+    async (showLoading = true, quiet = false) => {
       if (!appointmentId) {
+        detailLoadVersionRef.current += 1;
         setLoadError("Không tìm thấy mã lịch hẹn.");
         setIsLoading(false);
         return;
       }
 
+      if (detailInFlightRef.current) {
+        pendingSilentRefreshRef.current = true;
+        return;
+      }
+
+      detailInFlightRef.current = true;
+      const loadVersion = ++detailLoadVersionRef.current;
+      const isCurrent = () =>
+        isMountedRef.current &&
+        detailLoadVersionRef.current === loadVersion &&
+        appointmentIdRef.current === appointmentId;
+
       try {
         if (showLoading) setIsLoading(true);
         setLoadError(null);
         const response = await appointmentApi.getAppointmentDetail(appointmentId);
+        if (!isCurrent()) return;
         const rawAppointment = unwrap(response);
         const normalizedData =
           rawAppointment?.appointment
@@ -215,6 +265,7 @@ export default function AppointmentDetailScreen() {
                 }
               : rawAppointment;
         setData(normalizedData);
+        loadedAppointmentIdRef.current = String(appointmentId);
 
         const normalizedAppointment =
           normalizedData?.appointment;
@@ -234,8 +285,11 @@ export default function AppointmentDetailScreen() {
                 String(appointmentId),
               );
 
+            // Phiếu kiểm định của lượt tải cũ không được ghi đè lượt mới hơn.
+            if (!isCurrent()) return;
             setInspectionForm(form);
           } catch (inspectionError: any) {
+            if (!isCurrent()) return;
             const inspectionStatus =
               Number(
                 inspectionError?.response?.status ??
@@ -260,6 +314,7 @@ export default function AppointmentDetailScreen() {
                 text: "Chưa thể tải các thao tác sau kiểm định. Vui lòng mở lại lịch hẹn để thử lại.",
               });
             } else if (
+              !quiet &&
               !normalizedAppointment?.actions
                 ?.canCreateInspectionForm
             ) {
@@ -276,27 +331,136 @@ export default function AppointmentDetailScreen() {
           setInspectionForm(null);
         }
       } catch (error) {
+        if (!isCurrent()) return;
+        // Làm mới ngầm thất bại: giữ nguyên nội dung đang hiển thị.
+        if (quiet && dataRef.current?.appointment) return;
         setData(null);
         setLoadError(
           getApiErrorMessage(error, "Không thể tải thông tin lịch hẹn lúc này."),
         );
       } finally {
-        setIsLoading(false);
+        detailInFlightRef.current = false;
+        if (isCurrent()) setIsLoading(false);
+        // Tối đa MỘT lượt tải ngầm bổ sung cho mọi tín hiệu đến trong lúc đang tải.
+        if (pendingSilentRefreshRef.current) {
+          pendingSilentRefreshRef.current = false;
+          if (isMountedRef.current && appointmentIdRef.current) {
+            void fetchDetailRef.current(false, true);
+          }
+        }
       }
     },
     [appointmentId],
   );
+  fetchDetailRef.current = fetchDetail;
+
+  useEffect(() => {
+    // Đổi mã lịch hẹn: vô hiệu ngay các lượt tải cũ.
+    detailLoadVersionRef.current += 1;
+    pendingSilentRefreshRef.current = false;
+  }, [appointmentId]);
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    [],
+  );
+
+  // Realtime = tín hiệu tải lại dữ liệu chính thức (không dựng trạng thái từ sự kiện).
+  const requestSilentRefresh = useCallback(() => {
+    if (!isFocusedRef.current || !appointmentIdRef.current) return;
+    void fetchDetailRef.current(false, true);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
+      isFocusedRef.current = true;
       setActionMessage(null);
-      void fetchDetail();
-    }, [fetchDetail]),
+      void fetchDetail(loadedAppointmentIdRef.current !== String(appointmentId));
+      return () => {
+        isFocusedRef.current = false;
+      };
+    }, [appointmentId, fetchDetail]),
   );
 
-  const handleCheckIn = async () => {
-    if (!appointmentId || isCheckingIn) return;
+  // Thông báo miền Lịch hẹn/Đơn hàng: KHÔNG lọc theo targetId — chấp nhận đổi lịch
+  // có thể nhắm tới lịch hẹn đề xuất trong khi người dùng đang xem lịch gốc, và
+  // thao tác đơn hàng có thể đổi trạng thái lịch thu gom.
+  useEffect(() => {
+    const version = appointmentRefreshSignal.version;
+    if (version <= 0) {
+      // Đăng xuất/đổi phiên đặt lại tín hiệu: bắt đầu đếm lại.
+      handledRefreshSignalVersionRef.current = 0;
+      return;
+    }
+    if (handledRefreshSignalVersionRef.current === version) return;
+    handledRefreshSignalVersionRef.current = version;
+    requestSilentRefresh();
+  }, [appointmentRefreshSignal.version, requestSilentRefresh]);
 
+  // Kết nối lại: sự kiện bị lỡ không được phát lại → tải lại một lần.
+  useEffect(() => {
+    if (reconnectVersion <= 0 || handledReconnectVersionRef.current === reconnectVersion) return;
+    handledReconnectVersionRef.current = reconnectVersion;
+    requestSilentRefresh();
+  }, [reconnectVersion, requestSilentRefresh]);
+
+  // Quay lại foreground: bù khoảng trống khi app ở nền/mất kết nối. Không polling.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (previousState !== "active" && nextState === "active") {
+        requestSilentRefresh();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [requestSilentRefresh]);
+
+  // Phòng SignalR của đơn hàng liên quan: OrderTrackingUpdated → tải lại chi tiết.
+  // Đổi đơn → rời nhóm cũ, vào nhóm mới; ChatRealtimeContext tự vào lại khi reconnect.
+  const realtimeOrderId =
+    String(data?.order?.orderId ?? data?.order?.OrderId ?? "").trim() || null;
+
+  useEffect(() => {
+    if (!connection || !realtimeOrderId) return;
+    const currentOrderId = realtimeOrderId.toLowerCase();
+
+    const handleOrderTrackingUpdated = (payload: any) => {
+      const eventOrderId = String(payload?.orderId ?? payload?.OrderId ?? "")
+        .trim()
+        .toLowerCase();
+      // Nhóm đã được giới hạn theo đơn; chỉ lọc thêm khi sự kiện có orderId.
+      if (eventOrderId && eventOrderId !== currentOrderId) return;
+      requestSilentRefresh();
+    };
+
+    connection.on("OrderTrackingUpdated", handleOrderTrackingUpdated);
+    void joinOrder(realtimeOrderId).catch(() => {
+      // Chi tiết lịch hẹn vẫn dùng dữ liệu API nếu tạm thời chưa vào được nhóm.
+    });
+
+    return () => {
+      connection.off("OrderTrackingUpdated", handleOrderTrackingUpdated);
+      void leaveOrder(realtimeOrderId);
+    };
+  }, [connection, joinOrder, leaveOrder, realtimeOrderId, requestSilentRefresh]);
+
+  // Khóa ghi chung: chạm nhanh nhiều lần hoặc chạm chéo hai hành động khác nhau
+  // chỉ cho MỘT chuỗi mạng bắt đầu; các cờ is*Submitting chỉ phục vụ hiển thị.
+  const isAnyActionInFlight =
+    isCheckingIn ||
+    isReschedulingSubmitting ||
+    isLifecycleSubmitting ||
+    isCollectingNow;
+
+  const handleCheckIn = async () => {
+    if (!appointmentId || appointmentActionInFlightRef.current) return;
+
+    appointmentActionInFlightRef.current = true;
     try {
       setIsCheckingIn(true);
       setActionMessage(null);
@@ -336,11 +500,13 @@ export default function AppointmentDetailScreen() {
         text: getApiErrorMessage(error, fallback),
       });
     } finally {
+      appointmentActionInFlightRef.current = false;
       setIsCheckingIn(false);
     }
   };
 
   const openRescheduleModal = () => {
+    if (appointmentActionInFlightRef.current) return;
     const defaults = defaultReschedulePartsFrom();
     setRescheduleDate(defaults.date);
     setRescheduleTime(defaults.time);
@@ -349,12 +515,12 @@ export default function AppointmentDetailScreen() {
   };
 
   const closeRescheduleModal = () => {
-    if (isReschedulingSubmitting) return;
+    if (appointmentActionInFlightRef.current) return;
     setIsRescheduleModalVisible(false);
   };
 
   const handleSubmitReschedule = async () => {
-    if (!appointmentId || isReschedulingSubmitting) return;
+    if (!appointmentId || appointmentActionInFlightRef.current) return;
 
     if (!rescheduleDate || !/^([01]\d|2[0-3]):[0-5]\d$/.test(rescheduleTime)) {
       setRescheduleFormError(
@@ -373,6 +539,9 @@ export default function AppointmentDetailScreen() {
       return;
     }
 
+    // Đã kiểm tra biểu mẫu xong: giữ khóa ngay trước chuỗi mạng.
+    if (appointmentActionInFlightRef.current) return;
+    appointmentActionInFlightRef.current = true;
     try {
       setIsReschedulingSubmitting(true);
       setRescheduleFormError(null);
@@ -394,26 +563,31 @@ export default function AppointmentDetailScreen() {
         getApiErrorMessage(error, "Không thể gửi yêu cầu đổi lịch."),
       );
     } finally {
+      appointmentActionInFlightRef.current = false;
       setIsReschedulingSubmitting(false);
     }
   };
 
   const openLifecycleAction = (action: PendingLifecycleAction) => {
-    if (isLifecycleSubmitting) return;
+    if (appointmentActionInFlightRef.current) return;
     setLifecycleReason("");
     setLifecycleError(null);
     setPendingLifecycleAction(action);
   };
 
   const closeLifecycleAction = () => {
-    if (isLifecycleSubmitting) return;
+    if (appointmentActionInFlightRef.current) return;
     setPendingLifecycleAction(null);
     setLifecycleReason("");
     setLifecycleError(null);
   };
 
   const handleSubmitLifecycleAction = async () => {
-    if (!appointmentId || !pendingLifecycleAction || isLifecycleSubmitting) {
+    if (
+      !appointmentId ||
+      !pendingLifecycleAction ||
+      appointmentActionInFlightRef.current
+    ) {
       return;
     }
 
@@ -436,6 +610,9 @@ export default function AppointmentDetailScreen() {
       return;
     }
 
+    // Đã kiểm tra dữ liệu xong: giữ khóa ngay trước chuỗi mạng.
+    if (appointmentActionInFlightRef.current) return;
+    appointmentActionInFlightRef.current = true;
     try {
       setIsLifecycleSubmitting(true);
       setLifecycleError(null);
@@ -480,6 +657,7 @@ export default function AppointmentDetailScreen() {
         ),
       );
     } finally {
+      appointmentActionInFlightRef.current = false;
       setIsLifecycleSubmitting(false);
     }
   };
@@ -512,11 +690,12 @@ export default function AppointmentDetailScreen() {
       !inspectionForm ||
       inspectionForm.actions
         ?.canCollectNow !== true ||
-      isCollectingNow
+      appointmentActionInFlightRef.current
     ) {
       return;
     }
 
+    appointmentActionInFlightRef.current = true;
     try {
       setIsCollectingNow(true);
       setActionMessage(null);
@@ -588,6 +767,7 @@ export default function AppointmentDetailScreen() {
         ),
       });
     } finally {
+      appointmentActionInFlightRef.current = false;
       setIsCollectingNow(false);
     }
   };
@@ -691,7 +871,7 @@ export default function AppointmentDetailScreen() {
   ];
 
   const checkInDisabled =
-    isCheckingIn || checkIn?.canCheckIn !== true;
+    isAnyActionInFlight || checkIn?.canCheckIn !== true;
   const checkInOpenAt = checkIn?.checkInOpenAt || null;
   const checkInOpenDate = checkInOpenAt ? new Date(checkInOpenAt) : null;
   const isBeforeCheckInWindow =
@@ -1004,8 +1184,12 @@ export default function AppointmentDetailScreen() {
               <View style={styles.rescheduleActionsRow}>
                 {canAcceptReschedule ? (
                   <TouchableOpacity
-                    style={styles.primarySmallButtonFlex}
+                    style={[
+                      styles.primarySmallButtonFlex,
+                      isAnyActionInFlight ? styles.disabledButton : undefined,
+                    ]}
                     onPress={() => openLifecycleAction("accept")}
+                    disabled={isAnyActionInFlight}
                   >
                     <Text style={styles.primarySmallButtonText}>
                       Chấp nhận lịch mới
@@ -1014,8 +1198,12 @@ export default function AppointmentDetailScreen() {
                 ) : null}
                 {canRejectReschedule ? (
                   <TouchableOpacity
-                    style={styles.secondaryButtonFlex}
+                    style={[
+                      styles.secondaryButtonFlex,
+                      isAnyActionInFlight ? styles.disabledButton : undefined,
+                    ]}
                     onPress={() => openLifecycleAction("reject")}
+                    disabled={isAnyActionInFlight}
                   >
                     <Text style={styles.secondaryButtonText}>Từ chối</Text>
                   </TouchableOpacity>
@@ -1030,8 +1218,12 @@ export default function AppointmentDetailScreen() {
               Bạn có thể đề xuất một thời gian hẹn khác cho lịch hẹn này.
             </Text>
             <TouchableOpacity
-              style={styles.primarySmallButtonFlex}
+              style={[
+                styles.primarySmallButtonFlex,
+                isAnyActionInFlight ? styles.disabledButton : undefined,
+              ]}
               onPress={openRescheduleModal}
+              disabled={isAnyActionInFlight}
             >
               <Text style={styles.primarySmallButtonText}>
                 Yêu cầu đổi lịch hẹn
@@ -1047,8 +1239,12 @@ export default function AppointmentDetailScreen() {
               Thao tác này sẽ hủy lịch hẹn và không thể hoàn tác.
             </Text>
             <TouchableOpacity
-              style={styles.outlineBtnDanger}
+              style={[
+                styles.outlineBtnDanger,
+                isAnyActionInFlight ? styles.disabledButton : undefined,
+              ]}
               onPress={() => openLifecycleAction("cancel")}
+              disabled={isAnyActionInFlight}
             >
               <Text style={styles.outlineBtnDangerText}>Hủy lịch hẹn</Text>
             </TouchableOpacity>
@@ -1106,11 +1302,11 @@ export default function AppointmentDetailScreen() {
               <TouchableOpacity
                 style={[
                   styles.secondaryActionButton,
-                  isCollectingNow
+                  isAnyActionInFlight
                     ? styles.disabledButton
                     : undefined,
                 ]}
-                disabled={isCollectingNow}
+                disabled={isAnyActionInFlight}
                 onPress={() =>
                   void handleCollectNow()
                 }
@@ -1143,11 +1339,11 @@ export default function AppointmentDetailScreen() {
               <TouchableOpacity
                 style={[
                   styles.primaryButton,
-                  isCollectingNow
+                  isAnyActionInFlight
                     ? styles.disabledButton
                     : undefined,
                 ]}
-                disabled={isCollectingNow}
+                disabled={isAnyActionInFlight}
                 onPress={
                   handleScheduleCollection
                 }

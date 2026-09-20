@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AppState,
+  type AppStateStatus,
   ActivityIndicator,
   Modal,
   Platform,
@@ -18,6 +20,8 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -257,12 +261,17 @@ const translateDeliveryMethod = (value: unknown) => {
   }
 };
 
+// initial: loader toàn màn (lần đầu); manual: RefreshControl; silent: giữ nội dung.
+type AppointmentLoadMode = "initial" | "manual" | "silent";
+
 export default function ScheduleScreen() {
   const router = useGuardedRouter();
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === "web" && width > 480;
 
   const { user } = useAuth();
+  const { appointmentRefreshSignal } = useNotifications();
+  const { reconnectVersion } = useChatRealtime();
   const currentUserId = String(user?.userId || user?.id || "")
     .trim()
     .toLowerCase();
@@ -292,6 +301,24 @@ export default function ScheduleScreen() {
   );
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const appointmentLoadVersion = useRef(0);
+  // Thẩm quyền đồng thời là ref (state React cập nhật bất đồng bộ, không đủ tin cậy):
+  // - loadInFlightRef: không bao giờ chạy hai lượt tải 4 nguồn song song.
+  // - pendingSilentRefreshRef: tín hiệu (realtime/focus/reconnect/foreground) đến
+  //   trong lúc đang tải được gộp thành đúng MỘT lượt tải ngầm bổ sung.
+  // - appointmentLoadVersion + currentUserIdRef: phản hồi cũ không ghi đè trạng thái mới.
+  const loadInFlightRef = useRef(false);
+  const pendingSilentRefreshRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
+  const isFocusedRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+  const fetchAppointmentsRef = useRef<
+    (mode: AppointmentLoadMode) => Promise<void>
+  >(async () => {});
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const handledRefreshSignalVersionRef = useRef(0);
+  const handledReconnectVersionRef = useRef(0);
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return "Chưa cập nhật";
@@ -379,17 +406,33 @@ export default function ScheduleScreen() {
         };
 
   const fetchAppointments = useCallback(
-    async (isRefresh = false) => {
-      const loadVersion = ++appointmentLoadVersion.current;
+    async (mode: AppointmentLoadMode = "silent") => {
       if (!currentUserId) {
+        appointmentLoadVersion.current += 1;
+        pendingSilentRefreshRef.current = false;
         setAppointments([]);
         setIsLoading(false);
         setIsRefreshing(false);
         return;
       }
 
+      if (loadInFlightRef.current) {
+        // Đang tải: gộp mọi tín hiệu thành một lượt tải ngầm sau khi lượt này xong.
+        pendingSilentRefreshRef.current = true;
+        return;
+      }
+
+      loadInFlightRef.current = true;
+      const loadVersion = ++appointmentLoadVersion.current;
+      const isCurrent = () =>
+        isMountedRef.current &&
+        appointmentLoadVersion.current === loadVersion &&
+        currentUserIdRef.current === currentUserId;
+
       try {
-        if (!isRefresh) setIsLoading(true);
+        // "silent": giữ nguyên danh sách đang hiển thị, không bật loader toàn màn.
+        if (mode === "initial") setIsLoading(true);
+        else if (mode === "manual") setIsRefreshing(true);
 
         const feeds = [
           {
@@ -429,7 +472,7 @@ export default function ScheduleScreen() {
           })),
         );
 
-        if (appointmentLoadVersion.current !== loadVersion) return;
+        if (!isCurrent()) return;
 
         let allRaw: AppointmentItem[] = [];
 
@@ -520,28 +563,98 @@ export default function ScheduleScreen() {
         );
         setAppointments(uniqueAppointments);
       } catch (error) {
-        if (appointmentLoadVersion.current === loadVersion) {
+        if (isCurrent()) {
           devLog("Lỗi tải lịch hẹn:", error);
         }
       } finally {
-        if (appointmentLoadVersion.current === loadVersion) {
+        loadInFlightRef.current = false;
+        if (isCurrent()) {
+          hasLoadedOnceRef.current = true;
           setIsLoading(false);
           setIsRefreshing(false);
+        }
+        // Tối đa MỘT lượt tải ngầm bổ sung cho mọi tín hiệu đến trong lúc đang tải.
+        if (pendingSilentRefreshRef.current) {
+          pendingSilentRefreshRef.current = false;
+          if (isMountedRef.current && currentUserIdRef.current) {
+            void fetchAppointmentsRef.current("silent");
+          }
         }
       }
     },
     [currentUserId],
   );
+  fetchAppointmentsRef.current = fetchAppointments;
+
+  useEffect(() => {
+    // Đổi người dùng: lượt tải của người dùng cũ không còn hiện hành.
+    hasLoadedOnceRef.current = false;
+    pendingSilentRefreshRef.current = false;
+    appointmentLoadVersion.current += 1;
+  }, [currentUserId]);
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    [],
+  );
+
+  // Làm mới ngầm: chỉ khi màn hình đang hiển thị (khi quay lại, useFocusEffect tự tải).
+  // Giữ nguyên bộ lọc, chế độ lịch, ngày/tháng đang chọn.
+  const requestSilentRefresh = useCallback(() => {
+    if (!isFocusedRef.current || !currentUserIdRef.current) return;
+    void fetchAppointmentsRef.current("silent");
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void fetchAppointments(false);
+      isFocusedRef.current = true;
+      void fetchAppointments(hasLoadedOnceRef.current ? "silent" : "initial");
+      return () => {
+        isFocusedRef.current = false;
+      };
     }, [fetchAppointments]),
   );
 
+  // Realtime: NotificationCreated miền Lịch hẹn/Đơn hàng chỉ là tín hiệu tải lại
+  // dữ liệu chính thức (không dựng trạng thái từ nội dung sự kiện).
+  useEffect(() => {
+    const version = appointmentRefreshSignal.version;
+    if (version <= 0) {
+      // Đăng xuất/đổi phiên đặt lại tín hiệu: bắt đầu đếm lại.
+      handledRefreshSignalVersionRef.current = 0;
+      return;
+    }
+    if (handledRefreshSignalVersionRef.current === version) return;
+    handledRefreshSignalVersionRef.current = version;
+    requestSilentRefresh();
+  }, [appointmentRefreshSignal.version, requestSilentRefresh]);
+
+  // Kết nối lại SignalR: sự kiện bị lỡ không được phát lại → tải lại một lần.
+  useEffect(() => {
+    if (reconnectVersion <= 0 || handledReconnectVersionRef.current === reconnectVersion) return;
+    handledReconnectVersionRef.current = reconnectVersion;
+    requestSilentRefresh();
+  }, [reconnectVersion, requestSilentRefresh]);
+
+  // Quay lại foreground: bù khoảng trống khi app ở nền/mất kết nối. Không polling.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (previousState !== "active" && nextState === "active") {
+        requestSilentRefresh();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [requestSilentRefresh]);
+
   const onRefresh = () => {
     setIsRefreshing(true);
-    void fetchAppointments(true);
+    void fetchAppointments("manual");
   };
 
   if (!user) {

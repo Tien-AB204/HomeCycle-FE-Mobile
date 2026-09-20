@@ -26,12 +26,28 @@ import {
 import { useAuth } from "./AuthContext";
 import { useChatRealtime } from "./ChatRealtimeContext";
 
+// Tín hiệu làm mới miền Lịch hẹn: chỉ là lời nhắc "tải lại dữ liệu chính thức",
+// KHÔNG mang trạng thái lịch hẹn. Bao gồm cả thông báo miền Đơn hàng vì thao tác
+// đơn hàng có thể đổi trạng thái lịch thu gom ở phía Backend.
+export type AppointmentRefreshSignal = {
+  version: number;
+  targetType: "appointment" | "order" | null;
+  targetId: string | null;
+};
+
+const INITIAL_APPOINTMENT_REFRESH_SIGNAL: AppointmentRefreshSignal = {
+  version: 0,
+  targetType: null,
+  targetId: null,
+};
+
 type NotificationContextValue = {
   unreadCount: number;
   postNotificationSignal: {
     version: number;
     targetId: string | null;
   };
+  appointmentRefreshSignal: AppointmentRefreshSignal;
   inAppNotification: {
     version: number;
     notificationId: string;
@@ -83,6 +99,8 @@ export function NotificationProvider({
     version: 0,
     targetId: null as string | null,
   });
+  const [appointmentRefreshSignal, setAppointmentRefreshSignal] =
+    useState<AppointmentRefreshSignal>(INITIAL_APPOINTMENT_REFRESH_SIGNAL);
   const [inAppNotification, setInAppNotification] = useState<{
     version: number;
     notificationId: string;
@@ -210,6 +228,7 @@ export function NotificationProvider({
       unreadStateVersionRef.current += 1;
       setUnreadCount(0);
       setPostNotificationSignal({ version: 0, targetId: null });
+      setAppointmentRefreshSignal(INITIAL_APPOINTMENT_REFRESH_SIGNAL);
       return;
     }
 
@@ -280,6 +299,19 @@ export function NotificationProvider({
           version: current.version + 1,
           targetId: item.targetId,
         }));
+      }
+
+      // Chỉ chạy sau bước khử trùng lặp ở trên: một NotificationCreated mới →
+      // đúng một lần tăng version; bản phát lại cùng notificationId không tính.
+      if (item) {
+        const targetType = normalizeTargetType(item.targetType);
+        if (targetType === "appointment" || targetType === "order") {
+          setAppointmentRefreshSignal((current) => ({
+            version: current.version + 1,
+            targetType,
+            targetId: item.targetId,
+          }));
+        }
       }
 
       const isRead = Boolean(
@@ -452,6 +484,7 @@ export function NotificationProvider({
       value={{
         unreadCount,
         postNotificationSignal,
+        appointmentRefreshSignal,
         inAppNotification,
         refreshUnreadCount,
         markNotificationAsRead,

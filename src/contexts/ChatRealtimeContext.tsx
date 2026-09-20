@@ -131,6 +131,9 @@ export function ChatRealtimeProvider({
   const joinedNegotiationsRef = useRef<Set<string>>(new Set());
   const joinedConversationsRef = useRef<Set<string>>(new Set());
   const joinedOrdersRef = useRef<Set<string>>(new Set());
+  // Nhiều màn hình (Chi tiết đơn hàng, Chi tiết lịch hẹn) có thể cùng theo dõi
+  // một đơn: chỉ rời nhóm SignalR khi màn hình cuối cùng rời đi.
+  const orderRoomRefCountsRef = useRef<Map<string, number>>(new Map());
   const conversationRequestRef = useRef(0);
 
   const refreshConversationSummaries = useCallback(
@@ -229,6 +232,7 @@ export function ChatRealtimeProvider({
       joinedNegotiationsRef.current.clear();
       joinedConversationsRef.current.clear();
       joinedOrdersRef.current.clear();
+      orderRoomRefCountsRef.current.clear();
       connectionRef.current = null;
       setConnection(null);
       setConnectionStatus("idle");
@@ -499,6 +503,10 @@ export function ChatRealtimeProvider({
     async (orderId: string) => {
       if (!orderId) return;
 
+      orderRoomRefCountsRef.current.set(
+        orderId,
+        (orderRoomRefCountsRef.current.get(orderId) ?? 0) + 1,
+      );
       joinedOrdersRef.current.add(orderId);
 
       const currentConnection = connectionRef.current;
@@ -520,6 +528,15 @@ export function ChatRealtimeProvider({
     async (orderId: string) => {
       if (!orderId) return;
 
+      const remaining = Math.max(
+        0,
+        (orderRoomRefCountsRef.current.get(orderId) ?? 1) - 1,
+      );
+      if (remaining > 0) {
+        orderRoomRefCountsRef.current.set(orderId, remaining);
+        return;
+      }
+      orderRoomRefCountsRef.current.delete(orderId);
       joinedOrdersRef.current.delete(orderId);
 
       const currentConnection = connectionRef.current;
