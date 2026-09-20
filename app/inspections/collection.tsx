@@ -19,6 +19,7 @@ import {
 } from "react-native";
 
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
+import ClockTimeField from "../../src/components/shared/ClockTimeField";
 import Header from "../../src/components/shared/Header";
 import {
   ModalBackdrop,
@@ -1371,13 +1372,13 @@ export default function InspectionCollectionScreen() {
 
     if (
       !collectionDate ||
-      !/^\d{2}:\d{2}$/.test(
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(
         collectionTime,
       )
     ) {
       setNotice({
         type: "error",
-        text: "Vui lòng chọn ngày và nhập giờ giao nhận theo dạng HH:mm.",
+        text: "Vui lòng chọn ngày và giờ giao nhận.",
       });
       return;
     }
@@ -1690,29 +1691,12 @@ export default function InspectionCollectionScreen() {
               Giờ *
             </Text>
 
-            <TextInput
+            <ClockTimeField
               value={collectionTime}
-              onChangeText={(text) =>
-                setCollectionTime(
-                  text
-                    .replace(
-                      /[^0-9:]/g,
-                      "",
-                    )
-                    .slice(0, 5),
-                )
-              }
-              placeholder="09:00"
-              placeholderTextColor={
-                COLORS.textLight
-              }
-              keyboardType="numbers-and-punctuation"
-              style={styles.input}
+              onChange={setCollectionTime}
+              placeholder="Chọn giờ giao nhận"
+              accessibilityLabel="Giờ giao nhận"
             />
-
-            <Text style={styles.helperText}>
-              Nhập theo dạng HH:mm.
-            </Text>
           </View>
         </View>
 

@@ -9,12 +9,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
 import CalendarDateField from "../../../src/components/shared/CalendarDateField";
+import ClockTimeField from "../../../src/components/shared/ClockTimeField";
 import Header from "../../../src/components/shared/Header";
 import { COLORS } from "../../../src/constants/theme";
 import {
@@ -76,7 +76,6 @@ const combineLocalDateTime = (date: string, time: string): Date | null => {
     combined.getDate() === Number(dayText);
   return valid ? combined : null;
 };
-const sanitizeClockInput = (text: string) => text.replace(/[^0-9:]/g, "").slice(0, 5);
 
 const getStatusPresentation = (value: unknown) => {
   switch (String(value ?? "").trim().toLowerCase()) {
@@ -140,10 +139,6 @@ export default function WithdrawalHistoryScreen() {
 
   const fromInstant = useMemo(() => combineLocalDateTime(fromDate, fromTime), [fromDate, fromTime]);
   const toInstant = useMemo(() => combineLocalDateTime(toDate, toTime), [toDate, toTime]);
-  const fromTimeError =
-    fromTime.trim() && !isValidClockTime(fromTime) ? "Giờ không hợp lệ (00:00–23:59)." : null;
-  const toTimeError =
-    toTime.trim() && !isValidClockTime(toTime) ? "Giờ không hợp lệ (00:00–23:59)." : null;
   // Đã chọn ngày nhưng chưa có giờ hợp lệ: mốc này chưa được áp dụng (không gửi mốc thiếu/sai).
   const fromIncomplete = Boolean(fromDate) && !fromInstant;
   const toIncomplete = Boolean(toDate) && !toInstant;
@@ -251,13 +246,15 @@ export default function WithdrawalHistoryScreen() {
     setPageNumber(1);
   };
 
-  const changeFromTime = (text: string) => {
-    setFromTime(sanitizeClockInput(text));
+  const changeFromTime = (value: string) => {
+    if (value === fromTime) return;
+    setFromTime(value);
     setPageNumber(1);
   };
 
-  const changeToTime = (text: string) => {
-    setToTime(sanitizeClockInput(text));
+  const changeToTime = (value: string) => {
+    if (value === toTime) return;
+    setToTime(value);
     setPageNumber(1);
   };
 
@@ -383,19 +380,16 @@ export default function WithdrawalHistoryScreen() {
                   maximumDate={new Date()}
                 />
                 <Text style={[styles.dateFilterLabel, styles.timeFilterLabel]}>Từ giờ</Text>
-                <TextInput
+                <ClockTimeField
                   value={fromTime}
-                  onChangeText={changeFromTime}
-                  placeholder="08:30"
-                  placeholderTextColor={COLORS.textLight}
-                  keyboardType="numbers-and-punctuation"
-                  style={[styles.timeInput, fromTimeError || rangeError ? styles.timeInputError : undefined]}
-                  accessibilityLabel="Từ giờ (HH:mm)"
+                  onChange={changeFromTime}
+                  placeholder="Chọn giờ"
+                  accessibilityLabel="Từ giờ"
+                  hasError={Boolean(rangeError)}
+                  clearable
                 />
-                {fromTimeError ? (
-                  <Text style={styles.rangeErrorText}>{fromTimeError}</Text>
-                ) : fromIncomplete ? (
-                  <Text style={styles.timeHint}>Nhập giờ (HH:mm) để áp dụng mốc bắt đầu.</Text>
+                {fromIncomplete ? (
+                  <Text style={styles.timeHint}>Chọn giờ để áp dụng mốc bắt đầu.</Text>
                 ) : null}
               </View>
               <View style={styles.dateFilterItem}>
@@ -410,19 +404,16 @@ export default function WithdrawalHistoryScreen() {
                   maximumDate={new Date()}
                 />
                 <Text style={[styles.dateFilterLabel, styles.timeFilterLabel]}>Đến giờ</Text>
-                <TextInput
+                <ClockTimeField
                   value={toTime}
-                  onChangeText={changeToTime}
-                  placeholder="17:45"
-                  placeholderTextColor={COLORS.textLight}
-                  keyboardType="numbers-and-punctuation"
-                  style={[styles.timeInput, toTimeError || rangeError ? styles.timeInputError : undefined]}
-                  accessibilityLabel="Đến giờ (HH:mm)"
+                  onChange={changeToTime}
+                  placeholder="Chọn giờ"
+                  accessibilityLabel="Đến giờ"
+                  hasError={Boolean(rangeError)}
+                  clearable
                 />
-                {toTimeError ? (
-                  <Text style={styles.rangeErrorText}>{toTimeError}</Text>
-                ) : toIncomplete ? (
-                  <Text style={styles.timeHint}>Nhập giờ (HH:mm) để áp dụng mốc kết thúc.</Text>
+                {toIncomplete ? (
+                  <Text style={styles.timeHint}>Chọn giờ để áp dụng mốc kết thúc.</Text>
                 ) : null}
               </View>
             </View>
@@ -521,17 +512,6 @@ const styles = StyleSheet.create({
   dateFilterLabel: { marginBottom: 6, color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
   rangeErrorText: { marginTop: 6, color: "#7A1012", fontSize: 12, lineHeight: 17 },
   timeFilterLabel: { marginTop: 8 },
-  timeInput: {
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: COLORS.white,
-    color: COLORS.text,
-    fontSize: 14,
-  },
-  timeInputError: { borderColor: "#7A1012" },
   timeHint: { marginTop: 6, color: COLORS.textLight, fontSize: 12, lineHeight: 17 },
   resetFiltersButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8, marginBottom: 6, paddingVertical: 4 },
   resetFiltersText: { color: COLORS.primary, fontSize: 13, fontWeight: "700" },

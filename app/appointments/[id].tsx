@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
+import ClockTimeField from "../../src/components/shared/ClockTimeField";
 import Header from "../../src/components/shared/Header";
 import {
   ModalBackdrop,
@@ -355,9 +356,9 @@ export default function AppointmentDetailScreen() {
   const handleSubmitReschedule = async () => {
     if (!appointmentId || isReschedulingSubmitting) return;
 
-    if (!rescheduleDate || !/^\d{2}:\d{2}$/.test(rescheduleTime)) {
+    if (!rescheduleDate || !/^([01]\d|2[0-3]):[0-5]\d$/.test(rescheduleTime)) {
       setRescheduleFormError(
-        "Vui lòng chọn ngày và nhập giờ hẹn mới theo dạng HH:mm.",
+        "Vui lòng chọn ngày và giờ hẹn mới.",
       );
       return;
     }
@@ -1244,18 +1245,14 @@ export default function AppointmentDetailScreen() {
             />
 
             <Text style={styles.label}>Giờ <Text style={{ color: COLORS.error }}>*</Text></Text>
-            <TextInput
+            <ClockTimeField
               value={rescheduleTime}
-              onChangeText={(text) =>
-                setRescheduleTime(text.replace(/[^0-9:]/g, "").slice(0, 5))
-              }
-              placeholder="09:00"
-              placeholderTextColor={COLORS.textLight}
-              keyboardType="numbers-and-punctuation"
-              editable={!isReschedulingSubmitting}
-              style={styles.textInput}
+              onChange={setRescheduleTime}
+              placeholder="Chọn giờ hẹn mới"
+              accessibilityLabel="Giờ hẹn mới"
+              disabled={isReschedulingSubmitting}
+              style={styles.timeField}
             />
-            <Text style={styles.helperText}>Nhập theo dạng HH:mm.</Text>
 
             {rescheduleFormError ? (
               <Text style={styles.lifecycleModalError}>
@@ -1740,6 +1737,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 8,
+  },
+  timeField: {
+    marginBottom: 12,
   },
   lifecycleModalBackdrop: {
     flex: 1,
