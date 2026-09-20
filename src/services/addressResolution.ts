@@ -12,9 +12,18 @@ type AdministrativeSearchResult = {
   name?: string;
   ward_code?: string | number;
   ward_name?: string;
+  is_merger_match?: boolean;
+  matched_old_unit?: string;
+};
+
+type ProvinceWard = {
+  ward_code?: string | number;
+  ward_name?: string;
+  province_code?: string | number;
 };
 
 const SEARCH_ENDPOINT = "https://34tinhthanh.com/api/search";
+const WARDS_ENDPOINT = "https://34tinhthanh.com/api/wards";
 
 const normalizeForCompare = (value: string) =>
   value
@@ -109,33 +118,86 @@ const pickProvince = (
   return exact.length === 1 ? exact[0] : null;
 };
 
-const pickWard = (
-  results: AdministrativeSearchResult[],
-  segment: string,
+const loadProvinceWards = async (
   provinceCode: string,
-) => {
-  const wards = dedupeBy(
-    results.filter(
-      (item) =>
-        String(item?.type || "").toLocaleLowerCase("vi-VN") === "ward" &&
-        String(item?.province_code || "") === provinceCode &&
-        item?.ward_code &&
-        item?.ward_name,
-    ),
-    (item) => String(item.ward_code),
+): Promise<ProvinceWard[]> => {
+  const response = await fetch(
+    `${WARDS_ENDPOINT}?province_code=${encodeURIComponent(provinceCode)}`,
   );
 
-  if (wards.length === 1) return wards[0];
+  if (!response.ok) {
+    throw Object.assign(new Error("Ward list failed"), {
+      status: response.status,
+    });
+  }
 
+  const data = await response.json();
+  return Array.isArray(data) ? data : [];
+};
+
+const pickWard = (
+  results: AdministrativeSearchResult[],
+  provinceWards: ProvinceWard[],
+  segment: string,
+) => {
   const target = normalizeForCompare(stripAdministrativePrefix(segment));
-  const exact = wards.filter((item) => {
+
+  const currentExact = provinceWards.filter((item) => {
     const name = normalizeForCompare(
       stripAdministrativePrefix(String(item.ward_name || "")),
     );
     return name === target;
   });
 
-  return exact.length === 1 ? exact[0] : null;
+  if (currentExact.length === 1) {
+    return currentExact[0];
+  }
+
+  const searchWardResults = dedupeBy(
+    results.filter(
+      (item) =>
+        String(item?.type || "").toLocaleLowerCase("vi-VN") === "ward" &&
+        item?.ward_code &&
+        item?.ward_name,
+    ),
+    (item) => String(item.ward_code),
+  );
+
+  const validatedCandidates = searchWardResults
+    .map((searchItem) => {
+      const byCode = provinceWards.find(
+        (item) =>
+          String(item?.ward_code || "") ===
+          String(searchItem.ward_code || ""),
+      );
+
+      if (byCode) return byCode;
+
+      const searchName = normalizeForCompare(
+        stripAdministrativePrefix(String(searchItem.ward_name || "")),
+      );
+
+      const byName = provinceWards.find((item) => {
+        const currentName = normalizeForCompare(
+          stripAdministrativePrefix(String(item.ward_name || "")),
+        );
+        return currentName === searchName;
+      });
+
+      return byName ?? null;
+    })
+    .filter((item): item is ProvinceWard => Boolean(item));
+
+  const uniqueCandidates = Array.from(
+    new Map(
+      validatedCandidates.map((item) => [
+        String(item.ward_code || item.ward_name || ""),
+        item,
+      ]),
+    ).values(),
+  );
+
+  return uniqueCandidates.length === 1 ? uniqueCandidates[0] : null;
 };
 
 /**
@@ -174,8 +236,10 @@ export const resolveVietnameseAddress = async (
   if (!province?.province_code || !province?.name) return null;
 
   const provinceCode = String(province.province_code);
+  const provinceWards = await loadProvinceWards(provinceCode);
+
   let ward:
-    | AdministrativeSearchResult
+    | ProvinceWard
     | null = null;
   let wardIndex = -1;
 
@@ -185,7 +249,7 @@ export const resolveVietnameseAddress = async (
     index -= 1
   ) {
     const results = await searchAdministrativeUnit(parts[index]);
-    const candidate = pickWard(results, parts[index], provinceCode);
+    const candidate = pickWard(results, provinceWards, parts[index]);
     if (candidate) {
       ward = candidate;
       wardIndex = index;
