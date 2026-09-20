@@ -25,6 +25,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
+import { normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -83,16 +84,6 @@ const postApi = {
     apiClient.post("/ai/price-suggestions/draft", data, { timeout: 60000 }).then((response) => response.data),
 };
 
-const SPACE_USAGE_OPTIONS = [
-  { label: "Phòng khách", value: "Living_room" },
-  { label: "Nhà bếp", value: "Kitchen" },
-  { label: "Phòng ngủ", value: "Bedroom" },
-  { label: "Phòng tắm", value: "Bathroom" },
-  { label: "Phòng giặt", value: "Laundry_room" },
-  { label: "Ban công", value: "Balcony" },
-  { label: "Garage", value: "Garage" },
-  { label: "Nhà vệ sinh", value: "Restroom" },
-];
 // Số lượng: số nguyên. Tin thu mua giới hạn 1–99.999 theo Backend; tin bán tối thiểu 1.
 const BUY_QUANTITY_MAX = 99999;
 const validateQuantityInput = (raw: string, isBuy: boolean): string => {
@@ -341,6 +332,17 @@ export default function PostFormScreen() {
   const [usageDuration, setUsageDuration] = useState("");
   const [damageLevel, setDamageLevel] = useState("");
   const [spaceUsage, setSpaceUsage] = useState("");
+  // Không gian sử dụng: danh sách lựa chọn lấy từ Backend (không hard-code).
+  const spaceUsages = useSpaceUsages();
+  const spaceUsageOptions = useMemo(
+    () => spaceUsages.options.map((option) => ({ label: option.label, value: option.name })),
+    [spaceUsages.options],
+  );
+  // Tin đang sửa có thể trả SpaceUsage dạng số enum: đổi sang tên khi đã có danh sách.
+  useEffect(() => {
+    if (!spaceUsages.options.length) return;
+    setSpaceUsage((current) => normalizeSpaceUsageName(current, spaceUsages.options));
+  }, [spaceUsages.options]);
   const [priceFrom, setPriceFrom] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
@@ -646,7 +648,12 @@ export default function PostFormScreen() {
         setDetailDescription(product.detailDescription || "");
         setWeight(product.weight?.toString() || "");
         setUsageDuration(product.usageDuration?.toString() || "");
-        setSpaceUsage(product.spaceUsage || "");
+        // 0 = Living_room là hợp lệ: không dùng `|| ""` làm mất giá trị 0.
+        setSpaceUsage(
+          product.spaceUsage === null || product.spaceUsage === undefined || product.spaceUsage === ""
+            ? ""
+            : String(product.spaceUsage),
+        );
         setFunctionalityStatus(product.functionalityStatus || "");
         setDamageLevel(product.damageLevel || "");
         setLength(product.length?.toString() || "");
@@ -2245,7 +2252,14 @@ export default function PostFormScreen() {
                   label="Không gian dùng"
                   clearable
                   value={spaceUsage}
-                  options={SPACE_USAGE_OPTIONS}
+                  placeholder={
+                    spaceUsages.isLoading
+                      ? "Đang tải..."
+                      : spaceUsages.hasError
+                        ? "Chưa tải được danh sách"
+                        : "Chọn..."
+                  }
+                  options={spaceUsageOptions}
                   onChange={setSpaceUsage}
                 />
               ) : null}

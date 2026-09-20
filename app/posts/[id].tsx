@@ -30,6 +30,7 @@ import {
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { isBuyPostType } from "../../src/utils/postType";
+import { getSpaceUsageLabel, normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import {
@@ -425,6 +426,7 @@ export default function PostDetailScreen() {
   const [post, setPost] = useState<any>(null);
   // Tiến trình thu mua chỉ có ở API chi tiết theo loại (cần đăng nhập); null khi chưa có.
   const [buyProgress, setBuyProgress] = useState<BuyPostProgress | null>(null);
+  const { options: spaceUsageOptions } = useSpaceUsages();
   const imageScrollRef = useRef<ScrollView>(null);
   const [imageIndex, setImageIndex] = useState(0);
   const [imageWidth, setImageWidth] = useState(width);
@@ -1632,19 +1634,9 @@ export default function PostDetailScreen() {
     return "Không rõ";
   };
 
-  const translateSpace = (space: string) => {
-    const spaces: Record<string, string> = {
-      Living_room: "Phòng khách",
-      Kitchen: "Nhà bếp",
-      Bedroom: "Phòng ngủ",
-      Bathroom: "Phòng tắm",
-      Laundry_room: "Phòng giặt",
-      Balcony: "Ban công",
-      Garage: "Nhà để xe",
-      Restroom: "Nhà vệ sinh",
-    };
-    return spaces[space] || "Không rõ";
-  };
+  // Không gian sử dụng: chuẩn hóa số/tên enum theo danh sách Backend rồi hiển thị.
+  const translateSpace = (space: unknown) =>
+    getSpaceUsageLabel(normalizeSpaceUsageName(space, spaceUsageOptions)) || "Không rõ";
 
   const translatePostDeliveryMethod = (value: unknown) => {
     const normalized = String(value ?? "")
@@ -2095,7 +2087,9 @@ export default function PostDetailScreen() {
                 value={`${product.usageDuration} năm`}
               />
             ) : null}
-            {product.spaceUsage ? (
+            {product.spaceUsage !== null &&
+            product.spaceUsage !== undefined &&
+            product.spaceUsage !== "" ? (
               <SpecItem
                 icon="home-outline"
                 label="Không gian"

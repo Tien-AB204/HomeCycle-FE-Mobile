@@ -23,6 +23,7 @@ import {
 } from "../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
+import { getSpaceUsageLabel, useSpaceUsages } from "../src/services/spaceUsage";
 import { isBuyPostType } from "../src/utils/postType";
 import { useGuardedRouter } from "../src/utils/tapGuard";
 
@@ -60,20 +61,6 @@ const DAMAGE_LEVELS = [
   { label: "Tổn thất toàn bộ (100%)", value: 5 },
 ];
 
-const FILTER_SPACES = [
-  "Phòng khách",
-  "Phòng ngủ",
-  "Nhà bếp",
-  "Phòng ăn",
-  "Phòng làm việc",
-  "Phòng tắm",
-];
-const SPACE_MAP: Record<string, string> = {
-  "Phòng khách": "Living_room",
-  "Phòng ngủ": "Bedroom",
-  "Nhà bếp": "Kitchen",
-  "Phòng tắm": "Bathroom",
-};
 const POST_TYPES = ["Bán", "Mua"];
 const DELIVERY_METHODS = [
   "Không xác định",
@@ -185,6 +172,8 @@ export default function SearchScreen() {
   const [attributeError, setAttributeError] = useState("");
   const [selectedCondition, setSelectedCondition] = useState("");
   const [selectedSpace, setSelectedSpace] = useState("");
+  // Không gian sử dụng: lựa chọn lọc lấy từ Backend (giá trị gửi đi là tên enum).
+  const spaceUsages = useSpaceUsages();
   const [deliveryMethod, setDeliveryMethod] = useState("");
   const [priorityLevel, setPriorityLevel] = useState("");
 
@@ -534,8 +523,9 @@ export default function SearchScreen() {
       if (selectedCondition) {
         payload.functionalityStatus = CONDITION_MAP[selectedCondition];
       }
-      if (selectedSpace && SPACE_MAP[selectedSpace]) {
-        payload.spaceUsage = SPACE_MAP[selectedSpace];
+      // selectedSpace là tên enum SpaceUsage do Backend cung cấp.
+      if (selectedSpace) {
+        payload.spaceUsage = selectedSpace;
       }
       if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
       if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
@@ -1141,13 +1131,20 @@ export default function SearchScreen() {
         <Text style={styles.filterSectionTitle}>4. Tùy chọn khác</Text>
         <Text style={styles.subLabel}>Không gian sử dụng</Text>
         <View style={styles.chipContainer}>
-          {FILTER_SPACES.map((space) => {
-            const isActive = selectedSpace === space;
+          {spaceUsages.options.length === 0 ? (
+            <Text style={styles.spaceUsageHint}>
+              {spaceUsages.isLoading
+                ? "Đang tải danh sách không gian..."
+                : "Chưa tải được danh sách không gian."}
+            </Text>
+          ) : null}
+          {spaceUsages.options.map((space) => {
+            const isActive = selectedSpace === space.name;
             return (
               <TouchableOpacity
-                key={space}
+                key={space.name}
                 style={[styles.chip, isActive ? styles.chipActive : undefined]}
-                onPress={() => setSelectedSpace(isActive ? "" : space)}
+                onPress={() => setSelectedSpace(isActive ? "" : space.name)}
               >
                 <Text
                   style={[
@@ -1155,7 +1152,7 @@ export default function SearchScreen() {
                     isActive ? styles.chipTextActive : undefined,
                   ]}
                 >
-                  {space}
+                  {space.label}
                 </Text>
                 {isActive ? (
                   <Ionicons
@@ -1398,7 +1395,7 @@ export default function SearchScreen() {
     }
 
     if (selectedSpace) {
-      labels.push(selectedSpace);
+      labels.push(getSpaceUsageLabel(selectedSpace));
     }
 
     if (priorityLevel) {
@@ -1894,6 +1891,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  spaceUsageHint: { fontSize: 12, color: COLORS.textLight, marginBottom: 4 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
