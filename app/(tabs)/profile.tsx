@@ -678,7 +678,6 @@ const styles = StyleSheet.create({
   logoutButton: {
     minHeight: 62,
     marginTop: 20,
-    marginHorizontal: 16,
     borderWidth: 1,
     borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 14,
