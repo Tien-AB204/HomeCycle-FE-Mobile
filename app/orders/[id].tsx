@@ -41,6 +41,34 @@ type DeliveryMethod =
   | "BuyerPickUp"
   | "Unknown";
 
+// Đồng bộ GHN: tối đa 3 lần gọi mỗi chu kỳ, dừng ngay khi có phản hồi thành công.
+const TRACKING_MAX_ATTEMPTS = 3;
+const TRACKING_INITIAL_DELAY_MS = 4000;
+const TRACKING_RETRY_DELAY_MS = 1500;
+const NON_RETRYABLE_TRACKING_CODES = new Set([
+  "order.notfound",
+  "agreement.notfound",
+  "shipment.notghndelivery",
+]);
+const RETRYABLE_TRACKING_CODES = new Set([
+  "shipment.notfound",
+  "shipment.ghnrecordnotfound",
+  "shipment.ghnordercodemissing",
+  "ghn.trackingchanged",
+]);
+const isRetryableTrackingError = (error: unknown): boolean => {
+  const status = Number((error as any)?.response?.status || 0);
+  const data = (error as any)?.response?.data;
+  const code = String(data?.code ?? data?.error?.code ?? "").trim().toLowerCase();
+  if (status === 401 || status === 403) return false;
+  if (code && NON_RETRYABLE_TRACKING_CODES.has(code)) return false;
+  if (code && RETRYABLE_TRACKING_CODES.has(code)) return true;
+  // Không có phản hồi (mạng/hết thời gian chờ) hoặc lỗi máy chủ: tạm thời.
+  if (!(error as any)?.response) return true;
+  if (status >= 500) return true;
+  return false;
+};
+
 const orderApi = {
   getOrderDetail: (orderId: string) =>
     apiClient.get(`/orders/${orderId}`).then((response) => response.data),
@@ -418,6 +446,11 @@ export default function OrderDetailScreen() {
     setIsTrackingLoading(true);
     setTrackingError(null);
 
+    // Mỗi chu kỳ tối đa 3 lần gọi shipment-tracking (không phải 1 + 3 lần thử lại):
+    // thành công (kể cả isStale = true, là phản hồi hợp lệ) → dừng ngay; chỉ thử lại
+    // lỗi tạm thời; lỗi cố định (401/403/không phải GHN/không tìm thấy đơn) → dừng.
+    let attempt = 0;
+
     const runTrackingRequest = async () => {
       if (!active || generation !== trackingRequestGenerationRef.current) {
         return;
@@ -430,7 +463,9 @@ export default function OrderDetailScreen() {
         return;
       }
 
+      attempt += 1;
       trackingRequestInFlightRef.current = true;
+      let scheduleRetry = false;
 
       try {
         const trackResponse =
@@ -442,8 +477,13 @@ export default function OrderDetailScreen() {
 
         setTrackingData(unwrap(trackResponse));
         setTrackingError(null);
-      } catch {
+      } catch (error) {
         if (!active || generation !== trackingRequestGenerationRef.current) {
+          return;
+        }
+
+        if (attempt < TRACKING_MAX_ATTEMPTS && isRetryableTrackingError(error)) {
+          scheduleRetry = true;
           return;
         }
 
@@ -455,14 +495,20 @@ export default function OrderDetailScreen() {
         trackingRequestInFlightRef.current = false;
 
         if (active && generation === trackingRequestGenerationRef.current) {
-          setIsTrackingLoading(false);
+          if (scheduleRetry) {
+            timer = setTimeout(() => {
+              void runTrackingRequest();
+            }, TRACKING_RETRY_DELAY_MS);
+          } else {
+            setIsTrackingLoading(false);
+          }
         }
       }
     };
 
     timer = setTimeout(() => {
       void runTrackingRequest();
-    }, 4000);
+    }, TRACKING_INITIAL_DELAY_MS);
 
     return () => {
       active = false;
