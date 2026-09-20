@@ -368,6 +368,13 @@ export default function ProfileScreen() {
 
   const availableBalance = wallet?.availableBalance ?? wallet?.AvailableBalance ?? 0;
   const holdBalance = wallet?.holdBalance ?? wallet?.HoldBalance ?? 0;
+  const profileUserId = String(user?.userId || user?.id || "").trim();
+  const profileUsername = String(user?.username || "").trim();
+  const profileDisplayName =
+    user?.role === "business"
+      ? user?.businessName || user?.name || profileUsername
+      : user?.name || profileUsername;
+  const displayRating = Number(user?.displayStarRating ?? 0);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -386,39 +393,41 @@ export default function ProfileScreen() {
               />
               <VipCrownBadge size="medium" withLabel style={styles.avatarCrown} />
             </View>
-            <Text style={styles.userName}>{user.username}</Text>
+            <Text style={styles.userName}>{profileDisplayName}</Text>
+            {profileUsername ? (
+              <Text style={styles.profileUsername}>@{profileUsername}</Text>
+            ) : null}
+            <Text style={styles.accountTypeText}>
+              {user.role === "business" ? "Tài khoản Doanh nghiệp" : "Tài khoản Cá nhân"}
+            </Text>
             {user.verificationStatus === "Verified" ? (
               <View style={styles.verifiedBadge}>
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.primary} />
                 <Text style={styles.verifiedText}>Đã xác thực</Text>
               </View>
             ) : null}
-            <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
-            <View style={styles.statsBadge}>
-              <Text style={styles.statsStrong}>Điểm uy tín: {user.reputationScore ?? 0}</Text>
-              <Text style={styles.statsDivider}>|</Text>
-              <Text
-                style={styles.statsStrong}
-                accessibilityRole="link"
+            <View style={styles.profileStatsRow}>
+              <View style={styles.profileStatCard}>
+                <Text style={styles.profileStatValue}>{user.reputationScore ?? 0}</Text>
+                <Text style={styles.profileStatLabel}>Điểm uy tín</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.profileStatCard}
+                activeOpacity={profileUserId ? 0.75 : 1}
+                disabled={!profileUserId}
                 onPress={() => {
-                  const profileUserId = String(
-                    user?.userId || user?.id || "",
-                  ).trim();
-
                   if (profileUserId) {
                     router.push(`/reviews/user/${profileUserId}` as any);
                   }
                 }}
               >
-                {Number(user.displayStarRating ?? 0) > 0
-                  ? `★ ${Number(user.displayStarRating).toFixed(1)}`
-                  : "Chưa có đánh giá"}
-              </Text>
-              <Text style={styles.statsDivider}>|</Text>
-              <Text style={styles.statsText}>
-                {user.role === "business" ? "Tài khoản Doanh nghiệp" : "Tài khoản Cá nhân"}
-              </Text>
+                <Text style={styles.profileStatValue}>
+                  {displayRating > 0 ? `★ ${displayRating.toFixed(1)}` : "Chưa có"}
+                </Text>
+                <Text style={styles.profileStatLabel}>Đánh giá</Text>
+              </TouchableOpacity>
             </View>
+            <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
           </View>
 
           {message ? (
@@ -580,24 +589,46 @@ const styles = StyleSheet.create({
   avatar: { width: 100, height: 100, borderRadius: 50 },
   avatarCrown: { position: "absolute", bottom: -4, alignSelf: "center" },
   userName: { color: COLORS.text, fontSize: 20, fontWeight: "900", marginTop: 12 },
+  profileUsername: { color: COLORS.textLight, fontSize: 14, marginTop: 4 },
+  accountTypeText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 4,
+  },
   verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   verifiedText: { color: COLORS.primary, fontSize: 12, fontWeight: "800" },
-  metaText: { color: COLORS.textLight, fontSize: 13, marginTop: 6 },
-  statsBadge: {
-    marginTop: 14,
-    minHeight: 38,
+  profileStatsRow: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  profileStatCard: {
+    flex: 1,
+    minHeight: 92,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    borderRadius: 16,
     backgroundColor: COLORS.white,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 12,
   },
-  statsStrong: { color: COLORS.text, fontWeight: "900", fontSize: 12 },
-  statsDivider: { color: COLORS.border },
-  statsText: { color: COLORS.textLight, fontSize: 12 },
+  profileStatValue: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  profileStatLabel: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: "center",
+  },
+  metaText: { color: COLORS.textLight, fontSize: 13, marginTop: 10 },
   messageBox: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 12 },
   messageText: { fontSize: 12, lineHeight: 17 },
   messageError: { backgroundColor: "rgba(122, 16, 18, 0.08)", borderColor: "rgba(122, 16, 18, 0.22)" },
@@ -647,6 +678,7 @@ const styles = StyleSheet.create({
   logoutButton: {
     minHeight: 62,
     marginTop: 20,
+    marginHorizontal: 16,
     borderWidth: 1,
     borderColor: "rgba(122, 16, 18, 0.22)",
     borderRadius: 14,

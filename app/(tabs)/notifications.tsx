@@ -33,6 +33,7 @@ import {
   type NotificationItem,
 } from "../../src/services/notifications/notificationTargets";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -572,7 +573,7 @@ export default function NotificationsScreen() {
                         ]}
                         numberOfLines={1}
                       >
-                        {item.title}
+                        {localizeSystemText(item.title, "Thông báo mới")}
                       </Text>
 
                       <Text
@@ -584,7 +585,10 @@ export default function NotificationsScreen() {
                         ]}
                         numberOfLines={2}
                       >
-                        {item.message}
+                        {localizeSystemText(
+                          item.message,
+                          "Bạn có cập nhật mới từ hệ thống.",
+                        )}
                       </Text>
 
                       <Text

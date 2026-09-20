@@ -26,6 +26,7 @@ import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { localizeSystemText } from "../../src/utils/localizeSystemText";
 
 type InlineMessage = {
   type: "error" | "warning" | "info" | "success";
@@ -1871,11 +1872,7 @@ export default function OrderDetailScreen() {
 }
 
 function sanitizeTimelineText(value: unknown) {
-  if (value === undefined || value === null) return "";
-
-  return String(value)
-    .replace(/\bBuyer\b/gi, "Người mua")
-    .replace(/\bSeller\b/gi, "Người bán");
+  return localizeSystemText(value, "");
 }
 
 function formatTimelineDate(value: unknown) {

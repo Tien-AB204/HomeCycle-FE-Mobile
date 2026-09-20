@@ -1,3 +1,5 @@
+import { localizeSystemText } from "./localizeSystemText";
+
 export const NETWORK_ERROR_MESSAGE =
   "Không thể kết nối đến hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.";
 
@@ -39,7 +41,8 @@ export const readSafeApiMessage = (payload: any): string | null => {
 
   for (const candidate of candidates) {
     if (isSafeUserMessage(candidate)) {
-      return candidate.trim();
+      const localized = localizeSystemText(candidate, "");
+      if (localized) return localized;
     }
   }
 

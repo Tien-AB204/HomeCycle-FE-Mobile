@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants/theme";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { localizeSystemText } from "../../utils/localizeSystemText";
 
 const AUTO_DISMISS_MS = 5_000;
 
@@ -46,11 +47,14 @@ export default function InAppNotificationToast() {
         <Ionicons name="notifications-outline" size={22} color={COLORS.primary} />
         <View style={styles.content}>
           <Text numberOfLines={1} style={styles.title}>
-            {inAppNotification.title}
+            {localizeSystemText(inAppNotification.title, "Thông báo mới")}
           </Text>
           {inAppNotification.message ? (
             <Text numberOfLines={2} style={styles.message}>
-              {inAppNotification.message}
+              {localizeSystemText(
+                inAppNotification.message,
+                "Bạn có cập nhật mới từ hệ thống.",
+              )}
             </Text>
           ) : null}
         </View>

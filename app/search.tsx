@@ -399,6 +399,42 @@ export default function SearchScreen() {
     });
   };
 
+  const normalizeTextRange = (
+    firstValue: string,
+    secondValue: string,
+    setFirstValue: (value: string) => void,
+    setSecondValue: (value: string) => void,
+  ) => {
+    if (!firstValue.trim() || !secondValue.trim()) return;
+
+    const firstNumber = Number(firstValue);
+    const secondNumber = Number(secondValue);
+    if (
+      !Number.isFinite(firstNumber) ||
+      !Number.isFinite(secondNumber) ||
+      secondNumber >= firstNumber
+    ) {
+      return;
+    }
+
+    setFirstValue(secondValue);
+    setSecondValue(firstValue);
+  };
+
+  const normalizeDamageRange = (
+    nextMin: number | null,
+    nextMax: number | null,
+  ) => {
+    if (nextMin !== null && nextMax !== null && nextMax < nextMin) {
+      setMinDamage(nextMax);
+      setMaxDamage(nextMin);
+      return;
+    }
+
+    setMinDamage(nextMin);
+    setMaxDamage(nextMax);
+  };
+
   const handleInputFocus = () => setViewState("HISTORY");
 
   const handleBack = () => {
@@ -477,6 +513,8 @@ export default function SearchScreen() {
       actualMinPrice > actualMaxPrice
     ) {
       [actualMinPrice, actualMaxPrice] = [actualMaxPrice, actualMinPrice];
+      setMinPrice(String(actualMinPrice));
+      setMaxPrice(String(actualMaxPrice));
     }
 
     let actualMinUsage = minUsage ? Number(minUsage) : null;
@@ -487,6 +525,8 @@ export default function SearchScreen() {
       actualMinUsage > actualMaxUsage
     ) {
       [actualMinUsage, actualMaxUsage] = [actualMaxUsage, actualMinUsage];
+      setMinUsage(String(actualMinUsage));
+      setMaxUsage(String(actualMaxUsage));
     }
 
     let actualMinDamage = minDamage;
@@ -497,6 +537,8 @@ export default function SearchScreen() {
       actualMinDamage > actualMaxDamage
     ) {
       [actualMinDamage, actualMaxDamage] = [actualMaxDamage, actualMinDamage];
+      setMinDamage(actualMinDamage);
+      setMaxDamage(actualMaxDamage);
     }
 
     try {
@@ -888,6 +930,9 @@ export default function SearchScreen() {
             keyboardType="numeric"
             value={minPrice}
             onChangeText={setMinPrice}
+            onEndEditing={() =>
+              normalizeTextRange(minPrice, maxPrice, setMinPrice, setMaxPrice)
+            }
           />
           <View style={styles.divider} />
           <TextInput
@@ -897,6 +942,9 @@ export default function SearchScreen() {
             keyboardType="numeric"
             value={maxPrice}
             onChangeText={setMaxPrice}
+            onEndEditing={() =>
+              normalizeTextRange(minPrice, maxPrice, setMinPrice, setMaxPrice)
+            }
           />
         </View>
 
@@ -909,6 +957,9 @@ export default function SearchScreen() {
             keyboardType="numeric"
             value={minUsage}
             onChangeText={setMinUsage}
+            onEndEditing={() =>
+              normalizeTextRange(minUsage, maxUsage, setMinUsage, setMaxUsage)
+            }
           />
           <View style={styles.divider} />
           <TextInput
@@ -918,6 +969,9 @@ export default function SearchScreen() {
             keyboardType="numeric"
             value={maxUsage}
             onChangeText={setMaxUsage}
+            onEndEditing={() =>
+              normalizeTextRange(minUsage, maxUsage, setMinUsage, setMaxUsage)
+            }
           />
         </View>
 
@@ -1782,8 +1836,11 @@ export default function SearchScreen() {
                   key={item.value}
                   style={styles.actionModalBtn}
                   onPress={() => {
-                    if (showDamagePicker === "min") setMinDamage(item.value);
-                    else setMaxDamage(item.value);
+                    if (showDamagePicker === "min") {
+                      normalizeDamageRange(item.value, maxDamage);
+                    } else {
+                      normalizeDamageRange(minDamage, item.value);
+                    }
                     setShowDamagePicker(null);
                   }}
                 >
