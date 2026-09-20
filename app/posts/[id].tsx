@@ -1475,6 +1475,14 @@ export default function PostDetailScreen() {
     router.push(`/reviews/user/${String(ownerId)}` as any);
   };
 
+  // Hồ sơ công khai của người đăng (ownerId lấy từ dữ liệu tin, không suy từ tên).
+  const handleOpenOwnerProfile = () => {
+    const ownerId = post?.ownerId;
+    if (!ownerId) return;
+
+    router.push(`/users/${String(ownerId)}` as any);
+  };
+
   const handleAddToCart = async () => {
     const targetPostId =
       post?.postId || (Array.isArray(id) ? id[0] : id);
@@ -1930,13 +1938,29 @@ export default function PostDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Người đăng</Text>
           <View style={styles.ownerCard}>
-            <Image
-              source={ownerAvatarSource}
-              style={styles.ownerAvatar}
-              resizeMode="cover"
-            />
+            {/* Ảnh đại diện và tên → hồ sơ công khai; hàng đánh giá (bên dưới, không lồng) → đánh giá. */}
+            <TouchableOpacity
+              onPress={handleOpenOwnerProfile}
+              disabled={!post.ownerId}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Xem hồ sơ người đăng"
+            >
+              <Image
+                source={ownerAvatarSource}
+                style={styles.ownerAvatar}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
             <View style={styles.ownerInfo}>
-              <View style={styles.ownerNameRow}>
+              <TouchableOpacity
+                style={styles.ownerNameRow}
+                onPress={handleOpenOwnerProfile}
+                disabled={!post.ownerId}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Xem hồ sơ người đăng"
+              >
                 <Text style={styles.ownerName} numberOfLines={1}>
                   {ownerName}
                 </Text>
@@ -1950,7 +1974,14 @@ export default function PostDetailScreen() {
                     <Text style={styles.verifiedBadgeText}>Đã xác minh</Text>
                   </View>
                 ) : null}
-              </View>
+                {post.ownerId ? (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={15}
+                    color={COLORS.textLight}
+                  />
+                ) : null}
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.ownerRatingRow}

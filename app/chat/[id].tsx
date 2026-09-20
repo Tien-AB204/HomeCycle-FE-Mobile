@@ -2942,9 +2942,22 @@ export default function ChatDetailScreen() {
       negotiationInfo?.partnerUserId,
       negotiationInfo,
     );
+    // Chỉ vùng giữa (ảnh + tên đối tác) mở hồ sơ công khai; nút quay lại và
+    // các nút bên phải (chọn phiên, tải lại) là vùng chạm riêng, không bị chặn.
+    const partnerUserId = String(negotiationInfo?.partnerUserId ?? "").trim();
 
     const centerContent = (
-      <View style={styles.headerCenter}>
+      <TouchableOpacity
+        style={styles.headerCenter}
+        onPress={() => {
+          if (!partnerUserId) return;
+          router.push(`/users/${partnerUserId}` as any);
+        }}
+        disabled={!partnerUserId}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel="Xem hồ sơ đối tác"
+      >
         <Image
           source={{ uri: avatarUri }}
           style={styles.headerAvatar}
@@ -2963,7 +2976,7 @@ export default function ChatDetailScreen() {
             </Text>
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     );
 
     const rightContent = (

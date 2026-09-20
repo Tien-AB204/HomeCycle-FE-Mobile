@@ -523,6 +523,12 @@ export default function OfferDetailScreen() {
   const buyerRoles =
     buyerId && buyerId === postOwnerId ? [posterRoleLabel] : ["Người mua"];
 
+  // Hồ sơ công khai của người tham gia (ID lấy từ dữ liệu đề nghị, không suy từ tên).
+  const openParticipantProfile = (userId: string) => {
+    if (!userId) return;
+    router.push(`/users/${userId}` as any);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Chi tiết đề nghị" showBack={true} />
@@ -550,20 +556,34 @@ export default function OfferDetailScreen() {
           {sellerId || buyerId ? (
             <View style={styles.participantSection}>
               {sellerId ? (
-                <View style={styles.participantRow}>
+                <TouchableOpacity
+                  style={styles.participantRow}
+                  onPress={() => openParticipantProfile(sellerId)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Xem hồ sơ người bán"
+                >
                   <Text style={styles.participantName} numberOfLines={1}>
                     {getParticipantName(seller, "Người bán")}
                   </Text>
                   <Text style={styles.participantRoles}>{sellerRoles.join(" · ")}</Text>
-                </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
+                </TouchableOpacity>
               ) : null}
               {buyerId ? (
-                <View style={styles.participantRow}>
+                <TouchableOpacity
+                  style={styles.participantRow}
+                  onPress={() => openParticipantProfile(buyerId)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Xem hồ sơ người mua"
+                >
                   <Text style={styles.participantName} numberOfLines={1}>
                     {getParticipantName(buyer, "Người mua")}
                   </Text>
                   <Text style={styles.participantRoles}>{buyerRoles.join(" · ")}</Text>
-                </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
+                </TouchableOpacity>
               ) : null}
             </View>
           ) : null}

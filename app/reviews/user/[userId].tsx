@@ -69,6 +69,14 @@ export default function UserReviewsScreen() {
     } as any);
   };
 
+  // Hồ sơ công khai của người đánh giá: chỉ khi Backend trả reviewerId (không suy từ tên).
+  const openReviewerProfile = (reviewerId?: string) => {
+    const targetId = String(reviewerId ?? "").trim();
+    if (!targetId) return;
+
+    router.push(`/users/${targetId}` as any);
+  };
+
   const loadPage = useCallback(
     async (page: number) => {
       if (!userId) {
@@ -157,26 +165,35 @@ export default function UserReviewsScreen() {
           {reviews.map((review, index) => (
             <View key={review.reviewId || index} style={styles.reviewCard}>
               <View style={styles.reviewerRow}>
-                <Image
-                  source={getAvatarSource(review.reviewerAvatarUrl)}
-                  style={styles.avatar}
-                />
+                <TouchableOpacity
+                  style={styles.reviewerIdentity}
+                  onPress={() => openReviewerProfile(review.reviewerId)}
+                  disabled={!review.reviewerId}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Xem hồ sơ người đánh giá"
+                >
+                  <Image
+                    source={getAvatarSource(review.reviewerAvatarUrl)}
+                    style={styles.avatar}
+                  />
 
-                <View style={styles.flex}>
-                  <Text style={styles.reviewerName}>
-                    {review.reviewerName || "Người dùng"}
-                  </Text>
-                  <View style={styles.starRow}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Ionicons
-                        key={star}
-                        name={star <= Number(review.rating || 0) ? "star" : "star-outline"}
-                        size={17}
-                        color="#9A6418"
-                      />
-                    ))}
+                  <View style={styles.flex}>
+                    <Text style={styles.reviewerName}>
+                      {review.reviewerName || "Người dùng"}
+                    </Text>
+                    <View style={styles.starRow}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Ionicons
+                          key={star}
+                          name={star <= Number(review.rating || 0) ? "star" : "star-outline"}
+                          size={17}
+                          color="#9A6418"
+                        />
+                      ))}
+                    </View>
                   </View>
-                </View>
+                </TouchableOpacity>
 
                 <View style={styles.reviewTimeCol}>
                   <Text style={styles.reviewTime}>
@@ -311,6 +328,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   reviewerRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  reviewerIdentity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 9 },
   avatar: { width: 42, height: 42, borderRadius: 21 },
   avatarPlaceholder: {
     width: 42,
