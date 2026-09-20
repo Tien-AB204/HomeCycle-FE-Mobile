@@ -24,6 +24,7 @@ import { devLog } from "../../utils/devLog";
 import { isSafeUserMessage, readSafeApiMessage, SERVER_ERROR_MESSAGE, NETWORK_ERROR_MESSAGE } from "../../utils/errorMessage";
 import { useGuardedRouter } from "../../utils/tapGuard";
 import { useAutoDismissFeedback } from "../../utils/useAutoDismissFeedback";
+import { localizeSystemText } from "../../utils/localizeSystemText";
 
 /**
  * Gợi ý nhà cung cấp phù hợp — MỘT panel dùng chung cho gói dùng thử và gói VIP.
@@ -184,7 +185,11 @@ const describeFieldErrors = (errors: SupplierMatchValidationErrors): string[] =>
     const label = FIELD_LABELS.find((item) => item.test.test(key))?.label;
     for (const message of messages) {
       if (!isSafeUserMessage(message)) continue;
-      lines.push(label ? `${label}: ${message}` : message);
+      const localizedMessage = localizeSystemText(
+        message,
+        "Giá trị chưa hợp lệ.",
+      );
+      lines.push(label ? `${label}: ${localizedMessage}` : localizedMessage);
     }
   }
   return Array.from(new Set(lines)).slice(0, 6);
@@ -560,7 +565,14 @@ function SupplierMatchCard({
           ))}
         </View>
       ) : null}
-      {item.shortExplanation ? <Text style={styles.explanation}>{item.shortExplanation}</Text> : null}
+      {item.shortExplanation ? (
+          <Text style={styles.explanation}>
+            {localizeSystemText(
+              item.shortExplanation,
+              "Hệ thống đã tìm thấy bài bán phù hợp với các tiêu chí đã chọn.",
+            )}
+          </Text>
+        ) : null}
       <View style={styles.cardActions}>
         <TouchableOpacity onPress={onToggle} style={styles.secondaryButton} accessibilityRole="button">
           <Text style={styles.secondaryButtonText}>{expanded ? "Ẩn tiêu chí" : "Xem tiêu chí"}</Text>

@@ -70,6 +70,20 @@ const SYSTEM_REPLACEMENTS: Array<[RegExp, string]> = [
 const REMAINING_ENGLISH_SYSTEM_WORDS =
   /\b(the|and|or|is|are|was|were|has|have|had|from|with|without|after|before|because|when|while|not|found|invalid|error|successful|successfully|confirm|confirmation|funds|platform|seller|buyer|moderator|pending|processing|completed|cancelled|canceled|failed|success|active|inactive|unknown|approved|rejected|expired|refunded|partiallyrefunded|scheduled|proposed|inprogress|returned|delivering|readytopick|exception|damage_lost|dispute|order|refund|return|payment|shipping|delivery|appointment|inspection|review|profile|account|wallet|offer|agreement|free|premium|basic|standard|package|plan|unlimited|limited|days?|months?|years?)\b/i;
 
+const VIETNAMESE_TEXT_SIGNAL =
+  /[àáâãèéêìíòóôõùúýăđĩũơưạ-ỹ]|\b(người|đơn|hàng|đã|đang|chưa|không|vui lòng|thanh toán|hợp đồng|tranh chấp|kiểm định|lịch hẹn|đánh giá|hồ sơ|tài khoản|giao hàng|vận chuyển|trả hàng|hoàn tiền|thành công|thất bại|xác nhận|cập nhật|miễn phí|cao cấp|cơ bản|tiêu chuẩn|ngày|tháng|năm)\b/i;
+
+const ALLOWED_SYSTEM_BRAND_TEXT =
+  /^(?:HomeCycle|GHN|PayOS|VIP|HomeCycle\s+VIP|GHN\s+Express)$/i;
+
+const looksLikeUntranslatedEnglishProse = (text: string): boolean => {
+  if (ALLOWED_SYSTEM_BRAND_TEXT.test(text)) return false;
+  if (VIETNAMESE_TEXT_SIGNAL.test(text)) return false;
+
+  const asciiWords = text.match(/[A-Za-z]{2,}/g) ?? [];
+  return asciiWords.length >= 2;
+};
+
 /**
  * Chỉ dùng cho text hệ thống/Backend, không dùng cho tên người, tên doanh nghiệp,
  * tên sản phẩm hoặc nội dung do người dùng nhập.
@@ -87,7 +101,14 @@ export const localizeSystemText = (
     text = text.replace(pattern, replacement);
   }
 
-  return REMAINING_ENGLISH_SYSTEM_WORDS.test(text) ? fallback : text;
+  if (
+    REMAINING_ENGLISH_SYSTEM_WORDS.test(text) ||
+    looksLikeUntranslatedEnglishProse(text)
+  ) {
+    return fallback;
+  }
+
+  return text;
 };
 
 export default localizeSystemText;

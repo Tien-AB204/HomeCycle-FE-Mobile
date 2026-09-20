@@ -37,6 +37,7 @@ import { compareChatTimeline } from "../../src/utils/chatTimeline";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { devLog } from "../../src/utils/devLog";
+import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const agreementApi = {
@@ -248,7 +249,10 @@ const normalizeAgreementUiText = (
     }
   }
 
-  return normalized;
+  return localizeSystemText(
+    normalized,
+    "Cập nhật hợp đồng giao dịch.",
+  );
 };
 
 // Bản xem trước một dòng của tin nhắn mới nhất cho bộ chọn phiên. Dùng chung cho
@@ -299,7 +303,10 @@ const normalizeSystemUiText = (text?: string | null) => {
     return "Hợp đồng đã được thanh toán. Đơn hàng và lịch hẹn đã được tạo.";
   }
 
-  return normalized || "Cập nhật phiên thương lượng.";
+  return localizeSystemText(
+    normalized,
+    "Cập nhật phiên thương lượng.",
+  );
 };
 
 const isPaymentCompletedSystemText = (text?: string | null) => {
