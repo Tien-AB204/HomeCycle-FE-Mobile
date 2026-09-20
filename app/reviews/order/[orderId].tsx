@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -122,6 +122,7 @@ export default function OrderReviewScreen() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const reviewWriteInFlightRef = useRef<string | null>(null);
   const [orderData, setOrderData] = useState<any>(null);
   const [myReview, setMyReview] = useState<any>(null);
   const [rating, setRating] = useState(0);
@@ -277,7 +278,10 @@ export default function OrderReviewScreen() {
   };
 
   const submitCreateReview = async () => {
-    if (!orderId || !validate()) return;
+    if (reviewWriteInFlightRef.current || !orderId || !validate()) return;
+
+    const lockKey = `create:${orderId}`;
+    reviewWriteInFlightRef.current = lockKey;
 
     if (images.length > 0) {
       const filesValidation = await validateNewLocalFiles(
@@ -291,6 +295,9 @@ export default function OrderReviewScreen() {
 
       if (!filesValidation.valid) {
         setImageError(filesValidation.message);
+        if (reviewWriteInFlightRef.current === lockKey) {
+          reviewWriteInFlightRef.current = null;
+        }
         return;
       }
     }
@@ -326,12 +333,18 @@ export default function OrderReviewScreen() {
 
       setMessage({ type: "error", text: getErrorMessage(error, fallback) });
     } finally {
+      if (reviewWriteInFlightRef.current === lockKey) {
+        reviewWriteInFlightRef.current = null;
+      }
       setIsSubmitting(false);
     }
   };
 
   const submitUpdateReview = async () => {
-    if (!myReview?.reviewId || !validate()) return;
+    if (reviewWriteInFlightRef.current || !myReview?.reviewId || !validate()) return;
+
+    const lockKey = `update:${myReview.reviewId}`;
+    reviewWriteInFlightRef.current = lockKey;
 
     try {
       setIsSubmitting(true);
@@ -365,6 +378,9 @@ export default function OrderReviewScreen() {
 
       setMessage({ type: "error", text: getErrorMessage(error, fallback) });
     } finally {
+      if (reviewWriteInFlightRef.current === lockKey) {
+        reviewWriteInFlightRef.current = null;
+      }
       setIsSubmitting(false);
     }
   };

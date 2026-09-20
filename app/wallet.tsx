@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -124,6 +124,7 @@ export default function WalletScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const withdrawalInFlightRef = useRef(false);
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
   const [message, setMessage] = useState<InlineMessage>(null);
@@ -258,7 +259,9 @@ export default function WalletScreen() {
   };
 
   const createWithdrawal = async () => {
-    if (!validateWithdrawal()) return;
+    if (withdrawalInFlightRef.current || !validateWithdrawal()) return;
+
+    withdrawalInFlightRef.current = true;
 
     try {
       setIsWithdrawing(true);
@@ -306,6 +309,7 @@ export default function WalletScreen() {
           NETWORK_ERROR_MESSAGE,
       });
     } finally {
+      withdrawalInFlightRef.current = false;
       setIsWithdrawing(false);
     }
   };

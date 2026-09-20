@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -132,6 +132,7 @@ export default function InspectionFormScreen() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const inspectionWriteInFlightRef = useRef<string | null>(null);
 
   const [sellerAction, setSellerAction] = useState<SellerAction>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -293,7 +294,10 @@ export default function InspectionFormScreen() {
   });
 
   const handleSaveDraft = async () => {
-    if (!appointmentId || isSaving) return;
+    if (!appointmentId || isSaving || inspectionWriteInFlightRef.current) return;
+
+    const lockKey = `draft:${appointmentId}`;
+    inspectionWriteInFlightRef.current = lockKey;
 
     try {
       setIsSaving(true);
@@ -365,12 +369,15 @@ export default function InspectionFormScreen() {
         ),
       });
     } finally {
+      if (inspectionWriteInFlightRef.current === lockKey) {
+        inspectionWriteInFlightRef.current = null;
+      }
       setIsSaving(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!form || isSubmitting || isDirty) return;
+    if (!form || isSubmitting || isDirty || inspectionWriteInFlightRef.current) return;
 
     if (
       !operatingStatus ||
@@ -405,6 +412,9 @@ export default function InspectionFormScreen() {
         return;
       }
     }
+
+    const lockKey = `submit:${form.inspectionFormId}`;
+    inspectionWriteInFlightRef.current = lockKey;
 
     try {
       setIsSubmitting(true);
@@ -450,6 +460,9 @@ export default function InspectionFormScreen() {
           getApiErrorMessage(error, "Không thể gửi kết quả kiểm định lúc này."),
       });
     } finally {
+      if (inspectionWriteInFlightRef.current === lockKey) {
+        inspectionWriteInFlightRef.current = null;
+      }
       setIsSubmitting(false);
     }
   };
@@ -469,7 +482,7 @@ export default function InspectionFormScreen() {
   };
 
   const handleSubmitSellerAction = async () => {
-    if (!form || !sellerAction || isSellerActionSubmitting) return;
+    if (!form || !sellerAction || isSellerActionSubmitting || inspectionWriteInFlightRef.current) return;
 
     const trimmedReason = rejectReason.trim();
 
@@ -484,12 +497,16 @@ export default function InspectionFormScreen() {
       }
     }
 
+    const action = sellerAction;
+    const lockKey = `${action}:${form.inspectionFormId}`;
+    inspectionWriteInFlightRef.current = lockKey;
+
     try {
       setIsSellerActionSubmitting(true);
       setSellerActionError(null);
 
       const updated =
-        sellerAction === "confirm"
+        action === "confirm"
           ? await inspectionFormApi.sellerConfirm(
               form.inspectionFormId,
               form.revision,
@@ -507,7 +524,7 @@ export default function InspectionFormScreen() {
       setPageMessage({
         type: "success",
         text:
-          sellerAction === "confirm"
+          action === "confirm"
             ? "Đã xác nhận kết quả kiểm định."
             : "Đã từ chối kết quả kiểm định.",
       });
@@ -524,12 +541,15 @@ export default function InspectionFormScreen() {
       setSellerActionError(
         getApiErrorMessage(
           error,
-          sellerAction === "confirm"
+          action === "confirm"
             ? "Không thể xác nhận kết quả kiểm định lúc này."
             : "Không thể từ chối kết quả kiểm định lúc này.",
         ),
       );
     } finally {
+      if (inspectionWriteInFlightRef.current === lockKey) {
+        inspectionWriteInFlightRef.current = null;
+      }
       setIsSellerActionSubmitting(false);
     }
   };
