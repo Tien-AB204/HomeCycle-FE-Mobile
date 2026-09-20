@@ -28,7 +28,12 @@ import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 export default function LoginScreen() {
   const router = useGuardedRouter();
-  const { returnUrl } = useLocalSearchParams();
+  const { returnUrl, notice } = useLocalSearchParams();
+  const noticeParam = Array.isArray(notice) ? notice[0] : notice;
+  const resetSuccessMessage =
+    noticeParam === "password-reset"
+      ? "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới."
+      : "";
   const { login } = useAuth();
 
   const passwordInputRef = useRef<TextInput | null>(null);
@@ -293,6 +298,15 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
 
+            {resetSuccessMessage && !loginError ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={styles.loginSuccessText}
+              >
+                {resetSuccessMessage}
+              </Text>
+            ) : null}
+
             {loginError ? (
               <Text
                 accessibilityLiveRegion="polite"
@@ -509,6 +523,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  loginSuccessText: {
+    color: COLORS.success,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
   loginErrorText: {
     color: COLORS.error,
     fontSize: 12,

@@ -1,7 +1,8 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "../../src/constants/theme";
+import { authApi, getPasswordResetErrorMessage } from "../../src/services/apis/authApi";
 import {
   EMAIL_MAX_LENGTH,
   validateEmail,
@@ -25,30 +27,49 @@ export default function ForgotPasswordScreen() {
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [developmentMessage, setDevelopmentMessage] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitInFlightRef = useRef(false);
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
     setEmailError("");
-    setDevelopmentMessage("");
+    setSubmitError("");
   };
 
-  const handleSendCode = () => {
+  const handleSendCode = async () => {
+    if (submitInFlightRef.current) return;
     setEmailError("");
-    setDevelopmentMessage("");
+    setSubmitError("");
 
-    const validationError = validateEmail(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const validationError = validateEmail(normalizedEmail);
 
     if (validationError) {
       setEmailError(validationError);
       return;
     }
 
-    // BE chưa có endpoint forgot/reset password.
-    // Không gọi API giả và không chuyển sang OTP cho đến khi BE hoàn thiện.
-    setDevelopmentMessage(
-      "Tính năng khôi phục mật khẩu đang được phát triển. Vui lòng thử lại sau.",
-    );
+    submitInFlightRef.current = true;
+    setIsSubmitting(true);
+    try {
+      // Chỉ chuyển sang màn nhập OTP khi máy chủ xác nhận đã gửi mã.
+      await authApi.forgotPassword(normalizedEmail);
+      router.push({
+        pathname: "/(auth)/reset-password",
+        params: { email: normalizedEmail },
+      });
+    } catch (error) {
+      setSubmitError(
+        getPasswordResetErrorMessage(
+          error,
+          "Không thể gửi mã khôi phục lúc này. Vui lòng thử lại.",
+        ),
+      );
+    } finally {
+      submitInFlightRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   const handleBack = () => {
@@ -134,8 +155,9 @@ export default function ForgotPasswordScreen() {
               maxLength={EMAIL_MAX_LENGTH}
               value={email}
               onChangeText={handleEmailChange}
-              onSubmitEditing={handleSendCode}
+              onSubmitEditing={() => void handleSendCode()}
               returnKeyType="send"
+              editable={!isSubmitting}
             />
           </View>
 
@@ -149,28 +171,38 @@ export default function ForgotPasswordScreen() {
             </Text>
           ) : null}
 
-          {developmentMessage ? (
-            <View style={styles.developmentBox}>
+          {submitError ? (
+            <View style={styles.submitErrorBox}>
               <Ionicons
-                name="construct-outline"
+                name="alert-circle-outline"
                 size={18}
-                color={COLORS.warning}
+                color={COLORS.error}
               />
 
-              <Text style={styles.developmentText}>
-                {developmentMessage}
+              <Text
+                accessibilityLiveRegion="polite"
+                accessibilityRole="alert"
+                style={styles.submitErrorText}
+              >
+                {submitError}
               </Text>
             </View>
           ) : null}
 
           <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleSendCode}
+            style={[styles.primaryButton, isSubmitting ? styles.primaryButtonDisabled : undefined]}
+            onPress={() => void handleSendCode()}
+            disabled={isSubmitting}
             accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
           >
-            <Text style={styles.primaryButtonText}>
-              GỬI MÃ KHÔI PHỤC
-            </Text>
+            {isSubmitting ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                GỬI MÃ KHÔI PHỤC
+              </Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.footer}>
@@ -313,23 +345,25 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  developmentBox: {
+  submitErrorBox: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    padding: 12,
     marginTop: 12,
+    padding: 12,
     borderRadius: 10,
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderWidth: 1,
-    borderColor: "rgba(154, 100, 24, 0.24)",
+    borderColor: "rgba(122, 16, 18, 0.24)",
+    backgroundColor: "rgba(122, 16, 18, 0.06)",
   },
-
-  developmentText: {
+  submitErrorText: {
     flex: 1,
-    color: COLORS.warning,
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 18,
+    color: COLORS.error,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
   },
 
   primaryButton: {

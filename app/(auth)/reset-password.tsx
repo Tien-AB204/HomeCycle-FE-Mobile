@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -12,16 +13,24 @@ import {
   View,
 } from "react-native";
 import {
+  useEffect,
   useRef,
   useState,
 } from "react";
 
 import { COLORS } from "../../src/constants/theme";
+import { authApi, getPasswordResetErrorMessage } from "../../src/services/apis/authApi";
 import {
   PASSWORD_MAX_LENGTH,
   validatePassword,
 } from "../../src/utils/formValidation";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+
+// OTP đặt lại mật khẩu: đúng 6 chữ số, hiệu lực 5 phút, dùng một lần (Backend là nơi quyết định).
+const OTP_LENGTH = 6;
+const OTP_LIFETIME_SECONDS = 5 * 60;
+const formatCountdown = (seconds: number) =>
+  `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 const getStringParam = (
   value: string | string[] | undefined,
@@ -36,6 +45,24 @@ export default function ResetPasswordScreen() {
   const params = useLocalSearchParams();
 
   const email = getStringParam(params.email);
+
+  const [otp, setOtp] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState("");
+  // Đếm ngược hiệu lực OTP (hiển thị); Backend vẫn là nơi quyết định hết hạn/giới hạn gửi lại.
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number>(() => Date.now() + OTP_LIFETIME_SECONDS * 1000);
+  const [secondsLeft, setSecondsLeft] = useState(OTP_LIFETIME_SECONDS);
+  const submitInFlightRef = useRef(false);
+  const resendInFlightRef = useRef(false);
+
+  useEffect(() => {
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [otpExpiresAt]);
 
   const [newPassword, setNewPassword] =
     useState("");
@@ -102,9 +129,15 @@ export default function ResetPasswordScreen() {
   const validateForm = () => {
     let isValid = true;
 
+    setOtpError("");
     setNewPasswordError("");
     setConfirmPasswordError("");
     setSubmitError("");
+
+    if (!new RegExp(`^\\d{${OTP_LENGTH}}$`).test(otp)) {
+      setOtpError(`Mã OTP gồm đúng ${OTP_LENGTH} chữ số.`);
+      isValid = false;
+    }
 
     const passwordValidationError =
       validatePassword(newPassword);
@@ -131,31 +164,66 @@ export default function ResetPasswordScreen() {
     return isValid;
   };
   const handleReset = async () => {
+    if (submitInFlightRef.current) return;
     if (!validateForm()) {
       return;
     }
+    if (!email) {
+      setSubmitError("Thiếu email để đặt lại mật khẩu. Vui lòng quay lại bước quên mật khẩu.");
+      return;
+    }
 
-    /*
-     * TODO(BE):
-     *
-     * Swagger hiß╗çn tß║íi ng├áy 13/08/2026 ch╞░a c├│
-     * endpoint ─æß║╖t lß║íi mß║¡t khß║⌐u.
-     *
-     * C├íc endpoint Auth hiß╗çn c├│ chß╗ë gß╗ôm:
-     * - POST /api/auth/send-otp
-     * - POST /api/auth/verify-otp
-     * - POST /api/auth/login
-     * - POST /api/auth/personal/register
-     * - POST /api/auth/business/register
-     * - POST /api/auth/google-login
-     * - POST /api/auth/refresh-token
-     *
-     * Tuyß╗çt ─æß╗æi kh├┤ng giß║ú b├ío th├ánh c├┤ng hoß║╖c tß╗▒
-     * chuyß╗ân vß╗ü m├án ─æ─âng nhß║¡p khi ch╞░a gß╗ìi BE.
-     */
-    setSubmitError(
-      "Chß╗⌐c n─âng ─æß║╖t lß║íi mß║¡t khß║⌐u hiß╗çn ch╞░a ─æ╞░ß╗úc m├íy chß╗º hß╗ù trß╗ú. Vui l├▓ng thß╗¡ lß║íi sau.",
-    );
+    submitInFlightRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await authApi.resetPassword({
+        email,
+        otp,
+        newPassword,
+        confirmPassword,
+      });
+      // Không tự đăng nhập: về màn đăng nhập với thông báo thành công.
+      router.replace({
+        pathname: "/(auth)/login",
+        params: { notice: "password-reset" },
+      });
+    } catch (error) {
+      setSubmitError(
+        getPasswordResetErrorMessage(
+          error,
+          "Không thể đặt lại mật khẩu lúc này. Vui lòng thử lại.",
+        ),
+      );
+    } finally {
+      submitInFlightRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  // Gửi lại OTP đặt lại mật khẩu (KHÔNG dùng send-otp của đăng ký).
+  const handleResendOtp = async () => {
+    if (resendInFlightRef.current || isSubmitting || !email) return;
+    resendInFlightRef.current = true;
+    setIsResending(true);
+    setResendNotice("");
+    setSubmitError("");
+    try {
+      await authApi.forgotPassword(email);
+      setOtp("");
+      setOtpError("");
+      setOtpExpiresAt(Date.now() + OTP_LIFETIME_SECONDS * 1000);
+      setResendNotice("Đã gửi lại mã OTP mới tới email của bạn.");
+    } catch (error) {
+      setSubmitError(
+        getPasswordResetErrorMessage(
+          error,
+          "Không thể gửi lại mã OTP lúc này. Vui lòng thử lại sau.",
+        ),
+      );
+    } finally {
+      resendInFlightRef.current = false;
+      setIsResending(false);
+    }
   };
 
   return (
@@ -211,6 +279,117 @@ export default function ResetPasswordScreen() {
               </Text>
             ) : null}
           </View>
+
+          <Text style={styles.label}>
+            MÃ OTP
+          </Text>
+
+          <View
+            style={[
+              styles.inputContainer,
+              otpError
+                ? styles.inputContainerError
+                : undefined,
+            ]}
+          >
+            <Ionicons
+              name="key-outline"
+              size={20}
+              color={
+                otpError
+                  ? COLORS.error
+                  : COLORS.textLight
+              }
+              style={styles.inputIcon}
+            />
+
+            <TextInput
+              style={[
+                styles.input,
+                Platform.OS === "web"
+                  ? ({
+                      outlineStyle:
+                        "none",
+                    } as any)
+                  : undefined,
+              ]}
+              placeholder="Nhập mã 6 chữ số..."
+              placeholderTextColor={
+                COLORS.textLight
+              }
+              keyboardType="number-pad"
+              inputMode="numeric"
+              maxLength={OTP_LENGTH}
+              value={otp}
+              onChangeText={(text) => {
+                setOtp(text.replace(/[^0-9]/g, "").slice(0, OTP_LENGTH));
+                setOtpError("");
+                setSubmitError("");
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              editable={!isSubmitting}
+            />
+          </View>
+
+          {otpError ? (
+            <View
+              style={
+                styles.fieldErrorRow
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color={COLORS.error}
+              />
+
+              <Text
+                style={
+                  styles.fieldErrorText
+                }
+              >
+                {otpError}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.otpMetaRow}>
+            <Text style={styles.otpMetaText}>
+              {secondsLeft > 0
+                ? `Mã có hiệu lực trong ${formatCountdown(secondsLeft)}`
+                : "Mã OTP đã hết hạn. Hãy gửi lại mã mới."}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                void handleResendOtp();
+              }}
+              disabled={isResending || isSubmitting}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isResending || isSubmitting, busy: isResending }}
+              hitSlop={6}
+            >
+              <Text
+                style={[
+                  styles.resendText,
+                  isResending || isSubmitting ? styles.resendTextDisabled : undefined,
+                ]}
+              >
+                {isResending ? "Đang gửi..." : "Gửi lại mã"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {resendNotice ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={styles.resendNoticeText}
+            >
+              {resendNotice}
+            </Text>
+          ) : null}
 
           <Text style={styles.label}>
             Mß║¼T KHß║¿U Mß╗ÜI
@@ -459,11 +638,20 @@ export default function ResetPasswordScreen() {
           ) : null}
 
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[
+              styles.primaryButton,
+              isSubmitting ? styles.primaryButtonDisabled : undefined,
+            ]}
             onPress={() => {
               void handleReset();
             }}
+            disabled={isSubmitting}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
           >
+            {isSubmitting ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
             <Text
               style={
                 styles.primaryButtonText
@@ -471,6 +659,7 @@ export default function ResetPasswordScreen() {
             >
               X├üC NHß║¼N ─Éß╗öI Mß║¼T KHß║¿U
             </Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -652,6 +841,37 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  otpMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  otpMetaText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textLight,
+  },
+  resendText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.primary,
+  },
+  resendTextDisabled: {
+    opacity: 0.5,
+  },
+  resendNoticeText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.success,
+    marginBottom: 12,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
+  },
   primaryButton: {
     height: 56,
     justifyContent: "center",
