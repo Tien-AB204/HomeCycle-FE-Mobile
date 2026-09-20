@@ -846,10 +846,7 @@ const AddressPickerField = forwardRef<
           behavior={
             Platform.OS === "ios"
               ? "padding"
-              : Platform.OS ===
-                  "android"
-                ? "height"
-                : undefined
+              : undefined
           }
           keyboardVerticalOffset={0}
         >

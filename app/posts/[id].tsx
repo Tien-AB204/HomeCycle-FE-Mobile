@@ -2149,8 +2149,11 @@ export default function PostDetailScreen() {
           disabled={isAddingToCart}
           onPress={() => setShowCartModal(false)}
         >
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-            <ModalSurface style={styles.modalContent}>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardArea}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <ModalSurface style={[styles.modalContent, styles.modalContentShrink]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Thêm vào giỏ hàng</Text>
               <TouchableOpacity
@@ -2161,7 +2164,12 @@ export default function PostDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBodyScroll}
+              contentContainerStyle={styles.modalBody}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
               {cartFeedback ? (
                 <InlineFeedback
                   feedback={cartFeedback}
@@ -2257,7 +2265,7 @@ export default function PostDetailScreen() {
                   )}
                 </TouchableOpacity>
               )}
-            </View>
+            </ScrollView>
             </ModalSurface>
           </KeyboardAvoidingView>
         </ModalBackdrop>
@@ -2283,11 +2291,7 @@ export default function PostDetailScreen() {
           <KeyboardAvoidingView
             style={[styles.sellerKeyboardContainer, { paddingTop: insets.top }]}
             pointerEvents="box-none"
-            behavior={
-              Platform.OS === "ios"
-                ? "padding"
-                : Platform.OS === "android" ? "height" : undefined
-            }
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <ModalSurface
               style={[
@@ -2720,7 +2724,7 @@ export default function PostDetailScreen() {
                 )}
               </ScrollView>
               {!isLoadingSellerMatches && !sellerLoadError && (pendingSellerOfferId || selectedSellerPost) ? (
-                <View style={[styles.sellerModalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                <View style={[styles.sellerModalFooter, { paddingBottom: Platform.OS === "android" ? 16 : Math.max(insets.bottom, 16) }]}>
                   {pendingSellerOfferId ? (
                     <Text style={styles.sellerPendingText}>Đã chào bán · Đang chờ phản hồi</Text>
                   ) : null}
@@ -2761,8 +2765,11 @@ export default function PostDetailScreen() {
           disabled={isSubmittingOffer}
           onPress={() => setShowOfferModal(false)}
         >
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-            <ModalSurface style={styles.modalContent}>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardArea}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <ModalSurface style={[styles.modalContent, styles.modalContentShrink]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Thương lượng giá</Text>
               <TouchableOpacity
@@ -2773,7 +2780,12 @@ export default function PostDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBodyScroll}
+              contentContainerStyle={styles.modalBody}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
               {offerFeedback ? (
                 <InlineFeedback
                   feedback={offerFeedback}
@@ -2876,7 +2888,7 @@ export default function PostDetailScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
             </ModalSurface>
           </KeyboardAvoidingView>
         </ModalBackdrop>
@@ -3336,6 +3348,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
   modalBody: { gap: 16 },
+  // Bàn phím Android: nền modal chừa chỗ, vùng này co lại và cuộn được.
+  modalKeyboardArea: { maxHeight: "100%" },
+  modalContentShrink: { flexShrink: 1 },
+  modalBodyScroll: { flexShrink: 1 },
   modalSubmitBtn: {
     alignSelf: "center",
     flex: 0,

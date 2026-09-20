@@ -703,7 +703,7 @@ export default function OfferDetailScreen() {
 
       <Modal visible={responseAction !== null} transparent animationType="fade" onRequestClose={closeResponseAction}>
         <ModalBackdrop style={styles.modalOverlay} disabled={isResponding} onPress={closeResponseAction}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ModalSurface style={styles.modalCard}>
               <Text style={styles.modalTitle}>{responseAction === "counter" ? "Trao đổi đề nghị" : responseAction === "accept" ? "Đồng ý đề nghị" : "Từ chối đề nghị"}</Text>
               {responseAction === "counter" ? <>
@@ -744,7 +744,7 @@ export default function OfferDetailScreen() {
           onPress={handleCloseEditModal}
         >
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <ModalSurface style={styles.modalCard}>
               <View style={styles.modalHeader}>

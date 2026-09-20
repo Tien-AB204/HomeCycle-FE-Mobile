@@ -1520,11 +1520,7 @@ export default function OfferManagementPanel({
             onPress={handleCloseEditOfferModal}
           >
             <KeyboardAvoidingView
-              behavior={
-                Platform.OS === "ios"
-                  ? "padding"
-                  : "height"
-              }
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
               <ModalSurface style={styles.modalContent}>
                 <View style={styles.modalHeader}>

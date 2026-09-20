@@ -1401,11 +1401,7 @@ export default function OffersByPostScreen() {
         >
           <KeyboardAvoidingView
             style={styles.modalKeyboard}
-            behavior={
-              Platform.OS === "ios"
-                ? "padding"
-                : "height"
-            }
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <ModalSurface style={styles.actionModal}>
               <View style={styles.actionModalHeader}>
