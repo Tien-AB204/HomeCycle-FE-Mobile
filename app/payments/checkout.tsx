@@ -182,6 +182,8 @@ export default function CheckoutScreen() {
   const handledReturnKeyRef = useRef<string | null>(null);
   const navigatedToSuccessRef = useRef(false);
   const lastReconcileAtRef = useRef(0);
+  // Đang đối chiếu kết quả PayOS sau khi quay về: chặn hiển thị lại màn thanh toán cũ.
+  const [isReconcilingReturn, setIsReconcilingReturn] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"wallet" | "payos">(
     "wallet",
   );
@@ -300,6 +302,10 @@ export default function CheckoutScreen() {
       if (Date.now() - lastReconcileAtRef.current < 1500) return;
     }
     reconcileInFlightRef.current = true;
+    // Mọi lần đối chiếu ở đây đều xuất phát từ một phiên PayOS đang chờ (callback
+    // hoặc quay lại ứng dụng): che màn thanh toán cũ cho tới khi có kết quả.
+    const isReturnCallback = source !== "resume";
+    setIsReconcilingReturn(true);
     try {
       const statusResponse = await paymentApi.getStatus(agreementId);
       const statusData = unwrap(statusResponse);
@@ -335,8 +341,14 @@ export default function CheckoutScreen() {
     } catch (error) {
       devLog("[checkout] Không đối chiếu được trạng thái thanh toán:", error);
       clearFeedback();
+      if (isReturnCallback) {
+        showInfo(
+          "Chưa kiểm tra được trạng thái thanh toán. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
+        );
+      }
     } finally {
       reconcileInFlightRef.current = false;
+      setIsReconcilingReturn(false);
     }
   }, [agreementId, clearFeedback, fetchCheckoutData, router, showInfo]);
 
@@ -350,12 +362,21 @@ export default function CheckoutScreen() {
     const key = `${agreementId}:${kind}`;
     if (handledReturnKeyRef.current === key) return;
     handledReturnKeyRef.current = key;
+    // Hiện trạng thái xác nhận ngay cả khi một lần đối chiếu khác đang chạy;
+    // lần đối chiếu đó sẽ tắt trạng thái này khi kết thúc.
+    if (agreementId) setIsReconcilingReturn(true);
     void reconcileExternalCheckout(kind);
   }, [agreementId, reconcileExternalCheckout]);
 
   useEffect(() => {
     handleExternalReturn(payosReturnKind);
   }, [handleExternalReturn, payosReturnKind]);
+
+  const hasUnhandledReturnParam =
+    (payosReturnKind === "return" || payosReturnKind === "cancel") &&
+    handledReturnKeyRef.current !== `${agreementId}:${payosReturnKind}` &&
+    !navigatedToSuccessRef.current;
+  const showReturnReconciling = isReconcilingReturn || hasUnhandledReturnParam;
 
   useFocusEffect(
     useCallback(() => {
@@ -625,6 +646,19 @@ export default function CheckoutScreen() {
       setIsProcessing(false);
     }
   };
+
+  if (showReturnReconciling) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Header title="Thanh toán" showBack={false} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.reconcileTitle}>Đang xác nhận thanh toán...</Text>
+          <Text style={styles.reconcileHint}>Vui lòng chờ trong giây lát.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -916,6 +950,8 @@ export default function CheckoutScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8F9FA" },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  reconcileTitle: { marginTop: 16, fontSize: 16, fontWeight: "700", color: COLORS.text },
+  reconcileHint: { marginTop: 6, fontSize: 13, color: COLORS.textLight },
   container: { flex: 1, padding: 16 },
   emptyContainer: {
     flex: 1,
