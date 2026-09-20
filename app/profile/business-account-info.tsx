@@ -2,7 +2,7 @@ import { getAvatarSource } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -224,6 +224,7 @@ export default function BusinessAccountInfoScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingSection, setSavingSection] = useState<SectionKey | null>(null);
+  const businessProfileWriteInFlightRef = useRef<string | null>(null);
   const [editingSection, setEditingSection] =
     useState<EditableSectionKey | null>(null);
   const [messages, setMessages] = useState<
@@ -486,6 +487,7 @@ export default function BusinessAccountInfoScreen() {
   };
 
   const saveAccount = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     const normalizedUsername = clean(username);
 
     const normalizedPhone = normalizeVietnamPhone(phoneNumber);
@@ -535,6 +537,9 @@ export default function BusinessAccountInfoScreen() {
       return;
     }
 
+    const lockKey = "account";
+    businessProfileWriteInFlightRef.current = lockKey;
+
     try {
       setSavingSection("account");
       setSectionMessage("account", null);
@@ -564,10 +569,14 @@ export default function BusinessAccountInfoScreen() {
         ),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
   const saveAvatar = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     if (!avatarAsset) {
       setErrors((current) => ({
         ...current,
@@ -575,6 +584,9 @@ export default function BusinessAccountInfoScreen() {
       }));
       return;
     }
+
+    const lockKey = "avatar";
+    businessProfileWriteInFlightRef.current = lockKey;
 
     const avatarValidation = await validateNewLocalFiles("Avatar", [
       {
@@ -589,6 +601,9 @@ export default function BusinessAccountInfoScreen() {
         ...current,
         avatar: avatarValidation.message,
       }));
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       return;
     }
 
@@ -612,11 +627,15 @@ export default function BusinessAccountInfoScreen() {
         text: getApiErrorMessage(error, "Không thể cập nhật ảnh đại diện."),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
 
   const saveRegistration = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     const nextErrors: FieldErrors = {};
     if (!clean(businessName))
       nextErrors.businessName = "Vui lòng nhập tên doanh nghiệp.";
@@ -631,6 +650,9 @@ export default function BusinessAccountInfoScreen() {
         "Vui lòng tải lại giấy đăng ký kinh doanh khi cập nhật thông tin này.";
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
+
+    const lockKey = "registration";
+    businessProfileWriteInFlightRef.current = lockKey;
 
     const registrationValidation = await validateNewLocalFiles(
       "BusinessDocument",
@@ -648,6 +670,9 @@ export default function BusinessAccountInfoScreen() {
         ...current,
         registrationCertificate: registrationValidation.message,
       }));
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       return;
     }
 
@@ -687,11 +712,15 @@ export default function BusinessAccountInfoScreen() {
         ),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
 
   const saveIdentity = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     const nextErrors: FieldErrors = {};
     const fullNameValidationError = validateFullName(fullName);
 
@@ -720,6 +749,9 @@ export default function BusinessAccountInfoScreen() {
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
 
+    const lockKey = "identity";
+    businessProfileWriteInFlightRef.current = lockKey;
+
     const identityValidation = await validateNewLocalFiles(
       "IdentityDocument",
       [cccdFront!, cccdBack!].map((asset) => ({
@@ -734,6 +766,9 @@ export default function BusinessAccountInfoScreen() {
         ...current,
         cccdFront: identityValidation.message,
       }));
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       return;
     }
 
@@ -771,11 +806,15 @@ export default function BusinessAccountInfoScreen() {
         ),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
 
   const saveBank = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     const nextErrors: FieldErrors = {};
     if (!clean(bankCode) || !clean(bankName))
       nextErrors.bankCode = "Vui lòng chọn ngân hàng thụ hưởng.";
@@ -785,6 +824,9 @@ export default function BusinessAccountInfoScreen() {
       nextErrors.accountName = "Vui lòng nhập tên chủ tài khoản.";
     setErrors((current) => ({ ...current, ...nextErrors }));
     if (Object.keys(nextErrors).length) return;
+    const lockKey = "bank";
+    businessProfileWriteInFlightRef.current = lockKey;
+
     try {
       setSavingSection("bank");
       setSectionMessage("bank", null);
@@ -809,6 +851,9 @@ export default function BusinessAccountInfoScreen() {
         ),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
@@ -820,6 +865,7 @@ export default function BusinessAccountInfoScreen() {
     setErrors((current) => ({ ...current, serviceArea: undefined }));
   };
   const saveServiceArea = async () => {
+    if (businessProfileWriteInFlightRef.current) return;
     if (!serviceAreaSelection) {
       setErrors((current) => ({
         ...current,
@@ -827,6 +873,11 @@ export default function BusinessAccountInfoScreen() {
       }));
       return;
     }
+    const lockKey = editingServiceAreaId
+      ? `service-area:update:${editingServiceAreaId}`
+      : "service-area:create";
+    businessProfileWriteInFlightRef.current = lockKey;
+
     const payload = {
       city: clean(serviceAreaSelection.provinceName),
       street: capitalizeWordInitials(clean(serviceAreaSelection.streetAddress)),
@@ -855,11 +906,18 @@ export default function BusinessAccountInfoScreen() {
         text: getApiErrorMessage(error, "Không thể lưu khu vực dịch vụ."),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
   const confirmDeleteServiceArea = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || businessProfileWriteInFlightRef.current) return;
+
+    const lockKey = `service-area:delete:${deleteTarget.businessServiceAreaId}`;
+    businessProfileWriteInFlightRef.current = lockKey;
+
     try {
       setSavingSection("serviceArea");
       setSectionMessage("serviceArea", null);
@@ -878,6 +936,9 @@ export default function BusinessAccountInfoScreen() {
         text: getApiErrorMessage(error, "Không thể xóa khu vực dịch vụ."),
       });
     } finally {
+      if (businessProfileWriteInFlightRef.current === lockKey) {
+        businessProfileWriteInFlightRef.current = null;
+      }
       setSavingSection(null);
     }
   };
