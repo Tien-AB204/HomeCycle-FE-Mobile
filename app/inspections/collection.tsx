@@ -1342,6 +1342,14 @@ export default function InspectionCollectionScreen() {
       };
     };
 
+  // Kiện hàng: rộng không được lớn hơn dài (bằng nhau hợp lệ); kiểm tra ngay khi đổi Dài/Rộng.
+  const parcelWidthError =
+    parcel.lengthCm.trim() &&
+    parcel.widthCm.trim() &&
+    Number(parcel.widthCm) > Number(parcel.lengthCm)
+      ? "Chiều rộng không được lớn hơn chiều dài."
+      : "";
+
   const handleSubmit = async () => {
     if (
       !inspectionForm ||
@@ -1402,6 +1410,11 @@ export default function InspectionCollectionScreen() {
           type: "error",
           text: MULTI_PARCEL_MESSAGE,
         });
+        return;
+      }
+
+      if (parcelWidthError) {
+        setNotice({ type: "error", text: parcelWidthError });
         return;
       }
 
@@ -2092,10 +2105,18 @@ export default function InspectionCollectionScreen() {
                           COLORS.textLight
                         }
                         keyboardType="number-pad"
-                        style={
-                          styles.input
-                        }
+                        style={[
+                          styles.input,
+                          key === "widthCm" && parcelWidthError
+                            ? styles.inputError
+                            : undefined,
+                        ]}
                       />
+                      {key === "widthCm" && parcelWidthError ? (
+                        <Text style={styles.fieldErrorText}>
+                          {parcelWidthError}
+                        </Text>
+                      ) : null}
                     </View>
                   ),
                 )}
@@ -2353,6 +2374,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     color: COLORS.text,
     fontSize: 14,
+  },
+
+  inputError: {
+    borderColor: COLORS.error,
+  },
+
+  fieldErrorText: {
+    marginTop: 6,
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 17,
   },
 
   multilineInput: {

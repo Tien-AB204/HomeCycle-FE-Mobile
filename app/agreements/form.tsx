@@ -626,6 +626,12 @@ export default function AgreementFormScreen() {
     weightGram: toPositiveInt(item.weightGram), lengthCm: toPositiveInt(item.lengthCm),
     widthCm: toPositiveInt(item.widthCm), heightCm: toPositiveInt(item.heightCm),
   }];
+  // Kiện đã đóng gói: rộng không được lớn hơn dài (bằng nhau hợp lệ); kiểm tra ngay khi đổi Dài/Rộng.
+  const parcelWidthError =
+    item.lengthCm.trim() && item.widthCm.trim() && Number(item.widthCm) > Number(item.lengthCm)
+      ? "Chiều rộng không được lớn hơn chiều dài."
+      : null;
+
   const validateGhnForm = () => {
     if (!sender.fullName.trim() || !sender.phone.trim() || !sender.province || !sender.district || !sender.ward || !sender.addressDetail.trim())
       return "Vui lòng nhập đầy đủ thông tin và địa chỉ người gửi.";
@@ -637,6 +643,7 @@ export default function AgreementFormScreen() {
       return "GHN chỉ hỗ trợ kiện hàng có tổng khối lượng tối đa 50 kg. Vui lòng giảm khối lượng hoặc chọn phương thức giao hàng khác.";
     if ([item.lengthCm, item.widthCm, item.heightCm].some(value => !toPositiveInt(value) || toPositiveInt(value) > 200))
       return "Kích thước kiện đã đóng gói phải là số nguyên từ 1 đến 200 cm.";
+    if (parcelWidthError) return parcelWidthError;
     if (!requiredNote) return "Vui lòng chọn yêu cầu khi giao hàng.";
     if (shippingContent.trim().length > 2000) return "Nội dung hàng gửi không được vượt quá 2.000 ký tự.";
     return null;
@@ -723,7 +730,7 @@ export default function AgreementFormScreen() {
           <Text style={styles.numericHint}>Kích thước kiện đã đóng gói (cm)</Text>
           <View style={styles.numericGrid}>
             <NumericInput label="Dài (cm)" required value={item.lengthCm} onChangeText={lengthCm => updateItem({ lengthCm })} />
-            <NumericInput label="Rộng (cm)" required value={item.widthCm} onChangeText={widthCm => updateItem({ widthCm })} />
+            <NumericInput label="Rộng (cm)" required value={item.widthCm} onChangeText={widthCm => updateItem({ widthCm })} error={parcelWidthError} />
             <NumericInput label="Cao (cm)" required value={item.heightCm} onChangeText={heightCm => updateItem({ heightCm })} />
           </View>
         </View>
