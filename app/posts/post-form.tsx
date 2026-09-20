@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { usePreventRemove } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -26,6 +26,16 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useSubscription } from "../../src/contexts/SubscriptionContext";
+import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
+import {
+  SupplierMatchAdvancedFilters,
+  SupplierMatchDraftRequest,
+  SupplierMatchValidationErrors,
+  supplierMatchApi,
+} from "../../src/services/apis/supplierMatchApi";
 
 const postApi = {
   getActiveCategories: () =>
@@ -38,7 +48,7 @@ const postApi = {
       .then((response) => response.data),
   getAllBrands: () =>
     apiClient
-      .get("/brands", { params: { PageSize: 100, PageNumber: 1 } })
+      .get("/brands/active", { params: { PageSize: 100, PageNumber: 1 } })
       .then((response) => response.data),
   getPostById: (postId: string) =>
     apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
@@ -67,6 +77,10 @@ const postApi = {
     apiClient.patch(`/posts/update/buy/${postId}`, data, {
       timeout: 30000,
     }),
+  getAiPriceQuota: () =>
+    apiClient.get("/ai/price-suggestions/quota").then((response) => response.data),
+  getAiPriceSuggestion: (data: AiPriceSuggestionRequest) =>
+    apiClient.post("/ai/price-suggestions/draft", data, { timeout: 60000 }).then((response) => response.data),
 };
 
 const SPACE_USAGE_OPTIONS = [
@@ -79,6 +93,18 @@ const SPACE_USAGE_OPTIONS = [
   { label: "Garage", value: "Garage" },
   { label: "Nhà vệ sinh", value: "Restroom" },
 ];
+// Số lượng: số nguyên. Tin thu mua giới hạn 1–99.999 theo Backend; tin bán tối thiểu 1.
+const BUY_QUANTITY_MAX = 99999;
+const validateQuantityInput = (raw: string, isBuy: boolean): string => {
+  const text = raw.trim();
+  if (!text) return "Vui lòng nhập số lượng.";
+  if (!/^\d+$/.test(text)) return "Số lượng phải là số nguyên, không có dấu thập phân.";
+  const value = Number(text);
+  if (!Number.isInteger(value) || value <= 0) return "Số lượng phải là số nguyên lớn hơn 0.";
+  if (isBuy && value > BUY_QUANTITY_MAX) return "Số lượng thu mua tối đa là 99.999.";
+  return "";
+};
+
 const DAMAGE_LEVEL_OPTIONS = [
   { label: "Không hỏng (0%)", value: "None" },
   { label: "Thẩm mỹ - Trầy xước nhẹ (~20%)", value: "Cosmetic_Damage" },
@@ -123,6 +149,44 @@ type AttributeInputMode =
   | "CustomOnly"
   | "OptionOrCustom";
 
+type AiPriceAttributeValue = {
+  attributeId: string;
+  optionId?: string;
+  valueNumber?: number;
+  valueBoolean?: boolean;
+  valueText?: string;
+};
+
+type AiPriceSuggestionRequest = {
+  product: {
+    productTypeId: string;
+    brandId: string;
+    productName: string;
+    modelNumber: string;
+    functionalityStatus: string;
+    damageLevel: string;
+    usageDuration?: number;
+    attributeValues: AiPriceAttributeValue[];
+  };
+};
+
+type AiPriceSuggestionResult = {
+  status?: string;
+  suggestedPrice?: number | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  confidence?: string;
+  explanation?: string;
+  remainingToday?: number;
+  resetsAt?: string;
+};
+
+type AiPriceQuota = {
+  dailyLimit?: number;
+  remainingToday?: number;
+  resetsAt?: string;
+};
+
 const EAV_CLEAR_OPTION = "__homecycle_eav_clear__";
 const SELECT_CLEAR_OPTION = "__homecycle_select_clear__";
 
@@ -146,6 +210,33 @@ const normalizeAttributeDataType = (
   }
 
   return null;
+};
+
+// Thu thập giá trị thuộc tính động hiện có trên form (dùng chung cho gợi ý giá
+// và gợi ý nhà cung cấp). Mỗi thuộc tính chỉ mang đúng một giá trị/tùy chọn.
+const collectDraftAttributeValues = (eavAttributes: any[]) => {
+  const attributeValues: AiPriceAttributeValue[] = [];
+  let missingRequiredAttribute = false;
+  for (const attribute of eavAttributes) {
+    const attributeId = String(attribute?.attributeId || "");
+    let value: AiPriceAttributeValue | null = null;
+    if (attributeId && attribute?.selectedOptionId) {
+      value = { attributeId, optionId: String(attribute.selectedOptionId) };
+    } else {
+      const dataType = normalizeAttributeDataType(attribute?.dataType);
+      if (dataType === "Boolean" && typeof attribute?.valueBoolean === "boolean") {
+        value = { attributeId, valueBoolean: attribute.valueBoolean };
+      } else if (dataType === "Number" && String(attribute?.valueNumber ?? "").trim()) {
+        const valueNumber = Number(attribute.valueNumber);
+        if (Number.isFinite(valueNumber)) value = { attributeId, valueNumber };
+      } else if (dataType === "Text" && String(attribute?.valueText ?? "").trim()) {
+        value = { attributeId, valueText: String(attribute.valueText).trim() };
+      }
+    }
+    if (attribute?.isRequired && !value) missingRequiredAttribute = true;
+    if (value) attributeValues.push(value);
+  }
+  return { attributeValues, missingRequiredAttribute };
 };
 
 const normalizeAttributeInputMode = (
@@ -174,7 +265,7 @@ const normalizeAttributeInputMode = (
 };
 
 export default function PostFormScreen() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const userRole = user?.role?.toLowerCase() || "personal";
@@ -197,6 +288,8 @@ export default function PostFormScreen() {
   const procurementBuyPostId = !isEditMode && !isBuyPost && userRole === "personal"
     ? (Array.isArray(buyPostId) ? buyPostId[0] : buyPostId) : undefined;
   const publishLock = useRef(false);
+  // Tên tệp / MIME thật từ ImagePicker theo URI; state ảnh vẫn là danh sách URI.
+  const imageMetaRef = useRef<Record<string, { fileName?: string | null; mimeType?: string | null }>>({});
   const createdSellId = useRef<string | null>(null);
   const uncertainSellCreate = useRef(false);
   const [sellCreateNeedsRecovery, setSellCreateNeedsRecovery] = useState(false);
@@ -215,13 +308,20 @@ export default function PostFormScreen() {
   }, []));
   const [isFetchingOldData, setIsFetchingOldData] = useState(isEditMode);
   const [formMessage, setFormMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(formMessage, () => setFormMessage(null));
   const [imageError, setImageError] = useState("");
   const [addressError, setAddressError] = useState("");
+  const [weightError, setWeightError] = useState("");
+  const [quantityError, setQuantityError] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [allProductTypes, setAllProductTypes] = useState<any[]>([]);
   const [filteredProductTypes, setFilteredProductTypes] = useState<any[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
+  const [legacyEditBrandOption, setLegacyEditBrandOption] = useState<{
+    label: string;
+    value: string;
+  } | null>(null);
   const [eavAttributes, setEavAttributes] = useState<any[]>([]);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
   const [oldEavData, setOldEavData] = useState<any[]>([]);
@@ -254,6 +354,136 @@ export default function PostFormScreen() {
   const [modalTitle, setModalTitle] = useState("");
   const [modalOptions, setModalOptions] = useState<{ label: string; value: string }[]>([]);
   const currentSelectSetterRef = useRef<((value: string) => void) | null>(null);
+  const [aiPriceQuota, setAiPriceQuota] = useState<AiPriceQuota | null>(null);
+  const [aiPriceResult, setAiPriceResult] = useState<(AiPriceSuggestionResult & { contextKey: string }) | null>(null);
+  const [isAiPriceLoading, setIsAiPriceLoading] = useState(false);
+  const [aiPriceMessage, setAiPriceMessage] = useState<InlineMessage>(null);
+  useAutoDismissFeedback(aiPriceMessage, () => setAiPriceMessage(null));
+  const aiPriceRequestRef = useRef(false);
+
+  const canUseAiPriceSuggestion = !isEditMode && !isBuyPost && user?.role?.toLowerCase() === "personal";
+  // Hạn mức AI đổi khi gói đăng ký đổi (kích hoạt/hủy/hết hạn) → tải lại từ API có thẩm quyền.
+  const { entitlementVersion: subscriptionEntitlementVersion } = useSubscription();
+  const aiPricingContext = useMemo(() => {
+    const { attributeValues, missingRequiredAttribute } = collectDraftAttributeValues(eavAttributes);
+
+    const validUsageDuration = usageDuration.trim() === "" ||
+      (Number.isFinite(Number(usageDuration)) && Number(usageDuration) >= 0);
+    const product = {
+      productTypeId: selectedProductType.trim(),
+      brandId: brandId.trim(),
+      productName: productName.trim(),
+      modelNumber: modelNumber.trim(),
+      functionalityStatus,
+      damageLevel,
+      ...(usageDuration.trim() ? { usageDuration: Number(usageDuration) } : {}),
+      attributeValues,
+    };
+    const missingCore = !product.productTypeId || !product.brandId || !product.productName ||
+      !product.modelNumber || !product.functionalityStatus || !product.damageLevel;
+    const issue = missingCore
+      ? "Hoàn tất thông tin sản phẩm để nhận gợi ý giá."
+      : isLoadingSchema
+        ? "Đang tải thông số sản phẩm."
+        : missingRequiredAttribute
+          ? "Hoàn tất các thông số bắt buộc để nhận gợi ý giá."
+          : !validUsageDuration
+            ? "Thời gian sử dụng chưa hợp lệ."
+            : attributeValues.length > 30
+              ? "Sản phẩm có quá nhiều thông số để gợi ý giá."
+              : "";
+    return {
+      request: { product } as AiPriceSuggestionRequest,
+      key: JSON.stringify(product),
+      issue,
+    };
+  }, [brandId, damageLevel, eavAttributes, functionalityStatus, isLoadingSchema, modelNumber, productName, selectedProductType, usageDuration]);
+  const isAiPriceStale = Boolean(aiPriceResult && aiPriceResult.contextKey !== aiPricingContext.key);
+
+  // Gợi ý nhà cung cấp (Doanh nghiệp, tạo tin thu mua): dùng giá trị form hiện tại,
+  // KHÔNG tạo tin. Sẵn sàng khi có loại/danh mục, số lượng và giá hợp lệ, thuộc tính
+  // bắt buộc đã điền theo metadata hiện tại của loại sản phẩm.
+  const canUseSupplierSuggestion = !isEditMode && isBuyPost && userRole === "business";
+  const supplierDraftContext = useMemo(() => {
+    const { attributeValues, missingRequiredAttribute } = collectDraftAttributeValues(eavAttributes);
+    const parsedPriceFrom = priceFrom.trim() ? Number(priceFrom) : null;
+    const parsedPriceTo = basePrice.trim() ? Number(basePrice) : null;
+    const priceInvalid =
+      (parsedPriceFrom !== null && (!Number.isFinite(parsedPriceFrom) || parsedPriceFrom < 0)) ||
+      (parsedPriceTo !== null && (!Number.isFinite(parsedPriceTo) || parsedPriceTo < 0)) ||
+      (parsedPriceFrom !== null && parsedPriceTo !== null && parsedPriceFrom > parsedPriceTo);
+    const quantityIssue = validateQuantityInput(quantity, true);
+    const validUsageDuration =
+      usageDuration.trim() === "" || (Number.isFinite(Number(usageDuration)) && Number(usageDuration) >= 0);
+    const productTypeId = selectedProductType.trim() || null;
+    const request: SupplierMatchDraftRequest = {
+      categoryId: selectedCategory.trim() || null,
+      productTypeId,
+      brandId: brandId.trim() || null,
+      modelNumber: modelNumber.trim() || null,
+      functionalityStatus: functionalityStatus || null,
+      damageLevel: damageLevel || null,
+      usageDuration: usageDuration.trim() ? Number(usageDuration) : null,
+      priceFrom: parsedPriceFrom,
+      priceTo: parsedPriceTo,
+      quantity: quantityIssue ? 0 : Number(quantity),
+      city: city.trim() || null,
+      // Backend chỉ chấp nhận thuộc tính động khi đã có loại sản phẩm.
+      attributeValues: productTypeId ? attributeValues : [],
+    };
+    const hint = !request.productTypeId && !request.categoryId
+      ? "Chọn loại sản phẩm hoặc danh mục để gợi ý nhà cung cấp."
+      : quantityIssue
+        ? quantityIssue
+        : priceInvalid
+          ? "Khoảng giá thu mua chưa hợp lệ."
+          : isLoadingSchema
+            ? "Đang tải thông số sản phẩm."
+            : missingRequiredAttribute
+              ? "Hoàn tất các thông số bắt buộc để gợi ý nhà cung cấp."
+              : !validUsageDuration
+                ? "Thời gian sử dụng chưa hợp lệ."
+                : attributeValues.length > 30
+                  ? "Sản phẩm có quá nhiều thông số để gợi ý."
+                  : null;
+    return { request, key: JSON.stringify(request), readiness: { ready: !hint, hint } };
+  }, [basePrice, brandId, city, damageLevel, eavAttributes, functionalityStatus, isLoadingSchema, modelNumber, priceFrom, quantity, selectedCategory, selectedProductType, usageDuration]);
+
+  const requestSupplierDraftMatches = useCallback(
+    (filters: SupplierMatchAdvancedFilters | null) =>
+      supplierMatchApi.matchDraft(
+        filters ? { ...supplierDraftContext.request, advancedFilters: filters } : supplierDraftContext.request,
+      ),
+    [supplierDraftContext.request],
+  );
+  const handleSupplierValidationErrors = useCallback((errors: SupplierMatchValidationErrors) => {
+    const quantityMessages = Object.entries(errors).find(([key]) => key.toLowerCase() === "quantity")?.[1];
+    if (quantityMessages?.length) setQuantityError(quantityMessages[0]);
+  }, []);
+  const supplierAttributeNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const attribute of eavAttributes) {
+      const id = String(attribute?.attributeId || "").toLowerCase();
+      if (id) names[id] = String(attribute?.attributeName || "Thông số");
+    }
+    return names;
+  }, [eavAttributes]);
+
+  const brandOptions = useMemo(() => {
+    if (
+      !legacyEditBrandOption ||
+      String(brandId).trim() !== String(legacyEditBrandOption.value).trim() ||
+      brands.some(
+        (option: any) =>
+          String(option?.value || "").trim() ===
+          String(legacyEditBrandOption.value).trim(),
+      )
+    ) {
+      return brands;
+    }
+
+    return [legacyEditBrandOption, ...brands];
+  }, [brandId, brands, legacyEditBrandOption]);
 
   const openSelect = (
     title: string,
@@ -301,7 +531,7 @@ export default function PostFormScreen() {
                 }))
             : [],
         );
-        const brandItems = brandRes?.data?.items || brandRes?.data || [];
+        const brandItems = brandRes?.items || brandRes?.data?.items || brandRes?.data || brandRes || [];
         setBrands(
           Array.isArray(brandItems)
             ? brandItems.map((item: any) => ({
@@ -319,6 +549,40 @@ export default function PostFormScreen() {
     };
     void fetchMasterData();
   }, []);
+
+  useEffect(() => {
+    if (!canUseAiPriceSuggestion) return;
+    let active = true;
+    void postApi.getAiPriceQuota()
+      .then((response) => {
+        if (!active) return;
+        const quota = response?.data || response;
+        setAiPriceQuota({
+          dailyLimit: Number(quota?.dailyLimit),
+          remainingToday: Number(quota?.remainingToday),
+          resetsAt: quota?.resetsAt ? String(quota.resetsAt) : undefined,
+        });
+      })
+      .catch(() => {
+        // The POST remains authoritative; a failed quota display must not
+        // prevent a manual, eligible request.
+      });
+    return () => { active = false; };
+  }, [canUseAiPriceSuggestion, subscriptionEntitlementVersion]);
+
+  useEffect(() => {
+    if (!aiPriceMessage) return;
+    const timeout = setTimeout(
+      () => setAiPriceMessage(null),
+      aiPriceMessage.type === "info" ? 5000 : 10000,
+    );
+    return () => clearTimeout(timeout);
+  }, [aiPriceMessage]);
+
+  useEffect(() => {
+    // Feedback describes a prior draft; results retain their own stale marker.
+    setAiPriceMessage(null);
+  }, [aiPricingContext.key]);
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -345,7 +609,8 @@ export default function PostFormScreen() {
             product.expectedPrice?.toString() ||
             "",
         );
-        setQuantity(data.quantity?.toString() || "1");
+        setQuantity(data.quantity != null ? String(data.quantity) : "1");
+        setQuantityError("");
         setCity(data.city || "");
         setWard(data.ward || "");
         setStreetAddress(data.streetAddress || "");
@@ -353,7 +618,29 @@ export default function PostFormScreen() {
         setPriorityLevel(data.priorityLevel || "");
         setSelectedCategory(product.categoryId || "");
         setSelectedProductType(product.productTypeId || "");
-        setBrandId(product.brandId || "");
+
+        const currentBrandId = String(product.brandId || "").trim();
+        const currentBrandName = String(
+          product.brandName ||
+            product.brand?.brandName ||
+            product.brand?.name ||
+            data.brandName ||
+            data.brand?.brandName ||
+            data.brand?.name ||
+            "",
+        ).trim();
+
+        setBrandId(currentBrandId);
+        setLegacyEditBrandOption(
+          currentBrandId
+            ? {
+                value: currentBrandId,
+                label: currentBrandName
+                  ? `${currentBrandName} (hiện tại)`
+                  : "Thương hiệu hiện tại",
+              }
+            : null,
+        );
         setModelNumber(product.modelNumber || "");
         setOriginalPrice(product.originalPrice?.toString() || "");
         setDetailDescription(product.detailDescription || "");
@@ -490,6 +777,13 @@ export default function PostFormScreen() {
 
   const displayDimensions =
     length && width && height ? `${length} x ${width} x ${height} cm` : "";
+  // Kiểm tra ngay khi đổi Dài hoặc Rộng: rộng không được lớn hơn dài (bằng nhau hợp lệ).
+  const widthDimensionError =
+    length.trim() && width.trim() &&
+    Number.isFinite(Number(length)) && Number.isFinite(Number(width)) &&
+    Number(width) > Number(length)
+      ? "Chiều rộng không được lớn hơn chiều dài."
+      : "";
   const postAddress = [streetAddress, ward, city].filter(Boolean).join(", ");
 
   const pickImages = async () => {
@@ -520,6 +814,9 @@ export default function PostFormScreen() {
           return;
         }
 
+        result.assets.slice(0, remainingSlots).forEach((asset) => {
+          imageMetaRef.current[asset.uri] = { fileName: asset.fileName, mimeType: asset.mimeType };
+        });
         setImages((current) => [
           ...current,
           ...result.assets.map((asset) => asset.uri).slice(0, remainingSlots),
@@ -554,6 +851,82 @@ export default function PostFormScreen() {
     );
   };
 
+  const requestAiPriceSuggestion = async () => {
+    if (aiPriceRequestRef.current || aiPricingContext.issue) return;
+    if (Number(aiPriceQuota?.remainingToday) <= 0) return;
+
+    try {
+      aiPriceRequestRef.current = true;
+      setIsAiPriceLoading(true);
+      setAiPriceMessage(null);
+      const response = await postApi.getAiPriceSuggestion(aiPricingContext.request);
+      const result = response?.data || response;
+      const status = String(result?.status || "").trim().toUpperCase();
+      const remainingToday = Number(result?.remainingToday);
+      const resetsAt = result?.resetsAt ? String(result.resetsAt) : aiPriceQuota?.resetsAt;
+      if (Number.isFinite(remainingToday)) {
+        setAiPriceQuota((current) => ({
+          ...current,
+          remainingToday,
+          resetsAt,
+        }));
+      }
+      setAiPriceResult({
+        ...result,
+        status,
+        contextKey: aiPricingContext.key,
+      });
+      if (status === "DAILY_LIMIT_REACHED") {
+        setAiPriceQuota((current) => ({ ...current, remainingToday: 0, resetsAt }));
+      }
+    } catch (error: any) {
+      const status = Number(error?.response?.status || 0);
+      if (status === 429) {
+        setAiPriceQuota((current) => ({
+          ...current,
+          remainingToday: 0,
+          resetsAt: error?.response?.data?.resetsAt || current?.resetsAt,
+        }));
+        setAiPriceMessage({ type: "info", text: "Bạn đã dùng hết lượt gợi ý giá hôm nay." });
+      } else if (status === 400) {
+        setAiPriceMessage({ type: "error", text: "Thông tin sản phẩm chưa đủ hoặc chưa hợp lệ để gợi ý giá." });
+      } else if (status === 403) {
+        setAiPriceMessage({ type: "error", text: "Tính năng gợi ý giá hiện chỉ áp dụng cho tài khoản cá nhân." });
+      } else {
+        setAiPriceMessage({
+          type: "error",
+          text: getApiErrorMessage(error, "Không thể gợi ý giá lúc này. Vui lòng thử lại sau."),
+        });
+      }
+    } finally {
+      aiPriceRequestRef.current = false;
+      setIsAiPriceLoading(false);
+    }
+  };
+
+  const applyAiSuggestedPrice = () => {
+    const suggestedPrice = Number(aiPriceResult?.suggestedPrice);
+    if (!isAiPriceStale && Number.isFinite(suggestedPrice) && suggestedPrice > 0) {
+      setBasePrice(String(Math.round(suggestedPrice)));
+      setFormMessage(null);
+    }
+  };
+
+  const aiResultStatus = String(aiPriceResult?.status || "").toUpperCase();
+  const aiHasUsablePrice = [
+    "SUGGESTED",
+    "FALLBACK_DB_ONLY",
+    "FALLBACK_INTERNAL_LISTINGS",
+    "FALLBACK_MARKET_LISTINGS",
+    "FALLBACK_EQUIVALENT_MODEL",
+  ].includes(aiResultStatus) && Number(aiPriceResult?.suggestedPrice) > 0;
+  const aiConfidenceLabel: Record<string, string> = {
+    HIGH: "Độ tin cậy cao",
+    MEDIUM: "Độ tin cậy khá",
+    LOW: "Chỉ mang tính tham khảo",
+    NONE: "Chưa đủ dữ liệu",
+  };
+
   const continueAfterSellCreate = useCallback(() => {
     if (!formMounted.current || sellNavigationLock.current) return;
     sellNavigationLock.current = true;
@@ -579,7 +952,15 @@ export default function PostFormScreen() {
     continueAfterSellCreate();
   }, [sellContinuationPending, isLoading, continueAfterSellCreate]);
 
+  useEffect(() => {
+    if ((isBuyPost || deliveryMethod !== "GhnDelivery") && weightError) {
+      setWeightError("");
+    }
+  }, [deliveryMethod, isBuyPost, weightError]);
+
   const handlePublish = async () => {
+    // Kết quả tạo tin chưa rõ: không gửi lại chỉ vì bấm nút; người dùng phải
+    // kiểm tra danh sách tin bán hoặc xác nhận "tin chưa được tạo" trước.
     if (publishLock.current || uncertainSellCreate.current) return;
     if (createdSellId.current) {
       continueAfterSellCreate();
@@ -588,39 +969,40 @@ export default function PostFormScreen() {
     setFormMessage(null);
     setAddressError("");
     setImageError("");
+    setWeightError("");
 
-    const parsedQuantity = Number(quantity);
+    const normalizedWeight = weight.trim().replace(",", ".");
+    const quantityValidation = validateQuantityInput(quantity, isBuyPost);
+    if (quantityValidation) {
+      // Không tự ép giá trị: giữ lỗi tại ô nhập cho tới khi người dùng sửa.
+      setQuantityError(quantityValidation);
+      setFormMessage({ type: "error", text: quantityValidation });
+      return;
+    }
+    const parsedQuantity = Number(quantity.trim());
 
-    if (
-      !Number.isInteger(parsedQuantity) ||
-      parsedQuantity <= 0
-    ) {
-      setFormMessage({
-        type: "error",
-        text: "Số lượng phải là số nguyên lớn hơn 0.",
-      });
+    if (widthDimensionError) {
+      setFormMessage({ type: "error", text: widthDimensionError });
       return;
     }
 
     if (!isBuyPost && deliveryMethod === "GhnDelivery") {
-      const parsedWeightKg = Number(weight);
+      const parsedWeightKg = Number(normalizedWeight);
       const parsedLengthCm = Number(length);
       const parsedWidthCm = Number(width);
       const parsedHeightCm = Number(height);
 
       if (!Number.isFinite(parsedWeightKg) || parsedWeightKg <= 0) {
-        setFormMessage({
-          type: "error",
-          text: "Vui lòng nhập khối lượng sản phẩm lớn hơn 0 kg để giao hàng GHN.",
-        });
+        setWeightError(
+          "Vui lòng nhập khối lượng sản phẩm lớn hơn 0 kg để giao hàng GHN.",
+        );
         return;
       }
 
       if (parsedWeightKg > 50) {
-        setFormMessage({
-          type: "error",
-          text: "GHN chỉ hỗ trợ khối lượng sản phẩm tối đa 50 kg.",
-        });
+        setWeightError(
+          "GHN chỉ hỗ trợ khối lượng sản phẩm tối đa 50 kg.",
+        );
         return;
       }
 
@@ -1114,7 +1496,7 @@ export default function PostFormScreen() {
       if (weight) {
         formData.append(
           `${prefix}.Weight`,
-          weight,
+          normalizedWeight,
         );
       }
 
@@ -1173,27 +1555,37 @@ export default function PostFormScreen() {
               return;
             }
 
+            // Native: giữ nguyên URI của ImagePicker (đã chạy thật trên Android).
+            // Tên tệp và MIME phản ánh đúng tệp người dùng chọn (ImagePicker);
+            // không suy từ danh sách định dạng cho phép của Backend (Backend
+            // vẫn là nơi kiểm tra cuối theo File Upload Policy).
+            const meta = imageMetaRef.current[imageUri];
             let filename =
+              String(meta?.fileName ?? "").trim() ||
               imageUri
                 .split("/")
                 .pop()
                 ?.split("?")[0] ||
-              `image_${index}.jpg`;
+              `image_${index}`;
+            let mimeType = String(meta?.mimeType ?? "").trim().toLowerCase();
+            const extension = filename.includes(".")
+              ? filename.split(".").pop()!.toLowerCase()
+              : "";
 
-            if (!filename.includes(".")) {
-              filename =
-                `${filename}.jpg`;
+            if (!mimeType && extension) {
+              // Chỉ khi ImagePicker không cung cấp MIME: suy từ phần mở rộng thật của tệp.
+              mimeType = `image/${extension === "jpg" ? "jpeg" : extension}`;
+            }
+            if (!extension && mimeType.startsWith("image/")) {
+              filename = `${filename}.${mimeType.slice("image/".length) === "jpeg" ? "jpg" : mimeType.slice("image/".length)}`;
             }
 
             formData.append(
               "Medias",
               {
-                uri: imageUri.replace(
-                  "file://",
-                  "",
-                ),
+                uri: imageUri,
                 name: filename,
-                type: "image/jpeg",
+                ...(mimeType ? { type: mimeType } : {}),
               } as any,
             );
           },
@@ -1211,6 +1603,7 @@ export default function PostFormScreen() {
         const response = await postApi.createSellPost(
           formData,
         );
+
         const postId = response.data?.postId;
         if (typeof postId !== "string" || !postId.trim()) {
           uncertainSellCreate.current = true;
@@ -1230,13 +1623,21 @@ export default function PostFormScreen() {
       router.back();
     } catch (error) {
       if (!formMounted.current) return;
+
+      // Lỗi trước khi gọi createSellPost (kiểm tra cục bộ, dựng FormData, đọc tệp)
+      // chắc chắn chưa gửi → thử lại bình thường. Sau khi đã gọi createSellPost:
+      // chỉ phản hồi HTTP 4xx (trừ 408) là thất bại rõ ràng; 5xx/408/hết thời gian
+      // chờ/không có phản hồi có thẩm quyền (kể cả lỗi mạng) → KHÔNG RÕ KẾT QUẢ,
+      // không được coi là "yêu cầu chưa rời máy".
       const status = (error as { response?: { status?: number } })?.response?.status;
-      if (sellCreateStarted && !createdSellId.current && (!status || status >= 500 || status === 408)) {
+      const definiteClientFailure =
+        typeof status === "number" && status >= 400 && status < 500 && status !== 408;
+      if (sellCreateStarted && !createdSellId.current && !definiteClientFailure) {
         uncertainSellCreate.current = true;
         setSellCreateNeedsRecovery(true);
         setFormMessage({
           type: "error",
-          text: "Chưa xác nhận được kết quả đăng tin. Tin bán có thể đã được tạo; hãy kiểm tra danh sách trước khi đăng thêm.",
+          text: "Chưa xác nhận được kết quả đăng tin. Tin bán có thể đã được tạo. Hãy kiểm tra danh sách tin bán của bạn; chỉ đăng lại khi chắc chắn tin chưa được tạo.",
         });
         return;
       }
@@ -1339,7 +1740,6 @@ export default function PostFormScreen() {
     );
   };
 
-
   if (isFetchingOldData) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -1395,6 +1795,24 @@ export default function PostFormScreen() {
               }}
             >
               <Text style={styles.primaryButtonText}>Kiểm tra tin bán của tôi</Text>
+            </TouchableOpacity>
+          ) : null}
+          {sellCreateNeedsRecovery ? (
+            <TouchableOpacity
+              style={styles.recoveryAcknowledgeButton}
+              accessibilityRole="button"
+              onPress={() => {
+                // Chỉ mở khóa nút Đăng; KHÔNG gửi lại. Người dùng phải bấm Đăng thêm một lần.
+                if (publishLock.current) return;
+                uncertainSellCreate.current = false;
+                setSellCreateNeedsRecovery(false);
+                setFormMessage({
+                  type: "info",
+                  text: "Đã ghi nhận. Bạn có thể bấm Đăng để gửi lại tin bán.",
+                });
+              }}
+            >
+              <Text style={styles.recoveryAcknowledgeText}>Tôi đã kiểm tra, tin chưa được tạo</Text>
             </TouchableOpacity>
           ) : null}
           {formMessage ? (
@@ -1532,7 +1950,7 @@ export default function PostFormScreen() {
                 label="Thương hiệu"
                 clearable
                 value={brandId}
-                options={brands}
+                options={brandOptions}
                 onChange={setBrandId}
               />
               {!isBuyPost ? (
@@ -1785,9 +2203,39 @@ export default function PostFormScreen() {
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.label}>Cân nặng (kg){deliveryMethod === "GhnDelivery" ? <Text style={{ color: COLORS.error }}> *</Text> : null}</Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput style={styles.input} keyboardType="numeric" placeholder="VD: 15" placeholderTextColor="#547B7D" value={weight} onChangeText={setWeight} />
+                  <View
+                    style={[
+                      styles.inputContainer,
+                      weightError ? styles.inputContainerError : undefined,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="VD: 15"
+                      placeholderTextColor="#547B7D"
+                      value={weight}
+                      onChangeText={(value) => {
+                        setWeight(value);
+
+                        if (!weightError) return;
+
+                        const parsed = Number(value.trim().replace(",", "."));
+                        setWeightError(
+                          !Number.isFinite(parsed) || parsed <= 0
+                            ? "Vui lòng nhập khối lượng sản phẩm lớn hơn 0 kg để giao hàng GHN."
+                            : parsed > 50
+                              ? "GHN chỉ hỗ trợ khối lượng sản phẩm tối đa 50 kg."
+                              : "",
+                        );
+                      }}
+                    />
                   </View>
+                  {weightError ? (
+                    <Text style={[styles.fieldError, styles.fieldErrorCompact]}>
+                      {weightError}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             ) : null}
@@ -1913,22 +2361,85 @@ export default function PostFormScreen() {
               </View>
             )}
 
+            {canUseAiPriceSuggestion ? (
+              <View style={styles.aiPriceArea}>
+                <TouchableOpacity
+                  style={[
+                    styles.aiPriceButton,
+                    (isAiPriceLoading || Boolean(aiPricingContext.issue) || Number(aiPriceQuota?.remainingToday) <= 0) && styles.aiPriceButtonDisabled,
+                  ]}
+                  disabled={isAiPriceLoading || Boolean(aiPricingContext.issue) || Number(aiPriceQuota?.remainingToday) <= 0}
+                  onPress={() => void requestAiPriceSuggestion()}
+                >
+                  {isAiPriceLoading ? <ActivityIndicator color={COLORS.white} /> : <Ionicons name="sparkles-outline" size={18} color={COLORS.white} />}
+                  <Text style={styles.aiPriceButtonText}>{isAiPriceLoading ? "Đang phân tích dữ liệu giá..." : "Gợi ý giá với AI"}</Text>
+                </TouchableOpacity>
+                {aiPriceQuota && Number.isFinite(aiPriceQuota.remainingToday) ? (
+                  <Text style={styles.aiPriceQuota}>
+                    {Number(aiPriceQuota.remainingToday) > 0
+                      ? `Còn ${aiPriceQuota.remainingToday}${Number.isFinite(Number(aiPriceQuota.dailyLimit)) && Number(aiPriceQuota.dailyLimit) > 0 ? `/${aiPriceQuota.dailyLimit}` : ""} lượt gợi ý hôm nay`
+                      : `Đã hết lượt gợi ý hôm nay${aiPriceQuota.resetsAt ? ` · Làm mới ${new Date(aiPriceQuota.resetsAt).toLocaleString("vi-VN")}` : ""}`}
+                  </Text>
+                ) : null}
+                {aiPricingContext.issue && !isAiPriceLoading ? <Text style={styles.aiPriceHint}>{aiPricingContext.issue}</Text> : null}
+                {aiPriceMessage ? <Text style={aiPriceMessage.type === "error" ? styles.fieldError : styles.aiPriceHint}>{aiPriceMessage.text}</Text> : null}
+                {aiPriceResult ? (
+                  <View style={styles.aiPriceResult}>
+                    {isAiPriceStale ? (
+                      <Text style={styles.aiPriceHint}>Thông tin sản phẩm đã thay đổi. Hãy yêu cầu gợi ý mới.</Text>
+                    ) : aiResultStatus === "DAILY_LIMIT_REACHED" ? (
+                      <Text style={styles.fieldError}>Bạn đã dùng hết lượt gợi ý giá hôm nay.</Text>
+                    ) : aiResultStatus === "NO_RELIABLE_DATA" ? (
+                      <Text style={styles.aiPriceExplanation}>{aiPriceResult.explanation || "Chưa có đủ dữ liệu tham khảo đáng tin cậy. Bạn vẫn có thể nhập giá thủ công."}</Text>
+                    ) : aiHasUsablePrice ? (
+                      <>
+                        <Text style={styles.aiPriceLabel}>Giá tham khảo</Text>
+                        <Text style={styles.aiPriceValue}>{Number(aiPriceResult.suggestedPrice).toLocaleString("vi-VN")} đ</Text>
+                        {Number(aiPriceResult.minPrice) > 0 && Number(aiPriceResult.maxPrice) > 0 && Number(aiPriceResult.minPrice) !== Number(aiPriceResult.maxPrice) ? (
+                          <Text style={styles.aiPriceRange}>Khoảng {Number(aiPriceResult.minPrice).toLocaleString("vi-VN")} – {Number(aiPriceResult.maxPrice).toLocaleString("vi-VN")} đ</Text>
+                        ) : null}
+                        {aiResultStatus === "FALLBACK_EQUIVALENT_MODEL" ? <Text style={styles.aiPriceHint}>Tham khảo từ model tương đương</Text> : null}
+                        <Text style={styles.aiPriceExplanation}>{aiPriceResult.explanation}</Text>
+                        <Text style={styles.aiPriceConfidence}>{aiConfidenceLabel[String(aiPriceResult.confidence || "").toUpperCase()] || "Chưa đủ dữ liệu"}</Text>
+                        <TouchableOpacity style={styles.aiApplyButton} onPress={applyAiSuggestedPrice}>
+                          <Text style={styles.aiApplyButtonText}>Áp dụng giá này</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <Text style={styles.aiPriceExplanation}>{aiPriceResult.explanation || "Chưa thể tạo giá tham khảo. Bạn vẫn có thể nhập giá thủ công."}</Text>
+                    )}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             <Text style={styles.label}>Số lượng <Text style={{ color: COLORS.error }}>*</Text></Text>
             {isEditMode ? (
               <Text style={styles.quantityHelper}>
                 Nhập tổng số lượng mới của tin, không phải số lượng cộng thêm.
               </Text>
             ) : null}
-            <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputContainer,
+                quantityError ? styles.inputContainerError : undefined,
+              ]}
+            >
               <TextInput
                 style={styles.input}
-                keyboardType="numeric"
-                placeholder="Nhập SL..."
+                keyboardType="number-pad"
+                inputMode="numeric"
+                placeholder={isBuyPost ? "1 – 99.999" : "Nhập SL..."}
                 placeholderTextColor="#547B7D"
                 value={quantity}
-                onChangeText={setQuantity}
+                onChangeText={(value) => {
+                  setQuantity(value);
+                  // Kiểm tra ngay khi gõ; lỗi giữ nguyên cho tới khi giá trị hợp lệ.
+                  setQuantityError(value.trim() ? validateQuantityInput(value, isBuyPost) : "");
+                }}
               />
             </View>
+            {quantityError ? <Text style={styles.fieldError}>{quantityError}</Text> : null}
           </View>
 
           <View style={styles.cardSection}>
@@ -1982,6 +2493,20 @@ export default function PostFormScreen() {
             />
             {addressError ? <Text style={styles.fieldError}>{addressError}</Text> : null}
           </View>
+
+          {canUseSupplierSuggestion ? (
+            <View style={styles.cardSection}>
+              <SupplierSuggestionPanel
+                mode="draft"
+                readiness={supplierDraftContext.readiness}
+                contextKey={supplierDraftContext.key}
+                attributeNames={supplierAttributeNames}
+                onRequest={requestSupplierDraftMatches}
+                onValidationErrors={handleSupplierValidationErrors}
+                disabled={isLoading}
+              />
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1990,7 +2515,7 @@ export default function PostFormScreen() {
           <KeyboardAvoidingView
             style={[styles.dimensionKeyboardContainer, { paddingTop: insets.top }]}
             pointerEvents="box-none"
-            behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <ModalSurface style={[styles.modalContent, styles.dimensionModal]}>
               <View style={[styles.modalHeader, styles.dimensionHeader]}>
@@ -2009,10 +2534,13 @@ export default function PostFormScreen() {
                 ["Chiều dài (cm)", length, setLength, "VD: 120"],
                 ["Chiều rộng (cm)", width, setWidth, "VD: 60"],
                 ["Chiều cao (cm)", height, setHeight, "VD: 80"],
-              ].map(([label, value, setter, placeholder]) => (
+              ].map(([label, value, setter, placeholder]) => {
+                const isWidthField = setter === setWidth;
+                const fieldError = isWidthField ? widthDimensionError : "";
+                return (
                 <View key={label as string}>
                   <Text style={styles.label}>{label as string}</Text>
-                  <View style={styles.inputContainer}>
+                  <View style={[styles.inputContainer, fieldError ? styles.inputContainerError : undefined]}>
                     <TextInput
                       style={styles.input}
                       keyboardType="numeric"
@@ -2022,10 +2550,12 @@ export default function PostFormScreen() {
                       onChangeText={setter as (value: string) => void}
                     />
                   </View>
+                  {fieldError ? <Text style={[styles.fieldError, styles.dimensionFieldError]}>{fieldError}</Text> : null}
                 </View>
-              ))}
+                );
+              })}
               </ScrollView>
-              <View style={[styles.dimensionFooter, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+              <View style={[styles.dimensionFooter, { paddingBottom: Platform.OS === "android" ? 20 : Math.max(insets.bottom, 20) }]}>
                 <TouchableOpacity style={[styles.primaryButton, styles.dimensionCloseButton]} onPress={() => setShowDimensionsModal(false)}>
                   <Text style={styles.primaryButtonText}>Đóng</Text>
                 </TouchableOpacity>
@@ -2093,6 +2623,8 @@ const styles = StyleSheet.create({
   quantityHelper: { fontSize: 12, color: COLORS.textLight, marginTop: -4, marginBottom: 8 },
   required: { color: COLORS.error, fontWeight: "normal" },
   inputContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, minHeight: 46, backgroundColor: "#F8F9FA", marginBottom: 16, overflow: "hidden" },
+  inputContainerError: { borderColor: COLORS.error },
+  fieldErrorCompact: { marginTop: -12, marginBottom: 12 },
   shortDescription: { minHeight: 80, alignItems: "flex-start", paddingTop: 12 },
   detailDescription: { minHeight: 100, alignItems: "flex-start", paddingTop: 12 },
   input: { flex: 1, fontSize: 14, color: COLORS.text, minHeight: 44, minWidth: 0, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}) },
@@ -2118,6 +2650,7 @@ const styles = StyleSheet.create({
   dimensionHeader: { flexShrink: 0, paddingTop: 20, paddingHorizontal: 20 },
   dimensionScroll: { flexShrink: 1, minHeight: 0 },
   dimensionBody: { paddingHorizontal: 20, paddingBottom: 4 },
+  dimensionFieldError: { marginTop: -10, marginBottom: 16 },
   dimensionFooter: { flexShrink: 0, paddingTop: 12, paddingHorizontal: 20, backgroundColor: COLORS.white },
   dimensionCloseButton: { flexShrink: 0, marginTop: 0, marginBottom: 0 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#BAC2C1" },
@@ -2125,6 +2658,22 @@ const styles = StyleSheet.create({
   modalOptionBtn: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F8F9FA" },
   modalOptionText: { fontSize: 16, color: COLORS.text },
   modalEmptyText: { textAlign: "center", color: "#547B7D", marginTop: 20 },
+  recoveryAcknowledgeButton: { borderWidth: 1, borderColor: COLORS.primary, borderRadius: 12, height: 44, justifyContent: "center", alignItems: "center", marginTop: 10, marginBottom: 16 },
+  recoveryAcknowledgeText: { color: COLORS.primary, fontWeight: "700", fontSize: 14 },
   primaryButton: { backgroundColor: COLORS.primary, borderRadius: 12, height: 48, justifyContent: "center", alignItems: "center", marginTop: 8, marginBottom: Platform.OS === "ios" ? 16 : 0 },
   primaryButtonText: { color: COLORS.white, fontSize: 15, fontWeight: "bold" },
+  aiPriceArea: { marginTop: -4, marginBottom: 16 },
+  aiPriceButton: { minHeight: 44, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  aiPriceButtonDisabled: { opacity: 0.55 },
+  aiPriceButtonText: { color: COLORS.white, fontSize: 13, fontWeight: "700" },
+  aiPriceQuota: { marginTop: 7, color: COLORS.textLight, fontSize: 12 },
+  aiPriceHint: { marginTop: 7, color: COLORS.textLight, fontSize: 12, lineHeight: 17 },
+  aiPriceResult: { marginTop: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(84, 123, 125, 0.24)", backgroundColor: "rgba(84, 123, 125, 0.08)", padding: 12 },
+  aiPriceLabel: { color: COLORS.textLight, fontSize: 12 },
+  aiPriceValue: { color: COLORS.primary, fontWeight: "800", fontSize: 20, marginTop: 2 },
+  aiPriceRange: { color: COLORS.text, fontSize: 12, marginTop: 3 },
+  aiPriceExplanation: { color: COLORS.text, fontSize: 12, lineHeight: 18, marginTop: 7 },
+  aiPriceConfidence: { color: COLORS.primary, fontSize: 12, fontWeight: "700", marginTop: 7 },
+  aiApplyButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginTop: 10 },
+  aiApplyButtonText: { color: COLORS.primary, fontWeight: "700", fontSize: 13 },
 });
