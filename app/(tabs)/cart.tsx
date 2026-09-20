@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -63,6 +63,12 @@ type ItemMessage = {
   text: string;
 } | null;
 
+type UndoDeleteState = {
+  item: CartItem;
+  message: string;
+  expiresAt: number;
+} | null;
+
 const EMPTY_CART: CartData = {
   items: [],
   totalQuantity: 0,
@@ -71,6 +77,10 @@ const EMPTY_CART: CartData = {
 
 const cartApi = {
   getCart: () => apiClient.get("/cart").then((response) => response.data),
+  addItem: (postId: string, quantity: number) =>
+    apiClient
+      .post(`/cart/${postId}`, { quantity })
+      .then((response) => response.data),
   removeItem: (cartItemId: string) =>
     apiClient.delete(`/cart/${cartItemId}`).then((response) => response.data),
 };
@@ -101,6 +111,10 @@ export default function CartScreen() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [itemMessage, setItemMessage] = useState<ItemMessage>(null);
+  const [undoDelete, setUndoDelete] = useState<UndoDeleteState>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
+  const cartWriteInFlightRef = useRef<string | null>(null);
 
   const fetchCart = useCallback(
     async (showLoader = true) => {
@@ -150,9 +164,23 @@ export default function CartScreen() {
     }, [fetchCart, isAuthLoading, user]),
   );
 
+  useEffect(() => {
+    if (!undoDelete) return;
+
+    const timeoutId = setTimeout(() => {
+      setUndoDelete(null);
+      void fetchCart(false);
+    }, Math.max(0, undoDelete.expiresAt - Date.now()));
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [fetchCart, undoDelete]);
+
   const handleRefresh = async () => {
     setPendingDeleteId(null);
     setItemMessage(null);
+    setUndoError(null);
     setIsRefreshing(true);
     await fetchCart(false);
     setIsRefreshing(false);
@@ -164,21 +192,32 @@ export default function CartScreen() {
   };
 
   const confirmDelete = async (item: CartItem) => {
-    if (deletingItemId) return;
+    if (cartWriteInFlightRef.current) return;
+
+    const lockKey = `delete:${item.cartItemId}`;
+    cartWriteInFlightRef.current = lockKey;
 
     try {
       setDeletingItemId(item.cartItemId);
       setItemMessage(null);
+      setUndoError(null);
 
       const response = await cartApi.removeItem(item.cartItemId);
       if (response?.isSuccess === false || response?.data === false) throw response;
 
       setPendingDeleteId(null);
-      setItemMessage({
-        itemId: item.cartItemId,
-        type: "success",
-        text: getApiSuccessMessage(response, "Đã xóa sản phẩm khỏi giỏ hàng."),
+      setUndoDelete({
+        item,
+        message: getApiSuccessMessage(
+          response,
+          "Đã xóa sản phẩm khỏi giỏ hàng.",
+        ),
+        expiresAt: Date.now() + 5_000,
       });
+
+      // Backend is authoritative: refresh immediately so the deleted item,
+      // total quantity and total price all update without waiting for dismissal.
+      await fetchCart(false);
     } catch (error: unknown) {
       setItemMessage({
         itemId: item.cartItemId,
@@ -186,14 +225,54 @@ export default function CartScreen() {
         text: getApiErrorMessage(error, "Không thể xóa sản phẩm khỏi giỏ hàng."),
       });
     } finally {
+      if (cartWriteInFlightRef.current === lockKey) {
+        cartWriteInFlightRef.current = null;
+      }
       setDeletingItemId(null);
     }
   };
 
-  const dismissItemMessage = async () => {
-    const shouldReload = itemMessage?.type === "success";
+  const handleUndoDelete = async () => {
+    if (!undoDelete || cartWriteInFlightRef.current) return;
+
+    const snapshot = undoDelete;
+    const lockKey = `undo:${snapshot.item.postId}`;
+    cartWriteInFlightRef.current = lockKey;
+
+    // Hide first so the 5s timer cannot race the restore request.
+    setUndoDelete(null);
+    setUndoError(null);
+
+    try {
+      setIsUndoing(true);
+
+      const response = await cartApi.addItem(
+        snapshot.item.postId,
+        snapshot.item.quantity,
+      );
+      if (response?.isSuccess === false) throw response;
+
+      await fetchCart(false);
+    } catch (error: unknown) {
+      // Do not auto-retry a write with an uncertain outcome. Reconcile once
+      // with Backend and surface the result instead.
+      setUndoError(
+        getApiErrorMessage(
+          error,
+          "Không thể hoàn tác. Giỏ hàng đã được tải lại theo dữ liệu hệ thống.",
+        ),
+      );
+      await fetchCart(false);
+    } finally {
+      if (cartWriteInFlightRef.current === lockKey) {
+        cartWriteInFlightRef.current = null;
+      }
+      setIsUndoing(false);
+    }
+  };
+
+  const dismissItemMessage = () => {
     setItemMessage(null);
-    if (shouldReload) await fetchCart(false);
   };
 
   const renderCartItem = ({ item }: { item: CartItem }) => {
@@ -436,6 +515,49 @@ export default function CartScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mobileWrapper}>
         <MainHeader title="Giỏ hàng của bạn" />
+
+        {undoDelete ? (
+          <View style={styles.undoBanner}>
+            <Text style={styles.undoBannerText}>
+              {undoDelete.message}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void handleUndoDelete()}
+              disabled={isUndoing}
+              style={styles.undoButton}
+            >
+              {isUndoing ? (
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.primary}
+                />
+              ) : (
+                <Text style={styles.undoButtonText}>
+                  Hoàn tác
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {undoError ? (
+          <View style={styles.undoErrorBanner}>
+            <Text style={styles.undoErrorText}>
+              {undoError}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setUndoError(null)}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="close"
+                size={18}
+                color={COLORS.textLight}
+              />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {renderContent()}
 
         {showFooter ? (
@@ -472,6 +594,56 @@ const styles = StyleSheet.create({
       : {}),
   },
   list: { padding: 16, gap: 12, paddingBottom: 24 },
+  undoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: "rgba(47, 118, 93, 0.24)",
+    borderRadius: 10,
+    backgroundColor: "rgba(47, 118, 93, 0.10)",
+  },
+  undoBannerText: {
+    flex: 1,
+    color: "#2F765D",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  undoButton: {
+    minWidth: 72,
+    minHeight: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  undoButtonText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  undoErrorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "rgba(122, 16, 18, 0.22)",
+    borderRadius: 10,
+    backgroundColor: "rgba(122, 16, 18, 0.08)",
+  },
+  undoErrorText: {
+    flex: 1,
+    color: "#7A1012",
+    fontSize: 13,
+    lineHeight: 18,
+  },
   emptyList: { flexGrow: 1 },
   cartItemWrapper: { width: "100%" },
   cartItem: {

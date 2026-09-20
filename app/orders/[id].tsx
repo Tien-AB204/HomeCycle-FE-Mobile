@@ -186,6 +186,46 @@ const filterOrderTimelineForDisplay = (steps: any[]): any[] =>
       };
     });
 
+// Presentation only: when the order is already completed, omit stale
+// Upcoming/InProgress milestones instead of pretending they completed or
+// inventing timestamps. Surviving substeps are promoted if their parent is stale.
+const filterPendingTimelineAfterCompletion = (
+  steps: any[],
+  completed: boolean,
+): any[] => {
+  if (!completed) return steps;
+
+  return steps.flatMap((step) => {
+    const subSteps = Array.isArray(step?.subSteps)
+      ? filterPendingTimelineAfterCompletion(
+          step.subSteps,
+          true,
+        )
+      : [];
+
+    const status = normalizeStatus(
+      step?.status,
+    );
+
+    const isPending =
+      status === "upcoming" ||
+      status === "0" ||
+      status === "inprogress" ||
+      status === "1";
+
+    if (isPending) {
+      return subSteps;
+    }
+
+    return [
+      {
+        ...step,
+        subSteps,
+      },
+    ];
+  });
+};
+
 // Presentation only: omit an unconfirmed seller action once pickup has moved
 // past it. Never infer completion or change authoritative status/timestamps.
 const normalizePickupTimelineForDisplay = (
@@ -259,6 +299,7 @@ const translateCarrierStatus = (status: string) => {
     exception: "Đơn hàng đang được xử lý ngoại lệ",
     damage: "Hàng hóa bị hư hỏng",
     lost: "Hàng hóa bị thất lạc",
+    scrap: "Hàng hóa đã được GHN ghi nhận tiêu hủy",
   };
 
   return map[status.toLowerCase()] || "Trạng thái vận chuyển đang được cập nhật";
@@ -859,9 +900,19 @@ export default function OrderDetailScreen() {
       ? order.timeline
       : [];
 
+  const completedSafeTimeline =
+    filterPendingTimelineAfterCompletion(
+      rawOrderTimeline,
+      isCompleted,
+    );
+
   const displayTimeline = deliveryMethod === "BuyerPickUp"
-    ? normalizePickupTimelineForDisplay(rawOrderTimeline, isCompleted, order.sellerHandoverConfirmedAt)
-    : rawOrderTimeline;
+    ? normalizePickupTimelineForDisplay(
+        completedSafeTimeline,
+        isCompleted,
+        order.sellerHandoverConfirmedAt,
+      )
+    : completedSafeTimeline;
   const orderTimeline = filterOrderTimelineForDisplay(displayTimeline).flatMap(
     (step: any) =>
       deliveryMethod === "BuyerPickUp" &&

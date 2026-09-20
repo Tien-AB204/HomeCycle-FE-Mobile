@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants/theme";
 import { useNotifications } from "../../contexts/NotificationContext";
 
 const AUTO_DISMISS_MS = 5_000;
 
 export default function InAppNotificationToast() {
+  const insets = useSafeAreaInsets();
   const { inAppNotification } = useNotifications();
   const [visibleVersion, setVisibleVersion] = useState<number | null>(null);
 
@@ -30,7 +32,16 @@ export default function InAppNotificationToast() {
   }
 
   return (
-    <View pointerEvents="box-none" style={styles.host}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.host,
+        {
+          paddingTop:
+            Math.max(insets.top, 0) + 12,
+        },
+      ]}
+    >
       <Pressable style={styles.toast} onPress={() => setVisibleVersion(null)}>
         <Ionicons name="notifications-outline" size={22} color={COLORS.primary} />
         <View style={styles.content}>
@@ -62,7 +73,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-start",
     paddingHorizontal: 16,
-    paddingTop: 16,
     zIndex: 1000,
     elevation: 1000,
   },

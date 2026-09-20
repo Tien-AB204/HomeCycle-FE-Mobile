@@ -1410,7 +1410,10 @@ export default function AgreementPreviewScreen() {
           <View style={styles.postPaymentActions}>
             {postPaymentLinks.orderId ? (
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[
+                  styles.primaryBtn,
+                  styles.postPaymentBtn,
+                ]}
                 onPress={() =>
                   router.push(("/orders/" + postPaymentLinks.orderId) as any)
                 }
@@ -1427,7 +1430,10 @@ export default function AgreementPreviewScreen() {
 
             {postPaymentLinks.appointmentId ? (
               <TouchableOpacity
-                style={styles.secondaryBtn}
+                style={[
+                  styles.secondaryBtn,
+                  styles.postPaymentBtn,
+                ]}
                 onPress={() =>
                   router.push(
                     ("/appointments/" + postPaymentLinks.appointmentId) as any,
@@ -1637,6 +1643,12 @@ const styles = StyleSheet.create({
   },
   postPaymentActions: {
     gap: 10,
+  },
+  postPaymentBtn: {
+    flex: 0,
+    width: "100%",
+    minHeight: 48,
+    flexDirection: "row",
   },
   bottomBar: {
     padding: 16,

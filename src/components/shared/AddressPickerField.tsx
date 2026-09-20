@@ -84,6 +84,37 @@ const normalize = (value: string) =>
     .trim()
     .toLocaleLowerCase("vi-VN");
 
+const parseManualAddressSelection = (
+  value: string,
+): AddressSelection => {
+  const formattedAddress = value;
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const provinceName =
+    parts.length >= 3
+      ? parts[parts.length - 1]
+      : "";
+  const wardName =
+    parts.length >= 3
+      ? parts[parts.length - 2]
+      : "";
+  const streetAddress =
+    parts.length >= 3
+      ? parts.slice(0, -2).join(", ")
+      : value.trim();
+
+  return {
+    provinceCode: "",
+    provinceName,
+    wardName,
+    streetAddress,
+    formattedAddress,
+  };
+};
+
 const AddressPickerField = forwardRef<
   AddressPickerFieldHandle,
   AddressPickerFieldProps
@@ -800,7 +831,7 @@ const AddressPickerField = forwardRef<
 
   return (
     <>
-      <TouchableOpacity
+      <View
         style={[
           styles.trigger,
           hasError
@@ -810,27 +841,50 @@ const AddressPickerField = forwardRef<
             ? styles.triggerDisabled
             : undefined,
         ]}
-        onPress={open}
-        disabled={disabled}
-        accessibilityRole="button"
       >
-        <Text
-          style={
-            value
-              ? styles.triggerValue
-              : styles.triggerPlaceholder
+        <TextInput
+          style={styles.triggerInput}
+          value={value}
+          onChangeText={(nextValue) =>
+            onChange(
+              nextValue,
+              parseManualAddressSelection(
+                nextValue,
+              ),
+            )
           }
+          placeholder={placeholder}
+          placeholderTextColor={
+            COLORS.textLight
+          }
+          editable={!disabled}
+          multiline
           numberOfLines={2}
-        >
-          {value || placeholder}
-        </Text>
-
-        <Ionicons
-          name="location-outline"
-          size={21}
-          color={COLORS.primary}
+          textAlignVertical="center"
+          autoCapitalize="words"
         />
-      </TouchableOpacity>
+
+        <TouchableOpacity
+          style={
+            styles.triggerPickerButton
+          }
+          onPress={open}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="Mở hỗ trợ chọn địa chỉ"
+          hitSlop={6}
+        >
+          <Ionicons
+            name="chevron-down"
+            size={22}
+            color={
+              disabled
+                ? COLORS.textLight
+                : COLORS.primary
+            }
+          />
+        </TouchableOpacity>
+      </View>
 
       <Modal
         visible={visible}
@@ -1315,9 +1369,8 @@ const styles = StyleSheet.create({
     minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: 6,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#BAC2C1",
@@ -1333,17 +1386,29 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
 
-  triggerValue: {
+  triggerInput: {
     flex: 1,
+    minHeight: 50,
+    maxHeight: 76,
+    paddingVertical: 8,
+    paddingRight: 8,
     color: COLORS.text,
     fontSize: 14,
     lineHeight: 19,
+
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+        } as any)
+      : {}),
   },
 
-  triggerPlaceholder: {
-    flex: 1,
-    color: COLORS.textLight,
-    fontSize: 14,
+  triggerPickerButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
   },
 
   keyboardWrapper: {

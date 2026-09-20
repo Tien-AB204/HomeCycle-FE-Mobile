@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -295,6 +296,33 @@ const composePartyAddress = (
   ]
     .filter(Boolean)
     .join(", ");
+
+const normalizeComparableAddress = (
+  value: string,
+) =>
+  value
+    .normalize("NFC")
+    .trim()
+    .replace(/\s*,\s*/g, ",")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("vi-VN");
+
+const areAddressesExactlySame = (
+  first: string,
+  second: string,
+) => {
+  const normalizedFirst =
+    normalizeComparableAddress(first);
+  const normalizedSecond =
+    normalizeComparableAddress(second);
+
+  return Boolean(
+    normalizedFirst &&
+      normalizedSecond &&
+      normalizedFirst ===
+        normalizedSecond,
+  );
+};
 
 const toPositiveInteger = (
   value: string,
@@ -741,6 +769,8 @@ export default function InspectionCollectionScreen() {
 
   const [isSubmitting, setIsSubmitting] =
     useState(false);
+  const collectionActionInFlightRef =
+    useRef(false);
 
   const [notice, setNotice] =
     useState<Notice>(null);
@@ -1351,11 +1381,28 @@ export default function InspectionCollectionScreen() {
       ? "Chiều rộng không được lớn hơn chiều dài."
       : "";
 
+  const pickupAddressForComparison =
+    isGhn
+      ? composePartyAddress(sender)
+      : pickupAddress;
+  const deliveryAddressForComparison =
+    isGhn
+      ? composePartyAddress(receiver)
+      : deliveryAddress;
+  const sameAddressError =
+    areAddressesExactlySame(
+      pickupAddressForComparison,
+      deliveryAddressForComparison,
+    )
+      ? "Địa chỉ người nhận không được giống hoàn toàn địa chỉ người gửi."
+      : null;
+
   const handleSubmit = async () => {
     if (
       !inspectionForm ||
       !appointmentId ||
-      isSubmitting
+      isSubmitting ||
+      collectionActionInFlightRef.current
     ) {
       return;
     }
@@ -1430,6 +1477,14 @@ export default function InspectionCollectionScreen() {
         return;
       }
 
+      if (sameAddressError) {
+        setNotice({
+          type: "error",
+          text: sameAddressError,
+        });
+        return;
+      }
+
       payload = {
         expectedRevision:
           inspectionForm.revision,
@@ -1463,6 +1518,14 @@ export default function InspectionCollectionScreen() {
         setNotice({
           type: "error",
           text: "Vui lòng nhập đầy đủ điểm lấy và điểm giao.",
+        });
+        return;
+      }
+
+      if (sameAddressError) {
+        setNotice({
+          type: "error",
+          text: sameAddressError,
         });
         return;
       }
@@ -1506,6 +1569,8 @@ export default function InspectionCollectionScreen() {
         ghnInfo: null,
       };
     }
+
+    collectionActionInFlightRef.current = true;
 
     try {
       setIsSubmitting(true);
@@ -1573,6 +1638,7 @@ export default function InspectionCollectionScreen() {
         ),
       });
     } finally {
+      collectionActionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -1877,6 +1943,15 @@ export default function InspectionCollectionScreen() {
               }
             />
 
+            {sameAddressError ? (
+              <Text
+                accessibilityRole="alert"
+                style={styles.noticeTextError}
+              >
+                {sameAddressError}
+              </Text>
+            ) : null}
+
             <View style={styles.card}>
               <Text
                 style={
@@ -2153,8 +2228,19 @@ export default function InspectionCollectionScreen() {
                 style={[
                   styles.input,
                   styles.multilineInput,
+                  sameAddressError
+                    ? styles.inputError
+                    : undefined,
                 ]}
               />
+              {sameAddressError ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={styles.fieldErrorText}
+                >
+                  {sameAddressError}
+                </Text>
+              ) : null}
             </View>
 
             <View style={styles.fieldGroup}>
