@@ -274,7 +274,6 @@ export default function OfferDetailScreen() {
 
   const handleUpdateOffer = async () => {
     if (!offerId || offerActionLockRef.current) return;
-    offerActionLockRef.current = true;
 
     const price = Number(editPrice.trim());
     const quantity = Number(editQuantity.trim());
@@ -302,6 +301,8 @@ export default function OfferDetailScreen() {
       await fetchOffer();
       return;
     }
+
+    offerActionLockRef.current = true;
 
     try {
       setIsUpdating(true);
