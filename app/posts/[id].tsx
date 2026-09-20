@@ -1,11 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused, usePreventRemove } from "@react-navigation/native";
-import {
-  useFocusEffect,
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -34,6 +30,21 @@ import {
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { isBuyPostType } from "../../src/utils/postType";
+import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useGuardedRouter } from "../../src/utils/tapGuard";
+import {
+  BuyPostProgress,
+  isTypedDetailUnavailable,
+  normalizeBuyProgress,
+  postDetailApi,
+} from "../../src/services/apis/postDetailApi";
+import { getBuyOfferEligibility } from "../../src/utils/buyPostEligibility";
+import { devLog } from "../../src/utils/devLog";
+import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
+import {
+  SupplierMatchAdvancedFilters,
+  supplierMatchApi,
+} from "../../src/services/apis/supplierMatchApi";
 
 type FeedbackType = "error" | "success" | "warning" | "info";
 type LocalFeedback = {
@@ -145,6 +156,7 @@ function useLocalFeedback() {
   const [feedback, setFeedback] = useState<LocalFeedback>(null);
 
   const clearFeedback = useCallback(() => setFeedback(null), []);
+  useAutoDismissFeedback(feedback, clearFeedback);
   const showError = useCallback(
     (message: string) => setFeedback({ type: "error", message }),
     [],
@@ -385,6 +397,7 @@ async function loadPendingSellerOffers(
 }
 
 const cartApi = {
+  getCart: () => apiClient.get("/cart").then((response) => response.data),
   addToCart: (postId: string, quantity: number) =>
     apiClient.post(`/cart/${postId}`, { quantity }).then((response) => response.data),
 };
@@ -394,7 +407,7 @@ const { width } = Dimensions.get("window");
 export default function PostDetailScreen() {
   const { id, viewOnly, sellerRequestSellPostId, resumeSellerRequest } = useLocalSearchParams();
   const isViewOnly = viewOnly === "true";
-  const router = useRouter();
+  const router = useGuardedRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
 
@@ -410,6 +423,22 @@ export default function PostDetailScreen() {
   latestPostNotificationVersionRef.current = postNotificationSignal.version;
 
   const [post, setPost] = useState<any>(null);
+  // Tiến trình thu mua chỉ có ở API chi tiết theo loại (cần đăng nhập); null khi chưa có.
+  const [buyProgress, setBuyProgress] = useState<BuyPostProgress | null>(null);
+  const imageScrollRef = useRef<ScrollView>(null);
+  const [imageIndex, setImageIndex] = useState(0);
+  const [imageWidth, setImageWidth] = useState(width);
+  const mediaCount = Array.isArray(post?.medias) ? post.medias.length : 0;
+  useEffect(() => {
+    setImageIndex(0);
+    imageScrollRef.current?.scrollTo({ x: 0, animated: false });
+  }, [post?.postId, mediaCount]);
+  const goToImage = (index: number) => {
+    if (mediaCount < 2) return;
+    const next = Math.max(0, Math.min(index, mediaCount - 1));
+    setImageIndex(next);
+    imageScrollRef.current?.scrollTo({ x: next * imageWidth, animated: true });
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [existingOfferId, setExistingOfferId] = useState<string | null>(null);
   const [receivedOfferCount, setReceivedOfferCount] = useState<number | null>(null);
@@ -453,6 +482,9 @@ export default function PostDetailScreen() {
   const [cartQuantity, setCartQuantity] = useState("1");
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [cartAdded, setCartAdded] = useState(false);
+  // Trạng thái "đã có trong giỏ" lấy từ GET /cart, không suy đoán từ lỗi POST trùng.
+  const [isInCart, setIsInCart] = useState(false);
+  const cartMembershipVersion = useRef(0);
 
   const {
     feedback: pageFeedback,
@@ -514,8 +546,46 @@ export default function PostDetailScreen() {
       setIsLoading(true);
       const resPost = await postApi.getPostById(id as string);
       if (postLoadVersion.current !== version) return;
-      const postData = resPost?.data || resPost;
+      let postData = resPost?.data || resPost;
       setPost(postData);
+      setBuyProgress(null);
+
+      // Làm giàu bằng API chi tiết theo loại đã biết (không dò cả hai loại).
+      if (user && postData?.postId) {
+        try {
+          if (isBuyPostType(postData.postType)) {
+            const buyDetail = await postDetailApi.getBuyDetail(String(postData.postId));
+            if (postLoadVersion.current !== version) return;
+            const progress = normalizeBuyProgress(buyDetail?.progress);
+            postData = {
+              ...postData,
+              ...buyDetail,
+              // Tin thu mua: yêu cầu sản phẩm là "requirement"; giữ khóa product để
+              // các phần hiển thị dùng chung vẫn đọc được.
+              product: buyDetail?.requirement ?? postData?.product,
+              requirement: buyDetail?.requirement,
+            };
+            setPost(postData);
+            setBuyProgress(progress);
+          } else if (String(postData.postType ?? "").toLowerCase() === "sell") {
+            const sellDetail = await postDetailApi.getSellDetail(String(postData.postId));
+            if (postLoadVersion.current !== version) return;
+            postData = {
+              ...postData,
+              ...sellDetail,
+              product: sellDetail?.product ?? postData?.product,
+            };
+            setPost(postData);
+          }
+        } catch (typedError) {
+          // Endpoint mới có thể chưa triển khai / sai loại / chưa đăng nhập:
+          // giữ dữ liệu công khai đã tải, không chặn màn hình.
+          if (postLoadVersion.current !== version) return;
+          if (!isTypedDetailUnavailable(typedError)) {
+            devLog("[post-detail] Không tải được chi tiết theo loại:", typedError);
+          }
+        }
+      }
 
       const ownsPost = Boolean(
         currentUserId &&
@@ -638,6 +708,37 @@ export default function PostDetailScreen() {
     }, [fetchPostData]),
   );
 
+  const postIdForCart = String(post?.postId || "");
+  const postTypeForCart = post?.postType;
+  useEffect(() => {
+    if (!isFocused || !user || !postIdForCart || postTypeForCart !== "Sell") {
+      setIsInCart(false);
+      return;
+    }
+    const version = ++cartMembershipVersion.current;
+    void cartApi
+      .getCart()
+      .then((response) => {
+        if (version !== cartMembershipVersion.current) return;
+        const data = response?.data || response || {};
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const target = postIdForCart.toLowerCase();
+        setIsInCart(
+          items.some(
+            (item: any) =>
+              String(item?.postId || item?.post?.postId || "").toLowerCase() === target,
+          ),
+        );
+      })
+      .catch(() => {
+        // Không đọc được giỏ hàng: giữ CTA thêm; Backend vẫn chặn trùng khi cần.
+        if (version === cartMembershipVersion.current) setIsInCart(false);
+      });
+    return () => {
+      cartMembershipVersion.current += 1;
+    };
+  }, [isFocused, user, postIdForCart, postTypeForCart]);
+
   useEffect(() => {
     if (
       !isFocused ||
@@ -671,6 +772,32 @@ export default function PostDetailScreen() {
 
   const isBusinessViewingForeignBuy =
     user?.role === "business" && post?.postType === "Buy" && !isMyPost;
+
+  // Gợi ý nhà cung cấp: chỉ chủ tin thu mua (Doanh nghiệp) mới thấy; không tự gọi
+  // khi mở màn hình (Backend có thể dùng hạn mức AI khi có ≥2 ứng viên).
+  const canManageSupplierMatches =
+    isMyPost && user?.role === "business" && isBuyPostType(post?.postType);
+  const supplierMatchPostId = String(post?.postId || (Array.isArray(id) ? id[0] : id) || "");
+  const requestSupplierMatches = useCallback(
+    (filters: SupplierMatchAdvancedFilters | null) =>
+      supplierMatchApi.matchBuyPost(supplierMatchPostId, filters),
+    [supplierMatchPostId],
+  );
+  const handleSupplierPostUnavailable = useCallback(() => {
+    // Tin không còn khả dụng theo Backend: tải lại chi tiết để đồng bộ trạng thái.
+    void fetchPostData();
+  }, [fetchPostData]);
+  const supplierAttributeNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    const values = post?.product?.attributeValues ?? post?.requirement?.attributeValues;
+    if (Array.isArray(values)) {
+      for (const attribute of values) {
+        const attributeId = String(attribute?.attributeId || "").toLowerCase();
+        if (attributeId) names[attributeId] = String(attribute?.attributeName || "Thông số");
+      }
+    }
+    return names;
+  }, [post?.product?.attributeValues, post?.requirement?.attributeValues]);
 
   const handleOpenReceivedOffers = () => {
     const targetPostId =
@@ -951,6 +1078,12 @@ export default function PostDetailScreen() {
       return;
     }
 
+    const eligibility = getBuyOfferEligibility(post, buyProgress);
+    if (!eligibility.allowed) {
+      showPageError(eligibility.message || "Tin thu mua này hiện không nhận chào bán.");
+      return;
+    }
+
     clearPageFeedback();
     clearSellerRequestFeedback();
     setSellerLoadError(false);
@@ -997,7 +1130,7 @@ export default function PostDetailScreen() {
         sellerLoadLock.current = false;
       }
     }
-  }, [post, id, user, currentUserId, isViewOnly, router, selectedSellPostId,
+  }, [post, buyProgress, id, user, currentUserId, isViewOnly, router, selectedSellPostId,
     clearPageFeedback, clearSellerRequestFeedback, showPageError, showSellerRequestError,
     loadOwnSellPosts, loadSellerComparisons, handleSelectSellerMatch]);
 
@@ -1292,6 +1425,11 @@ export default function PostDetailScreen() {
       return;
     }
 
+    if (isInCart) {
+      router.push("/(tabs)/cart");
+      return;
+    }
+
     if (!targetPostId) {
       showPageError("Không tìm thấy bài đăng cần thêm vào giỏ hàng.");
       return;
@@ -1372,6 +1510,7 @@ export default function PostDetailScreen() {
       }
 
       setCartAdded(true);
+      setIsInCart(true);
       showCartSuccess(
         getApiSuccessMessage(
           response,
@@ -1621,6 +1760,7 @@ export default function PostDetailScreen() {
 
   const product = post.product || {};
   const isBuyPost = isBuyPostType(post.postType);
+  const buyOfferEligibility = getBuyOfferEligibility(post, buyProgress);
   const address = [post.streetAddress, post.ward, post.city]
     .filter(Boolean)
     .join(", ");
@@ -1698,17 +1838,27 @@ export default function PostDetailScreen() {
         </ModalBackdrop>
       </Modal>
 
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView} keyboardShouldPersistTaps="handled">
         {!isBuyPost ? (
           <>
-        <View style={styles.imageContainer}>
-          {post.medias && post.medias.length > 0 ? (
-            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+        <View style={styles.imageContainer} onLayout={(event) => {
+          const nextWidth = event.nativeEvent.layout.width;
+          if (nextWidth > 0 && nextWidth !== imageWidth) {
+            setImageWidth(nextWidth);
+            imageScrollRef.current?.scrollTo({ x: imageIndex * nextWidth, animated: false });
+          }
+        }}>
+          {mediaCount > 0 ? (
+            <ScrollView ref={imageScrollRef} horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(event) => setImageIndex(Math.max(0, Math.min(
+                mediaCount - 1, Math.round(event.nativeEvent.contentOffset.x / imageWidth),
+              )))}>
               {post.medias.map((image: any) => (
                 <Image
                   key={image.mediaId}
                   source={{ uri: image.url || image.mediaUrl }}
-                  style={styles.mainImage}
+                  style={[styles.mainImage, { width: imageWidth }]}
                   resizeMode="cover"
                 />
               ))}
@@ -1720,10 +1870,24 @@ export default function PostDetailScreen() {
             </View>
           )}
 
-          {post.medias && post.medias.length > 1 ? (
+          {mediaCount > 1 ? (
+            <>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Ảnh trước"
+              accessibilityState={{ disabled: imageIndex === 0 }}
+              disabled={imageIndex === 0} onPress={() => goToImage(imageIndex - 1)}
+              style={[styles.imageArrow, { left: 12 }, imageIndex === 0 && styles.imageArrowDisabled]}>
+              <Ionicons name="chevron-back" size={24} color={COLORS.white} />
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Ảnh tiếp theo"
+              accessibilityState={{ disabled: imageIndex >= mediaCount - 1 }}
+              disabled={imageIndex >= mediaCount - 1} onPress={() => goToImage(imageIndex + 1)}
+              style={[styles.imageArrow, { right: 12 }, imageIndex >= mediaCount - 1 && styles.imageArrowDisabled]}>
+              <Ionicons name="chevron-forward" size={24} color={COLORS.white} />
+            </TouchableOpacity>
             <View style={styles.imageBadge}>
-              <Text style={styles.imageBadgeText}>1 / {post.medias.length}</Text>
+              <Text style={styles.imageBadgeText}>{imageIndex + 1} / {mediaCount}</Text>
             </View>
+            </>
           ) : null}
         </View>
 
@@ -1760,7 +1924,15 @@ export default function PostDetailScreen() {
                 {post.postType === "Sell" ? "Tin Bán" : "Tin Mua"}
               </Text>
             </View>
+            {!isBuyPost ? (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>Còn {post.remainingQuantity ?? "—"}/{post.quantity ?? "—"}</Text>
+              </View>
+            ) : null}
           </View>
+          {!isMyPost ? (
+            <Text style={[styles.dateText, { marginTop: 10 }]}>Ngày đăng: {formatDate(post.createdAt)}</Text>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -1966,12 +2138,50 @@ export default function PostDetailScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Thông tin giao dịch</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Số lượng:</Text>
-            <Text style={styles.infoValue}>
-              {post.remainingQuantity} / {post.quantity}
-            </Text>
-          </View>
+          {isBuyPost ? (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Cần thu mua:</Text>
+              <Text style={styles.infoValue}>{post.quantity ?? "—"} sản phẩm</Text>
+            </View>
+          ) : (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Số lượng:</Text>
+              <Text style={styles.infoValue}>
+                {post.remainingQuantity} / {post.quantity}
+              </Text>
+            </View>
+          )}
+          {isBuyPost && buyProgress ? (
+            <View style={styles.progressCard}>
+              <Text style={styles.progressTitle}>Tiến trình thu mua</Text>
+              <Text style={styles.progressLine}>
+                Đã lập hợp đồng:{" "}
+                <Text style={styles.progressStrong}>
+                  {buyProgress.agreedQuantity}/{buyProgress.targetQuantity}
+                </Text>{" "}
+                sản phẩm
+              </Text>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.min(100, Math.max(0, buyProgress.progressPercent))}%` },
+                    buyProgress.isTargetReached ? styles.progressFillReached : undefined,
+                  ]}
+                />
+              </View>
+              <View style={styles.progressFooter}>
+                <Text style={styles.progressPercent}>
+                  {Math.round(buyProgress.progressPercent)}%
+                </Text>
+                <Text style={styles.progressLine}>
+                  {buyProgress.isTargetReached
+                    ? "Đã đủ số lượng cần mua"
+                    : `Còn cần: ${buyProgress.remainingTargetQuantity} sản phẩm`}
+                </Text>
+              </View>
+            </View>
+          ) : null}
           {post.postType !== "Buy" ? (
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>
@@ -2001,7 +2211,26 @@ export default function PostDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.section, styles.lastSection]}>
+        {canManageSupplierMatches ? (
+          <View style={styles.section}>
+            {buyOfferEligibility.reason === "inactive" || buyOfferEligibility.reason === "expired" ? (
+              <Text style={styles.supplierUnavailableText}>
+                Tin thu mua không còn hoạt động nên chưa thể gợi ý nhà cung cấp.
+              </Text>
+            ) : (
+              <SupplierSuggestionPanel
+                mode="buy-post"
+                readiness={{ ready: Boolean(supplierMatchPostId), hint: null }}
+                contextKey={`${supplierMatchPostId}:${String(post.status ?? "")}:${buyProgress?.agreedQuantity ?? ""}:${String(post.expiryDate ?? "")}`}
+                attributeNames={supplierAttributeNames}
+                onRequest={requestSupplierMatches}
+                onPostUnavailable={handleSupplierPostUnavailable}
+              />
+            )}
+          </View>
+        ) : null}
+
+        {isMyPost ? <View style={[styles.section, styles.lastSection]}>
           <Text style={styles.dateText}>Ngày đăng: {formatDate(post.createdAt)}</Text>
           <Text style={styles.dateText}>
             Cập nhật lần cuối: {formatDate(post.updatedAt)}
@@ -2009,7 +2238,7 @@ export default function PostDetailScreen() {
           <Text style={styles.dateText}>
             Ngày hết hạn: {formatDate(post.expiryDate)}
           </Text>
-        </View>
+        </View> : null}
       </ScrollView>
 
       {pageFeedback ? (
@@ -2089,14 +2318,27 @@ export default function PostDetailScreen() {
                   {isAddingToCart ? (
                     <ActivityIndicator size="small" color={COLORS.primary} />
                   ) : (
-                    <Ionicons name="cart-outline" size={20} color={COLORS.primary} />
+                    <Ionicons
+                      name={isInCart ? "cart" : "cart-outline"}
+                      size={20}
+                      color={COLORS.primary}
+                    />
                   )}
                   <Text style={styles.cartBtnText}>
-                    {isAddingToCart ? "Đang thêm..." : "Thêm giỏ hàng"}
+                    {isAddingToCart
+                      ? "Đang thêm..."
+                      : isInCart
+                        ? "Xem giỏ hàng"
+                        : "Thêm vào giỏ hàng"}
                   </Text>
                 </TouchableOpacity>
               ) : null}
 
+              {post.postType === "Buy" && !buyOfferEligibility.allowed && !hasPendingSellerOffers ? (
+                <View style={styles.closedPostContainer}>
+                  <Text style={styles.closedPostText}>{buyOfferEligibility.message}</Text>
+                </View>
+              ) : (
               <TouchableOpacity
                 style={[
                   styles.negotiateBtn,
@@ -2127,6 +2369,7 @@ export default function PostDetailScreen() {
                       : "Thương lượng"}
                 </Text>
               </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.closedPostContainer}>
@@ -3049,6 +3292,12 @@ const styles = StyleSheet.create({
   },
   postMenuOptionText: { color: "#7A1012", fontSize: 14, fontWeight: "600" },
   imageContainer: { position: "relative", backgroundColor: COLORS.white },
+  imageArrow: {
+    position: "absolute", top: 128, width: 44, height: 44,
+    borderRadius: 22, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  imageArrowDisabled: { opacity: 0.3 },
   mainImage: { width, height: 300 },
   imagePlaceholder: {
     justifyContent: "center",
@@ -3072,6 +3321,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   lastSection: { marginBottom: 30 },
+  supplierUnavailableText: { fontSize: 13, lineHeight: 18, color: COLORS.textLight },
   productName: {
     fontSize: 18,
     fontWeight: "bold",
@@ -3218,6 +3468,34 @@ const styles = StyleSheet.create({
   specLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 2 },
   specValue: { fontSize: 14, color: COLORS.text, fontWeight: "500" },
   infoRow: { flexDirection: "row", marginBottom: 8 },
+  progressCard: {
+    marginTop: 6,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.24)",
+  },
+  progressTitle: { fontSize: 14, fontWeight: "700", color: COLORS.text, marginBottom: 6 },
+  progressLine: { fontSize: 13, color: COLORS.text, lineHeight: 18 },
+  progressStrong: { fontWeight: "800", color: COLORS.primary },
+  progressTrack: {
+    height: 8,
+    marginTop: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(23, 40, 48, 0.10)",
+    overflow: "hidden",
+  },
+  progressFill: { height: "100%", borderRadius: 4, backgroundColor: COLORS.primary },
+  progressFillReached: { backgroundColor: "#2F765D" },
+  progressFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    gap: 8,
+  },
+  progressPercent: { fontSize: 12, fontWeight: "800", color: COLORS.primary },
   infoLabel: { width: 100, fontSize: 14, color: COLORS.textLight },
   infoValue: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: "500" },
   description: { fontSize: 14, color: COLORS.text, lineHeight: 22 },
