@@ -124,6 +124,8 @@ export function NotificationProvider({
   currentUserRoleRef.current = String(user?.role ?? "") || null;
   systemNotificationsEnabledRef.current = systemNotificationsEnabled;
   const processedCreatedNotificationIdsRef = useRef<Set<string>>(new Set());
+  const notificationReadInFlightRef = useRef<Map<string, Promise<any>>>(new Map());
+  const notificationReadAllInFlightRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -179,44 +181,74 @@ export function NotificationProvider({
 
   const markNotificationAsRead = useCallback(
     async (notificationId: string) => {
-      const response = await apiClient.patch(
-        `/notifications/${notificationId}/read`,
-      );
+      const existing =
+        notificationReadInFlightRef.current.get(notificationId);
+      if (existing) return existing;
+
+      let request: Promise<any>;
+      request = (async () => {
+        const response = await apiClient.patch(
+          `/notifications/${notificationId}/read`,
+        );
+        const data = unwrapApiData(response.data);
+        const nextCount = getUnreadCount(data);
+
+        if (
+          data?.unreadCount !== undefined ||
+          data?.UnreadCount !== undefined
+        ) {
+          unreadStateVersionRef.current += 1;
+          setUnreadCount(nextCount);
+        } else {
+          unreadStateVersionRef.current += 1;
+          setUnreadCount((current) => Math.max(0, current - 1));
+        }
+
+        return data;
+      })().finally(() => {
+        if (
+          notificationReadInFlightRef.current.get(notificationId) ===
+          request
+        ) {
+          notificationReadInFlightRef.current.delete(notificationId);
+        }
+      });
+
+      notificationReadInFlightRef.current.set(notificationId, request);
+      return request;
+    },
+    [],
+  );
+
+  const markAllNotificationsAsRead = useCallback(async () => {
+    const existing = notificationReadAllInFlightRef.current;
+    if (existing) return existing;
+
+    let request: Promise<any>;
+    request = (async () => {
+      const response = await apiClient.patch("/notifications/read-all");
       const data = unwrapApiData(response.data);
-      const nextCount = getUnreadCount(data);
 
       if (
         data?.unreadCount !== undefined ||
         data?.UnreadCount !== undefined
       ) {
         unreadStateVersionRef.current += 1;
-        setUnreadCount(nextCount);
+        setUnreadCount(getUnreadCount(data));
       } else {
         unreadStateVersionRef.current += 1;
-        setUnreadCount((current) => Math.max(0, current - 1));
+        setUnreadCount(0);
       }
 
       return data;
-    },
-    [],
-  );
+    })().finally(() => {
+      if (notificationReadAllInFlightRef.current === request) {
+        notificationReadAllInFlightRef.current = null;
+      }
+    });
 
-  const markAllNotificationsAsRead = useCallback(async () => {
-    const response = await apiClient.patch("/notifications/read-all");
-    const data = unwrapApiData(response.data);
-
-    if (
-      data?.unreadCount !== undefined ||
-      data?.UnreadCount !== undefined
-    ) {
-      unreadStateVersionRef.current += 1;
-      setUnreadCount(getUnreadCount(data));
-    } else {
-      unreadStateVersionRef.current += 1;
-      setUnreadCount(0);
-    }
-
-    return data;
+    notificationReadAllInFlightRef.current = request;
+    return request;
   }, []);
 
   useEffect(() => {

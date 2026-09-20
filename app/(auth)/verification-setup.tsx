@@ -176,6 +176,9 @@ export default function VerificationSetupScreen() {
     setPendingIncludeVerification,
   ] = useState<boolean | null>(null);
 
+  const registrationActionLockRef = useRef(false);
+  const reverifyActionLockRef = useRef(false);
+
   const [repCode, setRepCode] = useState("");
   const [legalName, setLegalName] = useState("");
   const repName = legalName;
@@ -319,7 +322,11 @@ export default function VerificationSetupScreen() {
     includeVerification: boolean,
     tokenOverride?: string,
   ) => {
-    setMessage(null);
+    if (registrationActionLockRef.current) return;
+    registrationActionLockRef.current = true;
+
+    try {
+      setMessage(null);
 
     if (
       includeVerification &&
@@ -379,7 +386,6 @@ export default function VerificationSetupScreen() {
       }
     }
 
-    try {
       setIsLoading(true);
 
       const formData = new FormData();
@@ -596,6 +602,7 @@ export default function VerificationSetupScreen() {
         ),
       });
     } finally {
+      registrationActionLockRef.current = false;
       setIsLoading(false);
     }
   };
@@ -612,6 +619,9 @@ export default function VerificationSetupScreen() {
 
         return;
       }
+
+      if (reverifyActionLockRef.current) return;
+      reverifyActionLockRef.current = true;
 
       try {
         setIsReverifyLoading(true);
@@ -630,6 +640,7 @@ export default function VerificationSetupScreen() {
           ),
         });
       } finally {
+        reverifyActionLockRef.current = false;
         setIsReverifyLoading(false);
       }
     };
@@ -656,6 +667,9 @@ export default function VerificationSetupScreen() {
 
         return;
       }
+
+      if (reverifyActionLockRef.current) return;
+      reverifyActionLockRef.current = true;
 
       try {
         setIsReverifyLoading(true);
@@ -713,6 +727,7 @@ export default function VerificationSetupScreen() {
           ),
         );
       } finally {
+        reverifyActionLockRef.current = false;
         setIsReverifyLoading(false);
       }
     };
