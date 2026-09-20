@@ -130,6 +130,7 @@ export default function BusinessSurveyScreen() {
   const [isEditingExistingSurvey, setIsEditingExistingSurvey] = useState(false);
   // Bản khảo sát mới nhất từ máy chủ — dùng để "Hủy" khôi phục đúng dữ liệu đã lưu.
   const lastServerDetailRef = useRef<any>(null);
+  const surveySaveInFlightRef = useRef(false);
   const [message, setMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(message, () => setMessage(null));
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -255,7 +256,9 @@ export default function BusinessSurveyScreen() {
   };
 
   const submitSurvey = async () => {
-    if (!validate()) return;
+    if (surveySaveInFlightRef.current || !validate()) return;
+
+    surveySaveInFlightRef.current = true;
 
     try {
       setIsSaving(true);
@@ -285,6 +288,7 @@ export default function BusinessSurveyScreen() {
         text: getErrorMessage(error, "Không thể lưu khảo sát thu mua."),
       });
     } finally {
+      surveySaveInFlightRef.current = false;
       setIsSaving(false);
     }
   };

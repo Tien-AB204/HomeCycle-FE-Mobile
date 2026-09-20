@@ -393,6 +393,7 @@ export default function OTPScreen() {
 
   const handleResend = async () => {
     if (
+      isSubmittingRef.current ||
       isLoading ||
       timeLeft > 0
     ) {
@@ -405,6 +406,8 @@ export default function OTPScreen() {
       );
       return;
     }
+
+    isSubmittingRef.current = true;
 
     try {
       setIsLoading(true);
@@ -434,6 +437,7 @@ export default function OTPScreen() {
         ),
       );
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };

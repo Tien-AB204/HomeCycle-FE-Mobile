@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -262,6 +262,7 @@ export default function ContentReportScreen() {
   const [description, setDescription] = useState("");
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const reportSubmitInFlightRef = useRef(false);
 
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(
@@ -407,8 +408,10 @@ export default function ContentReportScreen() {
   };
 
   const submit = async () => {
-    if (!targetType || !targetId) return;
+    if (reportSubmitInFlightRef.current || !targetType || !targetId) return;
     if (!validate() || !selectedCategoryId) return;
+
+    reportSubmitInFlightRef.current = true;
 
     const filesValidation = await validateNewLocalFiles(
       "DisputeEvidence",
@@ -421,6 +424,7 @@ export default function ContentReportScreen() {
 
     if (!filesValidation.valid) {
       setImageError(filesValidation.message);
+      reportSubmitInFlightRef.current = false;
       return;
     }
 
@@ -473,6 +477,7 @@ export default function ContentReportScreen() {
           NETWORK_ERROR_MESSAGE,
       });
     } finally {
+      reportSubmitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };

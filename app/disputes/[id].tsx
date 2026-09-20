@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -149,6 +149,7 @@ export default function DisputeDetailScreen() {
   useAutoDismissFeedback(actionMessage, () => setActionMessage(null));
   const [isCloseModalVisible, setIsCloseModalVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const closeDisputeInFlightRef = useRef(false);
   const [closeError, setCloseError] = useState<string | null>(null);
 
   const loadDetail = useCallback(async () => {
@@ -195,7 +196,9 @@ export default function DisputeDetailScreen() {
   };
 
   const handleCloseDispute = async () => {
-    if (!disputeId || isClosing) return;
+    if (!disputeId || isClosing || closeDisputeInFlightRef.current) return;
+
+    closeDisputeInFlightRef.current = true;
 
     try {
       setIsClosing(true);
@@ -210,6 +213,7 @@ export default function DisputeDetailScreen() {
         getApiErrorMessage(error, "Không thể đóng tranh chấp lúc này."),
       );
     } finally {
+      closeDisputeInFlightRef.current = false;
       setIsClosing(false);
     }
   };

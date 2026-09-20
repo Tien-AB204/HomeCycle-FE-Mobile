@@ -2,7 +2,7 @@ import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -90,6 +90,7 @@ export default function AccountInfoScreen() {
   const { user, reloadUser } = useAuth();
 
   const [isSaving, setIsSaving] = useState(false);
+  const profileSaveInFlightRef = useRef(false);
   const [imageError, setImageError] = useState(false);
   const [saveMessage, setSaveMessage] = useState<SaveMessage>(null);
   const [editingSection, setEditingSection] = useState<PersonalSection | null>(null);
@@ -309,6 +310,9 @@ export default function AccountInfoScreen() {
   };
 
   const handleSaveChanges = async (section: PersonalSection) => {
+    if (profileSaveInFlightRef.current) return;
+
+    profileSaveInFlightRef.current = true;
     setIsSaving(true);
     setSaveMessage(null);
 
@@ -509,6 +513,7 @@ export default function AccountInfoScreen() {
         ),
       });
     } finally {
+      profileSaveInFlightRef.current = false;
       setIsSaving(false);
     }
   };

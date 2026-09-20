@@ -89,6 +89,7 @@ export default function PostsScreen() {
   const handledPostNotificationVersionRef = useRef(
     postNotificationSignal.version,
   );
+  const postActionInFlightRef = useRef<string | null>(null);
   const latestPostNotificationVersionRef = useRef(
     postNotificationSignal.version,
   );
@@ -231,7 +232,10 @@ export default function PostsScreen() {
   };
 
   const confirmPostAction = async (postId: string, action: PostAction) => {
-    if (processingPostId) return;
+    if (processingPostId || postActionInFlightRef.current) return;
+
+    const lockKey = `${action}:${postId}`;
+    postActionInFlightRef.current = lockKey;
 
     try {
       setProcessingPostId(postId);
@@ -265,6 +269,9 @@ export default function PostsScreen() {
         ),
       });
     } finally {
+      if (postActionInFlightRef.current === lockKey) {
+        postActionInFlightRef.current = null;
+      }
       setProcessingPostId(null);
     }
   };
