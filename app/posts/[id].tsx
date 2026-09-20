@@ -487,6 +487,7 @@ export default function PostDetailScreen() {
   // Trạng thái "đã có trong giỏ" lấy từ GET /cart, không suy đoán từ lỗi POST trùng.
   const [isInCart, setIsInCart] = useState(false);
   const cartMembershipVersion = useRef(0);
+  const postWriteActionInFlightRef = useRef<string | null>(null);
 
   const {
     feedback: pageFeedback,
@@ -830,6 +831,7 @@ export default function PostDetailScreen() {
   };
 
   const handleClosePost = async () => {
+    if (postWriteActionInFlightRef.current) return;
     const targetPostId = post?.postId;
     if (!targetPostId) {
       showPageError("Không tìm thấy ID bài đăng.");
@@ -844,7 +846,10 @@ export default function PostDetailScreen() {
       cancelLabel: "Quay lại",
       destructive: true,
     });
-    if (!confirmed) return;
+    if (!confirmed || postWriteActionInFlightRef.current) return;
+
+    const lockKey = `close:${targetPostId}`;
+    postWriteActionInFlightRef.current = lockKey;
 
     try {
       setIsLoading(true);
@@ -857,11 +862,15 @@ export default function PostDetailScreen() {
         getApiErrorMessage(error, "Không thể đóng bài đăng lúc này."),
       );
     } finally {
+      if (postWriteActionInFlightRef.current === lockKey) {
+        postWriteActionInFlightRef.current = null;
+      }
       setIsLoading(false);
     }
   };
 
   const handleReactivatePost = async () => {
+    if (postWriteActionInFlightRef.current) return;
     const targetPostId = post?.postId;
     if (!targetPostId) {
       showPageError("Không tìm thấy ID bài đăng.");
@@ -874,7 +883,10 @@ export default function PostDetailScreen() {
       confirmLabel: "Mở lại",
       cancelLabel: "Quay lại",
     });
-    if (!confirmed) return;
+    if (!confirmed || postWriteActionInFlightRef.current) return;
+
+    const lockKey = `reactivate:${targetPostId}`;
+    postWriteActionInFlightRef.current = lockKey;
 
     try {
       setIsLoading(true);
@@ -887,6 +899,9 @@ export default function PostDetailScreen() {
         getApiErrorMessage(error, "Không thể mở lại bài đăng lúc này."),
       );
     } finally {
+      if (postWriteActionInFlightRef.current === lockKey) {
+        postWriteActionInFlightRef.current = null;
+      }
       setIsLoading(false);
     }
   };
@@ -1378,6 +1393,7 @@ export default function PostDetailScreen() {
   };
 
   const handleCreateOffer = async () => {
+    if (postWriteActionInFlightRef.current) return;
     if (post?.postType === "Buy") {
       showOfferError(
         "Tin thu mua sử dụng luồng chào bán sản phẩm.",
@@ -1395,6 +1411,9 @@ export default function PostDetailScreen() {
       return;
     }
 
+    const lockKey = `offer:${targetPostId}`;
+    postWriteActionInFlightRef.current = lockKey;
+
     try {
       setIsSubmittingOffer(true);
       clearOfferFeedback();
@@ -1411,6 +1430,9 @@ export default function PostDetailScreen() {
     } catch (error) {
       showOfferError(getApiErrorMessage(error, "Không thể gửi đề nghị."));
     } finally {
+      if (postWriteActionInFlightRef.current === lockKey) {
+        postWriteActionInFlightRef.current = null;
+      }
       setIsSubmittingOffer(false);
     }
   };
@@ -1484,6 +1506,7 @@ export default function PostDetailScreen() {
   };
 
   const handleAddToCart = async () => {
+    if (postWriteActionInFlightRef.current) return;
     const targetPostId =
       post?.postId || (Array.isArray(id) ? id[0] : id);
     const quantity = Number(cartQuantity);
@@ -1507,6 +1530,9 @@ export default function PostDetailScreen() {
       showCartError(`Số lượng tối đa là ${post?.remainingQuantity || 0}.`);
       return;
     }
+
+    const lockKey = `cart:${targetPostId}`;
+    postWriteActionInFlightRef.current = lockKey;
 
     try {
       setIsAddingToCart(true);
@@ -1532,6 +1558,9 @@ export default function PostDetailScreen() {
         getApiErrorMessage(error, "Không thể thêm sản phẩm vào giỏ hàng."),
       );
     } finally {
+      if (postWriteActionInFlightRef.current === lockKey) {
+        postWriteActionInFlightRef.current = null;
+      }
       setIsAddingToCart(false);
     }
   };
