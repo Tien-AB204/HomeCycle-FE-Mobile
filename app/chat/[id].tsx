@@ -543,6 +543,8 @@ export default function ChatDetailScreen() {
   const processedRealtimeMessageIdsRef =
     useRef<Set<string>>(new Set());
   const readRequestInFlightRef = useRef(false);
+  const negotiationActionInFlightRef = useRef<string | null>(null);
+  const messageSendInFlightRef = useRef(false);
   const activeReadTargetKeyRef = useRef<string | null>(null);
   const pendingReadTargetRef = useRef<{
     conversationId?: string | null;
@@ -2579,9 +2581,14 @@ export default function ChatDetailScreen() {
   const handleAcceptOffer = async (
     proposalMessageId: string,
   ) => {
+    if (negotiationActionInFlightRef.current) return;
+
     if (!negotiationId) {
       return;
     }
+
+    const lockKey = `accept:${proposalMessageId}`;
+    negotiationActionInFlightRef.current = lockKey;
 
     try {
       setIsProcessing(true);
@@ -2601,6 +2608,9 @@ export default function ChatDetailScreen() {
         ),
       );
     } finally {
+      if (negotiationActionInFlightRef.current === lockKey) {
+        negotiationActionInFlightRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
@@ -2608,9 +2618,14 @@ export default function ChatDetailScreen() {
   const handleRejectOffer = async (
     proposalMessageId: string,
   ) => {
+    if (negotiationActionInFlightRef.current) return;
+
     if (!negotiationId) {
       return;
     }
+
+    const lockKey = `reject:${proposalMessageId}`;
+    negotiationActionInFlightRef.current = lockKey;
 
     try {
       setIsProcessing(true);
@@ -2630,11 +2645,16 @@ export default function ChatDetailScreen() {
         ),
       );
     } finally {
+      if (negotiationActionInFlightRef.current === lockKey) {
+        negotiationActionInFlightRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
 
   const submitCounterOffer = async () => {
+    if (negotiationActionInFlightRef.current) return;
+
     if (!negotiationId) {
       return;
     }
@@ -2657,6 +2677,9 @@ export default function ChatDetailScreen() {
 
       return;
     }
+
+    const lockKey = `counter:${negotiationId}`;
+    negotiationActionInFlightRef.current = lockKey;
 
     try {
       setIsProcessing(true);
@@ -2681,16 +2704,26 @@ export default function ChatDetailScreen() {
         ),
       );
     } finally {
+      if (negotiationActionInFlightRef.current === lockKey) {
+        negotiationActionInFlightRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
 
   const handleCancelNegotiation = () => {
+    if (negotiationActionInFlightRef.current) return;
+
     if (!negotiationId) {
       return;
     }
 
     const executeCancel = async () => {
+      if (negotiationActionInFlightRef.current) return;
+
+      const lockKey = `cancel:${negotiationId}`;
+      negotiationActionInFlightRef.current = lockKey;
+
       try {
         setIsProcessing(true);
 
@@ -2713,6 +2746,9 @@ export default function ChatDetailScreen() {
           ),
         );
       } finally {
+        if (negotiationActionInFlightRef.current === lockKey) {
+          negotiationActionInFlightRef.current = null;
+        }
         setIsProcessing(false);
       }
     };
@@ -2736,6 +2772,8 @@ export default function ChatDetailScreen() {
   };
 
   const handleSendMessage = async () => {
+    if (messageSendInFlightRef.current) return;
+
     if (
       !inputText.trim() ||
       !negotiationId
@@ -2749,6 +2787,7 @@ export default function ChatDetailScreen() {
       return;
     }
 
+    messageSendInFlightRef.current = true;
     shouldScrollToLatestRef.current = true;
     animateNextScrollToLatestRef.current = true;
     setInputText("");
@@ -2787,6 +2826,8 @@ export default function ChatDetailScreen() {
           "Không thể gửi tin nhắn lúc này.",
         ),
       );
+    } finally {
+      messageSendInFlightRef.current = false;
     }
   };
 
