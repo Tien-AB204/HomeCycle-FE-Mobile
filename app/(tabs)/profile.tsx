@@ -505,7 +505,9 @@ export default function ProfileScreen() {
           </View>
 
           <TouchableOpacity style={styles.logoutButton} onPress={() => setShowLogoutConfirm(true)}>
-            <Ionicons name="log-out-outline" size={22} color="#7A1012" />
+            <View style={styles.logoutIconSlot}>
+              <Ionicons name="log-out-outline" size={22} color="#7A1012" />
+            </View>
             <Text style={styles.logoutText}>Đăng xuất</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -683,9 +685,15 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     backgroundColor: COLORS.white,
+  },
+  logoutIconSlot: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   logoutText: { color: "#7A1012", fontWeight: "900", fontSize: 15 },
   modalOverlay: {
