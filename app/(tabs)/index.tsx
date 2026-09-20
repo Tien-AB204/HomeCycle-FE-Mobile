@@ -141,6 +141,9 @@ export default function HomeScreen() {
   const homeRequestVersion = useRef(0);
   const [cartPostIds, setCartPostIds] = useState<Set<string>>(new Set());
   const [addingPostId, setAddingPostId] = useState<string | null>(null);
+  // Thẩm quyền đồng thời cho thêm nhanh vào giỏ (state React cập nhật bất đồng bộ
+  // nên addingPostId chỉ là trạng thái hiển thị): mỗi lúc chỉ MỘT yêu cầu thêm.
+  const quickCartActionInFlightRef = useRef<string | null>(null);
   const [feedback, setFeedback] = useState<HomeFeedback>(null);
   useAutoDismissFeedback(feedback, () => setFeedback(null));
   const cartRequestVersion = useRef(0);
@@ -356,6 +359,42 @@ export default function HomeScreen() {
     return [...withPosts, ...filler].slice(0, MAX_PRODUCT_TYPE_TILES);
   }, [productTypeGroups, productTypes]);
 
+  // "Bài đăng nổi bật" — heuristic FE chỉ cho Trang chủ Cá nhân: xếp hạng lại
+  // đúng lô tin đang hiển thị (đã qua filterDiscoveryPosts và tùy chọn tin của
+  // tôi, tối đa 100 tin mới nhất từ /posts/get-all-active) theo điểm đánh giá
+  // của chủ tin, số lượt đánh giá của chủ tin rồi thời điểm đăng. Không gọi thêm
+  // API. Đây KHÔNG phải chỉ số lượt xem/tương tác thật của bài đăng — Backend
+  // hiện không cung cấp số liệu như vậy — nên chỉ là phần xem trước được chọn lọc
+  // từ nội dung sẵn có; tin có thể xuất hiện lại ở các mục bên dưới.
+  const featuredPosts = useMemo(() => {
+    if (isBusiness) return [];
+    const seen = new Set<string>();
+    const ranked: { post: any; rating: number; reviews: number; createdAt: number; id: string }[] = [];
+    for (const post of [...buyPosts, ...sellPosts]) {
+      const id = String(post?.postId ?? "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const rating = Number(post?.averageRating);
+      const reviews = Number(post?.totalReviews);
+      const created = new Date(post?.createdAt ?? "").getTime();
+      ranked.push({
+        post,
+        id,
+        rating: Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 0,
+        reviews: Number.isFinite(reviews) ? Math.max(0, Math.trunc(reviews)) : 0,
+        createdAt: Number.isFinite(created) ? created : 0,
+      });
+    }
+    ranked.sort(
+      (a, b) =>
+        b.rating - a.rating ||
+        b.reviews - a.reviews ||
+        b.createdAt - a.createdAt ||
+        a.id.localeCompare(b.id),
+    );
+    return ranked.slice(0, MAX_SECTION_PREVIEW).map((entry) => entry.post);
+  }, [buyPosts, isBusiness, sellPosts]);
+
   // Mục theo loại: chỉ loại có đủ tin, số mục có giới hạn.
   const productTypeSections = useMemo(
     () =>
@@ -411,6 +450,7 @@ export default function HomeScreen() {
   const handleQuickAddToCart = async (post: any) => {
     const postId = String(post?.postId || "");
     if (!postId) return;
+    if (quickCartActionInFlightRef.current) return;
 
     if (!user) {
       router.push({
@@ -425,10 +465,13 @@ export default function HomeScreen() {
       return;
     }
 
-    if (addingPostId) return;
+    if (quickCartActionInFlightRef.current) return;
+    quickCartActionInFlightRef.current = postId;
 
     try {
       setAddingPostId(postId);
+      // Không tự thử lại khi hết thời gian chờ/lỗi mạng: kết quả có thể không chắc
+      // chắn; fetchCartMembership sẽ đối chiếu lại với Backend khi Trang chủ tải lại.
       const response = await cartApi.addToCart(postId, 1);
       if (response?.isSuccess === false) {
         throw new Error(response?.error?.message || "Không thể thêm sản phẩm vào giỏ hàng.");
@@ -442,6 +485,9 @@ export default function HomeScreen() {
         text: getApiErrorMessage(error, "Không thể thêm sản phẩm vào giỏ hàng."),
       });
     } finally {
+      if (quickCartActionInFlightRef.current === postId) {
+        quickCartActionInFlightRef.current = null;
+      }
       setAddingPostId(null);
     }
   };
@@ -719,6 +765,15 @@ export default function HomeScreen() {
                       pathname: "/search",
                       params: { autoSearch: "true", postType: "Mua" },
                     }),
+                )
+              : null}
+
+            {!isBusiness
+              ? renderPagedSection(
+                  "featured-posts",
+                  "Bài đăng nổi bật",
+                  featuredPosts,
+                  null,
                 )
               : null}
 
