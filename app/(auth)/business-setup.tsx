@@ -142,6 +142,7 @@ export default function BusinessSetupScreen() {
   const [step, setStep] = useState(1);
   const [model, setModel] = useState<"household" | "enterprise" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const businessSubmitInFlightRef = useRef(false);
   const [isFetchingOldData, setIsFetchingOldData] = useState(false);
 
   // Lý do từ chối và lỗi tải trang.
@@ -406,6 +407,8 @@ export default function BusinessSetupScreen() {
   };
 
   const handleSubmit = async () => {
+    if (businessSubmitInFlightRef.current) return;
+
     setSubmitError("");
 
     if (!model) {
@@ -543,6 +546,8 @@ export default function BusinessSetupScreen() {
         return;
       }
     }
+
+    businessSubmitInFlightRef.current = true;
 
     try {
       setIsLoading(true);
@@ -805,6 +810,7 @@ export default function BusinessSetupScreen() {
         );
       }
     } finally {
+      businessSubmitInFlightRef.current = false;
       setIsLoading(false);
     }
   };

@@ -37,6 +37,7 @@ export default function LoginScreen() {
   const { login } = useAuth();
 
   const passwordInputRef = useRef<TextInput | null>(null);
+  const loginActionInFlightRef = useRef(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +49,8 @@ export default function LoginScreen() {
   const [loginError, setLoginError] = useState("");
 
   const handleLogin = async () => {
+    if (loginActionInFlightRef.current) return;
+
     const cleanEmail = email.trim();
 
     // Không trim password.
@@ -73,6 +76,8 @@ export default function LoginScreen() {
       return;
     }
 
+    loginActionInFlightRef.current = true;
+
     try {
       setIsLoading(true);
 
@@ -91,6 +96,7 @@ export default function LoginScreen() {
         ),
       );
     } finally {
+      loginActionInFlightRef.current = false;
       setIsLoading(false);
     }
   };

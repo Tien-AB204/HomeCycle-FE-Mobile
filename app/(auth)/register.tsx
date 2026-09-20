@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -49,6 +49,8 @@ export default function RegisterScreen() {
 
   const [isLoading, setIsLoading] =
     useState(false);
+  const registerActionInFlightRef =
+    useRef(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -123,7 +125,10 @@ export default function RegisterScreen() {
     };
   };
   const handleRegister = async () => {
-    if (isLoading) {
+    if (
+      isLoading ||
+      registerActionInFlightRef.current
+    ) {
       return;
     }
 
@@ -133,6 +138,8 @@ export default function RegisterScreen() {
     if (!isValid) {
       return;
     }
+
+    registerActionInFlightRef.current = true;
 
     try {
       setIsLoading(true);
@@ -160,6 +167,7 @@ export default function RegisterScreen() {
         ),
       );
     } finally {
+      registerActionInFlightRef.current = false;
       setIsLoading(false);
     }
   };
