@@ -347,6 +347,7 @@ export default function OrderDetailScreen() {
   const [isTrackingLoading, setIsTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const trackingRequestInFlightRef = useRef(false);
+  const orderActionInFlightRef = useRef<string | null>(null);
   const trackingRequestGenerationRef = useRef(0);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
@@ -644,7 +645,7 @@ export default function OrderDetailScreen() {
   }, [fetchOrderDetail, orderId, reconnectVersion]);
 
   const handleConfirmSellerReady = async () => {
-    if (isSellerReadyLoading) return;
+    if (isSellerReadyLoading || orderActionInFlightRef.current) return;
 
     if (!canConfirmSellerReady) {
       setPageMessage({
@@ -661,6 +662,9 @@ export default function OrderDetailScreen() {
       });
       return;
     }
+
+    const lockKey = `seller-ready:${shipmentId}`;
+    orderActionInFlightRef.current = lockKey;
 
     try {
       setIsSellerReadyLoading(true);
@@ -683,18 +687,25 @@ export default function OrderDetailScreen() {
         ),
       });
     } finally {
+      if (orderActionInFlightRef.current === lockKey) {
+        orderActionInFlightRef.current = null;
+      }
       setIsSellerReadyLoading(false);
     }
   };
 
   const handleConfirmAction = async () => {
-    if (!orderId || !pendingAction || isActionLoading) return;
+    if (!orderId || !pendingAction || isActionLoading || orderActionInFlightRef.current) return;
+
+    const action = pendingAction;
+    const lockKey = `${action}:${orderId}`;
+    orderActionInFlightRef.current = lockKey;
 
     try {
       setIsActionLoading(true);
       setPageMessage(null);
 
-      if (pendingAction === "handover") {
+      if (action === "handover") {
         await orderApi.confirmHandover(orderId);
         setPageMessage({
           type: "success",
@@ -715,12 +726,15 @@ export default function OrderDetailScreen() {
         type: "error",
         text: getApiErrorMessage(
           error,
-          pendingAction === "handover"
+          action === "handover"
             ? "Chưa thể xác nhận bàn giao hàng."
             : "Chưa thể xác nhận đã nhận hàng.",
         ),
       });
     } finally {
+      if (orderActionInFlightRef.current === lockKey) {
+        orderActionInFlightRef.current = null;
+      }
       setIsActionLoading(false);
     }
   };
@@ -738,15 +752,19 @@ export default function OrderDetailScreen() {
   };
 
   const handleLifecycleAction = async () => {
-    if (!orderId || !lifecycleAction || isLifecycleActionLoading) return;
+    if (!orderId || !lifecycleAction || isLifecycleActionLoading || orderActionInFlightRef.current) return;
+
+    const action = lifecycleAction;
+    const lockKey = `${action}:${orderId}`;
+    orderActionInFlightRef.current = lockKey;
 
     try {
       setIsLifecycleActionLoading(true);
       setLifecycleActionError(null);
 
-      if (lifecycleAction === "cancel") {
+      if (action === "cancel") {
         await orderApi.cancelOrder(orderId);
-      } else if (lifecycleAction === "confirmReturn") {
+      } else if (action === "confirmReturn") {
         await orderApi.confirmReturn(orderId);
       } else {
         await orderApi.confirmReturnReceived(orderId);
@@ -758,9 +776,9 @@ export default function OrderDetailScreen() {
       setPageMessage({
         type: "success",
         text:
-          lifecycleAction === "cancel"
+          action === "cancel"
             ? "Đã hủy đơn hàng."
-            : lifecycleAction === "confirmReturn"
+            : action === "confirmReturn"
               ? "Đã xác nhận trả hàng."
               : "Đã xác nhận nhận lại hàng trả về.",
       });
@@ -768,14 +786,17 @@ export default function OrderDetailScreen() {
       setLifecycleActionError(
         getApiErrorMessage(
           error,
-          lifecycleAction === "cancel"
+          action === "cancel"
             ? "Không thể hủy đơn hàng lúc này."
-            : lifecycleAction === "confirmReturn"
+            : action === "confirmReturn"
               ? "Không thể xác nhận đã trả hàng lúc này."
               : "Không thể xác nhận đã nhận lại hàng lúc này.",
         ),
       );
     } finally {
+      if (orderActionInFlightRef.current === lockKey) {
+        orderActionInFlightRef.current = null;
+      }
       setIsLifecycleActionLoading(false);
     }
   };

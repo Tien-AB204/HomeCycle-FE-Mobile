@@ -159,6 +159,7 @@ export default function AgreementPreviewScreen() {
   const { user } = useAuth();
   const { connection, reconnectVersion } = useChatRealtime();
   const refreshRequestRef = useRef(0);
+  const agreementWriteInFlightRef = useRef<string | null>(null);
   const [isStateInvalidated, setIsStateInvalidated] = useState(false);
   const currentUserId = normalizeId(user?.userId || user?.id);
 
@@ -543,7 +544,10 @@ export default function AgreementPreviewScreen() {
   };
 
   const handleAccept = async () => {
-    if (!agreementId) return;
+    if (!agreementId || agreementWriteInFlightRef.current) return;
+
+    const lockKey = `accept:${agreementId}`;
+    agreementWriteInFlightRef.current = lockKey;
 
     try {
       setIsProcessing(true);
@@ -659,6 +663,9 @@ export default function AgreementPreviewScreen() {
         ),
       });
     } finally {
+      if (agreementWriteInFlightRef.current === lockKey) {
+        agreementWriteInFlightRef.current = null;
+      }
       setIsProcessing(false);
     }
   };
