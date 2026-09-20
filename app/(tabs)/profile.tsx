@@ -1,4 +1,6 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
+import VipCrownBadge from "../../src/components/shared/VipCrownBadge";
+import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -81,6 +83,7 @@ export default function ProfileScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const width = Platform.OS === "web" && screenWidth > 480 ? 480 : screenWidth;
   const { user, logout, isLoading, reloadUser } = useAuth();
+  const subscriptionState = useSubscription();
   const reloadUserRef = useRef(reloadUser);
 
   reloadUserRef.current = reloadUser;
@@ -282,6 +285,19 @@ export default function ProfileScreen() {
     }
   };
 
+  // Mục "Gói đăng ký": nhãn phụ phản ánh trạng thái có thẩm quyền từ SubscriptionContext.
+  const subscriptionMenuItem: ProfileMenuItem = {
+    icon: "star-outline",
+    title: "Gói đăng ký VIP",
+    subtitle: subscriptionState.isVip
+      ? "Đang là VIP"
+      : subscriptionState.isPending
+        ? "Đang chờ thanh toán"
+        : "Gói Miễn phí · Nâng cấp",
+    subtitleColor: subscriptionState.isVip ? "#9A6418" : undefined,
+    route: "/subscription",
+  };
+
   const menuItems: ProfileMenuItem[] =
     user.role === "business"
       ? [
@@ -294,6 +310,7 @@ export default function ProfileScreen() {
             subtitleColor: bizStatus === "SurveyPending" ? "#9A6418" : undefined,
             route: "/profile/business-survey",
           },
+          subscriptionMenuItem,
           {
             icon: "bar-chart-outline",
             title: "Thống kê & Đơn hàng",
@@ -326,6 +343,7 @@ export default function ProfileScreen() {
             title: "Thông tin tài khoản",
             route: "/profile/account-info",
           },
+          subscriptionMenuItem,
           {
             icon: "receipt-outline",
             title: "Lịch sử thanh toán",
@@ -360,11 +378,14 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.userInfoSection}>
-            <Image
-              source={{ uri: avatarUri }}
-              style={styles.avatar}
-              onError={() => setImageError(true)}
-            />
+            <View>
+              <Image
+                source={{ uri: avatarUri }}
+                style={styles.avatar}
+                onError={() => setImageError(true)}
+              />
+              <VipCrownBadge size="medium" withLabel style={styles.avatarCrown} />
+            </View>
             <Text style={styles.userName}>{user.username}</Text>
             {user.verificationStatus === "Verified" ? (
               <View style={styles.verifiedBadge}>
@@ -557,6 +578,7 @@ const styles = StyleSheet.create({
   loginBtnText: { color: COLORS.white, fontWeight: "900" },
   userInfoSection: { alignItems: "center", paddingTop: 20, paddingBottom: 18 },
   avatar: { width: 100, height: 100, borderRadius: 50 },
+  avatarCrown: { position: "absolute", bottom: -4, alignSelf: "center" },
   userName: { color: COLORS.text, fontSize: 20, fontWeight: "900", marginTop: 12 },
   verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   verifiedText: { color: COLORS.primary, fontSize: 12, fontWeight: "800" },

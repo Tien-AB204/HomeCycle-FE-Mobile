@@ -20,6 +20,7 @@ import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 import { DiscoveryPreferencesProvider } from "../src/contexts/DiscoveryPreferencesContext";
 import { NotificationProvider } from "../src/contexts/NotificationContext";
+import { SubscriptionProvider } from "../src/contexts/SubscriptionContext";
 import {
   applyAppearancePreference,
   loadAppearancePreference,
@@ -89,6 +90,7 @@ function RootNavigator() {
       ]}
     >
       <AuthProvider>
+        <SubscriptionProvider>
         <DiscoveryPreferencesProvider>
           <ChatRealtimeProvider>
             <NotificationProvider>
@@ -112,6 +114,7 @@ function RootNavigator() {
             </NotificationProvider>
           </ChatRealtimeProvider>
         </DiscoveryPreferencesProvider>
+        </SubscriptionProvider>
       </AuthProvider>
     </View>
   );

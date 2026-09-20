@@ -1,4 +1,5 @@
 import { DEFAULT_AVATAR_URI } from "../../utils/avatar";
+import VipCrownBadge from "./VipCrownBadge";
 import { Ionicons } from "@expo/vector-icons";
 
 import React, { useEffect, useState } from "react";
@@ -178,6 +179,8 @@ export default function MainHeader({
               }}
               onError={() => setImageError(true)}
             />
+            {/* Vương miện chỉ cho chính người dùng đang đăng nhập (SubscriptionContext). */}
+            <VipCrownBadge size="small" style={{ position: "absolute", right: -4, top: -4 }} />
           </TouchableOpacity>
         </>
       );
