@@ -1127,8 +1127,8 @@ export default function BusinessSetupScreen() {
                 value={businessAddress}
                 onChange={(nextAddress, selection) => {
                   setBusinessAddress(nextAddress);
-                  setBusinessCity(selection.provinceName);
-                  setBusinessWard(selection.wardName);
+                  setBusinessCity(selection?.provinceName || "");
+                  setBusinessWard(selection?.wardName || "");
                   setBusinessAddressError("");
                 }}
                 onClear={() => {

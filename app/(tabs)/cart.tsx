@@ -215,8 +215,30 @@ export default function CartScreen() {
         expiresAt: Date.now() + 5_000,
       });
 
-      // Backend is authoritative: refresh immediately so the deleted item,
-      // total quantity and total price all update without waiting for dismissal.
+      // Update immediately so the UI never keeps a successfully deleted item
+      // on screen while the authoritative reload is in flight or temporarily fails.
+      setCartData((current) => {
+        const nextItems = current.items.filter(
+          (currentItem) =>
+            currentItem.cartItemId !== item.cartItemId,
+        );
+
+        return {
+          items: nextItems,
+          totalQuantity: Math.max(
+            0,
+            current.totalQuantity - item.quantity,
+          ),
+          totalPrice: Math.max(
+            0,
+            current.totalPrice -
+              Number(item.post?.basePrice || 0) * item.quantity,
+          ),
+        };
+      });
+
+      // Backend is still authoritative: reconcile immediately after the local
+      // removal, then once more when the 5-second undo window expires.
       await fetchCart(false);
     } catch (error: unknown) {
       setItemMessage({

@@ -2485,10 +2485,16 @@ export default function PostFormScreen() {
                 wardName: ward,
                 streetAddress,
               }}
-              onChange={(_value, selection) => {
-                setCity(selection.provinceName);
-                setWard(selection.wardName);
-                setStreetAddress(selection.streetAddress);
+              onChange={(value, selection) => {
+                if (selection) {
+                  setCity(selection.provinceName);
+                  setWard(selection.wardName);
+                  setStreetAddress(selection.streetAddress);
+                } else {
+                  setCity("");
+                  setWard("");
+                  setStreetAddress(value);
+                }
                 setAddressError("");
               }}
               onClear={

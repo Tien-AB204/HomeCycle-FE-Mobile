@@ -52,7 +52,7 @@ interface AddressPickerFieldProps {
 
   onChange: (
     value: string,
-    selection: AddressSelection,
+    selection: AddressSelection | null,
   ) => void;
 
   initialSelection?: Pick<
@@ -83,37 +83,6 @@ const normalize = (value: string) =>
   value
     .trim()
     .toLocaleLowerCase("vi-VN");
-
-const parseManualAddressSelection = (
-  value: string,
-): AddressSelection => {
-  const formattedAddress = value;
-  const parts = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  const provinceName =
-    parts.length >= 3
-      ? parts[parts.length - 1]
-      : "";
-  const wardName =
-    parts.length >= 3
-      ? parts[parts.length - 2]
-      : "";
-  const streetAddress =
-    parts.length >= 3
-      ? parts.slice(0, -2).join(", ")
-      : value.trim();
-
-  return {
-    provinceCode: "",
-    provinceName,
-    wardName,
-    streetAddress,
-    formattedAddress,
-  };
-};
 
 const AddressPickerField = forwardRef<
   AddressPickerFieldHandle,
@@ -846,12 +815,7 @@ const AddressPickerField = forwardRef<
           style={styles.triggerInput}
           value={value}
           onChangeText={(nextValue) =>
-            onChange(
-              nextValue,
-              parseManualAddressSelection(
-                nextValue,
-              ),
-            )
+            onChange(nextValue, null)
           }
           placeholder={placeholder}
           placeholderTextColor={
