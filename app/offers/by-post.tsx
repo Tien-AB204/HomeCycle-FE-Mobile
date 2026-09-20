@@ -1340,7 +1340,7 @@ export default function OffersByPostScreen() {
                       }}
                     >
                       <Text style={styles.counterActionText}>
-                        Trao đổi
+                        Trả giá
                       </Text>
                     </TouchableOpacity>
 
@@ -1410,7 +1410,7 @@ export default function OffersByPostScreen() {
                     ? `Đồng ý ${offerNoun}`
                     : actionMode === "reject"
                       ? `Từ chối ${offerNoun}`
-                      : `Trao đổi ${offerNoun}`}
+                      : `Trả giá ${offerNoun}`}
                 </Text>
 
                 <TouchableOpacity

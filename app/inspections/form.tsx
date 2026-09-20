@@ -450,7 +450,7 @@ export default function InspectionFormScreen() {
         "Inspection.AppointmentNotInProgress":
           "Lịch kiểm định hiện không ở trạng thái đang diễn ra.",
         "Inspection.BothCheckInRequired":
-          "Cả hai bên cần check-in trước khi gửi kết quả kiểm định.",
+          "Cả hai bên cần xác nhận có mặt trước khi gửi kết quả kiểm định.",
       };
 
       setPageMessage({

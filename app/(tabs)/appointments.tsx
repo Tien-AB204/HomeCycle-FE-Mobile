@@ -886,7 +886,7 @@ export default function ScheduleScreen() {
           <Text style={styles.metaText}>
             Tạo lịch: {formatDateTime(item.createdAt)}
           </Text>
-          <Text style={styles.metaText}>Check-in: {checkedInCount}/2</Text>
+          <Text style={styles.metaText}>Đã xác nhận có mặt: {checkedInCount}/2</Text>
         </View>
 
         <View style={styles.divider} />

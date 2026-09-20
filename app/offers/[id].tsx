@@ -639,7 +639,7 @@ export default function OfferDetailScreen() {
             <TouchableOpacity key={action} style={styles.secondaryButton}
               disabled={isLoading || isResponding || isUpdating || isCancelling}
               onPress={() => void openResponseAction(action)}>
-              <Text style={styles.secondaryButtonText}>{action === "counter" ? "Trao đổi" : action === "accept" ? "Đồng ý" : "Từ chối"}</Text>
+              <Text style={styles.secondaryButtonText}>{action === "counter" ? "Trả giá" : action === "accept" ? "Đồng ý" : "Từ chối"}</Text>
             </TouchableOpacity>
           ))}
         </View> : null}
@@ -725,7 +725,7 @@ export default function OfferDetailScreen() {
         <ModalBackdrop style={styles.modalOverlay} disabled={isResponding} onPress={closeResponseAction}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ModalSurface style={styles.modalCard}>
-              <Text style={styles.modalTitle}>{responseAction === "counter" ? "Trao đổi đề nghị" : responseAction === "accept" ? "Đồng ý đề nghị" : "Từ chối đề nghị"}</Text>
+              <Text style={styles.modalTitle}>{responseAction === "counter" ? "Trả giá đề nghị" : responseAction === "accept" ? "Đồng ý đề nghị" : "Từ chối đề nghị"}</Text>
               {responseAction === "counter" ? <>
                 <Text style={styles.inputLabel}>Giá đề xuất mới (VNĐ)</Text>
                 <TextInput style={styles.input} value={responsePrice} keyboardType="number-pad" editable={!isResponding}

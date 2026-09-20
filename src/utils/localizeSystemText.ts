@@ -1,4 +1,5 @@
 const SYSTEM_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bcheck-in\b/gi, "xác nhận có mặt"],
   [/\bBuyer\b/gi, "Người mua"],
   [/\bSeller\b/gi, "Người bán"],
   [/\bModerator\b/gi, "Kiểm duyệt viên"],
@@ -14,6 +15,19 @@ const SYSTEM_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bActive\b/gi, "Đang hoạt động"],
   [/\bInactive\b/gi, "Ngừng hoạt động"],
   [/\bUnknown\b/gi, "Chưa xác định"],
+  [/\bApproved\b/gi, "Đã duyệt"],
+  [/\bRejected\b/gi, "Đã từ chối"],
+  [/\bExpired\b/gi, "Đã hết hạn"],
+  [/\bRefunded\b/gi, "Đã hoàn tiền"],
+  [/\bPartiallyRefunded\b/gi, "Đã hoàn tiền một phần"],
+  [/\bScheduled\b/gi, "Đã lên lịch"],
+  [/\bProposed\b/gi, "Đang đề xuất"],
+  [/\bInProgress\b/gi, "Đang diễn ra"],
+  [/\bReturned\b/gi, "Đã hoàn trả"],
+  [/\bDelivering\b/gi, "Đang vận chuyển"],
+  [/\bReadyToPick\b/gi, "Sẵn sàng lấy hàng"],
+  [/\bException\b/gi, "Ngoại lệ"],
+  [/\bDamage_Lost\b/gi, "Hư hỏng hoặc thất lạc"],
   [/\bdispute\b/gi, "tranh chấp"],
   [/\border\b/gi, "đơn hàng"],
   [/\brefund\b/gi, "hoàn tiền"],
@@ -30,6 +44,16 @@ const SYSTEM_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\boffer\b/gi, "đề nghị"],
   [/\bagreement\b/gi, "hợp đồng"],
   [/\bFree\b/gi, "Miễn phí"],
+  [/\bPremium\b/gi, "Cao cấp"],
+  [/\bBasic\b/gi, "Cơ bản"],
+  [/\bStandard\b/gi, "Tiêu chuẩn"],
+  [/\bPackage\b/gi, "Gói"],
+  [/\bPlan\b/gi, "Gói"],
+  [/\bUnlimited\b/gi, "Không giới hạn"],
+  [/\bLimited\b/gi, "Giới hạn"],
+  [/\bDays?\b/gi, "ngày"],
+  [/\bMonths?\b/gi, "tháng"],
+  [/\bYears?\b/gi, "năm"],
   [/\bplatform-held funds\b/gi, "khoản tiền nền tảng đang giữ"],
   [/\bheld funds\b/gi, "khoản tiền đang được giữ"],
   [/\breturned item\b/gi, "hàng trả"],
@@ -44,7 +68,7 @@ const SYSTEM_REPLACEMENTS: Array<[RegExp, string]> = [
 ];
 
 const REMAINING_ENGLISH_SYSTEM_WORDS =
-  /\b(the|and|or|is|are|was|were|has|have|had|from|with|without|after|before|because|when|while|not|found|invalid|error|successful|successfully|confirm|confirmation|funds|platform|seller|buyer|moderator|pending|processing|completed|cancelled|canceled|failed|success|active|inactive|unknown|dispute|order|refund|return|payment|shipping|delivery|appointment|inspection|review|profile|account|wallet|offer|agreement|free)\b/i;
+  /\b(the|and|or|is|are|was|were|has|have|had|from|with|without|after|before|because|when|while|not|found|invalid|error|successful|successfully|confirm|confirmation|funds|platform|seller|buyer|moderator|pending|processing|completed|cancelled|canceled|failed|success|active|inactive|unknown|approved|rejected|expired|refunded|partiallyrefunded|scheduled|proposed|inprogress|returned|delivering|readytopick|exception|damage_lost|dispute|order|refund|return|payment|shipping|delivery|appointment|inspection|review|profile|account|wallet|offer|agreement|free|premium|basic|standard|package|plan|unlimited|limited|days?|months?|years?)\b/i;
 
 /**
  * Chỉ dùng cho text hệ thống/Backend, không dùng cho tên người, tên doanh nghiệp,

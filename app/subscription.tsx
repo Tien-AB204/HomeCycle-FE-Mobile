@@ -38,6 +38,7 @@ import {
   SubscriptionPaymentStatus,
 } from "../src/services/apis/subscriptionApi";
 import { devLog } from "../src/utils/devLog";
+import { localizeSystemText } from "../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../src/utils/tapGuard";
 import { useAutoDismissFeedback } from "../src/utils/useAutoDismissFeedback";
 
@@ -700,13 +701,18 @@ export default function SubscriptionScreen() {
     return (
       <View style={[styles.card, styles.planCard, isCurrentFreePlan && styles.cardCurrentFree]}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.packageName}>{roleMatchesDefinition && freePlan?.planName ? freePlan.planName : "Gói Miễn phí"}</Text>
+          <Text style={styles.packageName}>{roleMatchesDefinition && freePlan?.planName
+            ? localizeSystemText(freePlan.planName, "Gói Miễn phí")
+            : "Gói Miễn phí"}</Text>
           {isCurrentFreePlan ? <View style={styles.freePill}><Text style={styles.freePillText}>Đang dùng</Text></View> : null}
         </View>
         <Text style={styles.packagePrice}>0 đ</Text>
         <Text style={styles.cardText}>
           {roleMatchesDefinition && freePlan?.description
-            ? freePlan.description
+            ? localizeSystemText(
+                freePlan.description,
+                "Sử dụng các tính năng cơ bản của HomeCycle theo hạn mức hiện tại.",
+              )
             : "Sử dụng các tính năng cơ bản của HomeCycle theo hạn mức hiện tại."}
         </Text>
         {renderBenefits(freeBenefits)}
@@ -743,14 +749,20 @@ export default function SubscriptionScreen() {
         ]}
       >
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.packageName} numberOfLines={2}>{pkg.name}</Text>
+          <Text style={styles.packageName} numberOfLines={2}>
+            {localizeSystemText(pkg.name, "Gói VIP")}
+          </Text>
           <View style={styles.planBadgeRow}>
             {isCurrentPackage ? <VipCrownBadge size="medium" withLabel /> : <Ionicons name="star" size={18} color="#C8951A" />}
             {isPendingPackage ? <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Đang chờ thanh toán</Text></View> : null}
           </View>
         </View>
         <Text style={styles.packagePrice}>{formatCurrency(pkg.price)} <Text style={styles.packageDuration}>/ {pkg.duration} ngày</Text></Text>
-        {pkg.description ? <Text style={styles.cardText}>{pkg.description}</Text> : null}
+        {pkg.description ? (
+          <Text style={styles.cardText}>
+            {localizeSystemText(pkg.description, "Gói quyền lợi VIP của HomeCycle.")}
+          </Text>
+        ) : null}
         {renderBenefits(pkg.entitlements)}
         {isCurrentPackage ? renderEffectiveAiUsage("VIP") : null}
         {isCurrentPackage && current ? (
@@ -876,7 +888,12 @@ export default function SubscriptionScreen() {
             {checkoutPackage ? (
               <>
                 <Text style={styles.sheetTitle}>Xác nhận nâng cấp</Text>
-                <Text style={styles.cardText}>Gói: <Text style={styles.strong}>{checkoutPackage.name}</Text></Text>
+                <Text style={styles.cardText}>
+                  Gói:{" "}
+                  <Text style={styles.strong}>
+                    {localizeSystemText(checkoutPackage.name, "Gói VIP")}
+                  </Text>
+                </Text>
                 <Text style={styles.cardText}>Giá: <Text style={styles.strong}>{formatCurrency(checkoutPackage.price)}</Text> · {checkoutPackage.duration} ngày</Text>
                 {renderBenefits(checkoutPackage.entitlements)}
 

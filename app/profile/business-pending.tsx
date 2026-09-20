@@ -168,7 +168,7 @@ export default function BusinessPendingScreen() {
           style={styles.btnGoHome}
           onPress={() => router.replace("/(tabs)/profile")}
         >
-          <Text style={styles.btnGoHomeText}>Về trang Profile</Text>
+          <Text style={styles.btnGoHomeText}>Về trang hồ sơ</Text>
         </TouchableOpacity>
       </ScrollView>
 

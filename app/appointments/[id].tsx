@@ -476,8 +476,8 @@ export default function AppointmentDetailScreen() {
       setActionMessage({
         type: "success",
         text: completed
-          ? "Check-in thành công. Lịch hẹn hiện đã hoàn thành."
-          : "Check-in thành công. Hệ thống đã ghi nhận thời điểm check-in.",
+          ? "Xác nhận có mặt thành công. Lịch hẹn hiện đã hoàn thành."
+          : "Xác nhận có mặt thành công. Hệ thống đã ghi nhận thời điểm xác nhận.",
       });
     } catch (error: any) {
       const code = String(
@@ -488,12 +488,12 @@ export default function AppointmentDetailScreen() {
 
       const fallback =
         code === "Appointment.Cancelled"
-          ? "Lịch hẹn đã bị hủy, không thể check-in."
+          ? "Lịch hẹn đã bị hủy, không thể xác nhận có mặt."
           : code === "Appointment.AlreadyCompleted"
             ? "Lịch hẹn đã hoàn tất."
             : code === "Auth.Forbidden"
-              ? "Bạn không có quyền check-in lịch hẹn này."
-              : "Không thể check-in lịch hẹn lúc này.";
+              ? "Bạn không có quyền xác nhận có mặt cho lịch hẹn này."
+              : "Không thể xác nhận có mặt cho lịch hẹn lúc này.";
 
       setActionMessage({
         type: "error",
@@ -1071,7 +1071,7 @@ export default function AppointmentDetailScreen() {
 
         {!isCollection ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Trạng thái Check-in</Text>
+            <Text style={styles.sectionTitle}>Trạng thái xác nhận có mặt</Text>
             <View style={styles.checkRow}>
               <Ionicons
                 name={buyerCheckAt ? "checkmark-circle" : "ellipse-outline"}
@@ -1082,8 +1082,8 @@ export default function AppointmentDetailScreen() {
                 <Text style={styles.checkLabel}>Người mua</Text>
                 <Text style={styles.checkTime}>
                   {buyerCheckAt
-                    ? `Đã check-in ${formatDateTime(buyerCheckAt)}`
-                    : "Chưa check-in"}
+                    ? `Đã xác nhận ${formatDateTime(buyerCheckAt)}`
+                    : "Chưa xác nhận"}
                 </Text>
               </View>
             </View>
@@ -1098,8 +1098,8 @@ export default function AppointmentDetailScreen() {
                 <Text style={styles.checkLabel}>Người bán</Text>
                 <Text style={styles.checkTime}>
                   {sellerCheckAt
-                    ? `Đã check-in ${formatDateTime(sellerCheckAt)}`
-                    : "Chưa check-in"}
+                    ? `Đã xác nhận ${formatDateTime(sellerCheckAt)}`
+                    : "Chưa xác nhận"}
                 </Text>
               </View>
             </View>
@@ -1377,7 +1377,7 @@ export default function AppointmentDetailScreen() {
                   color={COLORS.primary}
                 />
                 <Text style={styles.checkInWindowHintText}>
-                  Check-in mở lúc {formatDateTime(checkInOpenAt)}
+                  Có thể xác nhận có mặt từ {formatDateTime(checkInOpenAt)}
                 </Text>
               </View>
             ) : null}
@@ -1408,7 +1408,7 @@ export default function AppointmentDetailScreen() {
                       ? "Lịch hẹn đã bị hủy"
                       : isExpired
                         ? "Lịch hẹn đã quá hạn"
-                        : "Check-in tại điểm hẹn"}
+                        : "Xác nhận có mặt tại điểm hẹn"}
                 </Text>
               </>
             )}

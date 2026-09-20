@@ -35,6 +35,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import {
   FULL_NAME_MAX_LENGTH,
   validateFullName,
@@ -58,20 +59,24 @@ const readValidationError = (errors: unknown, fieldName: string): string => {
   );
   if (!matchedEntry) return "";
   const value = matchedEntry[1];
-  if (Array.isArray(value))
-    return value
-      .filter(
-        (item): item is string =>
-          typeof item === "string" && item.trim().length > 0,
-      )
-      .join(" ");
-  return typeof value === "string" ? value.trim() : "";
+  const raw = Array.isArray(value)
+    ? value
+        .filter(
+          (item): item is string =>
+            typeof item === "string" && item.trim().length > 0,
+        )
+        .join(" ")
+    : typeof value === "string"
+      ? value.trim()
+      : "";
+
+  return raw ? localizeSystemText(raw, "Thông tin chưa hợp lệ.") : "";
 };
 
 const readMessageError = (message: string, keywords: string[]): string => {
   if (!message.trim()) return "";
 
-  return message
+  const matched = message
     .split("|")
     .map((part) => part.trim())
     .filter(Boolean)
@@ -82,6 +87,10 @@ const readMessageError = (message: string, keywords: string[]): string => {
       );
     })
     .join(" ");
+
+  return matched
+    ? localizeSystemText(matched, "Thông tin chưa hợp lệ.")
+    : "";
 };
 
 const normalizeName = (value: string) =>
@@ -1521,7 +1530,7 @@ export default function BusinessSetupScreen() {
                 style={styles.btnGoHome}
                 onPress={() => router.replace("/(tabs)/profile")}
               >
-                <Text style={styles.btnGoHomeText}>Về trang Profile</Text>
+                <Text style={styles.btnGoHomeText}>Về trang hồ sơ</Text>
                 <Ionicons
                   name="arrow-forward"
                   size={18}
