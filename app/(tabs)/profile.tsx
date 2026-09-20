@@ -400,6 +400,7 @@ export default function ProfileScreen() {
             <Text style={styles.accountTypeText}>
               {user.role === "business" ? "Tài khoản Doanh nghiệp" : "Tài khoản Cá nhân"}
             </Text>
+            <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
             {user.verificationStatus === "Verified" ? (
               <View style={styles.verifiedBadge}>
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.primary} />
@@ -427,7 +428,6 @@ export default function ProfileScreen() {
                 <Text style={styles.profileStatLabel}>Đánh giá</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.metaText}>Tham gia: {formatFullDate(user.createdAt)}</Text>
           </View>
 
           {message ? (
