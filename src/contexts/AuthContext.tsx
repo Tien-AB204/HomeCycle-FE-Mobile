@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JWT
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import apiClient from "../services/apis/axiosClient";
 import { getApiErrorMessage } from "../utils/apiFeedback";
 import { devLog } from "../utils/devLog";
@@ -27,6 +27,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any | null>(null);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const loginInFlightRef = useRef(false);
+  const logoutInFlightRef = useRef(false);
   const router = useRouter();
 
   const reloadUser = async () => {
@@ -217,6 +219,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     token?: string,
     refresh?: string,
   ) => {
+    if (loginInFlightRef.current) return;
+    loginInFlightRef.current = true;
+
     try {
       // Nhánh 1: Login trực tiếp bằng token (Dành cho sau khi Register Business)
       if (token && initialUser) {
@@ -261,14 +266,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           "Đăng nhập thất bại. Vui lòng thử lại!",
         ),
       );
+    } finally {
+      loginInFlightRef.current = false;
     }
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
-    setUserToken(null);
-    setUser(null);
-    router.replace("/(auth)/login");
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
+
+    try {
+      await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
+      setUserToken(null);
+      setUser(null);
+      router.replace("/(auth)/login");
+    } finally {
+      logoutInFlightRef.current = false;
+    }
   };
 
   return (

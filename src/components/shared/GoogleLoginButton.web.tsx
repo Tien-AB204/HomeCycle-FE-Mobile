@@ -3,7 +3,7 @@ import { makeRedirectUri } from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import { useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -44,6 +44,7 @@ export default function GoogleLoginButton({
   const { returnUrl } = useLocalSearchParams();
   const { reloadUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const loginInFlightRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [googleIconFailed, setGoogleIconFailed] = useState(false);
 
@@ -95,8 +96,9 @@ export default function GoogleLoginButton({
   };
 
   const handlePress = async () => {
-    if (isLoading || disabled || !request) return;
+    if (loginInFlightRef.current || isLoading || disabled || !request) return;
 
+    loginInFlightRef.current = true;
     setErrorMessage("");
     setIsLoading(true);
 
@@ -124,6 +126,7 @@ export default function GoogleLoginButton({
         getApiErrorMessage(error, "Không thể đăng nhập bằng Google."),
       );
     } finally {
+      loginInFlightRef.current = false;
       setIsLoading(false);
     }
   };

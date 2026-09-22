@@ -6,7 +6,7 @@ import {
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -67,6 +67,7 @@ export default function GoogleLoginButton({
 
   const [isLoading, setIsLoading] =
     useState(false);
+  const loginInFlightRef = useRef(false);
 
   const [errorMessage, setErrorMessage] =
     useState("");
@@ -145,10 +146,11 @@ export default function GoogleLoginButton({
   };
 
   const handlePress = async () => {
-    if (isLoading || disabled) {
+    if (loginInFlightRef.current || isLoading || disabled) {
       return;
     }
 
+    loginInFlightRef.current = true;
     setErrorMessage("");
     setIsLoading(true);
 
@@ -213,6 +215,7 @@ export default function GoogleLoginButton({
         ),
       );
     } finally {
+      loginInFlightRef.current = false;
       setIsLoading(false);
     }
   };

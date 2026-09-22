@@ -85,6 +85,7 @@ export default function ProfileScreen() {
   const { user, logout, isLoading, reloadUser } = useAuth();
   const subscriptionState = useSubscription();
   const reloadUserRef = useRef(reloadUser);
+  const logoutInFlightRef = useRef(false);
 
   reloadUserRef.current = reloadUser;
 
@@ -176,6 +177,9 @@ export default function ProfileScreen() {
   );
 
   const handleLogout = async () => {
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
+
     try {
       setIsLoggingOut(true);
       setMessage(null);
@@ -186,6 +190,7 @@ export default function ProfileScreen() {
       setShowLogoutConfirm(false);
       setMessage({ type: "error", text: "Không thể đăng xuất lúc này. Vui lòng thử lại." });
     } finally {
+      logoutInFlightRef.current = false;
       setIsLoggingOut(false);
     }
   };

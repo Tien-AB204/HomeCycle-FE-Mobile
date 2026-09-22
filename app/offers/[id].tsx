@@ -169,7 +169,7 @@ export default function OfferDetailScreen() {
   const [responsePrice, setResponsePrice] = useState("");
   const [responseQuantity, setResponseQuantity] = useState("");
   const [isResponding, setIsResponding] = useState(false);
-  const responseLock = useRef(false);
+  const offerActionLockRef = useRef(false);
   const screenGeneration = useRef(0);
   const fetchGeneration = useRef(0);
 
@@ -273,7 +273,7 @@ export default function OfferDetailScreen() {
   };
 
   const handleUpdateOffer = async () => {
-    if (!offerId) return;
+    if (!offerId || offerActionLockRef.current) return;
 
     const price = Number(editPrice.trim());
     const quantity = Number(editQuantity.trim());
@@ -301,6 +301,8 @@ export default function OfferDetailScreen() {
       await fetchOffer();
       return;
     }
+
+    offerActionLockRef.current = true;
 
     try {
       setIsUpdating(true);
@@ -345,12 +347,14 @@ export default function OfferDetailScreen() {
         text: getApiErrorMessage(error, "Không thể cập nhật đề nghị lúc này."),
       });
     } finally {
+      offerActionLockRef.current = false;
       setIsUpdating(false);
     }
   };
 
   const handleCancelOffer = async () => {
-    if (!offerId) return;
+    if (!offerId || offerActionLockRef.current) return;
+    offerActionLockRef.current = true;
 
     try {
       setIsCancelling(true);
@@ -376,20 +380,21 @@ export default function OfferDetailScreen() {
         text: getApiErrorMessage(error, "Không thể hủy đề nghị lúc này."),
       });
     } finally {
+      offerActionLockRef.current = false;
       setIsCancelling(false);
     }
   };
 
   const closeResponseAction = () => {
-    if (responseLock.current) return;
+    if (offerActionLockRef.current) return;
     setResponseAction(null);
     setResponseVersion(null);
   };
 
   const openResponseAction = async (action: OfferResponseAction) => {
-    if (responseLock.current || isUpdating || isCancelling) return;
+    if (offerActionLockRef.current || isUpdating || isCancelling) return;
     const generation = screenGeneration.current;
-    responseLock.current = true;
+    offerActionLockRef.current = true;
     setIsResponding(true);
     try {
       const detail = await fetchOffer();
@@ -403,13 +408,13 @@ export default function OfferDetailScreen() {
       setResponseQuantity(String(detail.offerQuantity ?? ""));
       setResponseAction(action);
     } finally {
-      responseLock.current = false;
+      offerActionLockRef.current = false;
       setIsResponding(false);
     }
   };
 
   const submitResponseAction = async () => {
-    if (!offerId || !responseAction || responseLock.current) return;
+    if (!offerId || !responseAction || offerActionLockRef.current) return;
     const action = responseAction;
     const version = responseVersion;
     const price = Number(responsePrice.trim());
@@ -420,7 +425,7 @@ export default function OfferDetailScreen() {
     }
     const generation = screenGeneration.current;
     const isCurrent = () => generation === screenGeneration.current;
-    responseLock.current = true;
+    offerActionLockRef.current = true;
     setIsResponding(true);
     let succeeded = false;
     try {
@@ -464,7 +469,7 @@ export default function OfferDetailScreen() {
           ? "Đề nghị đã thay đổi ở nơi khác. Vui lòng kiểm tra dữ liệu mới nhất trước khi phản hồi."
           : getApiErrorMessage(error, "Không thể xử lý đề nghị lúc này.") });
     } finally {
-      responseLock.current = false;
+      offerActionLockRef.current = false;
       setIsResponding(false);
     }
   };
