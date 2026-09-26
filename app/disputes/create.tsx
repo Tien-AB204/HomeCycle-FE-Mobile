@@ -21,7 +21,11 @@ import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBa
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
-import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  NETWORK_ERROR_MESSAGE,
+  readSafeApiMessage,
+} from "../../src/utils/errorMessage";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -207,12 +211,15 @@ export default function CreateDisputeScreen() {
             ? null
             : current,
         );
-      } catch {
+      } catch (error: any) {
         if (!active) return;
 
         setDisputeEligibility(null);
         setDisputeEligibilityError(
-          "Không thể kiểm tra điều kiện khiếu nại của đơn hàng lúc này.",
+          getApiErrorMessage(
+            error,
+            "Không thể kiểm tra điều kiện khiếu nại của đơn hàng lúc này.",
+          ),
         );
       } finally {
         if (active) {
@@ -448,7 +455,11 @@ export default function CreateDisputeScreen() {
 
       setPageMessage({
         type: code === "DISPUTE_WINDOW_EXPIRED" ? "warning" : "error",
-        text: messageByCode[code] || NETWORK_ERROR_MESSAGE,
+        // Ưu tiên thông điệp BE; bảng mã lỗi chỉ là dự phòng.
+        text:
+          readSafeApiMessage(error?.response?.data) ||
+          messageByCode[code] ||
+          getApiErrorMessage(error, NETWORK_ERROR_MESSAGE),
       });
     } finally {
       setIsSubmitting(false);

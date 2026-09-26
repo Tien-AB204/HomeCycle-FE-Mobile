@@ -23,6 +23,7 @@ import {
   NETWORK_ERROR_MESSAGE,
 } from "../../utils/apiFeedback";
 import { devLog } from "../../utils/devLog";
+import { readSafeApiMessage } from "../../utils/errorMessage";
 import { useGuardedRouter } from "../../utils/tapGuard";
 
 const GOOGLE_WEB_CLIENT_ID =
@@ -87,10 +88,13 @@ export default function GoogleLoginButton({
     if (
       responseMessage?.isSuccess === false
     ) {
-      throw new Error(
-        responseMessage?.error?.message ||
+      // Ưu tiên thông điệp BE (message/error.message), nguyên văn.
+      setErrorMessage(
+        readSafeApiMessage(responseMessage) ??
           "Xác thực Google thất bại.",
       );
+
+      return;
     }
 
     const data = responseMessage?.data;

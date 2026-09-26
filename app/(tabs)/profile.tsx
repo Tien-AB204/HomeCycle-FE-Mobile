@@ -23,6 +23,8 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -155,7 +157,9 @@ export default function ProfileScreen() {
           setWallet(null);
           setMessage({
             type: "info",
-            text: "Chưa tải được số dư ví. Bạn vẫn có thể sử dụng các chức năng hồ sơ khác.",
+            text:
+              readSafeApiMessage(walletResult.reason?.response?.data) ??
+              "Chưa tải được số dư ví. Bạn vẫn có thể sử dụng các chức năng hồ sơ khác.",
           });
         }
 
@@ -186,9 +190,12 @@ export default function ProfileScreen() {
       await logout();
       setShowLogoutConfirm(false);
       router.replace("/(tabs)");
-    } catch {
+    } catch (error) {
       setShowLogoutConfirm(false);
-      setMessage({ type: "error", text: "Không thể đăng xuất lúc này. Vui lòng thử lại." });
+      setMessage({
+        type: "error",
+        text: getApiErrorMessage(error, "Không thể đăng xuất lúc này. Vui lòng thử lại."),
+      });
     } finally {
       logoutInFlightRef.current = false;
       setIsLoggingOut(false);

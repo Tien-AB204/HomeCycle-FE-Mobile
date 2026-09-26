@@ -10,7 +10,7 @@
 // Backend cố ý không trả email, số điện thoại, CCCD, ngân hàng, mật khẩu — không hiển thị.
 
 import axiosClient from "./axiosClient";
-import { getSafeErrorMessage } from "../../utils/errorMessage";
+import { getSafeErrorMessage, readSafeApiMessage } from "../../utils/errorMessage";
 
 export type PublicProfileKind = "personal" | "business" | "unknown";
 
@@ -183,6 +183,9 @@ export const PUBLIC_PROFILE_UNAVAILABLE_MESSAGE =
   "Hồ sơ công khai của người dùng này hiện không khả dụng.";
 
 export const getPublicProfileErrorMessage = (error: unknown): string => {
+  // Ưu tiên thông điệp BE; các câu dưới đây chỉ là dự phòng.
+  const backendMessage = readSafeApiMessage((error as any)?.response?.data);
+  if (backendMessage) return backendMessage;
   const status = Number((error as any)?.response?.status || 0);
   if (status === 404) return PUBLIC_PROFILE_UNAVAILABLE_MESSAGE;
   if (status === 401) return "Vui lòng đăng nhập để xem hồ sơ người dùng.";

@@ -154,6 +154,7 @@ export default function ChatListScreen() {
     conversationSummaries: conversationsList,
     isConversationSummaryLoading: isLoading,
     refreshConversationSummaries,
+    getConversationSummaryError,
   } = useChatRealtime();
   const isWaitingForNetwork =
     connectionStatus === "reconnecting" ||
@@ -188,12 +189,15 @@ export default function ChatListScreen() {
 
       if (!didLoad && !silent) {
         setFeedbackTarget({ type: "page" });
-        showError("Không thể tải danh sách trò chuyện.");
+        showError(
+          getConversationSummaryError() ??
+            "Không thể tải danh sách trò chuyện.",
+        );
       }
 
       return didLoad;
     },
-    [refreshConversationSummaries, showError, user],
+    [getConversationSummaryError, refreshConversationSummaries, showError, user],
   );
 
   useFocusEffect(

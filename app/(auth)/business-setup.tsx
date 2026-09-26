@@ -35,7 +35,6 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import {
   FULL_NAME_MAX_LENGTH,
   validateFullName,
@@ -70,7 +69,8 @@ const readValidationError = (errors: unknown, fieldName: string): string => {
       ? value.trim()
       : "";
 
-  return raw ? localizeSystemText(raw, "Thông tin chưa hợp lệ.") : "";
+  // Giữ nguyên văn thông điệp BE.
+  return raw;
 };
 
 const readMessageError = (message: string, keywords: string[]): string => {
@@ -88,9 +88,7 @@ const readMessageError = (message: string, keywords: string[]): string => {
     })
     .join(" ");
 
-  return matched
-    ? localizeSystemText(matched, "Thông tin chưa hợp lệ.")
-    : "";
+  return matched;
 };
 
 const normalizeName = (value: string) =>

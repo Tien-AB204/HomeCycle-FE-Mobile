@@ -17,6 +17,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { authApi } from "../../services/apis/authApi";
 import { getApiErrorMessage } from "../../utils/apiFeedback";
 import { devLog } from "../../utils/devLog";
+import { readSafeApiMessage } from "../../utils/errorMessage";
 import { useGuardedRouter } from "../../utils/tapGuard";
 
 const GOOGLE_WEB_CLIENT_ID =
@@ -59,9 +60,11 @@ export default function GoogleLoginButton({
     const responseMessage = responseData.data?.message;
 
     if (responseMessage?.isSuccess === false) {
-      throw new Error(
-        responseMessage?.error?.message || "Xác thực Google thất bại.",
+      // Ưu tiên thông điệp BE (message/error.message), nguyên văn.
+      setErrorMessage(
+        readSafeApiMessage(responseMessage) ?? "Xác thực Google thất bại.",
       );
+      return;
     }
 
     const data = responseMessage?.data;

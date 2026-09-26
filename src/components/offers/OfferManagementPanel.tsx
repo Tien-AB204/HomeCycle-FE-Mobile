@@ -976,7 +976,10 @@ export default function OfferManagementPanel({
 
         setFeedbackTarget({ type: "page" });
         showError(
-          "Đề nghị vừa có thay đổi. Danh sách đã được làm mới, vui lòng xem lại trước khi chỉnh sửa.",
+          getApiErrorMessage(
+            error,
+            "Đề nghị vừa có thay đổi. Danh sách đã được làm mới, vui lòng xem lại trước khi chỉnh sửa.",
+          ),
         );
 
         await fetchData();

@@ -621,7 +621,9 @@ export default function AccountInfoScreen() {
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={dismissActiveEdit}
+          // Cuộn chỉ ẩn bàn phím, không hủy phần đang sửa: nút chọn ảnh/lưu
+          // nằm dưới các ô nhập nên người dùng phải cuộn mới tới được.
+          keyboardDismissMode="on-drag"
         >
           <Pressable style={styles.contentPressArea} onPress={dismissActiveEdit}>
           <View style={styles.avatarWrapper}>

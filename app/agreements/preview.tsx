@@ -18,6 +18,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -649,7 +650,9 @@ export default function AgreementPreviewScreen() {
 
         setStatusMessage({
           type: "warning",
-          text: "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa.",
+          text:
+            readSafeApiMessage(error?.response?.data ?? error) ??
+            "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa.",
         });
 
         return;

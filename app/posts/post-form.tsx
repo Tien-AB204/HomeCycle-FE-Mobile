@@ -894,11 +894,11 @@ export default function PostFormScreen() {
           remainingToday: 0,
           resetsAt: error?.response?.data?.resetsAt || current?.resetsAt,
         }));
-        setAiPriceMessage({ type: "info", text: "Bạn đã dùng hết lượt gợi ý giá hôm nay." });
+        setAiPriceMessage({ type: "info", text: getApiErrorMessage(error, "Bạn đã dùng hết lượt gợi ý giá hôm nay.") });
       } else if (status === 400) {
-        setAiPriceMessage({ type: "error", text: "Thông tin sản phẩm chưa đủ hoặc chưa hợp lệ để gợi ý giá." });
+        setAiPriceMessage({ type: "error", text: getApiErrorMessage(error, "Thông tin sản phẩm chưa đủ hoặc chưa hợp lệ để gợi ý giá.") });
       } else if (status === 403) {
-        setAiPriceMessage({ type: "error", text: "Tính năng gợi ý giá hiện chỉ áp dụng cho tài khoản cá nhân." });
+        setAiPriceMessage({ type: "error", text: getApiErrorMessage(error, "Tính năng gợi ý giá hiện chỉ áp dụng cho tài khoản cá nhân.") });
       } else {
         setAiPriceMessage({
           type: "error",

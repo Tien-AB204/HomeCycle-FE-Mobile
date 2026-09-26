@@ -586,9 +586,11 @@ export default function VerificationSetupScreen() {
 
         setMessage({
           type: "error",
-          text:
+          text: getApiErrorMessage(
+            error,
             "Phiên xác thực email đã hết hạn. " +
-            "Vui lòng xác thực lại email để tiếp tục đăng ký.",
+              "Vui lòng xác thực lại email để tiếp tục đăng ký.",
+          ),
         });
 
         return;

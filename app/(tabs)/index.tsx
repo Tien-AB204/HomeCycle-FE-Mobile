@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Platform,
@@ -447,7 +448,7 @@ export default function HomeScreen() {
     return "available";
   };
 
-  const handleQuickAddToCart = async (post: any) => {
+  const handleQuickAddToCart = (post: any) => {
     const postId = String(post?.postId || "");
     if (!postId) return;
     if (quickCartActionInFlightRef.current) return;
@@ -465,6 +466,21 @@ export default function HomeScreen() {
       return;
     }
 
+    // Xác nhận trước khi thêm để tránh bấm nhầm biểu tượng giỏ trên thẻ.
+    const productName = post.productName || post.description || "sản phẩm này";
+    Alert.alert(
+      "Thêm vào giỏ hàng",
+      `Thêm 1 "${productName}" (${formatPrice(post.basePrice || post.expectedPrice)}) vào giỏ hàng?`,
+      [
+        { text: "Hủy", style: "cancel" },
+        { text: "Thêm vào giỏ", onPress: () => void addToCartConfirmed(post) },
+      ],
+    );
+  };
+
+  const addToCartConfirmed = async (post: any) => {
+    const postId = String(post?.postId || "");
+    if (!postId) return;
     if (quickCartActionInFlightRef.current) return;
     quickCartActionInFlightRef.current = postId;
 
@@ -473,11 +489,16 @@ export default function HomeScreen() {
       // Không tự thử lại khi hết thời gian chờ/lỗi mạng: kết quả có thể không chắc
       // chắn; fetchCartMembership sẽ đối chiếu lại với Backend khi Trang chủ tải lại.
       const response = await cartApi.addToCart(postId, 1);
-      if (response?.isSuccess === false) {
-        throw new Error(response?.error?.message || "Không thể thêm sản phẩm vào giỏ hàng.");
-      }
+      if (response?.isSuccess === false) throw response;
       setCartPostIds((current) => new Set(current).add(normalizeId(postId)));
-      showFeedback({ type: "success", text: "Đã thêm sản phẩm vào giỏ hàng." });
+      Alert.alert(
+        "Đã thêm vào giỏ hàng",
+        `Đã thêm 1 "${post.productName || post.description || "sản phẩm"}" vào giỏ hàng.`,
+        [
+          { text: "Tiếp tục xem", style: "cancel" },
+          { text: "Xem giỏ hàng", onPress: () => router.push("/(tabs)/cart") },
+        ],
+      );
     } catch (error) {
       devLog("[home] Thêm nhanh vào giỏ thất bại:", error);
       showFeedback({
@@ -585,7 +606,7 @@ export default function HomeScreen() {
                 disabled={isAdding}
                 onPress={(event) => {
                   event.stopPropagation();
-                  void handleQuickAddToCart(post);
+                  handleQuickAddToCart(post);
                 }}
               >
                 {isAdding ? (

@@ -337,7 +337,10 @@ export default function OfferDetailScreen() {
         await fetchOffer();
         setMessage({
           type: "warning",
-          text: "Đề nghị đã thay đổi ở nơi khác. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra trước khi chỉnh sửa tiếp.",
+          text: getApiErrorMessage(
+            error,
+            "Đề nghị đã thay đổi ở nơi khác. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra trước khi chỉnh sửa tiếp.",
+          ),
         });
         return;
       }
@@ -361,6 +364,7 @@ export default function OfferDetailScreen() {
       setMessage(null);
 
       const response = await offerApi.cancelOffer(offerId);
+      if (response?.isSuccess === false) throw response;
       const updatedOffer = unwrap(response);
 
       if (updatedOffer?.offerId) {
@@ -466,7 +470,7 @@ export default function OfferDetailScreen() {
       setMessage({ type: "warning", text: succeeded
         ? "Đã xử lý đề nghị. Vui lòng mở lại chi tiết, không gửi lại thao tác."
         : getOfferErrorCode(error) === "OFFER_TERMS_CHANGED"
-          ? "Đề nghị đã thay đổi ở nơi khác. Vui lòng kiểm tra dữ liệu mới nhất trước khi phản hồi."
+          ? getApiErrorMessage(error, "Đề nghị đã thay đổi ở nơi khác. Vui lòng kiểm tra dữ liệu mới nhất trước khi phản hồi.")
           : getApiErrorMessage(error, "Không thể xử lý đề nghị lúc này.") });
     } finally {
       offerActionLockRef.current = false;

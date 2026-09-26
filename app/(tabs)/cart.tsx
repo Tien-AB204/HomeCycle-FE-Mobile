@@ -203,7 +203,10 @@ export default function CartScreen() {
       setUndoError(null);
 
       const response = await cartApi.removeItem(item.cartItemId);
-      if (response?.isSuccess === false || response?.data === false) throw response;
+      if (response?.isSuccess === false) throw response;
+      if (response?.data === false) {
+        throw new Error("Không thể xóa sản phẩm khỏi giỏ hàng.");
+      }
 
       setPendingDeleteId(null);
       setUndoDelete({

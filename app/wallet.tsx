@@ -18,6 +18,7 @@ import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getMyWithdrawalQuota, WithdrawalQuota } from "../src/services/apis/withdrawalApi";
+import { getApiErrorMessage } from "../src/utils/apiFeedback";
 import { NETWORK_ERROR_MESSAGE, readSafeApiMessage } from "../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../src/utils/tapGuard";
@@ -170,10 +171,10 @@ export default function WalletScreen() {
 
         setMessage(null);
         await Promise.all([loadWallet(), loadLedger(page), loadQuota()]);
-      } catch {
+      } catch (error) {
         setMessage({
           type: "error",
-          text: NETWORK_ERROR_MESSAGE,
+          text: getApiErrorMessage(error, NETWORK_ERROR_MESSAGE),
         });
       } finally {
         setIsLoading(false);
@@ -292,7 +293,6 @@ export default function WalletScreen() {
         "Withdrawal.InvalidRequest":
           "Số tiền rút chưa hợp lệ.",
         "Withdrawal.DailyCountLimitExceeded":
-          getErrorMessageFromResponse(error) ||
           "Bạn đã sử dụng hết số lượt rút tiền trong ngày.",
       };
 
@@ -303,10 +303,11 @@ export default function WalletScreen() {
 
       setMessage({
         type: "error",
+        // Ưu tiên thông điệp BE; bảng mã lỗi chỉ là dự phòng.
         text:
-          messageByCode[code] ||
           getErrorMessageFromResponse(error) ||
-          NETWORK_ERROR_MESSAGE,
+          messageByCode[code] ||
+          getApiErrorMessage(error, NETWORK_ERROR_MESSAGE),
       });
     } finally {
       withdrawalInFlightRef.current = false;

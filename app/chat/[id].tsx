@@ -546,6 +546,8 @@ export default function ChatDetailScreen() {
   const pickerGenerationRef = useRef(0);
 
   const negotiationInfoRef = useRef<any>(null);
+  // Lỗi gần nhất của fetchBaseInfo để hiển thị thông điệp BE thay vì chữ cố định.
+  const baseInfoErrorRef = useRef<unknown>(null);
   const isScreenFocusedRef = useRef(false);
   const processedRealtimeMessageIdsRef =
     useRef<Set<string>>(new Set());
@@ -804,7 +806,10 @@ export default function ChatDetailScreen() {
         error,
       );
       setLoadError(
-        "Không thể mở cuộc trò chuyện này. Vui lòng thử lại.",
+        getApiErrorMessage(
+          error,
+          "Không thể mở cuộc trò chuyện này. Vui lòng thử lại.",
+        ),
       );
       return null;
     } finally {
@@ -1087,6 +1092,8 @@ export default function ChatDetailScreen() {
     const effectiveNegotiationId =
       targetNegotiationId ||
       negotiationId;
+
+    baseInfoErrorRef.current = null;
 
     if (!effectiveNegotiationId || !currentUserId) {
       return null;
@@ -1406,6 +1413,7 @@ export default function ChatDetailScreen() {
         "Lỗi tải thông tin thương lượng:",
         error,
       );
+      baseInfoErrorRef.current = error;
 
       return null;
     }
@@ -1844,7 +1852,12 @@ export default function ChatDetailScreen() {
 
         if (!loadedInfo) {
           setLoadError(
-            "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+            baseInfoErrorRef.current
+              ? getApiErrorMessage(
+                  baseInfoErrorRef.current,
+                  "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+                )
+              : "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
           );
 
           return;
@@ -2526,7 +2539,12 @@ export default function ChatDetailScreen() {
 
       if (!loadedInfo) {
         setLoadError(
-          "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+          baseInfoErrorRef.current
+            ? getApiErrorMessage(
+                baseInfoErrorRef.current,
+                "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
+              )
+            : "Không thể tải cuộc trò chuyện. Vui lòng thử lại.",
         );
 
         return;

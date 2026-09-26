@@ -15,6 +15,7 @@ import {
   type ResolvedVietnameseAddress,
 } from "../../src/services/addressResolution";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { capitalizeWordInitials } from "../../src/utils/textFormat";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -104,6 +105,8 @@ const toItemForm = (item: GhnItemPayload): GhnItemForm => ({
 });
 const getGhnErrorCode = (error: any): string =>
   String(error?.response?.data?.code ?? error?.response?.data?.error?.code ?? error?.code ?? "");
+// Thông điệp BE (nếu có) được ưu tiên hơn bảng mã lỗi GHN phía FE.
+const readBeMessage = (error: any) => readSafeApiMessage(error?.response?.data);
 const GHN_ERROR_MESSAGES: Record<string, string> = {
   "Ghn.InvalidPreview": "Thông tin tính phí đã hết hạn hoặc thay đổi. Vui lòng tính lại phí giao hàng trước khi lưu.",
   "Ghn.QuoteChanged": "Phí giao hàng đã thay đổi. Vui lòng tính lại phí và kiểm tra trước khi lưu.",
@@ -119,6 +122,7 @@ const MAX_WEIGHT_GRAM = 50000;
 const EMPTY_PARTY: GhnPartyFormValue = { fullName: "", phone: "", province: null, district: null, ward: null, addressDetail: "" };
 const FINAL_TERMS_REQUIRED_MESSAGE = "Phiên thương lượng chưa có giá và số lượng đã chốt. Vui lòng hoàn tất thương lượng trước khi tạo hợp đồng.";
 const EDIT_UNAVAILABLE_MESSAGE = "Hợp đồng không còn ở trạng thái cho phép chỉnh sửa.";
+const GHN_PARCEL_INFO_ERROR_MESSAGE = "Không thể lấy gợi ý kiện hàng. Bạn có thể nhập thông tin đóng gói hoặc chọn lại GHN để thử lại.";
 const isPendingAgreementStatus = (status: unknown) =>
   typeof status === "string" &&
   status.trim().replace(/[\s_-]/g, "").toLowerCase() === "pending";
@@ -180,6 +184,8 @@ const agreementApi = {
       if (error instanceof Error && error.message === EDIT_UNAVAILABLE_MESSAGE) {
         throw error;
       }
+      // Giữ lỗi gốc khi BE có thông điệp để màn hình hiển thị đúng thông điệp BE.
+      if (readBeMessage(error)) throw error;
       throw new Error("Không thể xác minh trạng thái hợp đồng để cập nhật. Vui lòng thử lại.");
     }
 
@@ -515,12 +521,12 @@ export default function AgreementFormScreen() {
       if (request === editAccessRequestRef.current) {
         setEditAccess("allowed");
       }
-    } catch {
+    } catch (error) {
       if (request === editAccessRequestRef.current) {
         setEditAccess("blocked");
         setNotice({
           type: "error",
-          message: "Không thể xác minh trạng thái hợp đồng để chỉnh sửa. Vui lòng thử lại.",
+          message: getErrorMessage(error, "Không thể xác minh trạng thái hợp đồng để chỉnh sửa. Vui lòng thử lại."),
         });
       }
     } finally {
@@ -586,7 +592,7 @@ export default function AgreementFormScreen() {
       const response = await agreementApi.getGhnParcelInfo(negotiationId);
       if (generation !== previewGenerationRef.current) return;
       const data: GhnParcelInfo = response?.data ?? response;
-      if (!data) throw new Error();
+      if (!data) throw new Error(GHN_PARCEL_INFO_ERROR_MESSAGE);
       hasFetchedGhnRef.current = true;
       const senderSuggestion = data.sender ? hydrateGhnParty(data.sender) : null;
       const receiverSuggestion = data.receiver ? hydrateGhnParty(data.receiver) : null;
@@ -637,9 +643,9 @@ export default function AgreementFormScreen() {
           ? GHN_ERROR_MESSAGES["Ghn.MultiParcelDimensionsUnverified"]
           : "Đã lấy gợi ý kiện hàng. Vui lòng kiểm tra và nhập thông tin đóng gói thực tế.",
       });
-    } catch {
+    } catch (error) {
       if (generation === previewGenerationRef.current)
-        setNotice({ type: "error", message: "Không thể lấy gợi ý kiện hàng. Bạn có thể nhập thông tin đóng gói hoặc chọn lại GHN để thử lại." });
+        setNotice({ type: "error", message: getErrorMessage(error, GHN_PARCEL_INFO_ERROR_MESSAGE) });
     } finally {
       setIsLoadingGhnInfo(false);
     }
@@ -767,18 +773,18 @@ export default function AgreementFormScreen() {
     } catch (error) {
       if (generation !== previewGenerationRef.current) return;
       invalidateQuote();
-      setNotice({ type: "error", message: GHN_ERROR_MESSAGES[getGhnErrorCode(error)] ||
+      setNotice({ type: "error", message: readBeMessage(error) || GHN_ERROR_MESSAGES[getGhnErrorCode(error)] ||
         "Không thể tính phí giao hàng lúc này. Vui lòng kiểm tra thông tin đóng gói và thử lại." });
     } finally {
       if (generation === previewGenerationRef.current) setIsCalculatingFee(false);
     }
   };
   const buildAgreementDetails = (): AgreementDetailsPayload => { const methodMap: Record<DeliveryMethod, AgreementDetailsPayload["deliveryMethod"]> = { SELLER_DELIVERY: "SellerDelivers", BUYER_PICKUP: "BuyerPickUp", GHN: "GhnDelivery" }; const details: AgreementDetailsPayload = { revision: Math.max(1, revision), notes: notes.trim() || null }; if (isInspection) { details.inspectionDate = combineLocalDateTime(inspectionDate, inspectionTime)?.toISOString() ?? null; details.inspectionAddress = inspectionAddressResolutionRef.current?.formattedAddress || inspectionAddress.trim() || null; return details; } details.collectionDate = combineLocalDateTime(collectionDate, collectionTime)?.toISOString() ?? null; details.deliveryMethod = methodMap[deliveryMethod]; if (deliveryMethod !== "GHN") { const pickupResolved = pickupAddressResolutionRef.current; const deliveryResolved = deliveryAddressResolutionRef.current; details.pickupAddress = pickupResolved?.formattedAddress || pickupAddress.trim() || null; details.deliveryAddress = deliveryResolved?.formattedAddress || deliveryAddress.trim() || null; details.ghnInfo = null; details.codValue = 0; details.estimatedShippingFee = null; details.sellerInfo = { fullName: toNullable(sellerInfo.fullName), phone: toNullable(sellerInfo.phone), streetAddress: toNullable(pickupResolved?.streetAddress || sellerInfo.streetAddress || pickupAddress), ward: toNullable(pickupResolved?.wardName || sellerInfo.ward), city: toNullable(pickupResolved?.provinceName || sellerInfo.city) }; return details; } const preview = requireCurrentPreview(); details.pickupAddress = composeAddress(sender); details.deliveryAddress = composeAddress(receiver); details.codValue = 0; details.estimatedShippingFee = preview.totalFee; details.ghnInfo = preview.shippingInfo; /* GHN: sellerInfo là ảnh chụp người gửi; ghnInfo giữ nguyên dữ liệu tích hợp GHN. */ details.sellerInfo = { fullName: toNullable(sender.fullName), phone: toNullable(sender.phone), streetAddress: toNullable(sender.addressDetail), ward: toNullable(sender.ward?.wardName ?? ""), city: toNullable(sender.province?.provinceName ?? "") }; return details; };
-  const handleSubmit = async (confirmedLowPrice = false) => { if (submitInFlightRef.current || addressResolutionInFlightRef.current) return; setNotice(null); if (!isEditing && !hasAuthoritativeTerms) { setNotice({ type: "error", message: FINAL_TERMS_REQUIRED_MESSAGE }); return; } if (isInspection) { if (!inspectionDate || !inspectionTime.trim() || !inspectionAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập ngày, giờ và địa điểm kiểm định." }); return; } if (!isValidClockTime(inspectionTime)) { setNotice({ type: "error", message: "Vui lòng chọn giờ kiểm định." }); return; } if (!isFutureScheduleDateTime(inspectionDate, inspectionTime)) { setNotice({ type: "error", message: "Thời gian kiểm định phải ở tương lai." }); return; } addressResolutionInFlightRef.current = true; const resolvedInspection = await resolveRequiredAddress("địa điểm kiểm định", inspectionAddress, inspectionAddressResolutionRef, setInspectionAddress); addressResolutionInFlightRef.current = false; if (!resolvedInspection) return; } else { if (!collectionDate || !collectionTime.trim()) { setNotice({ type: "error", message: "Vui lòng chọn ngày và giờ thu gom dự kiến." }); return; } if (!isValidClockTime(collectionTime)) { setNotice({ type: "error", message: "Vui lòng chọn giờ thu gom dự kiến." }); return; } if (!isFutureScheduleDateTime(collectionDate, collectionTime)) { setNotice({ type: "error", message: "Thời gian thu gom phải ở tương lai." }); return; } if (deliveryMethod === "GHN") { const validationMessage = validateGhnForm(); if (validationMessage) { setNotice({ type: "error", message: validationMessage }); return; } if (!acceptedPreviewRef.current || Date.parse(acceptedPreviewRef.current.expiresAt) <= Date.now()) { setNotice({ type: "error", message: "Thông tin giao hàng đã thay đổi hoặc chưa có phí hợp lệ. Vui lòng tính lại phí GHN." }); return; } } else { if (!pickupAddress.trim() || !deliveryAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập đầy đủ địa chỉ lấy và nhận hàng." }); return; } addressResolutionInFlightRef.current = true; const resolvedPickup = await resolveRequiredAddress("địa chỉ lấy hàng", pickupAddress, pickupAddressResolutionRef, setPickupAddress); if (!resolvedPickup) { addressResolutionInFlightRef.current = false; return; } const resolvedDelivery = await resolveRequiredAddress("địa chỉ nhận hàng", deliveryAddress, deliveryAddressResolutionRef, setDeliveryAddress); addressResolutionInFlightRef.current = false; if (!resolvedDelivery) return; setSellerInfo((current) => ({ ...current, streetAddress: resolvedPickup.streetAddress, ward: resolvedPickup.wardName, city: resolvedPickup.provinceName })); if (areAddressesExactlySame(resolvedPickup.formattedAddress, resolvedDelivery.formattedAddress)) { setNotice({ type: "error", message: "Địa chỉ người nhận không được giống hoàn toàn địa chỉ người gửi." }); return; } } } if (summary.price < 10_000 && !confirmedLowPrice) { setShowLowPriceConfirm(true); return; } try { submitInFlightRef.current = true; setIsProcessing(true); if (isEditing && editAgreementId) { try { const checkRes = await agreementApi.getAgreementById(editAgreementId as string); const latest = checkRes?.data || checkRes; const latestRevision = Number(latest?.agreementDetails?.revision ?? latest?.revision); if (!Number.isInteger(latestRevision) || latestRevision < 1) { setNotice({ type: "error", message: "Không xác định được phiên bản hợp đồng mới nhất. Vui lòng tải lại và thử lại để tránh ghi đè thay đổi." }); return; } if (latestRevision !== revision) { setNotice({ type: "error", message: "Dữ liệu hợp đồng đã thay đổi. Vui lòng tải lại bản mới nhất để tránh ghi đè." }); return; } } catch { setNotice({ type: "error", message: "Không thể kiểm tra phiên bản hợp đồng mới nhất. Vui lòng thử lại để tránh ghi đè thay đổi của đối tác." }); return; } } const commonPayload = { agreementType: isInspection ? ("Inspection" as const) : ("No_Inspection" as const), paymentType: isInspection ? ("Deposit" as const) : paymentType === "DEPOSIT" ? ("Deposit" as const) : ("Full_Payment" as const), agreementDetails: buildAgreementDetails() }; if (isEditing) { if (!editAgreementId) throw new Error("Không tìm thấy mã hợp đồng cần cập nhật."); await agreementApi.updateAgreement(editAgreementId as string, commonPayload);  router.replace({ pathname: "/agreements/preview", params: { agreementId: editAgreementId, negotiationId, successMsg: "Cập nhật hợp đồng thành công. Đang chờ đối tác xem và xác nhận." } }); } else { await agreementApi.createAgreement({ negotiationId: negotiationId as string, ...commonPayload }); setNotice({ type: "success", message: "Đã tạo hợp đồng và xác nhận phía người bán." }); if (negotiationId) router.replace(`/chat/${negotiationId}`); else router.back(); } } catch (error) {
+  const handleSubmit = async (confirmedLowPrice = false) => { if (submitInFlightRef.current || addressResolutionInFlightRef.current) return; setNotice(null); if (!isEditing && !hasAuthoritativeTerms) { setNotice({ type: "error", message: FINAL_TERMS_REQUIRED_MESSAGE }); return; } if (isInspection) { if (!inspectionDate || !inspectionTime.trim() || !inspectionAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập ngày, giờ và địa điểm kiểm định." }); return; } if (!isValidClockTime(inspectionTime)) { setNotice({ type: "error", message: "Vui lòng chọn giờ kiểm định." }); return; } if (!isFutureScheduleDateTime(inspectionDate, inspectionTime)) { setNotice({ type: "error", message: "Thời gian kiểm định phải ở tương lai." }); return; } addressResolutionInFlightRef.current = true; const resolvedInspection = await resolveRequiredAddress("địa điểm kiểm định", inspectionAddress, inspectionAddressResolutionRef, setInspectionAddress); addressResolutionInFlightRef.current = false; if (!resolvedInspection) return; } else { if (!collectionDate || !collectionTime.trim()) { setNotice({ type: "error", message: "Vui lòng chọn ngày và giờ thu gom dự kiến." }); return; } if (!isValidClockTime(collectionTime)) { setNotice({ type: "error", message: "Vui lòng chọn giờ thu gom dự kiến." }); return; } if (!isFutureScheduleDateTime(collectionDate, collectionTime)) { setNotice({ type: "error", message: "Thời gian thu gom phải ở tương lai." }); return; } if (deliveryMethod === "GHN") { const validationMessage = validateGhnForm(); if (validationMessage) { setNotice({ type: "error", message: validationMessage }); return; } if (!acceptedPreviewRef.current || Date.parse(acceptedPreviewRef.current.expiresAt) <= Date.now()) { setNotice({ type: "error", message: "Thông tin giao hàng đã thay đổi hoặc chưa có phí hợp lệ. Vui lòng tính lại phí GHN." }); return; } } else { if (!pickupAddress.trim() || !deliveryAddress.trim()) { setNotice({ type: "error", message: "Vui lòng nhập đầy đủ địa chỉ lấy và nhận hàng." }); return; } addressResolutionInFlightRef.current = true; const resolvedPickup = await resolveRequiredAddress("địa chỉ lấy hàng", pickupAddress, pickupAddressResolutionRef, setPickupAddress); if (!resolvedPickup) { addressResolutionInFlightRef.current = false; return; } const resolvedDelivery = await resolveRequiredAddress("địa chỉ nhận hàng", deliveryAddress, deliveryAddressResolutionRef, setDeliveryAddress); addressResolutionInFlightRef.current = false; if (!resolvedDelivery) return; setSellerInfo((current) => ({ ...current, streetAddress: resolvedPickup.streetAddress, ward: resolvedPickup.wardName, city: resolvedPickup.provinceName })); if (areAddressesExactlySame(resolvedPickup.formattedAddress, resolvedDelivery.formattedAddress)) { setNotice({ type: "error", message: "Địa chỉ người nhận không được giống hoàn toàn địa chỉ người gửi." }); return; } } } if (summary.price < 10_000 && !confirmedLowPrice) { setShowLowPriceConfirm(true); return; } try { submitInFlightRef.current = true; setIsProcessing(true); if (isEditing && editAgreementId) { try { const checkRes = await agreementApi.getAgreementById(editAgreementId as string); const latest = checkRes?.data || checkRes; const latestRevision = Number(latest?.agreementDetails?.revision ?? latest?.revision); if (!Number.isInteger(latestRevision) || latestRevision < 1) { setNotice({ type: "error", message: "Không xác định được phiên bản hợp đồng mới nhất. Vui lòng tải lại và thử lại để tránh ghi đè thay đổi." }); return; } if (latestRevision !== revision) { setNotice({ type: "error", message: "Dữ liệu hợp đồng đã thay đổi. Vui lòng tải lại bản mới nhất để tránh ghi đè." }); return; } } catch (checkError) { setNotice({ type: "error", message: getErrorMessage(checkError, "Không thể kiểm tra phiên bản hợp đồng mới nhất. Vui lòng thử lại để tránh ghi đè thay đổi của đối tác.") }); return; } } const commonPayload = { agreementType: isInspection ? ("Inspection" as const) : ("No_Inspection" as const), paymentType: isInspection ? ("Deposit" as const) : paymentType === "DEPOSIT" ? ("Deposit" as const) : ("Full_Payment" as const), agreementDetails: buildAgreementDetails() }; if (isEditing) { if (!editAgreementId) throw new Error("Không tìm thấy mã hợp đồng cần cập nhật."); await agreementApi.updateAgreement(editAgreementId as string, commonPayload);  router.replace({ pathname: "/agreements/preview", params: { agreementId: editAgreementId, negotiationId, successMsg: "Cập nhật hợp đồng thành công. Đang chờ đối tác xem và xác nhận." } }); } else { await agreementApi.createAgreement({ negotiationId: negotiationId as string, ...commonPayload }); setNotice({ type: "success", message: "Đã tạo hợp đồng và xác nhận phía người bán." }); if (negotiationId) router.replace(`/chat/${negotiationId}`); else router.back(); } } catch (error) {
       const code = getGhnErrorCode(error);
       if (!isInspection && deliveryMethod === "GHN") {
         invalidateQuote();
-        setNotice({ type: "error", message: GHN_ERROR_MESSAGES[code] || getErrorMessage(error, "Không thể lưu hợp đồng lúc này. Vui lòng kiểm tra lại thông tin giao hàng.") });
+        setNotice({ type: "error", message: readBeMessage(error) || GHN_ERROR_MESSAGES[code] || getErrorMessage(error, "Không thể lưu hợp đồng lúc này. Vui lòng kiểm tra lại thông tin giao hàng.") });
       } else setNotice({ type: "error", message: getErrorMessage(error, "Không thể thực hiện lúc này.") });
     } finally { submitInFlightRef.current = false; setIsProcessing(false); } };
   const formatPrice = (price: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(price);

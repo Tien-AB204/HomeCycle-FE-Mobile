@@ -19,7 +19,11 @@ import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
-import { NETWORK_ERROR_MESSAGE } from "../../src/utils/errorMessage";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  NETWORK_ERROR_MESSAGE,
+  readSafeApiMessage,
+} from "../../src/utils/errorMessage";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -199,13 +203,11 @@ const getErrorCode = (error: any): string =>
       "",
   ).trim();
 
+// Thông điệp BE nguyên văn; rỗng khi BE không trả.
 const getErrorMessageFromResponse = (error: any): string =>
-  String(
-    error?.response?.data?.message ??
-      error?.response?.data?.error?.message ??
-      "",
-  ).trim();
+  readSafeApiMessage(error?.response?.data) ?? "";
 
+// Chỉ dùng làm dự phòng khi BE không trả message.
 // Backend error codes verified against HomeCycle.Application.Commons.Errors
 // (ContentDisputeErrors / DisputeErrors) — matched by exact code, not by
 // HTTP status, since the dispute controller returns 400 for every business
@@ -279,10 +281,13 @@ export default function ContentReportScreen() {
       setCategoriesError(null);
       const list = await getContentReportCategories(targetType);
       setCategories(list);
-    } catch {
+    } catch (error) {
       setCategories([]);
       setCategoriesError(
-        "Không thể tải danh sách lý do báo cáo lúc này. Vui lòng thử lại.",
+        getApiErrorMessage(
+          error,
+          "Không thể tải danh sách lý do báo cáo lúc này. Vui lòng thử lại.",
+        ),
       );
     }
   }, [targetType]);
@@ -304,7 +309,10 @@ export default function ContentReportScreen() {
     } else {
       setCategories([]);
       setCategoriesError(
-        "Không thể tải danh sách lý do báo cáo lúc này. Vui lòng thử lại.",
+        getApiErrorMessage(
+          categoriesResult.reason,
+          "Không thể tải danh sách lý do báo cáo lúc này. Vui lòng thử lại.",
+        ),
       );
     }
 
@@ -461,6 +469,7 @@ export default function ContentReportScreen() {
         setPageMessage({
           type: "warning",
           text:
+            getErrorMessageFromResponse(error) ||
             CONTENT_REPORT_ERROR_MESSAGES[code] ||
             "Lý do báo cáo không còn phù hợp. Danh sách đã được làm mới, vui lòng chọn lại.",
         });
@@ -472,9 +481,9 @@ export default function ContentReportScreen() {
       setPageMessage({
         type: "error",
         text:
-          mappedMessage ||
           getErrorMessageFromResponse(error) ||
-          NETWORK_ERROR_MESSAGE,
+          mappedMessage ||
+          getApiErrorMessage(error, NETWORK_ERROR_MESSAGE),
       });
     } finally {
       reportSubmitInFlightRef.current = false;

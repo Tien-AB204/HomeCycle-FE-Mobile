@@ -1344,7 +1344,7 @@ export default function PostDetailScreen() {
         // Pending does not change post capacity; retain the authoritative write result immediately.
       } catch (error) {
         if (sellerContextVersion.current !== contextVersion) return;
-        const response = (error as { response?: { data?: any } })?.response?.data;
+        const response = (error as { response?: { data?: any } })?.response?.data ?? error;
         const code = response?.code ?? response?.error?.code;
         if (code === "OFFER_DUPLICATE_PENDING") {
           try {
@@ -1539,11 +1539,7 @@ export default function PostDetailScreen() {
       clearCartFeedback();
       const response = await cartApi.addToCart(targetPostId, quantity);
 
-      if (response?.isSuccess === false) {
-        throw new Error(
-          response?.error?.message || "Không thể thêm sản phẩm vào giỏ hàng.",
-        );
-      }
+      if (response?.isSuccess === false) throw response;
 
       setCartAdded(true);
       setIsInCart(true);

@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import apiClient from "./axiosClient";
+import { getSafeErrorMessage, readSafeApiMessage } from "../../utils/errorMessage";
 import type { WithdrawalQuota } from "./withdrawalApi";
 
 /**
@@ -444,6 +445,7 @@ export const describeEntitlement = (entitlement: PackageEntitlement): { label: s
 
 // ---------------------------------------------------------------- thông điệp lỗi
 
+// Chỉ dùng làm dự phòng khi BE không trả message.
 const SUBSCRIPTION_ERROR_MESSAGES: Record<string, string> = {
   "UserSubscription.RoleNotEligible": "Gói này không áp dụng cho loại tài khoản hiện tại.",
   "UserSubscription.UserInactive": "Tài khoản hiện không thể thực hiện giao dịch này.",
@@ -469,17 +471,17 @@ export const readErrorCode = (error: unknown): string => {
 };
 
 export const getSubscriptionErrorMessage = (error: unknown, fallback: string): string => {
+  // Ưu tiên thông điệp BE trả về (nguyên văn).
+  const backendMessage = readSafeApiMessage((error as any)?.response?.data);
+  if (backendMessage) return backendMessage;
   const code = readErrorCode(error);
   if (code && SUBSCRIPTION_ERROR_MESSAGES[code]) return SUBSCRIPTION_ERROR_MESSAGES[code];
   const status = Number((error as any)?.response?.status || 0);
   if (status === 401) return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
   if (status === 403) return "Bạn không có quyền thực hiện thao tác này.";
   if (status === 404) return "Không tìm thấy dữ liệu gói đăng ký.";
-  if (status >= 500) return "Hệ thống đang gặp sự cố. Vui lòng thử lại sau.";
-  if (status === 0 && !(error as any)?.response) {
-    return "Không thể kết nối đến hệ thống. Vui lòng kiểm tra kết nối mạng và thử lại.";
-  }
-  return fallback;
+  // Còn lại (5xx, lỗi mạng, lỗi do ứng dụng tự ném) dùng bộ xử lý chung.
+  return getSafeErrorMessage(error, fallback);
 };
 
 // ---------------------------------------------------------------- API

@@ -1008,7 +1008,9 @@ export default function BusinessAccountInfoScreen() {
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={dismissActiveEdit}
+          // Cuộn chỉ ẩn bàn phím, không hủy phần đang sửa: nút chọn ảnh/lưu
+          // nằm dưới các ô nhập nên người dùng phải cuộn mới tới được.
+          keyboardDismissMode="on-drag"
         >
           <Pressable
             style={styles.contentPressArea}
@@ -1281,11 +1283,13 @@ export default function BusinessAccountInfoScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color={COLORS.primary} />
             </TouchableOpacity>
-            <Text style={styles.inputLabel}>Giấy đăng ký kinh doanh mới <Text style={{ color: COLORS.error }}>*</Text></Text>
+            <RequiredDocumentLabel
+              label="Giấy đăng ký kinh doanh"
+              editing={isEditing("registration")}
+            />
             {documents.registration ? (
               <Text style={styles.existingFileText}>
-                Đã có giấy tờ hiện tại. BE vẫn yêu cầu tải file mới khi cập
-                nhật.
+                Đã có giấy tờ hiện tại. Khi cập nhật, vui lòng tải lên bản mới.
               </Text>
             ) : null}
             {isEditing("registration") ? (
@@ -1436,10 +1440,15 @@ export default function BusinessAccountInfoScreen() {
               disabled={!isEditing("identity") || savingSection === "identity"}
             />
             <FieldError text={errors.identityAddress} />
-            <Text style={styles.inputLabel}>CCCD mặt trước mới <Text style={{ color: COLORS.error }}>*</Text></Text>
-            {documents.front ? (
+            <RequiredDocumentLabel
+              label="CCCD mặt trước"
+              editing={isEditing("identity")}
+            />
+            {/* Ảnh vừa chọn được xem trước thay cho ảnh đang lưu. */}
+            {cccdFront?.uri || documents.front ? (
               <Image
-                source={{ uri: documents.front }}
+                key={cccdFront?.uri || documents.front}
+                source={{ uri: cccdFront?.uri || documents.front }}
                 style={styles.documentPreview}
               />
             ) : null}
@@ -1468,10 +1477,15 @@ export default function BusinessAccountInfoScreen() {
                 <FieldError text={errors.cccdFront} />
               </>
             ) : null}
-            <Text style={styles.inputLabel}>CCCD mặt sau mới <Text style={{ color: COLORS.error }}>*</Text></Text>
-            {documents.back ? (
+            <RequiredDocumentLabel
+              label="CCCD mặt sau"
+              editing={isEditing("identity")}
+            />
+            {/* Ảnh vừa chọn được xem trước thay cho ảnh đang lưu. */}
+            {cccdBack?.uri || documents.back ? (
               <Image
-                source={{ uri: documents.back }}
+                key={cccdBack?.uri || documents.back}
+                source={{ uri: cccdBack?.uri || documents.back }}
                 style={styles.documentPreview}
               />
             ) : null}
@@ -1883,6 +1897,22 @@ function SectionTitle({ title }: { title: string }) {
 }
 function FieldError({ text }: { text?: string }) {
   return text ? <Text style={styles.fieldError}>{text}</Text> : null;
+}
+// Khi chỉ xem: tên giấy tờ; khi chỉnh sửa: yêu cầu tải bản "mới" (bắt buộc).
+function RequiredDocumentLabel({
+  label,
+  editing,
+}: {
+  label: string;
+  editing: boolean;
+}) {
+  return editing ? (
+    <Text style={styles.inputLabel}>
+      {label} mới <Text style={{ color: COLORS.error }}>*</Text>
+    </Text>
+  ) : (
+    <Text style={styles.inputLabel}>{label}</Text>
+  );
 }
 function EditActions({
   loading,
@@ -2314,12 +2344,13 @@ const styles = StyleSheet.create({
   outlineButtonText: { color: COLORS.primary, fontWeight: "600", fontSize: 13 },
   identityFieldContainer: { marginBottom: 0 },
   identityInput: { minHeight: 50, borderRadius: 10 },
+  // Giữ tỉ lệ thẻ CCCD (85,6 × 54 mm) và hiển thị trọn ảnh, không cắt mép.
   documentPreview: {
     width: "100%",
-    height: 150,
+    aspectRatio: 1.586,
     borderRadius: 10,
     marginBottom: 10,
-    resizeMode: "cover",
+    resizeMode: "contain",
     backgroundColor: "#F8F9FA",
   },
   serviceAreaRow: {

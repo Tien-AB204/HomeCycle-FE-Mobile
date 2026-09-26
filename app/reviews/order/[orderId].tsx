@@ -366,7 +366,10 @@ export default function OrderReviewScreen() {
         await loadReviewData(true);
         setMessage({
           type: "warning",
-          text: "Đánh giá không còn khả dụng để chỉnh sửa.",
+          text: getErrorMessage(
+            error,
+            "Đánh giá không còn khả dụng để chỉnh sửa.",
+          ),
         });
         return;
       }

@@ -32,6 +32,7 @@ import inspectionFormApi, {
   type InspectionFormSummary,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -311,7 +312,10 @@ export default function AppointmentDetailScreen() {
             if (!isFormNotFound) {
               setActionMessage({
                 type: "info",
-                text: "Chưa thể tải các thao tác sau kiểm định. Vui lòng mở lại lịch hẹn để thử lại.",
+                text: getApiErrorMessage(
+                  inspectionError,
+                  "Chưa thể tải các thao tác sau kiểm định. Vui lòng mở lại lịch hẹn để thử lại.",
+                ),
               });
             } else if (
               !quiet &&
@@ -753,7 +757,11 @@ export default function AppointmentDetailScreen() {
 
         setActionMessage({
           type: "info",
-          text: "Kết quả kiểm định vừa được cập nhật. Vui lòng kiểm tra lại trước khi xác nhận nhận hàng.",
+          text:
+            readSafeApiMessage(
+              error?.response?.data,
+            ) ??
+            "Kết quả kiểm định vừa được cập nhật. Vui lòng kiểm tra lại trước khi xác nhận nhận hàng.",
         });
 
         return;

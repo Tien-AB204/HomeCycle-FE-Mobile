@@ -46,6 +46,7 @@ import inspectionFormApi, {
   type InspectionImageAsset,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -57,6 +58,10 @@ type InlineMessage = {
 type SellerAction = "confirm" | "reject" | null;
 
 const unwrap = (value: any) => value?.data ?? value;
+
+// Thông điệp BE (nếu có) được ưu tiên hơn chuỗi FE theo mã lỗi.
+const readBeMessage = (error: any) =>
+  readSafeApiMessage(error?.response?.data);
 
 const getErrorCode = (error: any) =>
   String(
@@ -346,7 +351,10 @@ export default function InspectionFormScreen() {
 
       if (code === "Inspection.RevisionMismatch") {
         await fetchAll(false);
-        setPageMessage({ type: "info", text: REVISION_CHANGED_MESSAGE });
+        setPageMessage({
+          type: "info",
+          text: readBeMessage(error) ?? REVISION_CHANGED_MESSAGE,
+        });
         return;
       }
 
@@ -354,7 +362,9 @@ export default function InspectionFormScreen() {
         await fetchAll(false);
         setPageMessage({
           type: "info",
-          text: "Phiếu kiểm định đã được tạo trước đó. Dữ liệu mới nhất đã được tải lại.",
+          text:
+            readBeMessage(error) ??
+            "Phiếu kiểm định đã được tạo trước đó. Dữ liệu mới nhất đã được tải lại.",
         });
         return;
       }
@@ -436,7 +446,10 @@ export default function InspectionFormScreen() {
 
       if (code === "Inspection.RevisionMismatch") {
         await fetchAll(false);
-        setPageMessage({ type: "info", text: REVISION_CHANGED_MESSAGE });
+        setPageMessage({
+          type: "info",
+          text: readBeMessage(error) ?? REVISION_CHANGED_MESSAGE,
+        });
         return;
       }
 
@@ -456,6 +469,7 @@ export default function InspectionFormScreen() {
       setPageMessage({
         type: "error",
         text:
+          readBeMessage(error) ||
           knownMessages[code] ||
           getApiErrorMessage(error, "Không thể gửi kết quả kiểm định lúc này."),
       });
@@ -534,7 +548,10 @@ export default function InspectionFormScreen() {
       if (code === "Inspection.RevisionMismatch") {
         setSellerAction(null);
         await fetchAll(false);
-        setPageMessage({ type: "info", text: REVISION_CHANGED_MESSAGE });
+        setPageMessage({
+          type: "info",
+          text: readBeMessage(error) ?? REVISION_CHANGED_MESSAGE,
+        });
         return;
       }
 

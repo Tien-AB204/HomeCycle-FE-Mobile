@@ -13,6 +13,8 @@ import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 
 const paymentApi = {
   getStatus: (agreementId: string) =>
@@ -213,9 +215,11 @@ export default function PaymentSuccessScreen() {
       }
 
       setStatusMessage("Chưa xác định được trạng thái thanh toán hiện tại.");
-    } catch {
+    } catch (error: any) {
       setIsPaid(false);
+      // Vẫn không kết luận thanh toán thành công; chỉ ưu tiên thông điệp BE nếu có.
       setStatusMessage(
+        readSafeApiMessage(error?.response?.data ?? error) ??
         "Không thể xác thực trạng thái thanh toán lúc này. Không dựa vào URL PayOS để kết luận giao dịch thành công; hãy thử kiểm tra lại.",
       );
     } finally {
@@ -237,9 +241,12 @@ export default function PaymentSuccessScreen() {
         setLoading(true);
         setStatusMessage(null);
         targetOrderId = await resolveOrder(agreementId);
-      } catch {
+      } catch (error) {
         setStatusMessage(
-          "Chưa thể lấy thông tin đơn hàng. Vui lòng thử lại sau.",
+          getApiErrorMessage(
+            error,
+            "Chưa thể lấy thông tin đơn hàng. Vui lòng thử lại sau.",
+          ),
         );
       } finally {
         setLoading(false);
@@ -301,8 +308,13 @@ export default function PaymentSuccessScreen() {
       }
 
       router.replace(`/chat/${negotiationId}` as any);
-    } catch {
-      setStatusMessage("Chưa thể mở lại đoạn chat lúc này. Vui lòng thử lại sau.");
+    } catch (error) {
+      setStatusMessage(
+        getApiErrorMessage(
+          error,
+          "Chưa thể mở lại đoạn chat lúc này. Vui lòng thử lại sau.",
+        ),
+      );
     } finally {
       setIsOpeningChat(false);
     }
@@ -340,9 +352,12 @@ export default function PaymentSuccessScreen() {
           ? String(preferredAppointment.appointmentId)
           : null;
         setAppointmentId(targetAppointmentId);
-      } catch {
+      } catch (error) {
         setStatusMessage(
-          "Chưa thể lấy thông tin lịch hẹn. Vui lòng thử lại sau.",
+          getApiErrorMessage(
+            error,
+            "Chưa thể lấy thông tin lịch hẹn. Vui lòng thử lại sau.",
+          ),
         );
       } finally {
         setLoading(false);

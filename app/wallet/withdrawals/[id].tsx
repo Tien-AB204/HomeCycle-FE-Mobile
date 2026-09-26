@@ -148,7 +148,10 @@ export default function WithdrawalDetailScreen() {
       if (requestGeneration.current !== generation) return;
       const detail = unwrap<WithdrawalDetail>(response);
       if (!detail?.withdrawalId) {
-        throw new Error("Không thể đọc chi tiết rút tiền.");
+        // Kết quả isSuccess=false mang thông điệp BE; ném nguyên để hiển thị.
+        throw (response as any)?.isSuccess === false
+          ? response
+          : new Error("Không thể đọc chi tiết rút tiền.");
       }
       setWithdrawal(detail);
     } catch (error) {
@@ -156,7 +159,7 @@ export default function WithdrawalDetailScreen() {
       setWithdrawal(null);
       setErrorText(
         isNotFoundError(error)
-          ? "Không tìm thấy yêu cầu rút tiền này."
+          ? getApiErrorMessage(error, "Không tìm thấy yêu cầu rút tiền này.")
           : getApiErrorMessage(error, "Không thể tải chi tiết rút tiền lúc này."),
       );
     } finally {

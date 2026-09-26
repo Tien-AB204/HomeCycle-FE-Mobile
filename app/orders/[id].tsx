@@ -22,6 +22,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
@@ -451,9 +452,10 @@ export default function OrderDetailScreen() {
       setPageMessage({
         type: "error",
         text:
-          status >= 500
+          readSafeApiMessage(error?.response?.data) ??
+          (status >= 500
             ? "Không thể tải đơn hàng từ hệ thống lúc này. Vui lòng thử lại sau."
-            : getApiErrorMessage(error, "Không thể tải dữ liệu đơn hàng lúc này."),
+            : getApiErrorMessage(error, "Không thể tải dữ liệu đơn hàng lúc này.")),
       });
       setData(null);
       setAgreement(null);
@@ -532,7 +534,10 @@ export default function OrderDetailScreen() {
 
         setTrackingData(null);
         setTrackingError(
-          "Không thể đồng bộ GHN lúc này. Thông tin đơn hàng vẫn được giữ nguyên.",
+          getApiErrorMessage(
+            error,
+            "Không thể đồng bộ GHN lúc này. Thông tin đơn hàng vẫn được giữ nguyên.",
+          ),
         );
       } finally {
         trackingRequestInFlightRef.current = false;

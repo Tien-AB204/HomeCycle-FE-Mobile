@@ -183,7 +183,10 @@ export default function WithdrawalHistoryScreen() {
 
       const page = unwrap<WithdrawalPage>(response);
       if (!Array.isArray(page?.items)) {
-        throw new Error("Không thể đọc danh sách rút tiền.");
+        // Kết quả isSuccess=false mang thông điệp BE; ném nguyên để hiển thị.
+        throw (response as any)?.isSuccess === false
+          ? response
+          : new Error("Không thể đọc danh sách rút tiền.");
       }
       setItems(page.items);
       setPageNumber(Number(page.pageNumber || targetPage));

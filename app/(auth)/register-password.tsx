@@ -162,6 +162,10 @@ export default function RegisterPasswordScreen() {
        * { data: { data: { accessToken } } }
        * { accessToken }
        */
+      if (response?.isSuccess === false) {
+        throw response;
+      }
+
       const responseData =
         response?.data?.data ??
         response?.data ??

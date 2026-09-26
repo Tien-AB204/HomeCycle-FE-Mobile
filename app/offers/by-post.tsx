@@ -997,7 +997,10 @@ export default function OffersByPostScreen() {
       ) {
         setActionFeedback({
           type: "error",
-          text: `${isBuyPost ? "Chào bán" : "Đề nghị"} vừa được cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.`,
+          text: getApiErrorMessage(
+            error,
+            `${isBuyPost ? "Chào bán" : "Đề nghị"} vừa được cập nhật. Danh sách đã được làm mới, vui lòng xem lại trước khi thao tác.`,
+          ),
         });
         return;
       }

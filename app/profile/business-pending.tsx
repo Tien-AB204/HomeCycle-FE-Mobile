@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SensitiveValue from "../../src/components/shared/SensitiveValue";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 export default function BusinessPendingScreen() {
@@ -42,9 +43,12 @@ export default function BusinessPendingScreen() {
           "/business-profiles/registration-detail",
         );
         setData(res.data?.data || res.data);
-      } catch {
+      } catch (error) {
         setLoadError(
-          "Không thể tải chi tiết hồ sơ đã nộp. Vui lòng quay lại và thử lại sau.",
+          getApiErrorMessage(
+            error,
+            "Không thể tải chi tiết hồ sơ đã nộp. Vui lòng quay lại và thử lại sau.",
+          ),
         );
       } finally {
         setIsLoading(false);

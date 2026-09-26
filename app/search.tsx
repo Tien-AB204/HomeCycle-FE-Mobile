@@ -268,11 +268,14 @@ export default function SearchScreen() {
           )
         : [];
       setProductTypes(nextProductTypes);
-    } catch {
+    } catch (error) {
       if (generation !== productTypeRequestGenerationRef.current) return;
       setProductTypes([]);
       setProductTypeError(
-        "Không thể tải loại sản phẩm. Bạn vẫn có thể tìm theo danh mục.",
+        getApiErrorMessage(
+          error,
+          "Không thể tải loại sản phẩm. Bạn vẫn có thể tìm theo danh mục.",
+        ),
       );
     } finally {
       if (generation === productTypeRequestGenerationRef.current) {
@@ -329,11 +332,14 @@ export default function SearchScreen() {
             )
         : [];
       setFilterableAttributes(nextAttributes);
-    } catch {
+    } catch (error) {
       if (generation !== attributeRequestGenerationRef.current) return;
       setFilterableAttributes([]);
       setAttributeError(
-        "Không thể tải bộ lọc mở rộng. Bạn vẫn có thể dùng các bộ lọc khác.",
+        getApiErrorMessage(
+          error,
+          "Không thể tải bộ lọc mở rộng. Bạn vẫn có thể dùng các bộ lọc khác.",
+        ),
       );
     } finally {
       if (generation === attributeRequestGenerationRef.current) {

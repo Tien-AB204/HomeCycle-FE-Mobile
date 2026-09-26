@@ -24,6 +24,7 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -247,7 +248,9 @@ export default function CheckoutScreen() {
         }
       } else {
         setWallet(null);
-        setWalletLoadError("Không tải được số dư ví lúc này.");
+        setWalletLoadError(
+          getApiErrorMessage(walletResult.reason, "Không tải được số dư ví lúc này."),
+        );
         setPaymentMethod("payos");
       }
 
@@ -276,7 +279,8 @@ export default function CheckoutScreen() {
                 ? "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch."
                 : null;
       showError(
-        checkoutUnavailableMessage ||
+        readSafeApiMessage((error as any)?.response?.data ?? error) ||
+          checkoutUnavailableMessage ||
           getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
       );
       return false;
@@ -343,6 +347,7 @@ export default function CheckoutScreen() {
       clearFeedback();
       if (isReturnCallback) {
         showInfo(
+          readSafeApiMessage((error as any)?.response?.data) ??
           "Chưa kiểm tra được trạng thái thanh toán. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
         );
       }
@@ -579,6 +584,10 @@ export default function CheckoutScreen() {
           "",
       ).trim();
       const normalizedErrorCode = errorCode.toLowerCase();
+      // Ưu tiên thông điệp BE; chuỗi FE chỉ là dự phòng khi BE không trả.
+      const beMessage = readSafeApiMessage(
+        (error as any)?.response?.data ?? error,
+      );
 
       if (normalizedErrorCode === "agreement.invalidstatus") {
         const refreshed = await fetchCheckoutData();
@@ -588,7 +597,8 @@ export default function CheckoutScreen() {
         }
 
         showError(
-          "Hợp đồng không còn ở trạng thái chờ thanh toán. Dữ liệu đã được làm mới, vui lòng kiểm tra lại.",
+          beMessage ??
+            "Hợp đồng không còn ở trạng thái chờ thanh toán. Dữ liệu đã được làm mới, vui lòng kiểm tra lại.",
         );
 
         return;
@@ -600,16 +610,18 @@ export default function CheckoutScreen() {
       ) {
         await fetchCheckoutData();
         showError(
-          normalizedErrorCode === "agreement.appointmentschedulemissing"
+          beMessage ??
+          (normalizedErrorCode === "agreement.appointmentschedulemissing"
             ? "Hợp đồng chưa có lịch hẹn hợp lệ. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán."
-            : "Lịch hẹn của Hợp đồng đã hết hạn. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán.",
+            : "Lịch hẹn của Hợp đồng đã hết hạn. Vui lòng quay lại cập nhật Hợp đồng/lịch hẹn trước khi thanh toán."),
         );
         return;
       }
 
       if (normalizedErrorCode === "auth.forbidden") {
         showError(
-          "Bạn không có quyền thanh toán Hợp đồng này. Vui lòng kiểm tra lại tài khoản và quyền truy cập.",
+          beMessage ??
+            "Bạn không có quyền thanh toán Hợp đồng này. Vui lòng kiểm tra lại tài khoản và quyền truy cập.",
         );
         return;
       }
@@ -617,7 +629,8 @@ export default function CheckoutScreen() {
       if (normalizedErrorCode === "agreement.notfound") {
         await fetchCheckoutData();
         showError(
-          "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch.",
+          beMessage ??
+            "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch.",
         );
         return;
       }
@@ -629,7 +642,8 @@ export default function CheckoutScreen() {
         await fetchCheckoutData();
 
         showError(
-          "Hợp đồng này đang có một phiên thanh toán PayOS chờ xử lý. Vui lòng kiểm tra hoặc hoàn tất phiên thanh toán hiện tại trước khi tạo thanh toán mới.",
+          beMessage ??
+            "Hợp đồng này đang có một phiên thanh toán PayOS chờ xử lý. Vui lòng kiểm tra hoặc hoàn tất phiên thanh toán hiện tại trước khi tạo thanh toán mới.",
         );
 
         return;

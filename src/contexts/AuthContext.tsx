@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JWT
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import apiClient from "../services/apis/axiosClient";
-import { getApiErrorMessage } from "../utils/apiFeedback";
 import { devLog } from "../utils/devLog";
 
 interface AuthContextType {
@@ -260,12 +259,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace("/(tabs)");
     } catch (error: any) {
       devLog("Lỗi đăng nhập:", error);
-      throw new Error(
-        getApiErrorMessage(
-          error,
-          "Đăng nhập thất bại. Vui lòng thử lại!",
-        ),
-      );
+      // Ném nguyên lỗi để màn hình đọc thông điệp BE (kể cả tiếng Anh).
+      throw error;
     } finally {
       loginInFlightRef.current = false;
     }

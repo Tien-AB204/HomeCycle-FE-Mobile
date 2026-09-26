@@ -13,6 +13,7 @@ import React, {
 import { AppState } from "react-native";
 import { refreshAccessToken } from "../services/apis/axiosClient";
 import conversationApi from "../services/apis/conversationApi";
+import { getApiErrorMessage } from "../utils/apiFeedback";
 import { useAuth } from "./AuthContext";
 
 const CHAT_HUB_URL =
@@ -51,6 +52,8 @@ type ChatRealtimeContextValue = {
   refreshConversationSummaries: (options?: {
     silent?: boolean;
   }) => Promise<boolean>;
+  // Thông điệp lỗi (ưu tiên của BE) của lần tải danh sách hội thoại gần nhất.
+  getConversationSummaryError: () => string | null;
   joinNegotiation: (negotiationId: string) => Promise<void>;
   leaveNegotiation: (negotiationId: string) => Promise<void>;
   joinConversation: (conversationId: string) => Promise<void>;
@@ -135,6 +138,11 @@ export function ChatRealtimeProvider({
   // một đơn: chỉ rời nhóm SignalR khi màn hình cuối cùng rời đi.
   const orderRoomRefCountsRef = useRef<Map<string, number>>(new Map());
   const conversationRequestRef = useRef(0);
+  const conversationSummaryErrorRef = useRef<string | null>(null);
+  const getConversationSummaryError = useCallback(
+    () => conversationSummaryErrorRef.current,
+    [],
+  );
 
   const refreshConversationSummaries = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -172,9 +180,14 @@ export function ChatRealtimeProvider({
           return true;
         }
 
+        conversationSummaryErrorRef.current = null;
         setConversationSummaries(allItems);
         return true;
-      } catch {
+      } catch (error) {
+        conversationSummaryErrorRef.current = getApiErrorMessage(
+          error,
+          "Không thể tải danh sách trò chuyện.",
+        );
         return false;
       } finally {
         if (requestId === conversationRequestRef.current) {
@@ -567,6 +580,7 @@ export function ChatRealtimeProvider({
         chatUnreadCount,
         isConversationSummaryLoading,
         refreshConversationSummaries,
+        getConversationSummaryError,
         joinNegotiation,
         leaveNegotiation,
         joinConversation,

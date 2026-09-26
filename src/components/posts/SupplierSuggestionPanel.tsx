@@ -41,8 +41,8 @@ export type SupplierSuggestionReadiness = {
 
 export type SupplierSuggestionRequestOutcome =
   | { kind: "validation"; message: string; errors: SupplierMatchValidationErrors }
-  | { kind: "forbidden" }
-  | { kind: "unavailable" }
+  | { kind: "forbidden"; message?: string }
+  | { kind: "unavailable"; message?: string }
   | { kind: "retryable"; message: string };
 
 type Props = {
@@ -145,27 +145,34 @@ export const describeQuota = (response: SupplierMatchResponse): string =>
     : `Còn ${response.remainingAiRefreshes} lượt gợi ý thông minh hôm nay`;
 
 // Phân loại lỗi HTTP thành trạng thái panel; không lộ mã HTTP / mã lỗi nội bộ.
+// Thông điệp BE (nguyên văn) luôn được ưu tiên; chữ FE chỉ là dự phòng.
 export const classifySupplierMatchError = (error: unknown, mode: Props["mode"]): SupplierSuggestionRequestOutcome => {
   const status = Number((error as any)?.response?.status || 0);
-  const data = (error as any)?.response?.data;
+  const data =
+    (error as any)?.response?.data ??
+    ((error as any)?.isSuccess === false ? error : undefined);
+  const backendMessage = readSafeApiMessage(data) ?? undefined;
   if (status === 400) {
     const errors = readSupplierMatchValidationErrors(error);
-    const backendMessage = readSafeApiMessage(data);
+    // Lỗi theo trường đã hiển thị riêng ở phần chi tiết; không lặp lại ở dòng chính.
+    const summaryMessage = Object.keys(errors).length
+      ? readSafeApiMessage({ ...data, errors: undefined })
+      : backendMessage;
     return {
       kind: "validation",
-      message: backendMessage ?? "Thông tin nhu cầu mua chưa đủ hoặc chưa hợp lệ để tìm nhà cung cấp.",
+      message: summaryMessage ?? "Thông tin nhu cầu mua chưa đủ hoặc chưa hợp lệ để tìm nhà cung cấp.",
       errors,
     };
   }
-  if (status === 403) return { kind: "forbidden" };
-  if (status === 404) return { kind: "unavailable" };
-  if (status === 401) return { kind: "retryable", message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." };
-  if (status >= 500) return { kind: "retryable", message: SERVER_ERROR_MESSAGE };
-  if (status === 0) return { kind: "retryable", message: NETWORK_ERROR_MESSAGE };
+  if (status === 403) return { kind: "forbidden", message: backendMessage };
+  if (status === 404) return { kind: "unavailable", message: backendMessage };
+  if (status === 401) return { kind: "retryable", message: backendMessage ?? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." };
+  if (status >= 500) return { kind: "retryable", message: backendMessage ?? SERVER_ERROR_MESSAGE };
+  if (status === 0) return { kind: "retryable", message: backendMessage ?? NETWORK_ERROR_MESSAGE };
   if (mode === "buy-post" && status === 409) {
-    return { kind: "retryable", message: readSafeApiMessage(data) ?? "Tin thu mua hiện không thể gợi ý nhà cung cấp." };
+    return { kind: "retryable", message: backendMessage ?? "Tin thu mua hiện không thể gợi ý nhà cung cấp." };
   }
-  return { kind: "retryable", message: "Không thể gợi ý nhà cung cấp lúc này. Vui lòng thử lại." };
+  return { kind: "retryable", message: backendMessage ?? "Không thể gợi ý nhà cung cấp lúc này. Vui lòng thử lại." };
 };
 
 const FIELD_LABELS: { test: RegExp; label: string }[] = [
@@ -185,11 +192,8 @@ const describeFieldErrors = (errors: SupplierMatchValidationErrors): string[] =>
     const label = FIELD_LABELS.find((item) => item.test.test(key))?.label;
     for (const message of messages) {
       if (!isSafeUserMessage(message)) continue;
-      const localizedMessage = localizeSystemText(
-        message,
-        "Giá trị chưa hợp lệ.",
-      );
-      lines.push(label ? `${label}: ${localizedMessage}` : localizedMessage);
+      const text = message.trim();
+      lines.push(label ? `${label}: ${text}` : text);
     }
   }
   return Array.from(new Set(lines)).slice(0, 6);
@@ -299,9 +303,10 @@ export default function SupplierSuggestionPanel({
           retryable: false,
           persistent: false,
           message:
-            mode === "buy-post"
+            outcome.message ??
+            (mode === "buy-post"
               ? "Bạn không có quyền xem gợi ý nhà cung cấp cho tin thu mua này."
-              : "Tính năng gợi ý nhà cung cấp chỉ dành cho tài khoản Doanh nghiệp.",
+              : "Tính năng gợi ý nhà cung cấp chỉ dành cho tài khoản Doanh nghiệp."),
         });
       } else if (outcome.kind === "unavailable") {
         setState({
@@ -309,9 +314,10 @@ export default function SupplierSuggestionPanel({
           retryable: false,
           persistent: false,
           message:
-            mode === "buy-post"
+            outcome.message ??
+            (mode === "buy-post"
               ? "Tin thu mua này hiện không còn khả dụng để gợi ý nhà cung cấp."
-              : "Không tìm thấy dữ liệu để gợi ý nhà cung cấp.",
+              : "Không tìm thấy dữ liệu để gợi ý nhà cung cấp."),
         });
         onPostUnavailable?.();
       } else if (outcome.kind === "retryable") {

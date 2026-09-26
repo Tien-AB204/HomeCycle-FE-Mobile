@@ -1,8 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
+  DEFAULT_ACTION_ERROR_MESSAGE,
   NETWORK_ERROR_MESSAGE,
   readSafeApiMessage,
+  SERVER_ERROR_MESSAGE,
 } from "../../utils/errorMessage";
 
 const API_BASE_URL =
@@ -40,45 +42,15 @@ const sanitizeRejectedError = (error: any) => {
   const responseData = response?.data;
   const safeResponseMessage = readSafeApiMessage(responseData);
 
-  const userMessage =
-    !response || status >= 500
-      ? NETWORK_ERROR_MESSAGE
-      : safeResponseMessage || NETWORK_ERROR_MESSAGE;
+  // Giữ nguyên response.data để màn hình đọc được thông điệp gốc của BE;
+  // chỉ gắn thông điệp hiển thị lên chính đối tượng lỗi.
+  const userMessage = !response
+    ? NETWORK_ERROR_MESSAGE
+    : safeResponseMessage ||
+      (status >= 500 ? SERVER_ERROR_MESSAGE : DEFAULT_ACTION_ERROR_MESSAGE);
 
   error.userMessage = userMessage;
   error.message = userMessage;
-
-  if (!response) {
-    return error;
-  }
-
-  if (
-    responseData &&
-    typeof responseData === "object" &&
-    !Array.isArray(responseData)
-  ) {
-    const nestedError =
-      responseData.error &&
-      typeof responseData.error === "object" &&
-      !Array.isArray(responseData.error)
-        ? responseData.error
-        : {};
-
-    if (!safeResponseMessage) {
-      response.data = {
-        ...responseData,
-        message: userMessage,
-        error: {
-          ...nestedError,
-          message: userMessage,
-        },
-      };
-    }
-  } else if (!safeResponseMessage) {
-    response.data = {
-      message: userMessage,
-    };
-  }
 
   return error;
 };

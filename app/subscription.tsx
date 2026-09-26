@@ -204,7 +204,11 @@ export default function SubscriptionScreen() {
       setPackages(list.filter((item) => item.isActive));
     } catch (error) {
       devLog("[subscription] Không tải được danh sách gói:", error);
-      if (mountedRef.current) setPackagesError("Chưa tải được danh sách gói. Kéo xuống để thử lại.");
+      if (mountedRef.current) {
+        setPackagesError(
+          getSubscriptionErrorMessage(error, "Chưa tải được danh sách gói. Kéo xuống để thử lại."),
+        );
+      }
     } finally {
       if (mountedRef.current) setIsLoadingPackages(false);
     }

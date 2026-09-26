@@ -19,6 +19,7 @@ import {
   normalizeReviewStatus,
 } from "../../src/services/reviews/reviewStatus";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { getAvatarSource } from "../../src/utils/avatar";
 
 type ReviewImage = {
@@ -108,6 +109,10 @@ export default function ReviewDetailScreen() {
   const [review, setReview] = useState<ReviewDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUnavailable, setIsUnavailable] = useState(false);
+  // Thông điệp BE khi đánh giá không còn khả dụng (404/410/Review.NotFound...).
+  const [unavailableMessage, setUnavailableMessage] = useState<string | null>(
+    null,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadReview = useCallback(async () => {
@@ -120,6 +125,7 @@ export default function ReviewDetailScreen() {
     try {
       setIsLoading(true);
       setIsUnavailable(false);
+      setUnavailableMessage(null);
       setErrorMessage(null);
 
       const response = await apiClient.get(`/reviews/${reviewId}`);
@@ -136,6 +142,7 @@ export default function ReviewDetailScreen() {
       setReview(null);
 
       if (isUnavailableReviewError(error)) {
+        setUnavailableMessage(readSafeApiMessage(error?.response?.data));
         setIsUnavailable(true);
       } else {
         setErrorMessage(
@@ -171,7 +178,7 @@ export default function ReviewDetailScreen() {
             color={COLORS.textLight}
           />
           <Text style={styles.unavailableTitle}>
-            Đánh giá không còn khả dụng
+            {unavailableMessage ?? "Đánh giá không còn khả dụng"}
           </Text>
         </View>
       ) : errorMessage ? (

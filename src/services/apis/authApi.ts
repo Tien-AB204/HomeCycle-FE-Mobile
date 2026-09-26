@@ -1,5 +1,8 @@
 import axiosClient from "./axiosClient";
-import { getSafeErrorMessage } from "../../utils/errorMessage";
+import {
+  getSafeErrorMessage,
+  readSafeApiMessage,
+} from "../../utils/errorMessage";
 
 export const authApi = {
   // 1. Hàm gửi OTP
@@ -55,7 +58,7 @@ export const authApi = {
   },
 };
 
-// Thông điệp tiếng Việt cho các mã lỗi đặt lại mật khẩu; mã khác dùng bộ lọc chung.
+// Thông điệp dự phòng cho các mã lỗi đặt lại mật khẩu khi BE không trả message.
 const PASSWORD_RESET_ERROR_MESSAGES: Record<string, string> = {
   AUTH_PASSWORD_RESET_EMAIL_NOT_FOUND: "Email này chưa được đăng ký trong hệ thống.",
   AUTH_PASSWORD_RESET_UNAVAILABLE:
@@ -70,6 +73,8 @@ const PASSWORD_RESET_ERROR_MESSAGES: Record<string, string> = {
 
 export const getPasswordResetErrorMessage = (error: unknown, fallback: string): string => {
   const data = (error as any)?.response?.data;
+  const backendMessage = readSafeApiMessage(data);
+  if (backendMessage) return backendMessage;
   const code = String(data?.code ?? data?.error?.code ?? "").trim().toUpperCase();
   if (code && PASSWORD_RESET_ERROR_MESSAGES[code]) return PASSWORD_RESET_ERROR_MESSAGES[code];
   return getSafeErrorMessage(error, fallback);

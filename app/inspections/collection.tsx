@@ -38,6 +38,7 @@ import inspectionFormApi, {
   type ScheduleInspectionCollectionRequest,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type Notice = {
@@ -1624,7 +1625,11 @@ export default function InspectionCollectionScreen() {
 
         setNotice({
           type: "info",
-          text: "Kết quả kiểm định vừa được cập nhật. Vui lòng kiểm tra lại thông tin và xác nhận tạo lịch một lần nữa.",
+          text:
+            readSafeApiMessage(
+              error?.response?.data,
+            ) ??
+            "Kết quả kiểm định vừa được cập nhật. Vui lòng kiểm tra lại thông tin và xác nhận tạo lịch một lần nữa.",
         });
 
         return;
