@@ -1647,11 +1647,12 @@ export default function SearchScreen() {
                         ? formatBuyPostPrice(post)
                         : formatPrice(post.basePrice)}
                     </Text>
-                    <Text style={styles.quantityText}>
-                      {isBuyPostType(post.postType)
-                        ? `Cần thu mua: ${post.quantity ?? 1}`
-                        : `SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
-                    </Text>
+                    {/* Tin thu mua không hiện "Cần thu mua" (giống Trang chủ) để giá hiển thị đủ. */}
+                    {!isBuyPostType(post.postType) ? (
+                      <Text style={styles.quantityText}>
+                        {`SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
+                      </Text>
+                    ) : null}
                   </View>
 
                   <View style={styles.footerRow}>
