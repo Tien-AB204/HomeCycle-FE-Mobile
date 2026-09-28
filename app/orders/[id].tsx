@@ -363,7 +363,11 @@ export default function OrderDetailScreen() {
   const [isLifecycleActionLoading, setIsLifecycleActionLoading] = useState(false);
   const [lifecycleActionError, setLifecycleActionError] = useState<string | null>(null);
 
-  const fetchOrderDetail = useCallback(async () => {
+  // silent: làm mới nền (realtime / sau thao tác) — không che màn hình bằng loading,
+  // không xóa thông báo đang hiển thị, không đóng hộp xác nhận và giữ dữ liệu cũ khi lỗi.
+  const fetchOrderDetail = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+
     if (!orderId) {
       setPageMessage({ type: "error", text: "Không tìm thấy mã đơn hàng." });
       setIsLoading(false);
@@ -371,10 +375,12 @@ export default function OrderDetailScreen() {
     }
 
     try {
-      setIsLoading(true);
-      setPageMessage(null);
+      if (!silent) {
+        setIsLoading(true);
+        setPageMessage(null);
+        setPendingAction(null);
+      }
       setTrackingError(null);
-      setPendingAction(null);
 
       const detailResponse = await orderApi.getOrderDetail(orderId);
       const rawOrder = unwrap(detailResponse);
@@ -448,6 +454,7 @@ export default function OrderDetailScreen() {
         setIsTrackingLoading(false);
       }
     } catch (error: any) {
+      if (silent) return;
       const status = Number(error?.response?.status || 0);
       setPageMessage({
         type: "error",
@@ -463,7 +470,7 @@ export default function OrderDetailScreen() {
       setDeliveryMethod("Unknown");
       setTransactionRole(null);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [currentUserId, orderId]);
 
@@ -583,7 +590,7 @@ export default function OrderDetailScreen() {
       running = true;
       do {
         pending = false;
-        await fetchOrderDetail();
+        await fetchOrderDetail({ silent: true });
       } while (active && pending);
       running = false;
     };
@@ -647,7 +654,7 @@ export default function OrderDetailScreen() {
   useEffect(() => {
     if (!orderId || reconnectVersion <= 0) return;
 
-    void fetchOrderDetail();
+    void fetchOrderDetail({ silent: true });
   }, [fetchOrderDetail, orderId, reconnectVersion]);
 
   const handleConfirmSellerReady = async () => {
@@ -677,13 +684,12 @@ export default function OrderDetailScreen() {
       setPageMessage(null);
 
       await orderApi.confirmSellerReady(shipmentId);
+      await fetchOrderDetail({ silent: true });
 
       setPageMessage({
         type: "success",
         text: "Đã xác nhận hàng sẵn sàng để giao.",
       });
-
-      await fetchOrderDetail();
     } catch (error) {
       setPageMessage({
         type: "error",
@@ -713,20 +719,20 @@ export default function OrderDetailScreen() {
 
       if (action === "handover") {
         await orderApi.confirmHandover(orderId);
-        setPageMessage({
-          type: "success",
-          text: "Đã xác nhận bàn giao hàng. Đơn hàng vẫn chờ người mua xác nhận đã nhận.",
-        });
       } else {
         await orderApi.confirmReceived(orderId);
-        setPageMessage({
-          type: "success",
-          text: "Đã xác nhận nhận hàng. Đơn hàng đã được hoàn thành.",
-        });
       }
 
       setPendingAction(null);
-      await fetchOrderDetail();
+      await fetchOrderDetail({ silent: true });
+
+      setPageMessage({
+        type: "success",
+        text:
+          action === "handover"
+            ? "Đã xác nhận bàn giao hàng. Đơn hàng vẫn chờ người mua xác nhận đã nhận."
+            : "Đã xác nhận nhận hàng. Đơn hàng đã được hoàn thành.",
+      });
     } catch (error) {
       setPageMessage({
         type: "error",
@@ -777,7 +783,7 @@ export default function OrderDetailScreen() {
       }
 
       setLifecycleAction(null);
-      await fetchOrderDetail();
+      await fetchOrderDetail({ silent: true });
 
       setPageMessage({
         type: "success",

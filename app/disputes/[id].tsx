@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -18,7 +19,9 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
@@ -151,8 +154,14 @@ export default function DisputeDetailScreen() {
   const [isClosing, setIsClosing] = useState(false);
   const closeDisputeInFlightRef = useRef(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { connection, reconnectVersion } = useChatRealtime();
 
-  const loadDetail = useCallback(async () => {
+  // silent: làm mới nền (realtime / kéo để làm mới) — giữ nguyên nội dung đang hiển thị,
+  // không che bằng loading toàn màn và không xóa dữ liệu cũ khi lỗi.
+  const loadDetail = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+
     if (!disputeId) {
       setErrorMessage("Không tìm thấy mã tranh chấp.");
       setIsLoading(false);
@@ -160,11 +169,14 @@ export default function DisputeDetailScreen() {
     }
 
     try {
-      setIsLoading(true);
-      setErrorMessage(null);
+      if (!silent) {
+        setIsLoading(true);
+        setErrorMessage(null);
+      }
       const response = await apiClient.get(`/disputes/${disputeId}`);
       setDetail(response.data?.data || response.data);
     } catch (error: any) {
+      if (silent) return;
       setDetail(null);
       setErrorMessage(
         getApiErrorMessage(
@@ -173,7 +185,7 @@ export default function DisputeDetailScreen() {
         ),
       );
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [disputeId]);
 
@@ -183,6 +195,39 @@ export default function DisputeDetailScreen() {
       void loadDetail();
     }, [loadDetail]),
   );
+
+  // BE không có sự kiện riêng cho tranh chấp: mỗi quyết định của Moderator gửi
+  // NotificationCreated (TargetType = Dispute, TargetId = disputeId) cho hai bên.
+  useEffect(() => {
+    if (!connection || !disputeId) return;
+
+    const currentDisputeId = String(disputeId).trim().toLowerCase();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const handleNotification = (event: any) => {
+      if (normalizeTargetType(event?.targetType ?? event?.TargetType) !== "dispute") return;
+      if (String(event?.targetId ?? event?.TargetId ?? "").trim().toLowerCase() !== currentDisputeId) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void loadDetail({ silent: true }), 150);
+    };
+
+    connection.on("NotificationCreated", handleNotification);
+    return () => {
+      if (timer) clearTimeout(timer);
+      connection.off("NotificationCreated", handleNotification);
+    };
+  }, [connection, disputeId, loadDetail]);
+
+  useEffect(() => {
+    if (reconnectVersion <= 0) return;
+    void loadDetail({ silent: true });
+  }, [loadDetail, reconnectVersion]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadDetail({ silent: true });
+    setIsRefreshing(false);
+  };
 
   const openCloseModal = () => {
     if (isClosing) return;
@@ -206,8 +251,8 @@ export default function DisputeDetailScreen() {
       await apiClient.post(`/disputes/${disputeId}/close`);
 
       setIsCloseModalVisible(false);
+      await loadDetail({ silent: true });
       setActionMessage({ type: "success", text: "Đã đóng tranh chấp." });
-      await loadDetail();
     } catch (error) {
       setCloseError(
         getApiErrorMessage(error, "Không thể đóng tranh chấp lúc này."),
@@ -265,7 +310,18 @@ export default function DisputeDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Chi tiết tranh chấp" showBack />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => void handleRefresh()}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
         <View style={styles.headerCard}>
           <View style={styles.headerIcon}>
             <Ionicons name="warning-outline" size={24} color="#9A6418" />
