@@ -36,6 +36,12 @@ import {
 } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
+  MASKED_ACCOUNT_NUMBER_REQUIRED_MESSAGE,
+  accountNumberPlaceholder,
+  editableAccountNumber,
+  isMaskedAccountNumber,
+} from "../../src/utils/bankAccount";
+import {
   FULL_NAME_MAX_LENGTH,
   USERNAME_MAX_LENGTH,
   normalizeVietnamPhone,
@@ -303,7 +309,7 @@ export default function BusinessAccountInfoScreen() {
     const bank = profile?.bankAccount || {};
     setBankCode(clean(bank.bankCode));
     setBankName(clean(bank.bankName));
-    setAccountNumber(clean(bank.accountNumber));
+    setAccountNumber(editableAccountNumber(bank.accountNumber));
     setAccountName(toUppercaseText(clean(bank.accountName)));
   }, []);
 
@@ -374,7 +380,7 @@ export default function BusinessAccountInfoScreen() {
       const bank = data.bankAccount || {};
       setBankCode(clean(bank.bankCode));
       setBankName(clean(bank.bankName));
-      setAccountNumber(clean(bank.accountNumber));
+      setAccountNumber(editableAccountNumber(bank.accountNumber));
       setAccountName(toUppercaseText(clean(bank.accountName)));
     }
 
@@ -819,7 +825,11 @@ export default function BusinessAccountInfoScreen() {
     if (!clean(bankCode) || !clean(bankName))
       nextErrors.bankCode = "Vui lòng chọn ngân hàng thụ hưởng.";
     if (!clean(accountNumber))
-      nextErrors.accountNumber = "Vui lòng nhập số tài khoản.";
+      nextErrors.accountNumber = isMaskedAccountNumber(
+        data?.bankAccount?.accountNumber,
+      )
+        ? MASKED_ACCOUNT_NUMBER_REQUIRED_MESSAGE
+        : "Vui lòng nhập số tài khoản.";
     if (!clean(accountName))
       nextErrors.accountName = "Vui lòng nhập tên chủ tài khoản.";
     setErrors((current) => ({ ...current, ...nextErrors }));
@@ -1722,7 +1732,11 @@ export default function BusinessAccountInfoScreen() {
                 paddingHorizontal: 12,
               }}
               hasError={Boolean(errors.accountNumber)}
-              value={accountNumber}
+              value={
+                isEditing("bank")
+                  ? accountNumber
+                  : clean(data?.bankAccount?.accountNumber)
+              }
               isEditing={isEditing("bank")}
               onChangeText={(value) => {
                 setAccountNumber(value.replace(/[^0-9]/g, ""));
@@ -1730,7 +1744,10 @@ export default function BusinessAccountInfoScreen() {
                 clearFieldError("accountNumber", "bank");
               }}
               keyboardType="number-pad"
-              placeholder="Nhập số tài khoản"
+              placeholder={accountNumberPlaceholder(
+                data?.bankAccount?.accountNumber,
+                "Nhập số tài khoản",
+              )}
               onPressIn={(event) => event.stopPropagation()}
               onFocus={() => handleFieldFocus("bank")}
               editable={!savingSection}

@@ -31,6 +31,12 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
+  MASKED_ACCOUNT_NUMBER_REQUIRED_MESSAGE,
+  accountNumberPlaceholder,
+  editableAccountNumber,
+  isMaskedAccountNumber,
+} from "../../src/utils/bankAccount";
+import {
   FULL_NAME_MAX_LENGTH,
   USERNAME_MAX_LENGTH,
   normalizeVietnamPhone,
@@ -137,7 +143,7 @@ export default function AccountInfoScreen() {
     const bank = user.bankAccount || {};
     setBankCode(sanitize(bank.bankCode));
     setBankName(toUppercaseText(sanitize(bank.bankName)));
-    setAccountNumber(sanitize(bank.accountNumber));
+    setAccountNumber(editableAccountNumber(bank.accountNumber));
     setAccountName(toUppercaseText(sanitize(bank.accountName)));
   }, [user]);
 
@@ -165,7 +171,7 @@ export default function AccountInfoScreen() {
       const bank = user.bankAccount || {};
       setBankCode(sanitize(bank.bankCode));
       setBankName(toUppercaseText(sanitize(bank.bankName)));
-      setAccountNumber(sanitize(bank.accountNumber));
+      setAccountNumber(editableAccountNumber(bank.accountNumber));
       setAccountName(toUppercaseText(sanitize(bank.accountName)));
     }
 
@@ -451,15 +457,26 @@ export default function AccountInfoScreen() {
 
       if (section === "bank") {
         const normalizedAccountName = toUppercaseText(accountName).trim();
+        const currentAccountNumberMasked = isMaskedAccountNumber(
+          bank.accountNumber,
+        );
         const bankChanged =
           bankCode !== sanitize(bank.bankCode) ||
           toUppercaseText(bankName) !==
             toUppercaseText(sanitize(bank.bankName)) ||
-          accountNumber !== sanitize(bank.accountNumber) ||
+          accountNumber !== editableAccountNumber(bank.accountNumber) ||
           normalizedAccountName !==
             toUppercaseText(sanitize(bank.accountName)).trim();
 
         if (bankChanged) {
+          if (!accountNumber.trim() && currentAccountNumberMasked) {
+            setSaveMessage({
+              type: "warning",
+              text: MASKED_ACCOUNT_NUMBER_REQUIRED_MESSAGE,
+            });
+            return;
+          }
+
           if (
             !bankCode.trim() ||
             !bankName.trim() ||
@@ -1001,7 +1018,11 @@ export default function AccountInfoScreen() {
               styles.input,
               { paddingHorizontal: 12 },
             ]}
-            value={accountNumber}
+            value={
+              editingSection === "bank"
+                ? accountNumber
+                : sanitize(user?.bankAccount?.accountNumber)
+            }
             onChangeText={(value) => {
               setAccountNumber(
                 value.replace(
@@ -1013,7 +1034,14 @@ export default function AccountInfoScreen() {
             }}
             keyboardType="number-pad"
             editable={editingSection === "bank" && !isSaving}
-            placeholder="Chưa có"
+            placeholder={
+              editingSection === "bank"
+                ? accountNumberPlaceholder(
+                    user?.bankAccount?.accountNumber,
+                    "Nhập số tài khoản",
+                  )
+                : "Chưa có"
+            }
             placeholderTextColor={
               PLACEHOLDER_COLOR
             }

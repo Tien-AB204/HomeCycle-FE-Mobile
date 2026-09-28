@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { COLORS } from "../../constants/theme";
+import { isMaskedAccountNumber } from "../../utils/bankAccount";
 
 interface SensitiveNumberFieldProps
   extends Omit<
@@ -85,7 +86,9 @@ export default function SensitiveNumberField({
   const [isVisible, setIsVisible] = useState(false);
 
   const rawValue = String(value ?? "");
-  const hasValue = rawValue.length > 0;
+  // Số do BE che sẵn (vd. ****1234) đã an toàn để hiển thị, không che thêm lần nữa.
+  const isPreMasked = isMaskedAccountNumber(rawValue);
+  const hasValue = rawValue.length > 0 && !isPreMasked;
   const privacyEditing = isEditing ?? editable;
 
   useEffect(() => {
@@ -93,7 +96,7 @@ export default function SensitiveNumberField({
   }, [privacyEditing]);
 
   const displayValue =
-    privacyEditing || isVisible
+    isPreMasked || privacyEditing || isVisible
       ? rawValue
       : maskSensitiveValue(
           rawValue,

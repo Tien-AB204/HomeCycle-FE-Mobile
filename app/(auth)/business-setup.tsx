@@ -36,6 +36,11 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
+  accountNumberPlaceholder,
+  editableAccountNumber,
+  isMaskedAccountNumber,
+} from "../../src/utils/bankAccount";
+import {
   FULL_NAME_MAX_LENGTH,
   validateFullName,
 } from "../../src/utils/formValidation";
@@ -211,6 +216,8 @@ export default function BusinessSetupScreen() {
   const [bankCode, setBankCode] = useState("");
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
+  // Số tài khoản của hồ sơ cũ (BE trả dạng đã che) chỉ dùng làm gợi ý khi nộp lại.
+  const [previousAccountNumber, setPreviousAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
   const [isAccountNameManuallyEdited, setIsAccountNameManuallyEdited] =
     useState(false);
@@ -256,7 +263,8 @@ export default function BusinessSetupScreen() {
 
             setBankCode(data.bankCode || "");
             setBankName(data.bankName || "");
-            setAccountNumber(data.accountNumber || "");
+            setAccountNumber(editableAccountNumber(data.accountNumber));
+            setPreviousAccountNumber(String(data.accountNumber ?? "").trim());
             setAccountName(
               (data.accountName || "").toLocaleUpperCase("vi-VN"),
             );
@@ -485,7 +493,9 @@ export default function BusinessSetupScreen() {
       : "Vui lòng chọn ngân hàng thụ hưởng.";
     const nextAccountNumberError = accountNumber.trim()
       ? ""
-      : "Vui lòng nhập số tài khoản ngân hàng.";
+      : isMaskedAccountNumber(previousAccountNumber)
+        ? "Vui lòng nhập lại số tài khoản ngân hàng đầy đủ."
+        : "Vui lòng nhập số tài khoản ngân hàng.";
     const nextAccountNameError = accountName.trim()
       ? ""
       : "Vui lòng nhập tên chủ tài khoản.";
@@ -1436,7 +1446,10 @@ export default function BusinessSetupScreen() {
                   hasError={Boolean(
                     accountNumberError,
                   )}
-                  placeholder="Nhập số tài khoản ngân hàng"
+                  placeholder={accountNumberPlaceholder(
+                    previousAccountNumber,
+                    "Nhập số tài khoản ngân hàng",
+                  )}
                   placeholderTextColor={
                     COLORS.textLight
                   }
