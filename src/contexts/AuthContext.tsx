@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { jwtDecode } from "jwt-decode"; // ĐÃ THÊM: Thư viện giải mã JWT
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import apiClient from "../services/apis/axiosClient";
+import apiClient, { setSessionExpiredHandler } from "../services/apis/axiosClient";
 import { devLog } from "../utils/devLog";
 
 interface AuthContextType {
@@ -201,14 +201,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const isInitialLoadRef = useRef(true);
+
   useEffect(() => {
     const checkLoginStatus = async () => {
       setIsLoading(true);
       await reloadUser();
+      isInitialLoadRef.current = false;
       setIsLoading(false);
     };
     checkLoginStatus();
   }, []);
+
+  // axiosClient gọi khi BE từ chối refresh token (token đã được xóa ở đó).
+  // Lúc khởi động chỉ xóa trạng thái (Root Layout có thể chưa sẵn sàng điều hướng).
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      setUserToken(null);
+      setUser(null);
+      if (isInitialLoadRef.current) return;
+      router.replace({
+        pathname: "/(auth)/login",
+        params: { notice: "session-expired" },
+      });
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [router]);
 
   // ĐÃ FIX: Cho phép truyền tay thông tin user/token trực tiếp để dùng chung cho Register Business
   const login = async (
@@ -256,7 +274,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUserToken(accessToken);
       await reloadUser();
-      router.replace("/(tabs)");
+      // Màn gọi login() tự điều hướng (vd. tới returnUrl); điều hướng thêm ở đây
+      // tạo ra một màn trùng trong ngăn xếp.
     } catch (error: any) {
       devLog("Lỗi đăng nhập:", error);
       // Ném nguyên lỗi để màn hình đọc thông điệp BE (kể cả tiếng Anh).
@@ -272,9 +291,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
+      // refreshAccessToken() đặt token vào header mặc định; không xóa thì yêu cầu
+      // ở chế độ khách vẫn mang token của phiên vừa đăng xuất.
+      delete apiClient.defaults.headers.common.Authorization;
       setUserToken(null);
       setUser(null);
-      router.replace("/(auth)/login");
+      // Màn gọi logout() tự điều hướng; điều hướng thêm ở đây làm màn đăng nhập
+      // nháy lên rồi bị thay ngay.
     } finally {
       logoutInFlightRef.current = false;
     }

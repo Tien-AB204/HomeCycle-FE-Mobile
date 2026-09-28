@@ -19,6 +19,31 @@ let isRefreshing = false;
 let failedQueue: any[] = [];
 let refreshPromise: Promise<string> | null = null;
 
+export const SESSION_EXPIRED_MESSAGE =
+  "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+const LOGIN_REQUIRED_MESSAGE = "Vui lòng đăng nhập để tiếp tục.";
+
+// AuthContext đăng ký để xóa trạng thái đăng nhập khi phiên thực sự hết hạn;
+// nếu không, giao diện vẫn hiển thị như đã đăng nhập trong khi token đã bị xóa.
+let sessionExpiredHandler: (() => void) | null = null;
+export const setSessionExpiredHandler = (handler: (() => void) | null) => {
+  sessionExpiredHandler = handler;
+};
+
+const createAuthError = (message: string, sessionExpired: boolean) => {
+  const error: any = new Error(message);
+  error.userMessage = message;
+  error.isSessionExpired = sessionExpired;
+  return error;
+};
+
+const expireSession = async () => {
+  await AsyncStorage.multiRemove(["accessToken", "refreshToken", "userRole"]);
+  delete apiClient.defaults.headers.common.Authorization;
+  sessionExpiredHandler?.();
+  return createAuthError(SESSION_EXPIRED_MESSAGE, true);
+};
+
 const processQueue = (
   error: any,
   token: string | null = null,
@@ -36,6 +61,8 @@ const processQueue = (
 
 const sanitizeRejectedError = (error: any) => {
   if (!error) return error;
+  // Lỗi phiên do chính client tạo (createAuthError) đã có thông điệp đúng.
+  if (typeof error.isSessionExpired === "boolean") return error;
 
   const response = error.response;
   const status = Number(response?.status || 0);
@@ -65,15 +92,28 @@ export const refreshAccessToken = async () => {
       await AsyncStorage.getItem("refreshToken");
 
     if (!refreshToken) {
-      throw new Error(NETWORK_ERROR_MESSAGE);
+      // Còn access token mà mất refresh token: phiên hỏng. Không có token nào: khách.
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      if (accessToken) throw await expireSession();
+      throw createAuthError(LOGIN_REQUIRED_MESSAGE, false);
     }
 
-    const response = await axios.post(
-      `${API_BASE_URL}/auth/refresh-token`,
-      {
-        refreshToken,
-      },
-    );
+    let response;
+    try {
+      response = await axios.post(
+        `${API_BASE_URL}/auth/refresh-token`,
+        {
+          refreshToken,
+        },
+        { timeout: 30000 },
+      );
+    } catch (error: any) {
+      // Chỉ khi BE từ chối refresh token mới là hết phiên. Lỗi mạng / hết thời gian
+      // chờ / 5xx (vd. BE đang khởi động) giữ nguyên token để lần sau thử lại.
+      const status = Number(error?.response?.status || 0);
+      if (status === 400 || status === 401) throw await expireSession();
+      throw error;
+    }
 
     const responseData =
       response.data?.data || response.data;
@@ -85,7 +125,7 @@ export const refreshAccessToken = async () => {
       responseData?.refreshToken;
 
     if (!newAccessToken) {
-      throw new Error(NETWORK_ERROR_MESSAGE);
+      throw createAuthError(NETWORK_ERROR_MESSAGE, false);
     }
 
     await AsyncStorage.setItem(
@@ -192,11 +232,6 @@ apiClient.interceptors.response.use(
 
         processQueue(safeRefreshError, null);
         isRefreshing = false;
-
-        await AsyncStorage.multiRemove([
-          "accessToken",
-          "refreshToken",
-        ]);
 
         return Promise.reject(safeRefreshError);
       }

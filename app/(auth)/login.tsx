@@ -17,6 +17,7 @@ import {
 import GoogleLoginButton from "../../src/components/shared/GoogleLoginButton";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { SESSION_EXPIRED_MESSAGE } from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   EMAIL_MAX_LENGTH,
@@ -34,6 +35,8 @@ export default function LoginScreen() {
     noticeParam === "password-reset"
       ? "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới."
       : "";
+  const sessionExpiredMessage =
+    noticeParam === "session-expired" ? SESSION_EXPIRED_MESSAGE : "";
   const { login } = useAuth();
 
   const passwordInputRef = useRef<TextInput | null>(null);
@@ -313,13 +316,13 @@ export default function LoginScreen() {
               </Text>
             ) : null}
 
-            {loginError ? (
+            {loginError || sessionExpiredMessage ? (
               <Text
                 accessibilityLiveRegion="polite"
                 accessibilityRole="alert"
                 style={styles.loginErrorText}
               >
-                {loginError}
+                {loginError || sessionExpiredMessage}
               </Text>
             ) : null}
 
