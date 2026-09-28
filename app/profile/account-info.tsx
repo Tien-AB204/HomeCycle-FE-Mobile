@@ -238,8 +238,7 @@ export default function AccountInfoScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: type === "avatar" ? [1, 1] : [4, 3],
+        allowsEditing: false,
         quality: 0.5,
       });
 
@@ -290,8 +289,7 @@ export default function AccountInfoScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
+      allowsEditing: false,
       quality: 0.5,
     });
 
