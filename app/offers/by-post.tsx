@@ -1478,11 +1478,56 @@ export default function OffersByPostScreen() {
                     }
                   />
                 </>
+              ) : actionMode === "accept" ? (
+                <>
+                  <View style={styles.acceptTermsBox}>
+                    <View style={styles.acceptTermsRow}>
+                      <Text style={styles.acceptTermsLabel}>Giá chốt</Text>
+                      <Text style={styles.acceptTermsValue}>
+                        {formatPrice(selectedOffer?.offerPrice)}
+                      </Text>
+                    </View>
+                    <View style={styles.acceptTermsRow}>
+                      <Text style={styles.acceptTermsLabel}>Số lượng</Text>
+                      <Text style={styles.acceptTermsValue}>
+                        {selectedOffer?.offerQuantity ?? 1}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.acceptWarningBox}>
+                    <Ionicons
+                      name="warning-outline"
+                      size={18}
+                      color={COLORS.warning}
+                    />
+                    <Text style={styles.acceptWarningText}>
+                      Khi bấm Đồng ý, giá và số lượng trên sẽ được chốt ngay và phiên
+                      thương lượng mở với đúng điều kiện này. Nếu muốn giá khác, hãy
+                      chọn Trả giá.
+                    </Text>
+                  </View>
+
+                  {selectedOffer && canRespondToOffer(selectedOffer, "counter") ? (
+                    <TouchableOpacity
+                      style={styles.switchToCounterButton}
+                      disabled={isProcessingAction}
+                      onPress={() => {
+                        setCounterPrice(String(selectedOffer.offerPrice ?? ""));
+                        setCounterQuantity(String(selectedOffer.offerQuantity ?? 1));
+                        setActionFeedback(null);
+                        setActionMode("counter");
+                      }}
+                    >
+                      <Text style={styles.switchToCounterText}>
+                        Muốn giá khác? Trả giá
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
               ) : (
                 <Text style={styles.actionModalMessage}>
-                  {actionMode === "accept"
-                    ? `Bạn có muốn đồng ý với ${offerNoun} này và mở phiên thương lượng?`
-                    : `Bạn có chắc muốn từ chối ${offerNoun} này?`}
+                  {`Bạn có chắc muốn từ chối ${offerNoun} này?`}
                 </Text>
               )}
 
@@ -1523,7 +1568,7 @@ export default function OffersByPostScreen() {
                   ) : (
                     <Text style={styles.actionSubmitText}>
                       {actionMode === "accept"
-                        ? "Đồng ý"
+                        ? "Đồng ý & chốt giá"
                         : actionMode === "reject"
                           ? "Từ chối"
                           : "Gửi đề xuất"}
@@ -1965,6 +2010,57 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 13,
     lineHeight: 19,
+  },
+  acceptTermsBox: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    gap: 6,
+  },
+  acceptTermsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  acceptTermsLabel: {
+    color: COLORS.textLight,
+    fontSize: 13,
+  },
+  acceptTermsValue: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  acceptWarningBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(154, 100, 24, 0.35)",
+    backgroundColor: "#FBF3E6",
+    flexDirection: "row",
+    gap: 8,
+  },
+  acceptWarningText: {
+    flex: 1,
+    color: COLORS.warning,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "600",
+  },
+  switchToCounterButton: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+  },
+  switchToCounterText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   actionInputLabel: {
     marginTop: 15,

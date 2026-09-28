@@ -775,9 +775,31 @@ export default function OfferDetailScreen() {
                 <Text style={styles.inputLabel}>Số lượng</Text>
                 <TextInput style={styles.input} value={responseQuantity} keyboardType="number-pad" editable={!isResponding}
                   onChangeText={(value) => setResponseQuantity(value.replace(/[^0-9]/g, ""))} />
-              </> : <Text style={styles.cardSubtitle}>{responseAction === "accept"
-                ? "Bạn có muốn đồng ý với đề nghị này và mở phiên thương lượng?"
-                : "Bạn có chắc muốn từ chối đề nghị này?"}</Text>}
+              </> : responseAction === "accept" ? <>
+                <View style={styles.acceptTermsBox}>
+                  <View style={styles.acceptTermsRow}>
+                    <Text style={styles.label}>Giá chốt</Text>
+                    <Text style={styles.acceptTermsValue}>{formatPrice(responsePrice)}</Text>
+                  </View>
+                  <View style={styles.acceptTermsRow}>
+                    <Text style={styles.label}>Số lượng</Text>
+                    <Text style={styles.acceptTermsValue}>{responseQuantity || 1}</Text>
+                  </View>
+                </View>
+                <View style={styles.acceptWarningBox}>
+                  <Ionicons name="warning-outline" size={18} color={COLORS.warning} />
+                  <Text style={styles.acceptWarningText}>
+                    Khi bấm Đồng ý, giá và số lượng trên sẽ được chốt ngay và phiên thương lượng mở với
+                    đúng điều kiện này. Nếu muốn giá khác, hãy chọn Trả giá.
+                  </Text>
+                </View>
+                {canRespondToOffer(offer, "counter") ? (
+                  <TouchableOpacity style={styles.switchToCounterButton} disabled={isResponding}
+                    onPress={() => setResponseAction("counter")}>
+                    <Text style={styles.switchToCounterText}>Muốn giá khác? Trả giá</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </> : <Text style={styles.cardSubtitle}>Bạn có chắc muốn từ chối đề nghị này?</Text>}
               {message ? <Text style={styles.errorText}>{message.text}</Text> : null}
               <View style={styles.actionRow}>
                 <TouchableOpacity style={styles.secondaryButton} disabled={isResponding} onPress={closeResponseAction}>
@@ -785,7 +807,7 @@ export default function OfferDetailScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.updateButton, styles.confirmActionButton]} disabled={isResponding} onPress={() => void submitResponseAction()}>
                   {isResponding ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.updateButtonText}>
-                    {responseAction === "counter" ? "Gửi đề xuất" : responseAction === "accept" ? "Đồng ý" : "Từ chối"}
+                    {responseAction === "counter" ? "Gửi đề xuất" : responseAction === "accept" ? "Đồng ý & chốt giá" : "Từ chối"}
                   </Text>}
                 </TouchableOpacity>
               </View>
@@ -989,6 +1011,19 @@ const styles = StyleSheet.create({
   price: { color: COLORS.error, fontWeight: "800" },
   statusValue: { color: COLORS.primary, fontWeight: "800" },
   deadlineBanner: { marginBottom: 12 },
+  acceptTermsBox: {
+    marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1,
+    borderColor: COLORS.border, backgroundColor: COLORS.background, gap: 6,
+  },
+  acceptTermsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  acceptTermsValue: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
+  acceptWarningBox: {
+    marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1,
+    borderColor: "rgba(154, 100, 24, 0.35)", backgroundColor: "#FBF3E6", flexDirection: "row", gap: 8,
+  },
+  acceptWarningText: { flex: 1, color: COLORS.warning, fontSize: 13, lineHeight: 19, fontWeight: "600" },
+  switchToCounterButton: { marginTop: 10, alignSelf: "flex-start", paddingVertical: 4 },
+  switchToCounterText: { color: COLORS.primary, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
   message: {
     marginTop: 14,
     padding: 12,
