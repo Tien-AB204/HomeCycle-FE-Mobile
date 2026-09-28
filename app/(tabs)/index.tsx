@@ -574,11 +574,12 @@ export default function HomeScreen() {
             <Text style={styles.productPrice} numberOfLines={1}>
               {formatPrice(post.basePrice || post.expectedPrice)}
             </Text>
-            <Text style={styles.quantityText}>
-              {isBuyPostType(post.postType)
-                ? `Cần thu mua: ${post.quantity ?? 1}`
-                : `SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
-            </Text>
+            {/* Tin thu mua không hiện "Cần thu mua" ở Trang chủ để giá hiển thị đủ. */}
+            {!isBuyPostType(post.postType) ? (
+              <Text style={styles.quantityText}>
+                {`SL: ${post.remainingQuantity ?? post.quantity ?? 1}/${post.quantity ?? 1}`}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.footerRow}>
