@@ -25,6 +25,7 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage, getApiSuccessMessage } from "../../src/utils/apiFeedback";
+import { showToast } from "../../src/components/shared/AppToast";
 import { getPosterRoleLabel } from "../../src/utils/postType";
 import {
   canRespondToOffer,
@@ -159,6 +160,9 @@ export default function OfferDetailScreen() {
   const { user } = useAuth();
   const currentUserId = user?.userId || user?.id;
   const offerId = Array.isArray(params.id) ? params.id[0] : params.id;
+  // created=1: vừa gửi đề nghị từ màn chi tiết tin, báo thành công một lần.
+  const justCreated = (Array.isArray(params.created) ? params.created[0] : params.created) === "1";
+  const createdNoticeShownRef = useRef(false);
 
   const [offer, setOffer] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,6 +207,10 @@ export default function OfferDetailScreen() {
       const detail = unwrap(response);
       if (normalizeId(detail?.offerId) !== normalizeId(offerId)) throw new Error("Không xác định được đề nghị.");
       setOffer(detail);
+      if (justCreated && !createdNoticeShownRef.current) {
+        createdNoticeShownRef.current = true;
+        showToast("success", "Đã gửi đề nghị thương lượng.");
+      }
       return detail;
     } catch (error) {
       if (request !== fetchGeneration.current) return null;
@@ -216,7 +224,7 @@ export default function OfferDetailScreen() {
       if (!silent && request === fetchGeneration.current) setIsLoading(false);
     }
     return null;
-  }, [offerId, currentUserId]);
+  }, [offerId, currentUserId, justCreated]);
 
   useFocusEffect(
     useCallback(() => {
@@ -348,28 +356,23 @@ export default function OfferDetailScreen() {
       }
 
       setShowEditModal(false);
-      setMessage({
-        type: "success",
-        text: getApiSuccessMessage(response, "Đã cập nhật đề nghị."),
-      });
+      // BE không trả message khi thành công: dùng message nếu có, không thì câu mặc định.
+      showToast("success", getApiSuccessMessage(response, "Đã cập nhật đề nghị."));
     } catch (error) {
       if (getOfferErrorCode(error) === "OFFER_TERMS_CHANGED") {
         setShowEditModal(false);
         await fetchOffer();
-        setMessage({
-          type: "warning",
-          text: getApiErrorMessage(
+        showToast(
+          "warning",
+          getApiErrorMessage(
             error,
             "Đề nghị đã thay đổi ở nơi khác. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra trước khi chỉnh sửa tiếp.",
           ),
-        });
+        );
         return;
       }
 
-      setMessage({
-        type: "error",
-        text: getApiErrorMessage(error, "Không thể cập nhật đề nghị lúc này."),
-      });
+      showToast("error", getApiErrorMessage(error, "Không thể cập nhật đề nghị lúc này."));
     } finally {
       offerActionLockRef.current = false;
       setIsUpdating(false);
@@ -395,15 +398,9 @@ export default function OfferDetailScreen() {
       }
 
       setIsConfirmingCancel(false);
-      setMessage({
-        type: "success",
-        text: getApiSuccessMessage(response, "Đã hủy đề nghị thương lượng."),
-      });
+      showToast("success", getApiSuccessMessage(response, "Đã hủy đề nghị thương lượng."));
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: getApiErrorMessage(error, "Không thể hủy đề nghị lúc này."),
-      });
+      showToast("error", getApiErrorMessage(error, "Không thể hủy đề nghị lúc này."));
     } finally {
       offerActionLockRef.current = false;
       setIsCancelling(false);
@@ -698,21 +695,35 @@ export default function OfferDetailScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {canUpdate ? (
-          <TouchableOpacity
-            style={styles.updateButton}
-            onPress={() => void handleOpenEditOffer()}
-            disabled={isUpdating || isCancelling}
-          >
-            <Ionicons
-              name="create-outline"
-              size={19}
-              color={COLORS.white}
-            />
-            <Text style={styles.updateButtonText}>
-              Cập nhật đề nghị
-            </Text>
-          </TouchableOpacity>
+        {canUpdate || (canCancel && !isConfirmingCancel) ? (
+          <View style={styles.primaryActionRow}>
+            {canCancel && !isConfirmingCancel ? (
+              <TouchableOpacity
+                style={[styles.cancelButton, styles.rowActionButton]}
+                onPress={() => {
+                  setMessage(null);
+                  setIsConfirmingCancel(true);
+                }}
+              >
+                <Ionicons name="trash-outline" size={19} color={COLORS.white} />
+                <Text style={styles.cancelButtonText}>Hủy</Text>
+              </TouchableOpacity>
+            ) : null}
+            {canUpdate ? (
+              <TouchableOpacity
+                style={[styles.updateButton, styles.rowActionButton]}
+                onPress={() => void handleOpenEditOffer()}
+                disabled={isUpdating || isCancelling}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={19}
+                  color={COLORS.white}
+                />
+                <Text style={styles.updateButtonText}>Cập nhật</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         ) : null}
 
         {isConfirmingCancel ? (
@@ -749,17 +760,6 @@ export default function OfferDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        ) : canCancel ? (
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => {
-              setMessage(null);
-              setIsConfirmingCancel(true);
-            }}
-          >
-            <Ionicons name="trash-outline" size={19} color={COLORS.white} />
-            <Text style={styles.cancelButtonText}>Hủy đề nghị</Text>
-          </TouchableOpacity>
         ) : null}
       </ScrollView>
 
@@ -1082,6 +1082,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   cancelButtonText: { color: COLORS.white, fontWeight: "800", fontSize: 14 },
+  // Cập nhật + Hủy chung một hàng, chia đều chiều ngang.
+  primaryActionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
+  rowActionButton: { flex: 1, marginTop: 0 },
   disabled: { opacity: 0.65 },
   primaryButton: {
     marginTop: 16,

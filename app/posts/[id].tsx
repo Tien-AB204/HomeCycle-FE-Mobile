@@ -30,6 +30,7 @@ import {
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { isBuyPostType } from "../../src/utils/postType";
+import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { getSpaceUsageLabel, normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -937,7 +938,13 @@ export default function PostDetailScreen() {
 
     clearOfferFeedback();
     setOfferQuantity("1");
-    setOfferPrice("");
+    // Điền sẵn giá mong muốn của người bán; người mua sửa lại nếu muốn thương lượng.
+    const listedPrice = Number(post?.basePrice ?? 0);
+    setOfferPrice(
+      Number.isFinite(listedPrice) && listedPrice > 0
+        ? String(Math.trunc(listedPrice))
+        : "",
+    );
     setShowOfferModal(true);
   };
 
@@ -1441,7 +1448,26 @@ export default function PostDetailScreen() {
         offerPrice: valid.price,
         offerQuantity: valid.quantity,
       });
+      if (response?.isSuccess === false) throw response;
       setShowOfferModal(false);
+
+      // BE trả OfferResponse { offerId }: có id thì mở thẳng chi tiết đề nghị.
+      // Không có id thì giữ nguyên hành vi cũ (báo thành công tại chỗ).
+      const createdOfferId = String(
+        response?.data?.offerId ??
+          response?.data?.OfferId ??
+          response?.offerId ??
+          response?.OfferId ??
+          "",
+      ).trim();
+      if (createdOfferId) {
+        router.push({
+          pathname: "/offers/[id]",
+          params: { id: createdOfferId, created: "1" },
+        });
+        return;
+      }
+
       showPageSuccess(
         getApiSuccessMessage(response, "Đã gửi đề nghị thương lượng."),
       );
@@ -2968,17 +2994,14 @@ export default function PostDetailScreen() {
                                 : undefined,
                             ]}
                             keyboardType="number-pad"
-                            value={
-                              sellerRequestPrice
-                            }
+                            value={formatPriceInput(
+                              sellerRequestPrice,
+                            )}
                             onChangeText={(
                               value,
                             ) => {
                               setSellerRequestPrice(
-                                value.replace(
-                                  /[^0-9]/g,
-                                  "",
-                                ),
+                                toPriceDigits(value),
                               );
                               clearSellerRequestFeedback();
                             }}
@@ -3139,19 +3162,11 @@ export default function PostDetailScreen() {
                       : undefined,
                   ]}
                   keyboardType="number-pad"
-                  value={offerPrice}
+                  value={formatPriceInput(offerPrice)}
                   onChangeText={(value) => {
-                    setOfferPrice(value.replace(/[^0-9]/g, ""));
+                    setOfferPrice(toPriceDigits(value));
                     clearOfferFeedback();
                   }}
-                  placeholder={
-                    focusedPlaceholderField === "offerPrice"
-                      ? ""
-                      : "Ví dụ: 1500000"
-                  }
-                  placeholderTextColor="rgba(84, 123, 125, 0.55)"
-                  onFocus={() => setFocusedPlaceholderField("offerPrice")}
-                  onBlur={() => setFocusedPlaceholderField(null)}
                   editable={!isSubmittingOffer}
                 />
               </View>

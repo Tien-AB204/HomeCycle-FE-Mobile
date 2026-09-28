@@ -27,6 +27,7 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
@@ -1958,6 +1959,52 @@ export default function PostFormScreen() {
                 </View>
               ) : null}
             </View>
+            <View style={styles.row}>
+              {!isBuyPost ? (
+                <View style={styles.flex}>
+                  <Text style={styles.label}>Giá bán lúc mua</Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="VNĐ"
+                      placeholderTextColor="#547B7D"
+                      value={formatPriceInput(originalPrice)}
+                      onChangeText={(value) => setOriginalPrice(toPriceDigits(value))}
+                    />
+                  </View>
+                </View>
+              ) : null}
+              <View style={styles.flex}>
+                <Text style={styles.label}>Số lượng <Text style={{ color: COLORS.error }}>*</Text></Text>
+                <View
+                  style={[
+                    styles.inputContainer,
+                    quantityError ? styles.inputContainerError : undefined,
+                  ]}
+                >
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    placeholder={isBuyPost ? "1 – 99.999" : "Nhập SL..."}
+                    placeholderTextColor="#547B7D"
+                    value={quantity}
+                    onChangeText={(value) => {
+                      setQuantity(value);
+                      // Kiểm tra ngay khi gõ; lỗi giữ nguyên cho tới khi giá trị hợp lệ.
+                      setQuantityError(value.trim() ? validateQuantityInput(value, isBuyPost) : "");
+                    }}
+                  />
+                </View>
+              </View>
+            </View>
+            {isEditMode ? (
+              <Text style={styles.quantityHelper}>
+                Số lượng: nhập tổng số lượng mới của tin, không phải số lượng cộng thêm.
+              </Text>
+            ) : null}
+            {quantityError ? <Text style={styles.fieldError}>{quantityError}</Text> : null}
             {!isBuyPost ? (
               <>
                 <Text style={styles.label}>Mô tả chi tiết sản phẩm</Text>
@@ -2286,11 +2333,9 @@ export default function PostFormScreen() {
                       keyboardType="numeric"
                       placeholder="Giá tối thiểu"
                       placeholderTextColor="#547B7D"
-                      value={priceFrom}
+                      value={formatPriceInput(priceFrom)}
                       onChangeText={(value) => {
-                        setPriceFrom(
-                          value.replace(/[^0-9]/g, ""),
-                        );
+                        setPriceFrom(toPriceDigits(value));
                         setFormMessage(null);
                       }}
                     />
@@ -2307,11 +2352,9 @@ export default function PostFormScreen() {
                       keyboardType="numeric"
                       placeholder="Giá tối đa"
                       placeholderTextColor="#547B7D"
-                      value={basePrice}
+                      value={formatPriceInput(basePrice)}
                       onChangeText={(value) => {
-                        setBasePrice(
-                          value.replace(/[^0-9]/g, ""),
-                        );
+                        setBasePrice(toPriceDigits(value));
                         setFormMessage(null);
                       }}
                     />
@@ -2319,43 +2362,25 @@ export default function PostFormScreen() {
                 </View>
               </View>
             ) : (
-              <View style={styles.row}>
-                <View style={styles.flex}>
-                  <Text style={styles.label}>
-                    Giá mong muốn{" "}
-                    <Text style={styles.required}>*</Text>
-                  </Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      keyboardType="numeric"
-                      placeholder="VNĐ"
-                      placeholderTextColor="#547B7D"
-                      value={basePrice}
-                      onChangeText={(value) => {
-                        setBasePrice(value);
-                        setFormMessage(null);
-                      }}
-                    />
-                  </View>
+              <>
+                <Text style={styles.label}>
+                  Giá mong muốn{" "}
+                  <Text style={styles.required}>*</Text>
+                </Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="numeric"
+                    placeholder="VNĐ"
+                    placeholderTextColor="#547B7D"
+                    value={formatPriceInput(basePrice)}
+                    onChangeText={(value) => {
+                      setBasePrice(toPriceDigits(value));
+                      setFormMessage(null);
+                    }}
+                  />
                 </View>
-
-                <View style={styles.flex}>
-                  <Text style={styles.label}>
-                    Giá lúc mua
-                  </Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      keyboardType="numeric"
-                      placeholder="VNĐ"
-                      placeholderTextColor="#547B7D"
-                      value={originalPrice}
-                      onChangeText={setOriginalPrice}
-                    />
-                  </View>
-                </View>
-              </View>
+              </>
             )}
 
             {canUseAiPriceSuggestion ? (
@@ -2410,33 +2435,6 @@ export default function PostFormScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.label}>Số lượng <Text style={{ color: COLORS.error }}>*</Text></Text>
-            {isEditMode ? (
-              <Text style={styles.quantityHelper}>
-                Nhập tổng số lượng mới của tin, không phải số lượng cộng thêm.
-              </Text>
-            ) : null}
-            <View
-              style={[
-                styles.inputContainer,
-                quantityError ? styles.inputContainerError : undefined,
-              ]}
-            >
-              <TextInput
-                style={styles.input}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                placeholder={isBuyPost ? "1 – 99.999" : "Nhập SL..."}
-                placeholderTextColor="#547B7D"
-                value={quantity}
-                onChangeText={(value) => {
-                  setQuantity(value);
-                  // Kiểm tra ngay khi gõ; lỗi giữ nguyên cho tới khi giá trị hợp lệ.
-                  setQuantityError(value.trim() ? validateQuantityInput(value, isBuyPost) : "");
-                }}
-              />
-            </View>
-            {quantityError ? <Text style={styles.fieldError}>{quantityError}</Text> : null}
           </View>
 
           <View style={styles.cardSection}>
