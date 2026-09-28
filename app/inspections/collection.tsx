@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 
+import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import ClockTimeField from "../../src/components/shared/ClockTimeField";
 import Header from "../../src/components/shared/Header";
@@ -991,7 +992,12 @@ export default function InspectionCollectionScreen() {
               order?.deliveryMethod,
           );
 
-        setDeliveryMethod(nextMethod);
+        // GHN đang ẩn ở màn này nên quay về lựa chọn mặc định nếu dữ liệu cũ là GHN.
+        setDeliveryMethod(
+          nextMethod === COLLECTION_DELIVERY_METHOD.GHN
+            ? COLLECTION_DELIVERY_METHOD.SELLER_DELIVERS
+            : nextMethod,
+        );
 
         setPickupAddress(
           String(
@@ -1663,13 +1669,7 @@ export default function InspectionCollectionScreen() {
       label: "Người mua tự lấy",
       icon: "person-outline",
     },
-    {
-      value:
-        COLLECTION_DELIVERY_METHOD
-          .GHN,
-      label: "Giao hàng GHN",
-      icon: "cube-outline",
-    },
+    // Tạm ẩn giao hàng GHN ở bước giao nhận sau kiểm định.
   ] as const;
 
   if (isLoading) {
@@ -2198,20 +2198,16 @@ export default function InspectionCollectionScreen() {
                 Điểm lấy *
               </Text>
 
-              <TextInput
+              <AddressPickerField
                 value={pickupAddress}
-                onChangeText={
-                  setPickupAddress
+                onChange={(value) =>
+                  setPickupAddress(value)
                 }
-                placeholder="Nhập điểm lấy hàng"
-                placeholderTextColor={
-                  COLORS.textLight
+                onClear={() =>
+                  setPickupAddress("")
                 }
-                multiline
-                style={[
-                  styles.input,
-                  styles.multilineInput,
-                ]}
+                placeholder="Chọn điểm lấy hàng"
+                disabled={isSubmitting}
               />
             </View>
 
@@ -2220,23 +2216,17 @@ export default function InspectionCollectionScreen() {
                 Điểm giao *
               </Text>
 
-              <TextInput
+              <AddressPickerField
                 value={deliveryAddress}
-                onChangeText={
-                  setDeliveryAddress
+                onChange={(value) =>
+                  setDeliveryAddress(value)
                 }
-                placeholder="Nhập điểm giao hàng"
-                placeholderTextColor={
-                  COLORS.textLight
+                onClear={() =>
+                  setDeliveryAddress("")
                 }
-                multiline
-                style={[
-                  styles.input,
-                  styles.multilineInput,
-                  sameAddressError
-                    ? styles.inputError
-                    : undefined,
-                ]}
+                placeholder="Chọn điểm giao hàng"
+                disabled={isSubmitting}
+                hasError={Boolean(sameAddressError)}
               />
               {sameAddressError ? (
                 <Text

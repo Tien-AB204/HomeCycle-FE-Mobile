@@ -411,7 +411,12 @@ export default function OrderDetailScreen() {
         setPostContext(null);
       }
       let nextAgreement: any = null;
-      let nextDeliveryMethod: DeliveryMethod = "Unknown";
+      // BE ưu tiên phương thức của shipment rồi mới tới hợp đồng. Đơn có kiểm định chỉ
+      // chọn phương thức ở bước thu gom nên hợp đồng của đơn đó không có giá trị này.
+      const orderDeliveryMethod = normalizeDeliveryMethod(
+        order?.deliveryMethod ?? rawOrder?.deliveryMethod,
+      );
+      let nextDeliveryMethod: DeliveryMethod = orderDeliveryMethod;
       let nextRole: TransactionRole = null;
 
       if (order?.agreementId) {
@@ -420,9 +425,11 @@ export default function OrderDetailScreen() {
           nextAgreement = unwrap(agreementResponse);
           setAgreement(nextAgreement);
 
-          nextDeliveryMethod = normalizeDeliveryMethod(
-            nextAgreement?.agreementDetails?.deliveryMethod,
-          );
+          if (nextDeliveryMethod === "Unknown") {
+            nextDeliveryMethod = normalizeDeliveryMethod(
+              nextAgreement?.agreementDetails?.deliveryMethod,
+            );
+          }
           setDeliveryMethod(nextDeliveryMethod);
 
           const sellerId = String(nextAgreement?.sellerId || "").toLowerCase();
@@ -432,7 +439,7 @@ export default function OrderDetailScreen() {
           setTransactionRole(nextRole);
         } catch (error) {
           setAgreement(null);
-          setDeliveryMethod("Unknown");
+          setDeliveryMethod(orderDeliveryMethod);
           setTransactionRole(null);
           setPageMessage({
             type: "warning",
@@ -444,7 +451,7 @@ export default function OrderDetailScreen() {
         }
       } else {
         setAgreement(null);
-        setDeliveryMethod("Unknown");
+        setDeliveryMethod(orderDeliveryMethod);
         setTransactionRole(null);
       }
 
@@ -999,6 +1006,11 @@ export default function OrderDetailScreen() {
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
+  // Chưa có phương thức (vd. đơn kiểm định trước bước thu gom) và không có dữ liệu giao nhận
+  // nào khác thì ẩn cả mục thay vì hiện "Chưa cập nhật".
+  const hasDeliveryMethod = deliveryMethod !== "Unknown";
+  const hasDeliveryInfo =
+    hasDeliveryMethod || Boolean(sellerReadyAt || pickedUpAt || trackingError);
 
   const sellerAlreadyConfirmed = Boolean(order.sellerHandoverConfirmedAt);
   const buyerAlreadyConfirmed = Boolean(order.buyerReceivedConfirmedAt);
@@ -1125,11 +1137,13 @@ export default function OrderDetailScreen() {
   const renderDeliveryInfo = () => (
     <>
           <Text style={styles.sectionTitle}>Vận chuyển & Giao nhận</Text>
-          <InfoRow
-            label="Phương thức:"
-            value={translateDeliveryMethod(deliveryMethod)}
-            bold
-          />
+          {hasDeliveryMethod ? (
+            <InfoRow
+              label="Phương thức:"
+              value={translateDeliveryMethod(deliveryMethod)}
+              bold
+            />
+          ) : null}
 
           {sellerReadyAt ? (
             <InfoRow
@@ -1438,7 +1452,7 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
-        {relatedAppointments.length === 0 ? (
+        {relatedAppointments.length === 0 && hasDeliveryInfo ? (
           <View style={styles.card}>
             {renderDeliveryInfo()}
           </View>
@@ -1500,9 +1514,11 @@ export default function OrderDetailScreen() {
                 </TouchableOpacity>
               );
             })}
-            <View style={styles.relatedDeliverySection}>
-              {renderDeliveryInfo()}
-            </View>
+            {hasDeliveryInfo ? (
+              <View style={styles.relatedDeliverySection}>
+                {renderDeliveryInfo()}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
