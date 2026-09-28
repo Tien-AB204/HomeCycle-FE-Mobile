@@ -26,7 +26,7 @@ import {
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { devLog } from "../../src/utils/devLog";
-import { isBuyPostType } from "../../src/utils/postType";
+import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -572,7 +572,9 @@ export default function HomeScreen() {
 
           <View style={styles.priceRow}>
             <Text style={styles.productPrice} numberOfLines={1}>
-              {formatPrice(post.basePrice || post.expectedPrice)}
+              {isBuyPostType(post.postType)
+                ? formatBuyPostPrice(post)
+                : formatPrice(post.basePrice || post.expectedPrice)}
             </Text>
             <Text style={styles.quantityText}>
               {isBuyPostType(post.postType)

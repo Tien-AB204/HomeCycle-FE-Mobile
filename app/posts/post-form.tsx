@@ -115,12 +115,6 @@ const DELIVERY_OPTIONS = [
   { label: "Người bán tự giao", value: "SellerDelivers" },
   { label: "Người mua đến lấy", value: "BuyerPickUp" },
 ];
-const PRIORITY_OPTIONS = [
-  { label: "Ưu tiên Thấp", value: "Low" },
-  { label: "Bình thường", value: "Medium" },
-  { label: "Bán gấp", value: "High" },
-  { label: "Khẩn cấp", value: "Urgent" },
-];
 const MAX_IMAGES = 5;
 type InlineMessage = { type: "error" | "info"; text: string } | null;
 
@@ -348,7 +342,6 @@ export default function PostFormScreen() {
   const [originalPrice, setOriginalPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [deliveryMethod, setDeliveryMethod] = useState("");
-  const [priorityLevel, setPriorityLevel] = useState("");
   const [city, setCity] = useState("");
   const [ward, setWard] = useState("");
   const [streetAddress, setStreetAddress] = useState("");
@@ -617,7 +610,6 @@ export default function PostFormScreen() {
         setWard(data.ward || "");
         setStreetAddress(data.streetAddress || "");
         setDeliveryMethod(data.deliveryMethod || "");
-        setPriorityLevel(data.priorityLevel || "");
         setSelectedCategory(product.categoryId || "");
         setSelectedProductType(product.productTypeId || "");
 
@@ -1344,8 +1336,6 @@ export default function PostFormScreen() {
             streetAddress.trim() || null,
           ward: ward.trim() || null,
           city: city.trim() || null,
-          priorityLevel:
-            priorityLevel || null,
           priceFrom: parsedPriceFrom,
           priceTo: parsedPriceTo,
           quantity: parsedQuantity,
@@ -1408,13 +1398,6 @@ export default function PostFormScreen() {
         formData.append(
           "DeliveryMethod",
           deliveryMethod,
-        );
-      }
-
-      if (priorityLevel) {
-        formData.append(
-          "PriorityLevel",
-          priorityLevel,
         );
       }
 
@@ -2467,13 +2450,6 @@ export default function PostFormScreen() {
                   onChange={setDeliveryMethod}
                 />
               ) : null}
-              <SelectBox
-                label="Ưu tiên"
-                clearable={isBuyPost || !isEditMode}
-                value={priorityLevel}
-                options={PRIORITY_OPTIONS}
-                onChange={setPriorityLevel}
-              />
             </View>
             <Text style={styles.label}>
               Địa chỉ bài đăng

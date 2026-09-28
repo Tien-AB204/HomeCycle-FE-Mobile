@@ -99,14 +99,14 @@ export type SellPostDetail = TypedPostDetailBase & {
   basePrice?: number | null;
   remainingQuantity?: number | null;
   deliveryMethod?: string | number | null;
-  priorityLevel?: string | null;
+  isPriority?: boolean;
 };
 
 export type BuyPostDetail = TypedPostDetailBase & {
   requirement: BuyRequirement;
   priceFrom?: number | null;
   priceTo?: number | null;
-  priorityLevel?: string | null;
+  isPriority?: boolean;
   progress: BuyPostProgress;
 };
 

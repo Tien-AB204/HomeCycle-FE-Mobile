@@ -24,6 +24,7 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
+import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -570,7 +571,10 @@ function PostTargetCard({
       <Text style={styles.sectionTitle}>Bài đăng bị báo cáo</Text>
       <InfoRow label="Sản phẩm" value={post?.productName || "Chưa có"} strong />
       {postTypeLabel ? <InfoRow label="Loại tin" value={postTypeLabel} /> : null}
-      <InfoRow label="Giá" value={formatCurrency(post?.basePrice)} />
+      <InfoRow
+        label="Giá"
+        value={isBuyPostType(post?.postType) ? formatBuyPostPrice(post) : formatCurrency(post?.basePrice)}
+      />
       <InfoRow label="Trạng thái hiện tại" value={statusLabel} />
       <InfoRow label="Ngày đăng" value={formatDateTime(post?.createdAt)} />
       <InfoRow label="Cập nhật" value={formatDateTime(post?.updatedAt)} />

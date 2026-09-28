@@ -26,7 +26,7 @@ import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
-import { isBuyPostType } from "../../src/utils/postType";
+import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -409,7 +409,9 @@ export default function PostsScreen() {
             <Text style={styles.cardTitle} numberOfLines={2}>
               {post.productName || post.description || "Không có tiêu đề"}
             </Text>
-            <Text style={styles.cardPrice}>{formatPrice(displayPrice)}</Text>
+            <Text style={styles.cardPrice}>
+              {isBuyPost ? formatBuyPostPrice(post) : formatPrice(displayPrice)}
+            </Text>
             <Text style={styles.descText} numberOfLines={2}>
               {post.description || "Chưa có mô tả"}
             </Text>

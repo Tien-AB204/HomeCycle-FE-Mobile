@@ -24,7 +24,7 @@ import {
 import apiClient from "../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
 import { getSpaceUsageLabel, useSpaceUsages } from "../src/services/spaceUsage";
-import { isBuyPostType } from "../src/utils/postType";
+import { formatBuyPostPrice, isBuyPostType } from "../src/utils/postType";
 import { useGuardedRouter } from "../src/utils/tapGuard";
 
 const locationApi = {
@@ -75,13 +75,6 @@ const DELIVERY_MAP: Record<string, string> = {
   "Giao hàng nhanh (GHN)": "GhnDelivery",
 };
 
-const PRIORITY_LEVELS = ["Ưu tiên Thấp", "Bình thường", "Bán gấp", "Khẩn cấp"];
-const PRIORITY_MAP: Record<string, string> = {
-  "Ưu tiên Thấp": "Low",
-  "Bình thường": "Medium",
-  "Bán gấp": "High",
-  "Khẩn cấp": "Urgent",
-};
 
 type ViewState = "BUILDER" | "HISTORY" | "RESULTS";
 
@@ -175,7 +168,6 @@ export default function SearchScreen() {
   // Không gian sử dụng: lựa chọn lọc lấy từ Backend (giá trị gửi đi là tên enum).
   const spaceUsages = useSpaceUsages();
   const [deliveryMethod, setDeliveryMethod] = useState("");
-  const [priorityLevel, setPriorityLevel] = useState("");
 
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -576,7 +568,6 @@ export default function SearchScreen() {
         payload.spaceUsage = selectedSpace;
       }
       if (deliveryMethod) payload.deliveryMethod = DELIVERY_MAP[deliveryMethod];
-      if (priorityLevel) payload.priorityLevel = PRIORITY_MAP[priorityLevel];
       if (actualMinPrice !== null) payload.minPrice = actualMinPrice;
       if (actualMaxPrice !== null) payload.maxPrice = actualMaxPrice;
       if (actualMinUsage !== null) payload.minUsageDuration = actualMinUsage;
@@ -673,7 +664,6 @@ export default function SearchScreen() {
     setDeliveryMethod("");
     setCity("");
     setCityCode(null);
-    setPriorityLevel("");
     setMinPrice("");
     setMaxPrice("");
     setMinUsage("");
@@ -703,34 +693,6 @@ export default function SearchScreen() {
 
   const getFullAddress = (post: any) =>
     [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
-
-  const getPriorityLabel = (level: string) => {
-    switch (level) {
-      case "Low":
-        return "Ưu tiên Thấp";
-      case "Medium":
-        return "Bình thường";
-      case "High":
-        return "Bán gấp";
-      case "Urgent":
-        return "Khẩn cấp";
-      default:
-        return "";
-    }
-  };
-
-  const getPriorityColor = (level: string) => {
-    switch (level) {
-      case "High":
-        return "#9A6418";
-      case "Urgent":
-        return "#7A1012";
-      case "Low":
-        return "#547B7D";
-      default:
-        return "#2F765D";
-    }
-  };
 
   const renderFilterBuilder = () => (
     <View style={styles.flex1}>
@@ -1227,37 +1189,6 @@ export default function SearchScreen() {
           })}
         </View>
 
-        <Text style={styles.subLabel}>Mức độ cần bán (Ưu tiên)</Text>
-        <View style={styles.chipContainer}>
-          {PRIORITY_LEVELS.map((level) => {
-            const isActive = priorityLevel === level;
-            return (
-              <TouchableOpacity
-                key={level}
-                style={[styles.chip, isActive ? styles.chipActive : undefined]}
-                onPress={() => setPriorityLevel(isActive ? "" : level)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    isActive ? styles.chipTextActive : undefined,
-                  ]}
-                >
-                  {level}
-                </Text>
-                {isActive ? (
-                  <Ionicons
-                    name="close"
-                    size={14}
-                    color={COLORS.primary}
-                    style={styles.chipCloseIcon}
-                  />
-                ) : null}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -1456,10 +1387,6 @@ export default function SearchScreen() {
 
     if (selectedSpace) {
       labels.push(getSpaceUsageLabel(selectedSpace));
-    }
-
-    if (priorityLevel) {
-      labels.push(priorityLevel);
     }
 
     return labels;
@@ -1716,7 +1643,9 @@ export default function SearchScreen() {
 
                   <View style={styles.priceRow}>
                     <Text style={styles.productPrice}>
-                      {formatPrice(post.basePrice)}
+                      {isBuyPostType(post.postType)
+                        ? formatBuyPostPrice(post)
+                        : formatPrice(post.basePrice)}
                     </Text>
                     <Text style={styles.quantityText}>
                       {isBuyPostType(post.postType)
@@ -1736,19 +1665,6 @@ export default function SearchScreen() {
                         {getFullAddress(post) || "Chưa cập nhật"}
                       </Text>
                     </View>
-
-                    {post.priorityLevel &&
-                    post.priorityLevel !== "Medium" &&
-                    post.priorityLevel !== "Low" ? (
-                      <Text
-                        style={[
-                          styles.priorityText,
-                          { color: getPriorityColor(post.priorityLevel) },
-                        ]}
-                      >
-                        {getPriorityLabel(post.priorityLevel)}
-                      </Text>
-                    ) : null}
                   </View>
                 </View>
               </TouchableOpacity>
@@ -2288,7 +2204,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  priorityText: { fontSize: 10, fontWeight: "bold" },
   productName: {
     fontSize: 13,
     color: COLORS.text,
