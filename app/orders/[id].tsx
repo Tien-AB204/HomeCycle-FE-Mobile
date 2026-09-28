@@ -841,6 +841,25 @@ export default function OrderDetailScreen() {
     });
   };
 
+  const formatDay = (dateString: string) => {
+    const date = dateString ? new Date(dateString) : null;
+    if (!date || Number.isNaN(date.getTime())) return "Chưa có";
+    return date.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  // Lịch thu gom của đơn GHN mang ngày GHN dự kiến giao, không phải giờ hẹn gặp mặt.
+  const isGhnCollection = (appointmentItem: any) => {
+    const type = normalizeStatus(appointmentItem?.appointmentType);
+    return (
+      deliveryMethod === "GhnDelivery" &&
+      (type === "1" || type === "collection")
+    );
+  };
+
   const translatePaymentStatus = (status: number | string) => {
     switch (normalizeStatus(status)) {
       case "0":
@@ -1487,16 +1506,21 @@ export default function OrderDetailScreen() {
 
                   <View style={styles.relatedAppointmentContent}>
                     <Text style={styles.relatedAppointmentTitle}>
-                      {translateRelatedAppointmentType(
-                        appointmentItem?.appointmentType,
-                      )}
+                      {isGhnCollection(appointmentItem)
+                        ? "Dự kiến giao (GHN)"
+                        : translateRelatedAppointmentType(
+                            appointmentItem?.appointmentType,
+                          )}
                     </Text>
                     <Text style={styles.relatedAppointmentMeta}>
                       {translateRelatedAppointmentStatus(
                         appointmentItem?.appointmentStatus,
                       )}
                       {appointmentItem?.scheduledAt
-                        ? " • " + formatDate(appointmentItem.scheduledAt)
+                        ? " • " +
+                          (isGhnCollection(appointmentItem)
+                            ? formatDay(appointmentItem.scheduledAt)
+                            : formatDate(appointmentItem.scheduledAt))
                         : ""}
                     </Text>
                   </View>

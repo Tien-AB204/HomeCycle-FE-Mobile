@@ -72,6 +72,8 @@ type AppointmentItem = {
   pickupAddress: string;
   deliveryAddress: string;
   deliveryMethod: string;
+  // Lịch thu gom GHN: ngày là ngày GHN dự kiến giao, không phải giờ hẹn gặp mặt.
+  isGhn: boolean;
   buyerCheckedIn: boolean;
   sellerCheckedIn: boolean;
   status: string;
@@ -333,6 +335,16 @@ export default function ScheduleScreen() {
     });
   };
 
+  const formatDateOnly = (dateString: string) => {
+    const date = dateString ? parseScheduledDate(dateString) : null;
+    if (!date) return "Chưa cập nhật";
+    return date.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
   const normalizeAppointmentStatus = (status: unknown) =>
     String(status ?? "")
       .replace(/[\s_-]/g, "")
@@ -488,6 +500,11 @@ export default function ScheduleScreen() {
               typeKey === "collection"
                 ? a.collectionDate ?? a.CollectionDate ?? ""
                 : a.inspectionDate ?? a.InspectionDate ?? "";
+            const isGhn =
+              typeKey === "collection" &&
+              ["ghndelivery", "1"].includes(
+                String(a.deliveryMethod ?? "").toLowerCase(),
+              );
 
             return {
               id: String(a.appointmentId || a.id || ""),
@@ -497,8 +514,9 @@ export default function ScheduleScreen() {
               roleKey,
               product: String(a.productName || "Sản phẩm giao dịch"),
               partner: String(a.counterpartyName || "Đối tác"),
-              date: formatDateTime(rawDate),
+              date: isGhn ? formatDateOnly(rawDate) : formatDateTime(rawDate),
               rawDate,
+              isGhn,
               inspectionAddress: String(a.inspectionAddress || ""),
               pickupAddress: String(a.pickupAddress || ""),
               deliveryAddress: String(a.deliveryAddress || ""),
@@ -861,7 +879,7 @@ export default function ScheduleScreen() {
           {item.role}: <Text style={styles.partnerValue}>{item.partner}</Text>
         </Text>
 
-        <InfoLine label="Lịch hẹn" value={item.date} />
+        <InfoLine label={item.isGhn ? "Dự kiến giao" : "Lịch hẹn"} value={item.date} />
 
         {item.typeKey === "inspection" ? (
           <InfoLine
@@ -886,7 +904,9 @@ export default function ScheduleScreen() {
           <Text style={styles.metaText}>
             Tạo lịch: {formatDateTime(item.createdAt)}
           </Text>
-          <Text style={styles.metaText}>Đã xác nhận có mặt: {checkedInCount}/2</Text>
+          {item.isGhn ? null : (
+            <Text style={styles.metaText}>Đã xác nhận có mặt: {checkedInCount}/2</Text>
+          )}
         </View>
 
         <View style={styles.divider} />

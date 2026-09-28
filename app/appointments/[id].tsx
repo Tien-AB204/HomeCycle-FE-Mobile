@@ -92,6 +92,20 @@ const formatDateTime = (dateString?: string | null) => {
   });
 };
 
+const formatDateOnly = (dateString?: string | null) => {
+  if (!dateString) return "Chưa có";
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "Chưa có";
+  return date.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
+const isGhnDeliveryMethod = (value: unknown) =>
+  ["ghndelivery", "1"].includes(String(value ?? "").trim().toLowerCase());
+
 const normalizeAppointmentStatus = (value: unknown) =>
   String(value ?? "")
     .replace(/[\s_-]/g, "")
@@ -1015,10 +1029,18 @@ export default function AppointmentDetailScreen() {
 
           {isCollection ? (
             <>
-              <InfoRow
-                label="Thời gian thu gom"
-                value={formatDateTime(detail.collectionDate)}
-              />
+              {isGhnDeliveryMethod(detail.deliveryMethod) ? (
+                // GHN chỉ ước tính theo ngày; đây là ngày dự kiến giao, không phải giờ hẹn.
+                <InfoRow
+                  label="Dự kiến giao"
+                  value={formatDateOnly(detail.collectionDate)}
+                />
+              ) : (
+                <InfoRow
+                  label="Thời gian thu gom"
+                  value={formatDateTime(detail.collectionDate)}
+                />
+              )}
               <InfoRow
                 label="Điểm lấy"
                 value={detail.pickupAddress || "Chưa cập nhật"}
