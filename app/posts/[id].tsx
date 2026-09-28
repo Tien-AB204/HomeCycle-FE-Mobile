@@ -105,7 +105,15 @@ type MatchSummary = {
 type BuyPostMatch = {
   sellPost?: SellerMatchPost;
   matchSummary?: MatchSummary;
+  // BE báo tin đang có đề nghị chờ hoặc phiên/thỏa thuận chưa xong với người mua này.
+  canSendOffer?: boolean;
+  blockCode?: string | null;
+  blockMessage?: string | null;
 };
+
+// BE giới hạn 10 kết quả mỗi trang cho danh sách so khớp.
+const MATCH_PAGE_SIZE = 10;
+const MAX_MATCH_PAGES = 10;
 
 const normalizePostId = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
@@ -986,25 +994,36 @@ export default function PostDetailScreen() {
   }, [currentUserId]);
 
   const loadSellerComparisons = useCallback(async (buyPostId: string, version: number) => {
-    // One batch supplements the inventory; missing comparisons never remove a post.
+    // Comparisons supplement the inventory; missing comparisons never remove a post.
+    const found = new Map<string, BuyPostMatch>();
     try {
-      const response = await postApi.getBuyPostMatches(buyPostId, { PageNumber: 1, PageSize: 100 });
-      if (response?.isSuccess === false) return;
-      const page = response?.data ?? response;
-      if (!Array.isArray(page?.items) || sellerLoadVersion.current !== version) return;
-      const summaries = new Map<string, MatchSummary>();
-      for (const item of page.items as BuyPostMatch[]) {
-        if (item.sellPost?.postId && item.matchSummary) {
-          summaries.set(normalizePostId(item.sellPost.postId), item.matchSummary);
+      for (let pageNumber = 1; pageNumber <= MAX_MATCH_PAGES; pageNumber += 1) {
+        const response = await postApi.getBuyPostMatches(buyPostId, {
+          PageNumber: pageNumber,
+          PageSize: MATCH_PAGE_SIZE,
+        });
+        if (response?.isSuccess === false) break;
+        const page = response?.data ?? response;
+        if (!Array.isArray(page?.items) || sellerLoadVersion.current !== version) return;
+        for (const item of page.items as BuyPostMatch[]) {
+          if (item.sellPost?.postId) found.set(normalizePostId(item.sellPost.postId), item);
         }
+        if (page.hasNextPage !== true) break;
       }
-      setSellerMatches((current) => sellerLoadVersion.current !== version ? current : current.map((item) => ({
-        ...item,
-        matchSummary: summaries.get(normalizePostId(item.sellPost?.postId)),
-      })));
     } catch {
-      // Inventory and terms remain usable without comparison data.
+      // Keep comparisons from pages that loaded; inventory remains usable without them.
     }
+    if (found.size === 0 || sellerLoadVersion.current !== version) return;
+    setSellerMatches((current) => sellerLoadVersion.current !== version ? current : current.map((item) => {
+      const match = found.get(normalizePostId(item.sellPost?.postId));
+      return {
+        ...item,
+        matchSummary: match?.matchSummary,
+        canSendOffer: match?.canSendOffer,
+        blockCode: match?.blockCode ?? null,
+        blockMessage: match?.blockMessage ?? null,
+      };
+    }));
   }, []);
 
   const findPendingSellerOffer = async (buyPostId: string, sellPostId: string) => {
@@ -1610,35 +1629,6 @@ export default function PostDetailScreen() {
     return "Giá thỏa thuận";
   };
 
-  const translatePriorityLevel = (
-    value: unknown,
-  ) => {
-    switch (
-      String(value ?? "")
-        .trim()
-        .toLowerCase()
-    ) {
-      case "0":
-      case "low":
-        return "Thấp";
-
-      case "1":
-      case "medium":
-        return "Bình thường";
-
-      case "2":
-      case "high":
-        return "Cao";
-
-      case "3":
-      case "urgent":
-        return "Khẩn cấp";
-
-      default:
-        return "Chưa cập nhật";
-    }
-  };
-
   const formatDate = (dateString: string) => {
     if (!dateString) return "Chưa có";
     return new Date(dateString).toLocaleDateString("vi-VN", {
@@ -1815,6 +1805,9 @@ export default function PostDetailScreen() {
           selectedSellPostId || "",
         ),
     );
+  // Tin đang bị BE chặn (canSendOffer=false) không hiện form gửi; lý do hiện ngay trên thẻ tin.
+  const isSelectedSellerBlocked =
+    !pendingSellerOfferId && selectedSellerMatch?.canSendOffer === false;
 
   const selectedSellerPost =
     selectedSellerMatch?.sellPost;
@@ -2243,18 +2236,7 @@ export default function PostDetailScreen() {
                 )}
               </Text>
             </View>
-          ) : (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>
-                Mức ưu tiên:
-              </Text>
-              <Text style={styles.infoValue}>
-                {translatePriorityLevel(
-                  post.priorityLevel,
-                )}
-              </Text>
-            </View>
-          )}
+          ) : null}
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Địa chỉ:</Text>
             <Text style={styles.infoValue}>{address || "Chưa cập nhật"}</Text>
@@ -2774,6 +2756,11 @@ export default function PostDetailScreen() {
                                   "",
                               );
                             const sentOfferId = pendingSellerOffers[normalizePostId(sellPost.postId)];
+                            const blockedReason =
+                              !sentOfferId && match.canSendOffer === false
+                                ? match.blockMessage ||
+                                  "Tin bán này đang có giao dịch chưa hoàn tất với người mua."
+                                : null;
 
                             return (
                               <TouchableOpacity
@@ -2785,11 +2772,15 @@ export default function PostDetailScreen() {
                                   selected
                                     ? styles.sellerMatchCardSelected
                                     : undefined,
+                                  blockedReason
+                                    ? styles.sellerMatchCardBlocked
+                                    : undefined,
                                 ]}
                                 activeOpacity={
                                   0.8
                                 }
-                                disabled={isSubmittingSellerRequest}
+                                disabled={isSubmittingSellerRequest || Boolean(blockedReason)}
+                                accessibilityState={{ disabled: isSubmittingSellerRequest || Boolean(blockedReason) }}
                                 onPress={() => sentOfferId
                                   ? openSellerOffer(sentOfferId) : handleSelectSellerMatch(sellPost)}
                               >
@@ -2811,6 +2802,9 @@ export default function PostDetailScreen() {
                                   </Text>
                                   {sentOfferId ? (
                                     <Text style={styles.sellerPendingText}>Đã chào bán · Xem chào bán</Text>
+                                  ) : null}
+                                  {blockedReason ? (
+                                    <Text style={styles.sellerBlockedText}>{blockedReason}</Text>
                                   ) : null}
 
                                   <Text
@@ -2865,7 +2859,7 @@ export default function PostDetailScreen() {
                       </ScrollView>
                     </View>
 
-                    {selectedSellerPost && !pendingSellerOfferId ? (
+                    {selectedSellerPost && !pendingSellerOfferId && !isSelectedSellerBlocked ? (
                       <>
                         <View
                           style={
@@ -3016,7 +3010,8 @@ export default function PostDetailScreen() {
                   </>
                 )}
               </ScrollView>
-              {!isLoadingSellerMatches && !sellerLoadError && (pendingSellerOfferId || selectedSellerPost) ? (
+              {!isLoadingSellerMatches && !sellerLoadError &&
+                (pendingSellerOfferId || (selectedSellerPost && !isSelectedSellerBlocked)) ? (
                 <View style={[styles.sellerModalFooter, { paddingBottom: Platform.OS === "android" ? 16 : Math.max(insets.bottom, 16) }]}>
                   {pendingSellerOfferId ? (
                     <Text style={styles.sellerPendingText}>Đã chào bán · Đang chờ phản hồi</Text>
@@ -3123,7 +3118,11 @@ export default function PostDetailScreen() {
                     : "Giá mong muốn của người bán"}
                 </Text>
                 <View style={styles.readOnlyInput}>
-                  <Text style={styles.readOnlyText}>{formatPrice(post.basePrice)}</Text>
+                  <Text style={styles.readOnlyText}>
+                    {post.postType === "Buy"
+                      ? formatBuyPriceRange(post.priceFrom, post.priceTo ?? post.basePrice)
+                      : formatPrice(post.basePrice)}
+                  </Text>
                 </View>
               </View>
 
@@ -3818,6 +3817,17 @@ const styles = StyleSheet.create({
   sellerMatchCardSelected: {
     borderColor: COLORS.primary,
     backgroundColor: "rgba(43, 86, 89, 0.06)",
+  },
+  sellerMatchCardBlocked: {
+    opacity: 0.7,
+    backgroundColor: COLORS.background,
+  },
+  sellerBlockedText: {
+    color: COLORS.warning,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+    marginBottom: 2,
   },
   sellerMatchContent: {
     flex: 1,

@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import Header from "../../src/components/shared/Header";
 import {
   ModalBackdrop,
@@ -33,6 +34,7 @@ import {
   type OfferResponseAction,
 } from "../../src/utils/offerActions";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const offerApi = {
@@ -124,6 +126,10 @@ const translateStatus = (
     case "cancelled":
     case "canceled":
       return "Đã hủy";
+    case "expired":
+      return "Đã hết hạn";
+    case "closed":
+      return "Đã đóng";
     default:
       return value ? String(value) : "Chưa xác định";
   }
@@ -247,6 +253,13 @@ export default function OfferDetailScreen() {
       connection.off("OfferUpdated", handleOfferUpdated);
     };
   }, [connection, fetchOffer, offerId]);
+
+  // Hết 3 phút: khóa thao tác ngay; trạng thái Expired đến sau qua OfferUpdated hoặc lần tải lại.
+  const responseCountdown = useDeadlineCountdown(
+    isPendingOffer(offer?.offerStatus) ? offer?.responseDeadlineAt : null,
+    () => void fetchOffer({ silent: true }),
+  );
+  const responseWindowClosed = responseCountdown.isExpired;
 
   const handleOpenEditOffer = async () => {
     const pendingNow = isPendingOffer(offer?.offerStatus);
@@ -514,15 +527,19 @@ export default function OfferDetailScreen() {
     );
   }
 
-  const pending = isPendingOffer(offer.offerStatus);
+  const pending = isPendingOffer(offer.offerStatus) && !responseWindowClosed;
   const canUpdate = offer.canUpdate === true && pending;
   const canCancel = offer.canCancel === true && pending;
-  const responseActions = (["counter", "accept", "reject"] as const)
-    .filter((action) => canRespondToOffer(offer, action));
+  const responseActions = responseWindowClosed
+    ? []
+    : (["counter", "accept", "reject"] as const)
+      .filter((action) => canRespondToOffer(offer, action));
   const movedToNegotiation =
     (normalizeStatus(offer.offerStatus) === "accepted" ||
       String(offer.offerStatus) === "1") &&
     Boolean(offer.negotiationId);
+  const isExpired =
+    normalizeStatus(offer.offerStatus) === "expired" || responseWindowClosed;
   const seller = offer.seller ?? offer.Seller;
   const buyer = offer.buyer ?? offer.Buyer;
   const postOwnerId = normalizeId(
@@ -563,12 +580,21 @@ export default function OfferDetailScreen() {
                   ? "Đề nghị đang chờ phản hồi; bạn có thể cập nhật giá hoặc số lượng."
                   : movedToNegotiation
                     ? "Đề nghị đã chuyển sang phiên thương lượng."
-                    : responseActions.length > 0
+                    : isExpired
+                      ? "Đề nghị đã hết hạn sau 3 phút chờ phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng."
+                      : responseActions.length > 0
                       ? "Đề nghị đang chờ phản hồi của bạn."
                       : "Đề nghị này chỉ có thể xem."}
               </Text>
             </View>
           </View>
+
+          <DeadlineBanner
+            countdown={responseCountdown}
+            label="Thời gian phản hồi còn lại"
+            expiredText="Đã hết 3 phút phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng."
+            style={styles.deadlineBanner}
+          />
 
           {sellerId || buyerId ? (
             <View style={styles.participantSection}>
@@ -622,10 +648,9 @@ export default function OfferDetailScreen() {
 
           <View style={styles.row}>
             <Text style={styles.label}>Trạng thái</Text>
-            <Text style={[styles.value, styles.statusValue]}>{translateStatus(
-              offer.offerStatus,
-              offer.negotiationId,
-            )}</Text>
+            <Text style={[styles.value, styles.statusValue]}>{isExpired
+              ? translateStatus("expired")
+              : translateStatus(offer.offerStatus, offer.negotiationId)}</Text>
           </View>
 
           <View style={[styles.row, styles.lastRow]}>
@@ -963,6 +988,7 @@ const styles = StyleSheet.create({
   },
   price: { color: COLORS.error, fontWeight: "800" },
   statusValue: { color: COLORS.primary, fontWeight: "800" },
+  deadlineBanner: { marginBottom: 12 },
   message: {
     marginTop: 14,
     padding: 12,

@@ -6,6 +6,7 @@ import {
   readSafeApiMessage,
   SERVER_ERROR_MESSAGE,
 } from "../../utils/errorMessage";
+import { syncServerClock } from "../../utils/serverClock";
 
 const API_BASE_URL =
   "https://homecycle-backend.onrender.com/api";
@@ -180,7 +181,10 @@ apiClient.interceptors.request.use(
 );
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    syncServerClock(response.headers?.date);
+    return response;
+  },
 
   async (rawError) => {
     const error = sanitizeRejectedError(rawError);

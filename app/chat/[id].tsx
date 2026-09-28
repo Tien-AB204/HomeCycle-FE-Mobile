@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import Header from "../../src/components/shared/Header";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,10 +36,11 @@ import conversationApi from "../../src/services/apis/conversationApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { compareChatTimeline } from "../../src/utils/chatTimeline";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
-import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
+import { formatBuyPostPrice, getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { devLog } from "../../src/utils/devLog";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 
 const agreementApi = {
   getPreview: (negotiationId: string) =>
@@ -1213,6 +1215,12 @@ export default function ChatDetailScreen() {
 
             productDetails.basePrice =
               Number(post?.basePrice || 0);
+
+            productDetails.priceFrom =
+              post?.priceFrom ?? null;
+
+            productDetails.priceTo =
+              post?.priceTo ?? null;
 
             productDetails.city =
               post?.city || "Chưa cập nhật";
@@ -2424,6 +2432,38 @@ export default function ChatDetailScreen() {
     negotiationId,
   ]);
 
+  // Hạn của phiên: 5 phút không hoạt động khi đang thương lượng; 15 phút xác nhận và
+  // thanh toán khi đã có hợp đồng. Hết hạn thì tải lại để nhận trạng thái Expired từ BE.
+  const refreshAfterDeadline = useCallback(() => {
+    void (async () => {
+      await fetchBaseInfo();
+      await fetchMessagesOnly();
+    })();
+  }, [fetchBaseInfo, fetchMessagesOnly]);
+  const negotiationStatusKey = String(
+    negotiationInfo?.negotiationStatus ?? "",
+  ).trim().toLowerCase();
+  const isNegotiationOpen =
+    negotiationStatusKey === "open" || negotiationStatusKey === "1";
+  const agreementStatusKey = String(
+    negotiationInfo?.agreementData?.agreementStatus ?? "",
+  ).replace(/[\s_-]/g, "").toLowerCase();
+  const isAgreementAwaitingCompletion =
+    Boolean(negotiationInfo?.agreementPreview?.hasAgreement) &&
+    ["pending", "awaitingpayment", "accepted"].includes(agreementStatusKey);
+  const negotiationCountdown = useDeadlineCountdown(
+    isNegotiationOpen ? negotiationInfo?.responseDeadlineAt : null,
+    refreshAfterDeadline,
+  );
+  const paymentCountdown = useDeadlineCountdown(
+    isAgreementAwaitingCompletion
+      ? negotiationInfo?.agreementData?.paymentDeadlineAt ??
+          negotiationInfo?.paymentDeadlineAt
+      : null,
+    refreshAfterDeadline,
+  );
+  const isNegotiationWindowClosed = negotiationCountdown.isExpired;
+
   useEffect(() => {
     if (
       reconnectVersion <= 0 ||
@@ -2977,11 +3017,15 @@ export default function ChatDetailScreen() {
         </View>
 
         <Text style={styles.productPrice}>
-          Giá niêm yết:{" "}
+          {isBuyPostType(negotiationInfo?.postType)
+            ? "Giá thu mua: "
+            : "Giá niêm yết: "}
           <Text style={styles.boldText}>
-            {formatCurrency(
-              negotiationInfo?.basePrice,
-            )}
+            {isBuyPostType(negotiationInfo?.postType)
+              ? formatBuyPostPrice(negotiationInfo)
+              : formatCurrency(
+                  negotiationInfo?.basePrice,
+                )}
           </Text>
         </Text>
       </View>
@@ -3386,6 +3430,7 @@ export default function ChatDetailScreen() {
             {isLatestOffer &&
               negotiationStatus ===
                 "Open" &&
+              !isNegotiationWindowClosed &&
               item.status ===
                 "pending" &&
               (isMe ? (
@@ -3866,6 +3911,24 @@ export default function ChatDetailScreen() {
             />
           )}
 
+          {isNegotiationOpen ? (
+            <DeadlineBanner
+              countdown={negotiationCountdown}
+              label="Phiên tự hết hạn nếu không có hoạt động sau"
+              expiredText="Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+              note="Mỗi tin nhắn hoặc đề xuất mới sẽ tính lại thời gian."
+              style={styles.deadlineBanner}
+            />
+          ) : isAgreementAwaitingCompletion ? (
+            <DeadlineBanner
+              countdown={paymentCountdown}
+              label="Thời gian xác nhận và thanh toán còn lại"
+              expiredText="Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+              note="Chỉnh sửa hợp đồng không gia hạn thời gian."
+              style={styles.deadlineBanner}
+            />
+          ) : null}
+
           <View
             style={[
               styles.inputContainer,
@@ -4108,7 +4171,8 @@ export default function ChatDetailScreen() {
             ]}
           >
             {negotiationInfo?.negotiationStatus ===
-              "Open" && (
+              "Open" &&
+              !isNegotiationWindowClosed && (
               <>
                 <TouchableOpacity
                   style={styles.menuItem}
@@ -5205,6 +5269,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
+  deadlineBanner: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+  },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",

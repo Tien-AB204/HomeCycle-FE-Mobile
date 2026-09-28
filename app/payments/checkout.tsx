@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import Header from "../../src/components/shared/Header";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -24,6 +25,7 @@ import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -422,9 +424,16 @@ export default function CheckoutScreen() {
     isWalletUnavailable || isWalletInsufficient;
   const isWalletSelected =
     paymentMethod === "wallet" && !isWalletDisabled;
+  // Hạn 15 phút của hợp đồng: hết giờ thì BE từ chối thanh toán nên khóa nút ngay trên app.
+  const paymentCountdown = useDeadlineCountdown(
+    isPaymentCompleted ? null : agreement?.paymentDeadlineAt,
+  );
+  const isPaymentWindowClosed = paymentCountdown.isExpired;
+
   const isSubmitDisabled =
     isProcessing ||
     isPaymentCompleted ||
+    isPaymentWindowClosed ||
     !hasAcceptedTerms ||
     isSeller ||
     (paymentMethod === "wallet" && isWalletDisabled);
@@ -490,6 +499,13 @@ export default function CheckoutScreen() {
     }
 
     if (isPaymentCompleted) return;
+
+    if (isPaymentWindowClosed) {
+      showError(
+        "Đã hết 15 phút xác nhận và thanh toán của hợp đồng này. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.",
+      );
+      return;
+    }
 
     if (!hasAcceptedTerms) {
       showError(
@@ -860,6 +876,13 @@ export default function CheckoutScreen() {
       </View>
 
       <View style={styles.bottomBar}>
+        {!isPaymentCompleted ? (
+          <DeadlineBanner
+            countdown={paymentCountdown}
+            label="Thời gian thanh toán còn lại"
+            expiredText="Đã hết 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+          />
+        ) : null}
         <InlineFeedback feedback={feedback} />
         {!isPaymentCompleted ? (
           <View style={styles.termsBox}>

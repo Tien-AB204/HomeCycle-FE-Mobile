@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -22,6 +23,7 @@ import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 
 const agreementApi = {
   getPreview: async (negotiationId: string) => {
@@ -787,6 +789,8 @@ export default function AgreementPreviewScreen() {
       case "cancelled":
       case "canceled":
         return "Đã hủy";
+      case "expired":
+        return "Đã hết hạn";
       default:
         return "Chưa xác định";
     }
@@ -848,6 +852,18 @@ export default function AgreementPreviewScreen() {
       active = false;
     };
   }, [needsParticipantLookup, negotiationId]);
+
+  // Hạn 15 phút tính từ lúc tạo hợp đồng; hết hạn thì khóa sửa/xác nhận/thanh toán và tải lại.
+  const isAgreementOpen = ["pending", "awaitingpayment", "accepted"].includes(
+    normalizeStatus(agreementData?.agreementStatus),
+  );
+  const paymentCountdown = useDeadlineCountdown(
+    isAgreementOpen ? agreementData?.paymentDeadlineAt : null,
+    () => void fetchAgreementDetails(false),
+  );
+  const isPaymentWindowClosed = paymentCountdown.isExpired;
+  const isPaymentResolutionPending =
+    agreementData?.paymentResolutionPending === true;
 
   if (isLoading && !agreementData) {
     return (
@@ -973,17 +989,24 @@ export default function AgreementPreviewScreen() {
 
   const canEdit =
     !isStateInvalidated &&
+    !isPaymentWindowClosed &&
     isPending &&
     (previewInfo?.canEdit === true || (hasParticipantIds && isParticipant));
   const canAccept =
     !isStateInvalidated &&
+    !isPaymentWindowClosed &&
     isPending &&
     !currentSideConfirmed &&
     (previewInfo?.canConfirm === true || (hasParticipantIds && isParticipant));
 
   // Tạm ẩn quyền Yêu cầu chỉnh sửa
   // const canRequestEdit = isAwaitingPayment && isParticipant;
-  const canPay = !isStateInvalidated && isAwaitingPayment && (previewInfo?.canPay === true || isBuyer);
+  const canPay =
+    !isStateInvalidated &&
+    !isPaymentWindowClosed &&
+    !isPaymentResolutionPending &&
+    isAwaitingPayment &&
+    (previewInfo?.canPay === true || isBuyer);
 
   const hasPendingAction = canEdit || canAccept;
   const hasAwaitingAction = /* canRequestEdit || */ canPay;
@@ -1249,6 +1272,21 @@ export default function AgreementPreviewScreen() {
           </TouchableOpacity>
         </View>
 
+        <DeadlineBanner
+          countdown={paymentCountdown}
+          label="Thời gian xác nhận và thanh toán còn lại"
+          expiredText="Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ sẽ được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+          note={isPending ? "Chỉnh sửa hợp đồng không gia hạn thời gian." : undefined}
+          style={styles.deadlineBanner}
+        />
+
+        {isPaymentResolutionPending && isAwaitingPayment ? (
+          <Text style={[styles.inlineMessage, styles.warningText]}>
+            Thanh toán của hợp đồng này đang được đối soát. Vui lòng chờ kết quả,
+            không thanh toán lại.
+          </Text>
+        ) : null}
+
         {statusMessage && (
           <Text
             style={[
@@ -1387,7 +1425,7 @@ export default function AgreementPreviewScreen() {
               </TouchableOpacity>
             )}
 
-            {!hasPendingAction && (
+            {!hasPendingAction && !isPaymentWindowClosed && (
               <Text style={styles.waitingText}>
                 Bạn đã xác nhận. Đang chờ phía còn lại xử lý...
               </Text>
@@ -1411,7 +1449,7 @@ export default function AgreementPreviewScreen() {
               </TouchableOpacity>
             )}
 
-            {!hasAwaitingAction && (
+            {!hasAwaitingAction && !isPaymentWindowClosed && !isPaymentResolutionPending && (
               <Text style={styles.waitingText}>
                 Hai bên đã chốt. Đang chờ người mua thanh toán...
               </Text>
@@ -1476,7 +1514,9 @@ export default function AgreementPreviewScreen() {
           !isAwaitingPayment &&
           !isPostPayment && (
             <Text style={styles.waitingText}>
-              Hợp đồng hiện không có thao tác cần xử lý.
+              {status === "expired"
+                ? "Thỏa thuận đã hết hạn sau 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                : "Hợp đồng hiện không có thao tác cần xử lý."}
             </Text>
           )}
       </View>
@@ -1671,6 +1711,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+  deadlineBanner: {
+    marginBottom: 10,
+  },
   reloadRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
