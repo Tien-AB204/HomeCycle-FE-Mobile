@@ -651,7 +651,10 @@ export default function AgreementPreviewScreen() {
         setStatusMessage({
           type: "warning",
           text:
-            readSafeApiMessage(error?.response?.data ?? error) ??
+            readSafeApiMessage(
+              error?.response?.data ??
+                (error?.isSuccess === false ? error : undefined),
+            ) ??
             "Hợp đồng vừa có phiên bản mới trước khi xác nhận. Dữ liệu đã được làm mới, vui lòng kiểm tra lại rồi xác nhận lần nữa.",
         });
 

@@ -156,15 +156,22 @@ export default function PaymentSuccessScreen() {
           setAppointmentId(String(statusAppointmentId));
         }
 
+        // Đơn hàng có thể chưa được tạo ngay sau khi thanh toán: lỗi khi tra
+        // đơn hàng không được làm mất trạng thái "đã thanh toán" đã xác nhận.
         if (statusOrderId) {
           setOrderId(String(statusOrderId));
           if (!statusAppointmentId) {
-            await resolveOrder(agreementId);
+            try {
+              await resolveOrder(agreementId);
+            } catch {}
           }
           return;
         }
 
-        const resolvedOrderId = await resolveOrder(agreementId);
+        let resolvedOrderId: string | null = null;
+        try {
+          resolvedOrderId = await resolveOrder(agreementId);
+        } catch {}
         if (!resolvedOrderId) {
           setStatusMessage(
             "Thanh toán đã hoàn tất nhưng đơn hàng chưa sẵn sàng. Hãy thử tải lại sau ít giây.",
@@ -219,7 +226,10 @@ export default function PaymentSuccessScreen() {
       setIsPaid(false);
       // Vẫn không kết luận thanh toán thành công; chỉ ưu tiên thông điệp BE nếu có.
       setStatusMessage(
-        readSafeApiMessage(error?.response?.data ?? error) ??
+        readSafeApiMessage(
+          error?.response?.data ??
+            (error?.isSuccess === false ? error : undefined),
+        ) ??
         "Không thể xác thực trạng thái thanh toán lúc này. Không dựa vào URL PayOS để kết luận giao dịch thành công; hãy thử kiểm tra lại.",
       );
     } finally {

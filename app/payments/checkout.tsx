@@ -20,10 +20,7 @@ import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { devLog } from "../../src/utils/devLog";
-import {
-  getApiErrorMessage,
-  getApiSuccessMessage,
-} from "../../src/utils/apiFeedback";
+import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -202,10 +199,6 @@ export default function CheckoutScreen() {
     (text: string) => setFeedback({ type: "info", text }),
     [],
   );
-  const showSuccess = useCallback(
-    (text: string) => setFeedback({ type: "success", text }),
-    [],
-  );
 
   const fetchCheckoutData = useCallback(async () => {
     if (!agreementId) {
@@ -279,7 +272,10 @@ export default function CheckoutScreen() {
                 ? "Không tìm thấy Hợp đồng. Vui lòng quay lại và kiểm tra lại giao dịch."
                 : null;
       showError(
-        readSafeApiMessage((error as any)?.response?.data ?? error) ||
+        readSafeApiMessage(
+          (error as any)?.response?.data ??
+            ((error as any)?.isSuccess === false ? error : undefined),
+        ) ||
           checkoutUnavailableMessage ||
           getApiErrorMessage(error, "Không thể tải thông tin thanh toán."),
       );
@@ -335,13 +331,15 @@ export default function CheckoutScreen() {
 
       // Chưa ghi nhận thanh toán: bỏ trạng thái "đang mở PayOS" cũ và
       // phản ánh dữ liệu hiện tại; không tự tạo phiên thanh toán mới.
-      clearFeedback();
+      if (source === "cancel") externalCheckoutPendingRef.current = false;
+      // fetchCheckoutData xóa thông báo khi bắt đầu nên phải hiện thông báo sau khi tải xong.
+      const refreshed = await fetchCheckoutData();
+      if (!refreshed) return;
       showInfo(
         source === "cancel"
           ? "Bạn đã hủy hoặc đóng phiên thanh toán. Hợp đồng chưa được thanh toán; bạn có thể thanh toán lại khi sẵn sàng."
           : "Chưa ghi nhận thanh toán cho hợp đồng này. Nếu bạn đã thanh toán, hệ thống sẽ cập nhật trong ít phút; vui lòng không thanh toán lại.",
       );
-      await fetchCheckoutData();
     } catch (error) {
       devLog("[checkout] Không đối chiếu được trạng thái thanh toán:", error);
       clearFeedback();
@@ -536,11 +534,13 @@ export default function CheckoutScreen() {
 
       if (paymentMethod === "wallet") {
         const response = await paymentApi.checkoutWithWallet(agreementId);
+        if (response?.isSuccess === false) throw response;
+        navigatedToSuccessRef.current = true;
         setIsPaymentCompleted(true);
-        showSuccess(
-          getApiSuccessMessage(response, "Thanh toán qua ví thành công."),
-        );
-        await fetchCheckoutData();
+        router.replace({
+          pathname: "/payments/success",
+          params: { agreementId },
+        });
         return;
       }
 
@@ -586,7 +586,8 @@ export default function CheckoutScreen() {
       const normalizedErrorCode = errorCode.toLowerCase();
       // Ưu tiên thông điệp BE; chuỗi FE chỉ là dự phòng khi BE không trả.
       const beMessage = readSafeApiMessage(
-        (error as any)?.response?.data ?? error,
+        (error as any)?.response?.data ??
+          ((error as any)?.isSuccess === false ? error : undefined),
       );
 
       if (normalizedErrorCode === "agreement.invalidstatus") {
