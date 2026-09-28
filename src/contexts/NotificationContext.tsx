@@ -414,14 +414,30 @@ export function NotificationProvider({
       }
     };
 
+    // BE phát AppointmentUpdated cho cả hai bên ở mọi thay đổi lịch hẹn/phiếu kiểm định,
+    // kể cả khi không có thông báo cho người đang xem (vd. người mua gửi kết quả).
+    const handleAppointmentUpdated = (payload: any) => {
+      const data = payload?.data ?? payload;
+      const appointmentId = String(
+        data?.appointmentId ?? data?.AppointmentId ?? "",
+      ).trim();
+      setAppointmentRefreshSignal((current) => ({
+        version: current.version + 1,
+        targetType: "appointment",
+        targetId: appointmentId || null,
+      }));
+    };
+
     connection.on("NotificationCreated", handleCreated);
     connection.on("NotificationRead", handleRead);
     connection.on("NotificationsReadAll", handleAllRead);
+    connection.on("AppointmentUpdated", handleAppointmentUpdated);
 
     return () => {
       connection.off("NotificationCreated", handleCreated);
       connection.off("NotificationRead", handleRead);
       connection.off("NotificationsReadAll", handleAllRead);
+      connection.off("AppointmentUpdated", handleAppointmentUpdated);
     };
   }, [connection, refreshUnreadCount, userToken]);
 

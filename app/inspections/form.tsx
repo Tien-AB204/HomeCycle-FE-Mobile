@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -21,6 +23,8 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
+import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import inspectionFormApi, {
@@ -129,6 +133,13 @@ export default function InspectionFormScreen() {
   const [conclusion, setConclusion] = useState<number | null>(null);
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+  const isDirtyRef = useRef(false);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { reconnectVersion } = useChatRealtime();
+  const { appointmentRefreshSignal } = useNotifications();
 
   const [newImages, setNewImages] = useState<ImagePicker.ImagePickerAsset[]>(
     [],
@@ -167,8 +178,11 @@ export default function InspectionFormScreen() {
     setNewImages([]);
   };
 
+  // background: làm mới nền (realtime / quay lại màn / kéo để làm mới) — không che
+  // màn hình bằng loading, giữ dữ liệu cũ khi lỗi và không ghi đè phần người dùng
+  // đang nhập dở (isDirty) bằng dữ liệu từ server.
   const fetchAll = useCallback(
-    async (showLoading = true) => {
+    async (showLoading = true, background = false) => {
       if (!appointmentId) {
         setLoadError("Không tìm thấy mã lịch hẹn.");
         setIsLoading(false);
@@ -176,8 +190,8 @@ export default function InspectionFormScreen() {
       }
 
       try {
-        if (showLoading) setIsLoading(true);
-        setLoadError(null);
+        if (showLoading && !background) setIsLoading(true);
+        if (!background) setLoadError(null);
 
         const appointmentResponse = await apiClient.get(
           `/appointments/${appointmentId}`,
@@ -192,9 +206,11 @@ export default function InspectionFormScreen() {
           const formData = await inspectionFormApi.getByAppointment(
             String(appointmentId),
           );
+          if (background && isDirtyRef.current) return;
           setForm(formData);
           hydrateFromForm(formData);
         } catch (formError: any) {
+          if (background) return;
           const status = Number(formError?.response?.status ?? 0);
           setForm(null);
 
@@ -209,11 +225,12 @@ export default function InspectionFormScreen() {
           }
         }
       } catch (error) {
+        if (background) return;
         setLoadError(
           getApiErrorMessage(error, "Không thể tải thông tin lịch hẹn lúc này."),
         );
       } finally {
-        setIsLoading(false);
+        if (!background) setIsLoading(false);
       }
     },
     [appointmentId],
@@ -222,6 +239,57 @@ export default function InspectionFormScreen() {
   useEffect(() => {
     void fetchAll();
   }, [fetchAll]);
+
+  const refreshInBackground = useCallback(
+    () => fetchAll(false, true),
+    [fetchAll],
+  );
+
+  // Lần focus đầu trùng với lần tải ban đầu ở trên nên bỏ qua.
+  const hasFocusedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+      void refreshInBackground();
+    }, [refreshInBackground]),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshInBackground();
+    });
+    return () => subscription.remove();
+  }, [refreshInBackground]);
+
+  // Gửi/từ chối kết quả kiểm định chỉ phát AppointmentUpdated + NotificationCreated,
+  // không phát OrderTrackingUpdated; NotificationContext gom cả hai thành tín hiệu này.
+  const handledRefreshSignalVersionRef = useRef(appointmentRefreshSignal.version);
+  useEffect(() => {
+    const version = appointmentRefreshSignal.version;
+    if (version <= 0) {
+      handledRefreshSignalVersionRef.current = 0;
+      return;
+    }
+    if (handledRefreshSignalVersionRef.current === version) return;
+    handledRefreshSignalVersionRef.current = version;
+
+    const timer = setTimeout(() => void refreshInBackground(), 150);
+    return () => clearTimeout(timer);
+  }, [appointmentRefreshSignal.version, refreshInBackground]);
+
+  useEffect(() => {
+    if (reconnectVersion <= 0) return;
+    void refreshInBackground();
+  }, [reconnectVersion, refreshInBackground]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshInBackground();
+    setIsRefreshing(false);
+  };
 
   const pickImages = async () => {
     if (newImages.length >= 5) {
@@ -621,6 +689,14 @@ export default function InspectionFormScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => void handleRefresh()}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
       >
         <View style={styles.headerStatusCard}>
           <Text style={styles.statusTitle}>

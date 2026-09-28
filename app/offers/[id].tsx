@@ -173,17 +173,24 @@ export default function OfferDetailScreen() {
   const screenGeneration = useRef(0);
   const fetchGeneration = useRef(0);
 
-  const fetchOffer = useCallback(async () => {
-    const request = ++fetchGeneration.current;
+  // silent (realtime): không che loading, không xóa thông báo, giữ dữ liệu cũ khi lỗi.
+  // Lần tải im lặng chỉ đọc (không tăng) fetchGeneration để không vô hiệu hóa một lần
+  // tải thường đang chạy — nếu không, lần tải thường đó sẽ không tắt được loading.
+  const fetchOffer = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    const request = silent ? fetchGeneration.current : ++fetchGeneration.current;
     if (!offerId) {
+      if (silent) return null;
       setMessage({ type: "error", text: "Không tìm thấy mã đề nghị." });
       setIsLoading(false);
       return;
     }
 
     try {
-      setIsLoading(true);
-      setMessage(null);
+      if (!silent) {
+        setIsLoading(true);
+        setMessage(null);
+      }
       const response = await offerApi.getOfferById(offerId);
       if (request !== fetchGeneration.current) return null;
       if (response?.isSuccess === false) throw response;
@@ -193,13 +200,14 @@ export default function OfferDetailScreen() {
       return detail;
     } catch (error) {
       if (request !== fetchGeneration.current) return null;
+      if (silent) return null;
       setOffer(null);
       setMessage({
         type: "error",
         text: getApiErrorMessage(error, "Không thể tải chi tiết đề nghị."),
       });
     } finally {
-      if (request === fetchGeneration.current) setIsLoading(false);
+      if (!silent && request === fetchGeneration.current) setIsLoading(false);
     }
     return null;
   }, [offerId, currentUserId]);
@@ -229,7 +237,7 @@ export default function OfferDetailScreen() {
       if (updatedOfferId === String(offerId)) {
         // OfferResponse realtime không chứa đầy đủ canUpdate/canCancel.
         // Refetch đúng detail này một lần để giữ action flags authoritative.
-        void fetchOffer();
+        void fetchOffer({ silent: true });
       }
     };
 
