@@ -40,7 +40,10 @@ import { formatBuyPostPrice, getPosterRoleLabel, isBuyPostType } from "../../src
 import { devLog } from "../../src/utils/devLog";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
-import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
+import {
+  type DeadlineCountdown,
+  useDeadlineCountdown,
+} from "../../src/utils/useDeadlineCountdown";
 
 const agreementApi = {
   getPreview: (negotiationId: string) =>
@@ -164,6 +167,13 @@ const getRobustAvatar = (
   }
 
   return DEFAULT_AVATAR_URI;
+};
+
+// Khung báo "đã hết hạn" cố định cho phiên BE đã chuyển sang Expired.
+const EXPIRED_COUNTDOWN: DeadlineCountdown = {
+  hasDeadline: true,
+  remainingMs: 0,
+  isExpired: true,
 };
 
 const getNegotiationStatusLabel = (status: unknown) => {
@@ -2463,6 +2473,11 @@ export default function ChatDetailScreen() {
     refreshAfterDeadline,
   );
   const isNegotiationWindowClosed = negotiationCountdown.isExpired;
+  // Phiên đã hết hạn (BE: Expired) — BE không phải lúc nào cũng ghi tin nhắn hệ thống,
+  // nên màn hình tự báo trạng thái và khóa ô nhập.
+  const isNegotiationExpired =
+    negotiationStatusKey === "expired" || negotiationStatusKey === "6";
+  const isAgreementExpired = agreementStatusKey === "expired";
 
   useEffect(() => {
     if (
@@ -3618,6 +3633,21 @@ export default function ChatDetailScreen() {
                 </View>
               )}
 
+            {isLatestOffer &&
+              (isNegotiationExpired ||
+                isNegotiationWindowClosed) && (
+                <View style={styles.statusBadgeError}>
+                  <Ionicons
+                    name="time-outline"
+                    size={16}
+                    color={COLORS.white}
+                  />
+                  <Text style={styles.statusBadgeText}>
+                    Phiên thương lượng đã hết hạn
+                  </Text>
+                </View>
+              )}
+
             {(!isLatestOffer ||
               item.status ===
                 "superseded") &&
@@ -3911,7 +3941,18 @@ export default function ChatDetailScreen() {
             />
           )}
 
-          {isNegotiationOpen ? (
+          {isNegotiationExpired ? (
+            <DeadlineBanner
+              countdown={EXPIRED_COUNTDOWN}
+              label=""
+              expiredText={
+                isAgreementExpired
+                  ? "Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                  : "Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+              }
+              style={styles.deadlineBanner}
+            />
+          ) : isNegotiationOpen ? (
             <DeadlineBanner
               countdown={negotiationCountdown}
               label="Phiên tự hết hạn nếu không có hoạt động sau"
@@ -3969,7 +4010,9 @@ export default function ChatDetailScreen() {
                 isResolvingRoute ||
                 !negotiationId
                   ? "Đang kết nối cuộc trò chuyện..."
-                  : "Nhập tin nhắn..."
+                  : isNegotiationExpired
+                    ? "Phiên thương lượng đã hết hạn"
+                    : "Nhập tin nhắn..."
               }
               placeholderTextColor={
                 COLORS.textLight
@@ -3978,6 +4021,7 @@ export default function ChatDetailScreen() {
               editable={
                 !isAuthLoading &&
                 !isResolvingRoute &&
+                !isNegotiationExpired &&
                 Boolean(negotiationId)
               }
               onChangeText={setInputText}
@@ -3994,6 +4038,7 @@ export default function ChatDetailScreen() {
                   !negotiationId ||
                   isAuthLoading ||
                   isResolvingRoute ||
+                  isNegotiationExpired ||
                   isWaitingForNetwork) && {
                   opacity: 0.45,
                 },
@@ -4003,6 +4048,7 @@ export default function ChatDetailScreen() {
                 !negotiationId ||
                 isAuthLoading ||
                 isResolvingRoute ||
+                isNegotiationExpired ||
                 isWaitingForNetwork
               }
               onPress={() =>
