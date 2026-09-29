@@ -21,6 +21,7 @@ import { AuthProvider } from "../src/contexts/AuthContext";
 import { ChatRealtimeProvider } from "../src/contexts/ChatRealtimeContext";
 import { DiscoveryPreferencesProvider } from "../src/contexts/DiscoveryPreferencesContext";
 import { NotificationProvider } from "../src/contexts/NotificationContext";
+import { OfferInboxProvider } from "../src/contexts/OfferInboxContext";
 import { SubscriptionProvider } from "../src/contexts/SubscriptionContext";
 import {
   applyAppearancePreference,
@@ -95,6 +96,7 @@ function RootNavigator() {
         <DiscoveryPreferencesProvider>
           <ChatRealtimeProvider>
             <NotificationProvider>
+              <OfferInboxProvider>
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -113,6 +115,7 @@ function RootNavigator() {
               </Stack>
               <InAppNotificationToast />
               <AppToastHost />
+              </OfferInboxProvider>
             </NotificationProvider>
           </ChatRealtimeProvider>
         </DiscoveryPreferencesProvider>

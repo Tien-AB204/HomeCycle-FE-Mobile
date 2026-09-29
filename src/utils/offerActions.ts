@@ -28,12 +28,3 @@ export const canRespondToOffer = (offer: any, action: OfferResponseAction) => {
 
 export const validOfferTerms = (price: number, quantity: number) =>
   Number.isFinite(price) && price > 0 && Number.isInteger(quantity) && quantity > 0;
-
-// Only IDs returned by the authenticated negotiation list may supply routes.
-export const collectOfferChatRoutes = (items: any[], routes: Record<string, string>) => {
-  for (const item of items) {
-    const offerId = String(item?.offerId ?? "").trim().toLowerCase();
-    const negotiationId = String(item?.negotiationId ?? "").trim();
-    if (offerId && negotiationId) routes[offerId] = negotiationId;
-  }
-};

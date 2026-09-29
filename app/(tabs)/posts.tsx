@@ -21,6 +21,7 @@ import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useNotifications } from "../../src/contexts/NotificationContext";
+import { formatBadgeCount, useOfferInbox } from "../../src/contexts/OfferInboxContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
@@ -100,6 +101,16 @@ export default function PostsScreen() {
 
   const [section, setSection] = useState<PostSection>(requestedSection);
   const [offerTab, setOfferTab] = useState<OfferTab>(requestedOfferTab);
+  const {
+    pendingCount: pendingOfferCount,
+    unseenCount: unseenOfferCount,
+    markOffersSeen,
+  } = useOfferInbox();
+
+  // Đang mở mục Đề nghị thì mọi đề nghị đang chờ coi như đã xem (tắt badge đỏ ở thanh dưới).
+  useEffect(() => {
+    if (isFocused && section === "offers" && unseenOfferCount > 0) markOffersSeen();
+  }, [isFocused, markOffersSeen, section, unseenOfferCount]);
   const [activeTab, setActiveTab] = useState<PostTab>("all");
 
   useEffect(() => {
@@ -597,6 +608,14 @@ export default function PostsScreen() {
                 <Text style={[styles.sectionText, selected ? styles.sectionTextActive : undefined]}>
                   {item.label}
                 </Text>
+                {item.key === "offers" && pendingOfferCount > 0 ? (
+                  // Xanh = tổng đề nghị còn chờ phản hồi (kể cả đã xem).
+                  <View style={[styles.sectionBadge, selected ? styles.sectionBadgeActive : undefined]}>
+                    <Text style={[styles.sectionBadgeText, selected ? styles.sectionBadgeTextActive : undefined]}>
+                      {formatBadgeCount(pendingOfferCount)}
+                    </Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -781,6 +800,18 @@ const styles = StyleSheet.create({
   sectionBtnActive: { backgroundColor: COLORS.primary },
   sectionText: { color: COLORS.primary, fontSize: 14, fontWeight: "700" },
   sectionTextActive: { color: COLORS.white },
+  sectionBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+  },
+  sectionBadgeActive: { backgroundColor: COLORS.white },
+  sectionBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: "800" },
+  sectionBadgeTextActive: { color: COLORS.primary },
   statusFilterContainer: {
     flexDirection: "row",
     flexWrap: "wrap",

@@ -1,5 +1,4 @@
 import { DEFAULT_AVATAR_URI } from "../../utils/avatar";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import React, {
@@ -28,6 +27,7 @@ import { ModalBackdrop, ModalSurface } from "../../components/shared/ModalBackdr
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChatRealtime } from "../../contexts/ChatRealtimeContext";
+import { formatBadgeCount, useOfferInbox } from "../../contexts/OfferInboxContext";
 import apiClient from "../../services/apis/axiosClient";
 import {
   getApiErrorMessage,
@@ -40,7 +40,6 @@ import { remainingUntil, useServerNowTicker } from "../../utils/useDeadlineCount
 type OfferTab = "received" | "sent";
 type ActiveTab = OfferTab;
 type OfferSort = "newest" | "highest";
-type OfferTabChanges = Record<OfferTab, boolean>;
 
 type FeedbackTarget =
   | { type: "page" }
@@ -135,19 +134,6 @@ const getPendingOffers = (response: any): any[] =>
         new Date(second.createdAt).getTime() -
         new Date(first.createdAt).getTime(),
     );
-
-const createOfferSnapshot = (offers: any[]) =>
-  offers
-    .map((offer) =>
-      [
-        String(offer.offerId ?? ""),
-        String(offer.offerPrice ?? ""),
-        String(offer.offerQuantity ?? ""),
-        String(offer.offerStatus ?? ""),
-      ].join(":"),
-    )
-    .sort()
-    .join("|");
 
 const normalizeSearchText = (value: unknown) =>
   String(value || "")
@@ -317,6 +303,7 @@ export default function OfferManagementPanel({
     reconnectVersion,
   } = useChatRealtime();
   const currentUserId = user?.userId || user?.id;
+  const { isNewOffer, pendingCount: pendingReceivedCount } = useOfferInbox();
   const isWaitingForNetwork =
     connectionStatus === "reconnecting" ||
     connectionStatus === "disconnected";
@@ -331,19 +318,13 @@ export default function OfferManagementPanel({
   const appStateRef = useRef(AppState.currentState);
   const offerSyncInFlightRef = useRef(false);
   const offerSyncPendingRef = useRef(false);
-  const seenOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
-  const latestOfferSnapshotsRef = useRef<Partial<Record<OfferTab, string>>>({});
 
   const [activeTab, setActiveTab] =
     useState<ActiveTab>(requestedTab);
-  const [offerTabChanges, setOfferTabChanges] = useState<OfferTabChanges>({
-    received: false,
-    sent: false,
-  });
   const [offerSort, setOfferSort] = useState<OfferSort>("newest");
   const [searchQuery, setSearchQuery] = useState("");
   const [offersList, setOffersList] = useState<any[]>([]);
-  // Một bộ đếm chung cho hạn phản hồi 3 phút của các đề nghị đã gửi.
+  // Một bộ đếm chung cho hạn phản hồi 3 phút của các đề nghị trong danh sách.
   const nowTick = useServerNowTicker(
     offersList.some((offer) => Boolean(offer?.responseDeadlineAt)),
   );
@@ -382,9 +363,6 @@ export default function OfferManagementPanel({
 
   useEffect(() => {
     handledReconnectVersionRef.current = 0;
-    seenOfferSnapshotsRef.current = {};
-    latestOfferSnapshotsRef.current = {};
-    setOfferTabChanges({ received: false, sent: false });
   }, [currentUserId]);
 
   const getOfferSenderId = useCallback(
@@ -411,70 +389,16 @@ export default function OfferManagementPanel({
     [],
   );
 
-  const updateOfferTabDot = useCallback(
-    (tab: OfferTab, hasChanges: boolean) => {
-      setOfferTabChanges((current) =>
-        current[tab] === hasChanges
-          ? current
-          : { ...current, [tab]: hasChanges },
-      );
-    },
-    [],
-  );
-
-  const getSeenSnapshotKey = useCallback(
-    (tab: OfferTab) =>
-      [
-        "homecycle",
-        "offer-seen-snapshot",
-        String(currentUserId),
-        tab,
-      ].join(":"),
-    [currentUserId],
-  );
-
-  const saveSeenOfferSnapshot = useCallback(
-    async (tab: OfferTab, snapshot: string) => {
-      if (!currentUserId) return;
-
-      seenOfferSnapshotsRef.current[tab] = snapshot;
-      await AsyncStorage.setItem(getSeenSnapshotKey(tab), snapshot);
-      updateOfferTabDot(tab, false);
-    },
-    [currentUserId, getSeenSnapshotKey, updateOfferTabDot],
-  );
-
+  // Số trên tab "Đã nhận" lấy từ OfferInboxContext; ở đây chỉ nạp danh sách tab đang mở.
   const checkOfferTabChanges = useCallback(
     async (tab: OfferTab, response: any) => {
       if (response?.isSuccess === false) throw response;
 
-      const pendingOffers = getPendingOffers(response);
-      const currentSnapshot = createOfferSnapshot(pendingOffers);
-      latestOfferSnapshotsRef.current[tab] = currentSnapshot;
-
-      let seenSnapshot = seenOfferSnapshotsRef.current[tab];
-
-      if (seenSnapshot === undefined) {
-        const storedSnapshot = await AsyncStorage.getItem(getSeenSnapshotKey(tab));
-
-        if (storedSnapshot === null) {
-          await saveSeenOfferSnapshot(tab, currentSnapshot);
-          seenSnapshot = currentSnapshot;
-        } else {
-          seenSnapshot = storedSnapshot;
-          seenOfferSnapshotsRef.current[tab] = storedSnapshot;
-        }
-      }
-
       if (activeTabRef.current === tab) {
-        setOffersList(pendingOffers);
-        await saveSeenOfferSnapshot(tab, currentSnapshot);
-        return;
+        setOffersList(getPendingOffers(response));
       }
-
-      updateOfferTabDot(tab, currentSnapshot !== seenSnapshot);
     },
-    [getSeenSnapshotKey, saveSeenOfferSnapshot, updateOfferTabDot],
+    [],
   );
 
   const fetchData = useCallback(
@@ -571,17 +495,6 @@ export default function OfferManagementPanel({
       offerSyncInFlightRef.current = false;
     }
   }, [checkOfferTabChanges]);
-
-  const markOfferTabAsSeen = useCallback(
-    (tab: OfferTab) => {
-      updateOfferTabDot(tab, false);
-      const latestSnapshot = latestOfferSnapshotsRef.current[tab];
-      if (latestSnapshot !== undefined) {
-        void saveSeenOfferSnapshot(tab, latestSnapshot);
-      }
-    },
-    [saveSeenOfferSnapshot, updateOfferTabDot],
-  );
 
   const applyRealtimeOfferChange = useCallback(
     (payload: any) => {
@@ -722,6 +635,9 @@ export default function OfferManagementPanel({
         offerStatus: offer?.offerStatus ?? offer?.OfferStatus,
         version: offer?.version ?? offer?.Version,
         createdAt: offer?.createdAt ?? offer?.CreatedAt,
+        // Giữ hạn phản hồi để thẻ thêm qua realtime cũng có đồng hồ ngay.
+        responseDeadlineAt:
+          offer?.responseDeadlineAt ?? offer?.ResponseDeadlineAt ?? null,
       };
 
       if (activeTabRef.current === affectedTab) {
@@ -734,14 +650,9 @@ export default function OfferManagementPanel({
             ? [normalizedOffer, ...withoutCurrentOffer]
             : withoutCurrentOffer;
         });
-
-        updateOfferTabDot(affectedTab, false);
-        return;
       }
-
-      updateOfferTabDot(affectedTab, true);
     },
-    [currentUserId, updateOfferTabDot],
+    [currentUserId],
   );
 
   useFocusEffect(
@@ -826,24 +737,15 @@ export default function OfferManagementPanel({
 
   const handleChangeTab = useCallback(
     (nextTab: ActiveTab) => {
-      if (nextTab === activeTabRef.current) {
-        if (nextTab === "received" || nextTab === "sent") {
-          void markOfferTabAsSeen(nextTab);
-        }
-        return;
-      }
+      if (nextTab === activeTabRef.current) return;
 
       fetchRequestIdRef.current += 1;
       clearCurrentFeedback();
       setOffersList([]);
       activeTabRef.current = nextTab;
       setActiveTab(nextTab);
-
-      if (nextTab === "received" || nextTab === "sent") {
-        void markOfferTabAsSeen(nextTab);
-      }
     },
-    [clearCurrentFeedback, markOfferTabAsSeen],
+    [clearCurrentFeedback],
   );
 
   useEffect(() => {
@@ -1090,10 +992,15 @@ export default function OfferManagementPanel({
         offerCount: number;
         highestPrice: number;
         latestCreatedAt: number;
+        newCount: number;
       }
     >();
 
     filteredOffers.forEach((item) => {
+      // Đề nghị còn chờ và đến sau lần xem trước → "mới".
+      const isNew =
+        (item?.offerStatus === "Pending" || item?.offerStatus === 0) &&
+        isNewOffer(item?.createdAt);
       const buyPostId = String(item?.buyPostId || "").trim();
       const isBuyPost = buyPostId.length > 0;
       const postId = isBuyPost ? buyPostId : String(item?.postId || "").trim();
@@ -1121,11 +1028,13 @@ export default function OfferManagementPanel({
           offerCount: 1,
           highestPrice: price,
           latestCreatedAt: createdAt,
+          newCount: isNew ? 1 : 0,
         });
         return;
       }
 
       existing.offerCount += 1;
+      if (isNew) existing.newCount += 1;
       if (price > existing.highestPrice) existing.highestPrice = price;
       if (createdAt > existing.latestCreatedAt) existing.latestCreatedAt = createdAt;
       if (!existing.thumbnailUrl && !isBuyPost && thumbnailUrl) {
@@ -1134,7 +1043,7 @@ export default function OfferManagementPanel({
     });
 
     return Array.from(groups.values());
-  }, [activeTab, filteredOffers]);
+  }, [activeTab, filteredOffers, isNewOffer]);
 
   const openReceivedPostGroup = (group: { postId: string; title: string }) => {
     router.push({
@@ -1172,9 +1081,16 @@ export default function OfferManagementPanel({
         <Text style={styles.postGroupTitle} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={styles.postGroupCount}>
-          {item.offerCount} đề nghị đã nhận
-        </Text>
+        <View style={styles.postGroupCountRow}>
+          <Text style={styles.postGroupCount}>
+            {item.offerCount} đề nghị đã nhận
+          </Text>
+          {item.newCount > 0 ? (
+            <View style={styles.newOfferBadge}>
+              <Text style={styles.newOfferBadgeText}>{item.newCount} mới</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.postGroupHighest}>
           Giá cao nhất: {item.highestPrice.toLocaleString("vi-VN")} đ
         </Text>
@@ -1372,30 +1288,39 @@ export default function OfferManagementPanel({
           {([
             { key: "received", label: "Đã nhận" },
             { key: "sent", label: "Đã gửi" },
-          ] as const).map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.tabBtn,
-                activeTab === tab.key ? styles.tabBtnActive : undefined,
-              ]}
-              onPress={() => handleChangeTab(tab.key)}
-            >
-              <View style={styles.tabLabelRow}>
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeTab === tab.key ? styles.tabTextActive : undefined,
-                  ]}
-                >
-                  {tab.label}
-                </Text>
-                {offerTabChanges[tab.key] ? (
-                  <View style={styles.tabUnreadDot} />
-                ) : null}
-              </View>
-            </TouchableOpacity>
-          ))}
+          ] as const).map((tab) => {
+            // Chỉ đếm đề nghị nhận được (việc bạn cần phản hồi); "Đã gửi" không hiện báo hiệu.
+            const pendingCount = tab.key === "received" ? pendingReceivedCount : 0;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabBtn,
+                  activeTab === tab.key ? styles.tabBtnActive : undefined,
+                ]}
+                onPress={() => handleChangeTab(tab.key)}
+              >
+                <View style={styles.tabLabelRow}>
+                  <Text
+                    style={[
+                      styles.tabText,
+                      activeTab === tab.key ? styles.tabTextActive : undefined,
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                  {pendingCount > 0 ? (
+                    // Số đề nghị nhận được còn chờ phản hồi.
+                    <View style={styles.tabCountBadge}>
+                      <Text style={styles.tabCountBadgeText}>
+                        {formatBadgeCount(pendingCount)}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {isWaitingForNetwork ? (
@@ -1704,11 +1629,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
   },
-  tabUnreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.error,
+  tabCountBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+  },
+  tabCountBadgeText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: "800",
   },
   contentArea: { flex: 1, backgroundColor: COLORS.white },
   offerListArea: {
@@ -2000,6 +1933,23 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 13,
     fontWeight: "700",
+  },
+  postGroupCountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  newOfferBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.error,
+  },
+  newOfferBadgeText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: "800",
   },
   postGroupHighest: {
     marginTop: 2,

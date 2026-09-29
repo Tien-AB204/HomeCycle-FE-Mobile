@@ -3,9 +3,11 @@ import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../src/constants/theme";
+import { formatBadgeCount, useOfferInbox } from "../../src/contexts/OfferInboxContext";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { unseenCount } = useOfferInbox();
   const isWeb = Platform.OS === "web";
 
   const tabBottomPadding = isWeb
@@ -74,6 +76,14 @@ export default function TabsLayout() {
         name="posts"
         options={{
           title: "Tin đăng",
+          // Đỏ = đề nghị còn chờ phản hồi mà bạn chưa xem.
+          tabBarBadge: unseenCount > 0 ? formatBadgeCount(unseenCount) : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: COLORS.error,
+            color: COLORS.white,
+            fontSize: 10,
+            fontWeight: "700",
+          },
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "newspaper" : "newspaper-outline"}

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
@@ -29,13 +30,14 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import DeadlineChip from "../../src/components/shared/DeadlineChip";
+import { useOfferInbox } from "../../src/contexts/OfferInboxContext";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
-import { canRespondToOffer, collectOfferChatRoutes, getOfferVersion, isAcceptedOffer, isPendingOffer, validOfferTerms } from "../../src/utils/offerActions";
+import { canRespondToOffer, getOfferVersion, isAcceptedOffer, isPendingOffer, validOfferTerms } from "../../src/utils/offerActions";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { remainingUntil, useServerNowTicker } from "../../src/utils/useDeadlineCountdown";
 
@@ -467,34 +469,20 @@ export default function OffersByPostScreen() {
   const [offers, setOffers] = useState<
     ReceivedOfferItem[]
   >([]);
-  const [chatRoutes, setChatRoutes] = useState<Record<string, string>>({});
   // Một bộ đếm chung cho các thẻ còn đang chờ phản hồi.
   const nowTick = useServerNowTicker(
     offers.some((offer) => isPendingOffer(offer.offerStatus) && Boolean(offer.responseDeadlineAt)),
   );
-  useFocusEffect(useCallback(() => {
-    let cancelled = false;
-    setChatRoutes({});
-    const wanted = offers.filter((item) => isAcceptedOffer(item.offerStatus)).map((item) => normalizeId(item.offerId));
-    if (wanted.length && currentUserId) void (async () => {
-      const routes: Record<string, string> = {};
-      try {
-        for (let pageNumber = 1; pageNumber <= MAX_PAGE_GUARD; pageNumber++) {
-          const response = await apiClient.get("/negotiations", { params: { PageNumber: pageNumber, PageSize: PAGE_SIZE } });
-          if (cancelled) return;
-          if (response.data?.isSuccess === false) break;
-          const page = unwrapPage(response.data);
-          if (!Array.isArray(page?.items)) break;
-          collectOfferChatRoutes(page.items, routes);
-          setChatRoutes({ ...routes });
-          if (wanted.every((id) => routes[id]) || !hasMorePages(page, pageNumber, page.items.length)) break;
-        }
-      } catch {
-        // Missing route data hides the shortcut; never guess or create a room.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [offers, currentUserId, contextKey]));
+  // Nút chat hiện ngay cho đề nghị đã chấp nhận; phiên chỉ được tra khi bấm (chi tiết đề
+  // nghị có negotiationId) rồi nhớ lại, thay vì dò toàn bộ danh sách phiên mỗi lần tải.
+  const chatRouteCacheRef = useRef<Record<string, string>>({});
+  const [openingChatOfferId, setOpeningChatOfferId] = useState<string | null>(null);
+  // Đang xem danh sách đề nghị thì coi như đã xem (tắt badge đỏ ở thanh dưới).
+  const { isNewOffer, markOffersSeen, unseenCount } = useOfferInbox();
+  const isScreenFocused = useIsFocused();
+  useEffect(() => {
+    if (isScreenFocused && unseenCount > 0) markOffersSeen();
+  }, [isScreenFocused, markOffersSeen, unseenCount]);
 
   // Default stays "newest" for both Buy and Sell context — the Buy
   // procurement default must never be highest-price-first, and there is no
@@ -1028,6 +1016,34 @@ export default function OffersByPostScreen() {
     }
   };
 
+  const openOfferChat = async (offerId: unknown) => {
+    const key = normalizeId(offerId);
+    if (!key || openingChatOfferId) return;
+    const cached = chatRouteCacheRef.current[key];
+    if (cached) {
+      router.push(`/chat/${cached}` as any);
+      return;
+    }
+    try {
+      setOpeningChatOfferId(key);
+      const detail = unwrapPage(await offerApi.getOfferById(String(offerId)));
+      const negotiationId = String(detail?.negotiationId ?? detail?.NegotiationId ?? "").trim();
+      if (!negotiationId) {
+        openOfferDetail(offerId);
+        return;
+      }
+      chatRouteCacheRef.current[key] = negotiationId;
+      router.push(`/chat/${negotiationId}` as any);
+    } catch (error) {
+      setActionFeedback({
+        type: "error",
+        text: getApiErrorMessage(error, "Không mở được trò chuyện lúc này. Vui lòng thử lại."),
+      });
+    } finally {
+      setOpeningChatOfferId(null);
+    }
+  };
+
   const openOfferDetail = (
     offerId: unknown,
   ) => {
@@ -1209,7 +1225,6 @@ export default function OffersByPostScreen() {
           </View>
         }
         renderItem={({ item }) => {
-          const chatId = isAcceptedOffer(item.offerStatus) ? chatRoutes[normalizeId(item.offerId)] : undefined;
           const senderName =
             String(
               item.senderName || "",
@@ -1253,20 +1268,24 @@ export default function OffersByPostScreen() {
                 ) : null}
                 <View style={styles.offerTopRow}>
                   <View style={styles.offerIdentityColumn}>
-                    <Text style={styles.senderName} numberOfLines={1}>
-                      {senderName}
-                    </Text>
-                    <Text style={styles.offerQuantity}>
-                      Số lượng: {Number(item.offerQuantity || 0)}
+                    <View style={styles.senderNameRow}>
+                      <Text style={styles.senderName} numberOfLines={1}>
+                        {senderName}
+                      </Text>
+                      {isPending && isNewOffer(item.createdAt) ? (
+                        <View style={styles.newOfferPill}>
+                          <Text style={styles.newOfferPillText}>Mới</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.offerQuantity} numberOfLines={1}>
+                      SL {Number(item.offerQuantity || 0)} · {formatDate(item.createdAt)}
                     </Text>
                   </View>
 
                   <View style={styles.offerPriceDateColumn}>
                     <Text style={styles.offerPrice}>
                       {formatPrice(item.offerPrice)}
-                    </Text>
-                    <Text style={styles.offerDate}>
-                      {formatDate(item.createdAt)}
                     </Text>
                   </View>
 
@@ -1300,53 +1319,52 @@ export default function OffersByPostScreen() {
                   </Text>
                 ) : null}
 
-                {isPending ? (
-                  <DeadlineChip
-                    remainingMs={responseRemaining}
-                    label="Còn"
-                    expiredText="Đã hết thời gian phản hồi"
-                    style={styles.offerDeadlineChip}
-                  />
-                ) : null}
-
                 <View style={styles.offerBottomRow}>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      getStatusStyle(
-                        item.offerStatus,
-                      ),
-                    ]}
-                  >
-                    <Text style={styles.statusText}>
-                      {getStatusLabel(
-                        item.offerStatus,
-                      )}
-                    </Text>
-                  </View>
+                  {/* Đề nghị đang chờ: nhãn trạng thái gộp luôn thời gian còn lại. */}
+                  {isPending && responseRemaining !== null ? (
+                    <DeadlineChip
+                      remainingMs={responseRemaining}
+                      label="Chờ phản hồi ·"
+                      expiredText="Hết thời gian phản hồi"
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        getStatusStyle(
+                          item.offerStatus,
+                        ),
+                      ]}
+                    >
+                      <Text style={styles.statusText}>
+                        {getStatusLabel(
+                          item.offerStatus,
+                        )}
+                      </Text>
+                    </View>
+                  )}
 
                   <View style={styles.offerBottomActions}>
-                    <View style={styles.chatShortcutSlot}>
-                      {chatId ? (
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel="Đi tới trò chuyện"
-                          style={styles.chatShortcut}
-                          hitSlop={3}
-                          disabled={isProcessingAction}
-                          onPress={(event) => {
-                            event.stopPropagation();
-                            router.push(`/chat/${chatId}` as any);
-                          }}
-                        >
+                    {isAcceptedOffer(item.offerStatus) ? (
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Đi tới trò chuyện"
+                        style={styles.chatShortcut}
+                        hitSlop={3}
+                        disabled={isProcessingAction || Boolean(openingChatOfferId)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          void openOfferChat(item.offerId);
+                        }}
+                      >
+                        {openingChatOfferId === normalizeId(item.offerId) ? (
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : (
                           <Ionicons name="chatbubbles-outline" size={18} color={COLORS.primary} />
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                    <View style={styles.detailLink}>
-                      <Text style={styles.detailLinkText}>Xem chi tiết</Text>
-                      <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
-                    </View>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                    <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
                   </View>
                 </View>
 
@@ -1878,10 +1896,27 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   senderName: {
+    flexShrink: 1,
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "800",
     lineHeight: 22,
+  },
+  senderNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  newOfferPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: COLORS.error,
+  },
+  newOfferPillText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "800",
   },
   offerPrice: {
     color: COLORS.primary,
