@@ -47,6 +47,26 @@ export function useDeadlineCountdown(
   return { hasDeadline: deadlineMs !== null, remainingMs, isExpired };
 }
 
+// Một bộ đếm theo giờ server dùng chung cho cả danh sách, thay vì mỗi thẻ một setInterval.
+export function useServerNowTicker(active: boolean) {
+  const [now, setNow] = useState(() => serverNow());
+
+  useEffect(() => {
+    if (!active) return;
+    setNow(serverNow());
+    const timer = setInterval(() => setNow(serverNow()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return now;
+}
+
+// Thời gian còn lại (ms) tới hạn do BE trả; null khi không có hạn.
+export const remainingUntil = (deadline: unknown, now: number) => {
+  const deadlineMs = parseServerDate(deadline);
+  return deadlineMs === null ? null : Math.max(0, deadlineMs - now);
+};
+
 export const formatRemainingTime = (remainingMs: number) => {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const hours = Math.floor(totalSeconds / 3600);

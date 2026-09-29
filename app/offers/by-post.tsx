@@ -28,6 +28,7 @@ import {
   ModalBackdrop,
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
+import DeadlineChip from "../../src/components/shared/DeadlineChip";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
@@ -36,6 +37,7 @@ import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { canRespondToOffer, collectOfferChatRoutes, getOfferVersion, isAcceptedOffer, isPendingOffer, validOfferTerms } from "../../src/utils/offerActions";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { remainingUntil, useServerNowTicker } from "../../src/utils/useDeadlineCountdown";
 
 type ReceivedOfferItem = {
   offerId?: string;
@@ -56,6 +58,8 @@ type ReceivedOfferItem = {
 
   version?: number | null;
   createdAt?: string | null;
+  // Hạn phản hồi 3 phút của đề nghị đang chờ (BE tính).
+  responseDeadlineAt?: string | null;
 };
 
 type ComparisonProduct = {
@@ -464,6 +468,10 @@ export default function OffersByPostScreen() {
     ReceivedOfferItem[]
   >([]);
   const [chatRoutes, setChatRoutes] = useState<Record<string, string>>({});
+  // Một bộ đếm chung cho các thẻ còn đang chờ phản hồi.
+  const nowTick = useServerNowTicker(
+    offers.some((offer) => isPendingOffer(offer.offerStatus) && Boolean(offer.responseDeadlineAt)),
+  );
   useFocusEffect(useCallback(() => {
     let cancelled = false;
     setChatRoutes({});
@@ -1212,6 +1220,12 @@ export default function OffersByPostScreen() {
           const sellProductName = item.productName || item.postTitle ||
             reviewedSell?.product?.productName || reviewedSell?.productName ||
             comparison?.sellPost?.productName || "Tin bán";
+          const isPending = isPendingOffer(item.offerStatus);
+          const responseRemaining = isPending
+            ? remainingUntil(item.responseDeadlineAt, nowTick)
+            : null;
+          // Hết 3 phút: ẩn thao tác ngay; trạng thái Expired đến sau khi danh sách tải lại.
+          const canActOnOffer = isPending && responseRemaining !== 0;
 
           return (
             <TouchableOpacity
@@ -1257,7 +1271,7 @@ export default function OffersByPostScreen() {
                   </View>
 
                   <View style={styles.rejectActionSlot}>
-                    {isPendingOffer(item.offerStatus) ? (
+                    {canActOnOffer ? (
                     <TouchableOpacity
                       style={styles.rejectIconButton}
                       hitSlop={8}
@@ -1284,6 +1298,15 @@ export default function OffersByPostScreen() {
                   <Text style={styles.suitabilityText}>
                     {getSuitabilityCopy(postContext, comparison, reviewedSell)}
                   </Text>
+                ) : null}
+
+                {isPending ? (
+                  <DeadlineChip
+                    remainingMs={responseRemaining}
+                    label="Còn"
+                    expiredText="Đã hết thời gian phản hồi"
+                    style={styles.offerDeadlineChip}
+                  />
                 ) : null}
 
                 <View style={styles.offerBottomRow}>
@@ -1327,9 +1350,7 @@ export default function OffersByPostScreen() {
                   </View>
                 </View>
 
-                {isPendingOffer(
-                  item.offerStatus,
-                ) ? (
+                {canActOnOffer ? (
                   <View style={styles.offerActionRow}>
                     <TouchableOpacity
                       style={styles.counterActionButton}
@@ -2010,6 +2031,9 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 13,
     lineHeight: 19,
+  },
+  offerDeadlineChip: {
+    marginTop: 6,
   },
   acceptTermsBox: {
     marginTop: 14,

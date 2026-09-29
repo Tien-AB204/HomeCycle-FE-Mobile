@@ -15,6 +15,8 @@ type DeadlineBannerProps = {
   label: string;
   expiredText: string;
   note?: string;
+  // Bản gọn một dòng (vd. dưới màn chat, khi chi tiết đã nằm trên thẻ).
+  compact?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -23,6 +25,7 @@ export default function DeadlineBanner({
   label,
   expiredText,
   note,
+  compact = false,
   style,
 }: DeadlineBannerProps) {
   if (!countdown.hasDeadline || countdown.remainingMs === null) return null;
@@ -35,6 +38,7 @@ export default function DeadlineBanner({
     <View
       style={[
         styles.container,
+        compact ? styles.compact : undefined,
         { borderColor: tone },
         isExpired ? styles.expired : isWarning ? styles.warning : styles.normal,
         style,
@@ -45,17 +49,20 @@ export default function DeadlineBanner({
       <View style={styles.row}>
         <Ionicons
           name={isExpired ? "alert-circle-outline" : "time-outline"}
-          size={18}
+          size={compact ? 15 : 18}
           color={tone}
         />
-        <Text style={[styles.text, { color: tone }]}>
+        <Text
+          style={[styles.text, compact ? styles.compactText : undefined, { color: tone }]}
+          numberOfLines={compact ? 1 : undefined}
+        >
           {isExpired ? expiredText : `${label}: `}
           {isExpired ? null : (
             <Text style={styles.time}>{formatRemainingTime(remainingMs)}</Text>
           )}
         </Text>
       </View>
-      {note && !isExpired ? <Text style={styles.note}>{note}</Text> : null}
+      {note && !isExpired && !compact ? <Text style={styles.note}>{note}</Text> : null}
     </View>
   );
 }
@@ -67,6 +74,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 4,
+  },
+  compact: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  compactText: {
+    flex: 0,
+    flexShrink: 1,
+    fontSize: 13,
   },
   normal: {
     backgroundColor: "#EEF4F4",

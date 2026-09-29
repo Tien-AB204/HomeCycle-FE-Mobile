@@ -23,6 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DeadlineChip from "../../components/shared/DeadlineChip";
 import { ModalBackdrop, ModalSurface } from "../../components/shared/ModalBackdrop";
 import { COLORS } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
@@ -34,6 +35,7 @@ import {
 } from "../../utils/apiFeedback";
 import { useAutoDismissFeedback } from "../../utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../utils/tapGuard";
+import { remainingUntil, useServerNowTicker } from "../../utils/useDeadlineCountdown";
 
 type OfferTab = "received" | "sent";
 type ActiveTab = OfferTab;
@@ -341,6 +343,10 @@ export default function OfferManagementPanel({
   const [offerSort, setOfferSort] = useState<OfferSort>("newest");
   const [searchQuery, setSearchQuery] = useState("");
   const [offersList, setOffersList] = useState<any[]>([]);
+  // Một bộ đếm chung cho hạn phản hồi 3 phút của các đề nghị đã gửi.
+  const nowTick = useServerNowTicker(
+    offersList.some((offer) => Boolean(offer?.responseDeadlineAt)),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
@@ -1202,6 +1208,9 @@ export default function OfferManagementPanel({
     const showOfferFeedback =
       feedbackTarget?.type === "offer" &&
       feedbackTarget.offerId === item.offerId;
+    const responseRemaining = remainingUntil(item.responseDeadlineAt, nowTick);
+    // Hết 3 phút thì không sửa/hủy được nữa; trạng thái Expired đến khi danh sách tải lại.
+    const isResponseWindowClosed = responseRemaining === 0;
 
     return (
       <View style={styles.offerCard}>
@@ -1248,6 +1257,12 @@ export default function OfferManagementPanel({
               <Text style={styles.offerQuantityText}>
                 Số lượng: {item.offerQuantity || 0}
               </Text>
+              <DeadlineChip
+                remainingMs={responseRemaining}
+                label="Chờ phản hồi, còn"
+                expiredText="Đã hết thời gian phản hồi"
+                style={styles.offerDeadlineChip}
+              />
             </View>
           </View>
         </View>
@@ -1270,14 +1285,16 @@ export default function OfferManagementPanel({
           </TouchableOpacity>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.editOfferBtnCompact}
-              onPress={() => handleOpenEditOfferModal(item)}
-              disabled={isProcessingAction}
-            >
-              <Ionicons name="pencil-outline" size={14} color={COLORS.primary} />
-              <Text style={styles.editOfferBtnText}>Chỉnh sửa</Text>
-            </TouchableOpacity>
+            {isResponseWindowClosed ? null : (
+              <TouchableOpacity
+                style={styles.editOfferBtnCompact}
+                onPress={() => handleOpenEditOfferModal(item)}
+                disabled={isProcessingAction}
+              >
+                <Ionicons name="pencil-outline" size={14} color={COLORS.primary} />
+                <Text style={styles.editOfferBtnText}>Chỉnh sửa</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.viewPostBtnCompact}
@@ -1288,14 +1305,16 @@ export default function OfferManagementPanel({
               <Text style={styles.viewPostBtnText}>Xem bài đăng</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.cancelIconBtn}
-              onPress={() => void handleCancelOffer(item.offerId)}
-              disabled={isProcessingAction}
-              hitSlop={4}
-            >
-              <Ionicons name="close-circle-outline" size={18} color={COLORS.error} />
-            </TouchableOpacity>
+            {isResponseWindowClosed ? null : (
+              <TouchableOpacity
+                style={styles.cancelIconBtn}
+                onPress={() => void handleCancelOffer(item.offerId)}
+                disabled={isProcessingAction}
+                hitSlop={4}
+              >
+                <Ionicons name="close-circle-outline" size={18} color={COLORS.error} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {showOfferFeedback ? (
@@ -1874,6 +1893,9 @@ const styles = StyleSheet.create({
     marginTop: 3,
     color: COLORS.textLight,
     fontSize: 13,
+  },
+  offerDeadlineChip: {
+    marginTop: 6,
   },
   offerPrice: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
   actionArea: { gap: 8 },

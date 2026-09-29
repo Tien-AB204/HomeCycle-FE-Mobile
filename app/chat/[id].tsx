@@ -25,6 +25,7 @@ import {
   View,
 } from "react-native";
 import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
+import DeadlineChip from "../../src/components/shared/DeadlineChip";
 import Header from "../../src/components/shared/Header";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,7 +43,9 @@ import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import {
   type DeadlineCountdown,
+  remainingUntil,
   useDeadlineCountdown,
+  useServerNowTicker,
 } from "../../src/utils/useDeadlineCountdown";
 
 const agreementApi = {
@@ -2461,8 +2464,14 @@ export default function ChatDetailScreen() {
   const isAgreementAwaitingCompletion =
     Boolean(negotiationInfo?.agreementPreview?.hasAgreement) &&
     ["pending", "awaitingpayment", "accepted"].includes(agreementStatusKey);
+  // BE vẫn đếm 5 phút không hoạt động sau khi đã chốt giá (Agreed) cho tới khi có hợp đồng.
+  const isAgreedWithoutAgreement =
+    ["agreed", "accepted", "2"].includes(negotiationStatusKey) &&
+    !negotiationInfo?.agreementPreview?.hasAgreement;
   const negotiationCountdown = useDeadlineCountdown(
-    isNegotiationOpen ? negotiationInfo?.responseDeadlineAt : null,
+    isNegotiationOpen || isAgreedWithoutAgreement
+      ? negotiationInfo?.responseDeadlineAt
+      : null,
     refreshAfterDeadline,
   );
   const paymentCountdown = useDeadlineCountdown(
@@ -2473,6 +2482,8 @@ export default function ChatDetailScreen() {
     refreshAfterDeadline,
   );
   const isNegotiationWindowClosed = negotiationCountdown.isExpired;
+  // Bộ đếm chung cho các phiên trong hộp chọn phiên (chỉ chạy khi hộp đang mở).
+  const pickerNowTick = useServerNowTicker(isNegotiationPickerVisible);
   // Phiên đã hết hạn (BE: Expired) — BE không phải lúc nào cũng ghi tin nhắn hệ thống,
   // nên màn hình tự báo trạng thái và khóa ô nhập.
   const isNegotiationExpired =
@@ -3323,6 +3334,18 @@ export default function ChatDetailScreen() {
               </Text>
             </View>
 
+            {item.isLatestAgreement &&
+            !item.isPaidAgreement &&
+            isAgreementAwaitingCompletion ? (
+              <DeadlineBanner
+                countdown={paymentCountdown}
+                label="Thời gian xác nhận và thanh toán còn lại"
+                expiredText="Thỏa thuận đã hết 15 phút xác nhận và thanh toán."
+                note="Chỉnh sửa hợp đồng không gia hạn thời gian."
+                style={styles.cardDeadline}
+              />
+            ) : null}
+
             {item.isLatestAgreement ? (
               <>
                 <TouchableOpacity
@@ -3443,6 +3466,20 @@ export default function ChatDetailScreen() {
             </View>
 
             {isLatestOffer &&
+              isNegotiationOpen &&
+              item.status === "pending" &&
+              !isNegotiationWindowClosed &&
+              !isNegotiationExpired ? (
+                <DeadlineBanner
+                  countdown={negotiationCountdown}
+                  label="Phiên hết hạn nếu không có hoạt động sau"
+                  expiredText="Phiên thương lượng đã hết thời gian."
+                  note="Mỗi tin nhắn hoặc đề xuất mới sẽ tính lại thời gian."
+                  style={styles.cardDeadline}
+                />
+              ) : null}
+
+            {isLatestOffer &&
               negotiationStatus ===
                 "Open" &&
               !isNegotiationWindowClosed &&
@@ -3535,12 +3572,31 @@ export default function ChatDetailScreen() {
                 </View>
               ))}
 
+            {isLatestOffer &&
+              item.status === "accepted" &&
+              isAgreedWithoutAgreement &&
+              !isNegotiationWindowClosed &&
+              !isNegotiationExpired ? (
+                <DeadlineBanner
+                  countdown={negotiationCountdown}
+                  label="Thời gian còn lại để tạo hợp đồng"
+                  expiredText="Phiên thương lượng đã hết thời gian."
+                  note={
+                    agreementPreview?.canCreate
+                      ? "Hãy tạo hợp đồng trước khi hết giờ. Tin nhắn mới trong phiên sẽ tính lại thời gian."
+                      : "Đang chờ người bán tạo hợp đồng. Tin nhắn mới trong phiên sẽ tính lại thời gian."
+                  }
+                  style={styles.cardDeadline}
+                />
+              ) : null}
+
             {item.status ===
               "accepted" &&
               (negotiationStatus ===
                 "Accepted" ||
                 negotiationStatus ===
                   "Agreed") &&
+              !isNegotiationWindowClosed &&
               !agreementPreview?.hasAgreement &&
               agreementPreview?.canCreate && (
                 <View
@@ -3952,21 +4008,22 @@ export default function ChatDetailScreen() {
               }
               style={styles.deadlineBanner}
             />
-          ) : isNegotiationOpen ? (
+          ) : isNegotiationOpen || isAgreedWithoutAgreement ? (
+            // Bản gọn; chi tiết nằm trên thẻ đề nghị / khối tạo hợp đồng.
             <DeadlineBanner
+              compact
               countdown={negotiationCountdown}
-              label="Phiên tự hết hạn nếu không có hoạt động sau"
-              expiredText="Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-              note="Mỗi tin nhắn hoặc đề xuất mới sẽ tính lại thời gian."
-              style={styles.deadlineBanner}
+              label={isAgreedWithoutAgreement ? "Hạn tạo hợp đồng" : "Phiên còn"}
+              expiredText="Phiên thương lượng đã hết thời gian."
+              style={styles.compactDeadline}
             />
           ) : isAgreementAwaitingCompletion ? (
             <DeadlineBanner
+              compact
               countdown={paymentCountdown}
-              label="Thời gian xác nhận và thanh toán còn lại"
-              expiredText="Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-              note="Chỉnh sửa hợp đồng không gia hạn thời gian."
-              style={styles.deadlineBanner}
+              label="Hạn xác nhận & thanh toán"
+              expiredText="Thỏa thuận đã hết thời gian."
+              style={styles.compactDeadline}
             />
           ) : null}
 
@@ -4167,6 +4224,24 @@ export default function ChatDetailScreen() {
                         >
                           Tin nhắn gần nhất: {itemPreview}
                         </Text>
+
+                        {(() => {
+                          // Phiên đang mở/đã chốt giá: hạn 5 phút; chờ hợp đồng: hạn 15 phút.
+                          const statusKey = String(item?.negotiationStatus ?? "").trim().toLowerCase();
+                          const isAwaitingAgreement = ["agreementpending", "3"].includes(statusKey);
+                          const isActiveSession = ["open", "1", "agreed", "2"].includes(statusKey);
+                          if (!isAwaitingAgreement && !isActiveSession) return null;
+                          return (
+                            <DeadlineChip
+                              remainingMs={remainingUntil(
+                                isAwaitingAgreement ? item?.paymentDeadlineAt : item?.responseDeadlineAt,
+                                pickerNowTick,
+                              )}
+                              label={isAwaitingAgreement ? "Hạn thanh toán còn" : "Còn"}
+                              style={styles.pickerDeadlineChip}
+                            />
+                          );
+                        })()}
                       </View>
 
                       {unreadCount > 0 ? (
@@ -5318,6 +5393,17 @@ const styles = StyleSheet.create({
   deadlineBanner: {
     marginHorizontal: 12,
     marginBottom: 8,
+  },
+  compactDeadline: {
+    alignSelf: "center",
+    maxWidth: "92%",
+    marginBottom: 8,
+  },
+  cardDeadline: {
+    marginTop: 10,
+  },
+  pickerDeadlineChip: {
+    marginTop: 6,
   },
   inputContainer: {
     flexDirection: "row",
