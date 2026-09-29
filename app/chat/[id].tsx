@@ -3346,6 +3346,17 @@ export default function ChatDetailScreen() {
               />
             ) : null}
 
+            {item.isLatestAgreement &&
+            !item.isPaidAgreement &&
+            (isAgreementExpired || isNegotiationExpired) ? (
+              <DeadlineBanner
+                countdown={EXPIRED_COUNTDOWN}
+                label=""
+                expiredText="Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                style={styles.cardDeadline}
+              />
+            ) : null}
+
             {item.isLatestAgreement ? (
               <>
                 <TouchableOpacity
@@ -3689,20 +3700,18 @@ export default function ChatDetailScreen() {
                 </View>
               )}
 
+            {/* Phiên hết hạn khi chưa có hợp đồng: thông báo đầy đủ nằm trên thẻ đề nghị;
+                đã có hợp đồng thì thông báo nằm trên thẻ hợp đồng. */}
             {isLatestOffer &&
-              (isNegotiationExpired ||
-                isNegotiationWindowClosed) && (
-                <View style={styles.statusBadgeError}>
-                  <Ionicons
-                    name="time-outline"
-                    size={16}
-                    color={COLORS.white}
-                  />
-                  <Text style={styles.statusBadgeText}>
-                    Phiên thương lượng đã hết hạn
-                  </Text>
-                </View>
-              )}
+            (isNegotiationExpired || isNegotiationWindowClosed) &&
+            !agreementPreview?.hasAgreement ? (
+              <DeadlineBanner
+                countdown={EXPIRED_COUNTDOWN}
+                label=""
+                expiredText="Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                style={styles.cardDeadline}
+              />
+            ) : null}
 
             {(!isLatestOffer ||
               item.status ===
@@ -3998,15 +4007,17 @@ export default function ChatDetailScreen() {
           )}
 
           {isNegotiationExpired ? (
+            // Bản gọn; lời giải thích đầy đủ nằm trên thẻ đề nghị / thẻ hợp đồng.
             <DeadlineBanner
+              compact
               countdown={EXPIRED_COUNTDOWN}
               label=""
               expiredText={
                 isAgreementExpired
-                  ? "Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-                  : "Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                  ? "Thỏa thuận đã hết hạn"
+                  : "Phiên thương lượng đã hết hạn"
               }
-              style={styles.deadlineBanner}
+              style={styles.compactDeadline}
             />
           ) : isNegotiationOpen || isAgreedWithoutAgreement ? (
             // Bản gọn; chi tiết nằm trên thẻ đề nghị / khối tạo hợp đồng.
