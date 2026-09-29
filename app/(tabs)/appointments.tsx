@@ -853,6 +853,12 @@ export default function ScheduleScreen() {
     const checkedInCount =
       Number(item.buyerCheckedIn) + Number(item.sellerCheckedIn);
     const typeAccent = getTypeAccent(item.typeKey);
+    const isInspectionCompleted = ["2", "completed"].includes(item.statusKey);
+    const canOpenInspectionForm =
+      item.typeKey === "inspection" &&
+      (isInspectionCompleted ||
+        ["5", "inprogress"].includes(item.statusKey) ||
+        (item.buyerCheckedIn && item.sellerCheckedIn));
 
     return (
       <View key={item.id} style={styles.card}>
@@ -912,6 +918,24 @@ export default function ScheduleScreen() {
         <View style={styles.divider} />
 
         <View style={styles.cardFooter}>
+          {canOpenInspectionForm ? (
+            // Phiếu chỉ có thể tồn tại khi buổi kiểm định đã bắt đầu; form tự quyết
+            // tạo / sửa / chỉ xem theo quyền BE trả.
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() =>
+                router.push({
+                  pathname: "/inspections/form",
+                  params: { appointmentId: item.id },
+                } as any)
+              }
+            >
+              <Ionicons name="clipboard-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.secondaryBtnText}>
+                {isInspectionCompleted ? "Xem phiếu kiểm định" : "Phiếu kiểm định"}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => router.push(`/appointments/${item.id}` as any)}
@@ -1654,7 +1678,20 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   divider: { height: 1, marginVertical: 12, backgroundColor: "#F8F9FA" },
-  cardFooter: { flexDirection: "row", marginTop: 4 },
+  cardFooter: { flexDirection: "row", marginTop: 4, gap: 8 },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  secondaryBtnText: { color: COLORS.primary, fontSize: 14, fontWeight: "bold" },
   primaryBtn: {
     flex: 1,
     alignItems: "center",
