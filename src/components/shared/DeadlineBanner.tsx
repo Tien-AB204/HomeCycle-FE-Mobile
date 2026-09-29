@@ -53,7 +53,8 @@ export default function DeadlineBanner({
           color={tone}
         />
         <Text
-          style={[styles.text, compact ? styles.compactText : undefined, { color: tone }]}
+          // Bản gọn co theo nội dung nên không được dùng flex (flex làm chữ co về 0).
+          style={[compact ? styles.compactText : styles.text, { color: tone }]}
           numberOfLines={compact ? 1 : undefined}
         >
           {isExpired ? expiredText : `${label}: `}
@@ -81,9 +82,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   compactText: {
-    flex: 0,
     flexShrink: 1,
     fontSize: 13,
+    fontWeight: "600",
   },
   normal: {
     backgroundColor: "#EEF4F4",
