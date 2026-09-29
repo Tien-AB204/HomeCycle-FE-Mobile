@@ -18,6 +18,7 @@ import {
 
 import OfferManagementPanel from "../../src/components/offers/OfferManagementPanel";
 import MainHeader from "../../src/components/shared/MainHeader";
+import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useNotifications } from "../../src/contexts/NotificationContext";
@@ -452,6 +453,7 @@ export default function PostsScreen() {
                     : `Số lượng: ${post.remainingQuantity ?? 0} / ${post.quantity ?? 0}`}
                 </Text>
               </View>
+              <PriorityBadge post={post} style={styles.priorityTag} />
             </View>
 
             <View style={styles.cardFooter}>
@@ -880,6 +882,7 @@ const styles = StyleSheet.create({
   tagGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
   tag: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: "#F8F9FA" },
   tagText: { color: "#547B7D", fontSize: 10, fontWeight: "500" },
+  priorityTag: { paddingVertical: 3 },
   cardFooter: {
     flexDirection: "row",
     alignItems: "flex-end",

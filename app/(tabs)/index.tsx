@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import MainHeader from "../../src/components/shared/MainHeader";
+import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import {
@@ -541,6 +542,7 @@ export default function HomeScreen() {
               <View style={[styles.postTypeBadge, styles.sellPostBadge]}>
                 <Text style={styles.postTypeBadgeText}>Tin bán</Text>
               </View>
+              <PriorityBadge post={post} />
             </View>
           </View>
         ) : null}
@@ -558,6 +560,7 @@ export default function HomeScreen() {
               <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
                 <Text style={styles.postTypeBadgeText}>Tin mua</Text>
               </View>
+              <PriorityBadge post={post} />
             </View>
           ) : null}
           {post.brandName ? (

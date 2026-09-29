@@ -28,6 +28,7 @@ import {
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
+import { PriorityNotice } from "../../src/components/shared/PriorityBadge";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { isBuyPostType } from "../../src/utils/postType";
 import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
@@ -1974,6 +1975,7 @@ export default function PostDetailScreen() {
               </View>
             ) : null}
           </View>
+          <PriorityNotice post={post} style={styles.priorityNotice} />
           {!isMyPost ? (
             <Text style={[styles.dateText, { marginTop: 10 }]}>Ngày đăng: {formatDate(post.createdAt)}</Text>
           ) : null}
@@ -3406,6 +3408,7 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
   },
   tagRow: { flexDirection: "row", gap: 8 },
+  priorityNotice: { marginTop: 10 },
   tag: {
     backgroundColor: "#F8F9FA",
     paddingHorizontal: 8,
