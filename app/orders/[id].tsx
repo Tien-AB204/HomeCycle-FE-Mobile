@@ -1025,6 +1025,12 @@ export default function OrderDetailScreen() {
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
+  // BE chỉ tạo vận đơn GHN sau khi Người bán xác nhận hàng sẵn sàng (Shipment.SellerReadyAt).
+  const isAwaitingGhnSellerReady =
+    isGhn &&
+    !sellerReadyAt &&
+    !trackingCode &&
+    (!creationStat || String(creationStat).toLowerCase() === "pending");
   // Chưa có phương thức (vd. đơn kiểm định trước bước thu gom) và không có dữ liệu giao nhận
   // nào khác thì ẩn cả mục thay vì hiện "Chưa cập nhật".
   const hasDeliveryMethod = deliveryMethod !== "Unknown";
@@ -1205,9 +1211,13 @@ export default function OrderDetailScreen() {
               <InfoRow
                 label="Trạng thái vận chuyển:"
                 value={
-                  creationStat && creationStat !== "Success"
-                    ? translateCreationStatus(creationStat) || "Đang cập nhật"
-                    : trackingMsg || translateCarrierStatus(carrierStat)
+                  isAwaitingGhnSellerReady
+                    ? transactionRole === "seller"
+                      ? "Chờ bạn xác nhận hàng sẵn sàng"
+                      : "Chờ người bán xác nhận hàng sẵn sàng"
+                    : creationStat && creationStat !== "Success"
+                      ? translateCreationStatus(creationStat) || "Đang cập nhật"
+                      : trackingMsg || translateCarrierStatus(carrierStat)
                 }
                 valueStyle={styles.primaryValue}
               />
@@ -1445,7 +1455,9 @@ export default function OrderDetailScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
             <Text style={styles.actionHint}>
-              Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao.
+              {isGhn
+                ? "Đóng gói xong thì bấm \"Hàng đã sẵn sàng\" để hệ thống tạo vận đơn GHN và gọi shipper đến lấy hàng."
+                : "Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao."}
             </Text>
             <TouchableOpacity
               style={[
