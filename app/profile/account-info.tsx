@@ -23,6 +23,8 @@ import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import IdentityScanPanel from "../../src/components/shared/IdentityScanPanel";
+import SensitiveDocumentImage from "../../src/components/shared/SensitiveDocumentImage";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -832,14 +834,12 @@ export default function AccountInfoScreen() {
               disabled={editingSection !== "identity" || isSaving}
             >
               {frontImage?.uri || sanitize(user?.frontIDCardImage) ? (
-                <Image
-                  source={{
-                    uri: getRobustUrl(
-                      frontImage?.uri || sanitize(user?.frontIDCardImage),
-                    ),
-                  }}
+                <SensitiveDocumentImage
+                  uri={getRobustUrl(
+                    frontImage?.uri || sanitize(user?.frontIDCardImage),
+                  )}
                   style={styles.documentImage}
-                  resizeMode="cover"
+                  tapToView={editingSection !== "identity"}
                 />
               ) : (
                 <>
@@ -860,14 +860,12 @@ export default function AccountInfoScreen() {
               disabled={editingSection !== "identity" || isSaving}
             >
               {backImage?.uri || sanitize(user?.backIDCardImage) ? (
-                <Image
-                  source={{
-                    uri: getRobustUrl(
-                      backImage?.uri || sanitize(user?.backIDCardImage),
-                    ),
-                  }}
+                <SensitiveDocumentImage
+                  uri={getRobustUrl(
+                    backImage?.uri || sanitize(user?.backIDCardImage),
+                  )}
                   style={styles.documentImage}
-                  resizeMode="cover"
+                  tapToView={editingSection !== "identity"}
                 />
               ) : (
                 <>
@@ -882,6 +880,22 @@ export default function AccountInfoScreen() {
               )}
             </TouchableOpacity>
           </View>
+
+          {editingSection === "identity" ? (
+            <IdentityScanPanel
+              target={{ kind: "personal" }}
+              front={frontImage}
+              back={backImage}
+              disabled={isSaving}
+              onResult={(result) => {
+                if (result.identityNumber) setRepCode(result.identityNumber);
+                if (result.fullName) setRepName(toUppercaseText(result.fullName));
+                if (result.dateOfBirth) setRepDob(result.dateOfBirth);
+                if (result.address) setRepAddress(result.address);
+                setSaveMessage(null);
+              }}
+            />
+          ) : null}
 
           <Text style={styles.label}>Số CCCD</Text>
           <SensitiveNumberField

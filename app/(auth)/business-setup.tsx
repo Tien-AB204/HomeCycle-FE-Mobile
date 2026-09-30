@@ -28,6 +28,7 @@ import CalendarDateField, {
 import BankPickerField from "../../src/components/shared/BankPickerField";
 import FullNameField from "../../src/components/shared/FullNameField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import IdentityScanPanel from "../../src/components/shared/IdentityScanPanel";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -1383,6 +1384,29 @@ export default function BusinessSetupScreen() {
                   ) : null}
                 </View>
               </View>
+
+              {/* Chỉ quét ảnh vừa chọn trên máy; ảnh đã lưu trên máy chủ không gửi lại để quét. */}
+              <IdentityScanPanel
+                target={{ kind: "business" }}
+                front={frontImage && !/^https?:/i.test(frontImage) ? { uri: frontImage } : null}
+                back={backImage && !/^https?:/i.test(backImage) ? { uri: backImage } : null}
+                disabled={isLoading}
+                onResult={(result) => {
+                  if (result.identityNumber) {
+                    setIdentityNumber(result.identityNumber);
+                    setIdentityNumberError("");
+                  }
+                  if (result.fullName) handleIdentityNameChange(result.fullName);
+                  if (result.dateOfBirth) {
+                    setIdentityDob(result.dateOfBirth);
+                    setIdentityDobError("");
+                  }
+                  if (result.address) {
+                    setIdentityAddress(result.address);
+                    setIdentityAddressError("");
+                  }
+                }}
+              />
 
               {model === "enterprise" ? (
                 <>

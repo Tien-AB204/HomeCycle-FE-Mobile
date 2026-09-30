@@ -22,6 +22,7 @@ import AddressPickerField from "../../src/components/shared/AddressPickerField";
 import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import IdentityScanPanel from "../../src/components/shared/IdentityScanPanel";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -883,6 +884,32 @@ export default function VerificationSetupScreen() {
           {errors.identityImages ? (
             <Text style={styles.fieldError}>{errors.identityImages}</Text>
           ) : null}
+
+          <IdentityScanPanel
+            target={
+              activeRegistrationToken
+                ? { kind: "register", registrationToken: activeRegistrationToken }
+                : null
+            }
+            front={frontImage ? { uri: frontImage } : null}
+            back={backImage ? { uri: backImage } : null}
+            disabled={isLoading}
+            onResult={(result) => {
+              if (result.identityNumber) {
+                setRepCode(result.identityNumber);
+                clearError("repCode");
+              }
+              if (result.fullName) updateLegalName(result.fullName);
+              if (result.dateOfBirth) {
+                setRepDob(result.dateOfBirth);
+                clearError("repDob");
+              }
+              if (result.address) {
+                setRepAddress(result.address);
+                clearError("repAddress");
+              }
+            }}
+          />
 
           <View style={[styles.sectionHeader, styles.paymentHeader]}>
             <View style={styles.verticalBar} />

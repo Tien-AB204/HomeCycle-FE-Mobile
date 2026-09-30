@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SensitiveValue from "../../src/components/shared/SensitiveValue";
+import SensitiveDocumentImage from "../../src/components/shared/SensitiveDocumentImage";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
@@ -325,11 +326,20 @@ export default function BusinessPendingScreen() {
                       <Text style={styles.documentLabel}>
                         {getDocumentName(doc.documentType)}
                       </Text>
-                      <Image
-                        source={{ uri: doc.documentUrl }}
-                        style={styles.documentImage}
-                        resizeMode="contain"
-                      />
+                      {Number(doc.documentType) === 0 ||
+                      Number(doc.documentType) === 1 ? (
+                        <SensitiveDocumentImage
+                          uri={String(doc.documentUrl)}
+                          style={styles.documentImage}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Image
+                          source={{ uri: doc.documentUrl }}
+                          style={styles.documentImage}
+                          resizeMode="contain"
+                        />
+                      )}
                     </View>
                   ))
                 ) : (

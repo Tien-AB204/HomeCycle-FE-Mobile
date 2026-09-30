@@ -25,6 +25,8 @@ import AddressPickerField, {
 import BankPickerField from "../../src/components/shared/BankPickerField";
 import CalendarDateField from "../../src/components/shared/CalendarDateField";
 import IdentityNameField from "../../src/components/shared/IdentityNameField";
+import IdentityScanPanel from "../../src/components/shared/IdentityScanPanel";
+import SensitiveDocumentImage from "../../src/components/shared/SensitiveDocumentImage";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
@@ -1456,10 +1458,11 @@ export default function BusinessAccountInfoScreen() {
             />
             {/* Ảnh vừa chọn được xem trước thay cho ảnh đang lưu. */}
             {cccdFront?.uri || documents.front ? (
-              <Image
+              <SensitiveDocumentImage
                 key={cccdFront?.uri || documents.front}
-                source={{ uri: cccdFront?.uri || documents.front }}
+                uri={String(cccdFront?.uri || documents.front)}
                 style={styles.documentPreview}
+                resizeMode="contain"
               />
             ) : null}
             {isEditing("identity") ? (
@@ -1493,10 +1496,11 @@ export default function BusinessAccountInfoScreen() {
             />
             {/* Ảnh vừa chọn được xem trước thay cho ảnh đang lưu. */}
             {cccdBack?.uri || documents.back ? (
-              <Image
+              <SensitiveDocumentImage
                 key={cccdBack?.uri || documents.back}
-                source={{ uri: cccdBack?.uri || documents.back }}
+                uri={String(cccdBack?.uri || documents.back)}
                 style={styles.documentPreview}
+                resizeMode="contain"
               />
             ) : null}
             {isEditing("identity") ? (
@@ -1524,7 +1528,33 @@ export default function BusinessAccountInfoScreen() {
                 <FieldError text={errors.cccdBack} />
               </>
             ) : null}
+            {isEditing("identity") ? (
+              <IdentityScanPanel
+                target={{ kind: "business" }}
+                front={cccdFront}
+                back={cccdBack}
+                disabled={savingSection === "identity"}
+                onResult={(result) => {
+                  if (result.identityNumber) setIdentityNumber(result.identityNumber);
+                  if (result.fullName) setIdentityName(toUppercaseText(result.fullName));
+                  if (result.dateOfBirth) setIdentityDob(result.dateOfBirth);
+                  if (result.address) {
+                    setIdentityAddress(result.address);
+                    setIdentityAddressSelection(null);
+                  }
+                }}
+              />
+            ) : null}
             <InlineMessage message={messages.identity || null} />
+            {isEditing("identity") ? (
+              // BE đưa hồ sơ doanh nghiệp về chờ duyệt khi đổi thông tin người đại diện/CCCD.
+              <InlineMessage
+                message={{
+                  type: "warning",
+                  text: "Nếu bạn cập nhật thông tin người đại diện, hồ sơ doanh nghiệp sẽ phải chờ kiểm duyệt viên phê duyệt lại. Trong thời gian chờ, tài khoản ngân hàng cũng chuyển về chưa xác minh.",
+                }}
+              />
+            ) : null}
             {isEditing("identity") ? (
               <EditActions
                 loading={savingSection === "identity"}
