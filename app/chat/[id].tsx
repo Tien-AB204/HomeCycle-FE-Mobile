@@ -2489,6 +2489,34 @@ export default function ChatDetailScreen() {
   const isNegotiationExpired =
     negotiationStatusKey === "expired" || negotiationStatusKey === "6";
   const isAgreementExpired = agreementStatusKey === "expired";
+  // Phiên đã kết thúc (hết hạn, bị hủy, đã thanh toán hoặc hoàn tất): chỉ còn khối thông báo ở cuối
+  // danh sách, không còn ô nhập. BE không chuyển phiên sang Completed sau khi thanh toán
+  // (NegotiationService.CloseAsync chưa được gọi ở đâu) nên trạng thái đã thanh toán lấy theo hợp đồng.
+  const isNegotiationCancelled =
+    negotiationStatusKey === "cancelled" || negotiationStatusKey === "7";
+  const isNegotiationFinished =
+    negotiationInfo?.isPaidAgreement === true ||
+    ["completed", "4", "closed", "5"].includes(negotiationStatusKey) ||
+    agreementStatusKey === "cancelled" ||
+    agreementStatusKey === "canceled";
+  const isNegotiationEnded =
+    isNegotiationExpired || isNegotiationCancelled || isNegotiationFinished;
+  // BE chỉ cho nhắn khi phiên Open/Agreed: phiên đang chờ xác nhận hợp đồng thì làm mờ ô nhập
+  // nhưng giữ nút "+" (menu còn đường dẫn tới hợp đồng).
+  const isMessagingLocked =
+    negotiationStatusKey === "agreementpending" || negotiationStatusKey === "3";
+  // Hủy hợp đồng trước thanh toán: BE đóng phiên (Closed) và hợp đồng thành Cancelled.
+  const isAgreementCancelled =
+    agreementStatusKey === "cancelled" || agreementStatusKey === "canceled";
+  const negotiationEndedText = isAgreementCancelled
+    ? "Hợp đồng đã bị hủy nên phiên thương lượng này đã kết thúc. Để tiếp tục giao dịch, hãy gửi đề nghị mới để bắt đầu phiên thương lượng mới."
+    : isNegotiationCancelled
+    ? "Phiên thương lượng đã bị hủy."
+    : isAgreementExpired
+      ? "Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu tin đăng còn khả dụng."
+      : isNegotiationExpired
+        ? "Phiên thương lượng đã kết thúc do hết thời gian. Bạn có thể gửi yêu cầu mới nếu tin đăng còn khả dụng."
+        : "Hợp đồng đã được thanh toán nên phiên thương lượng đã kết thúc. Bạn có thể theo dõi tiếp trong đơn hàng.";
 
   useEffect(() => {
     if (
@@ -3302,6 +3330,18 @@ export default function ChatDetailScreen() {
         const agreementTitle = item.isPaidAgreement
           ? "Hợp đồng đã thanh toán"
           : getAgreementTimelineTitle(item.agreementTimelineKind);
+        // Phí giao hàng (GHN) nằm ngoài giá hàng; tổng tính như lúc thanh toán: đơn giá x số lượng + phí.
+        const agreementShippingFee = Number(
+          item.agreementData?.estimatedShippingFee ??
+            item.agreementData?.agreementDetails?.estimatedShippingFee ??
+            0,
+        );
+        const hasAgreementShippingFee =
+          Number.isFinite(agreementShippingFee) && agreementShippingFee > 0;
+        const agreementGrandTotal =
+          Number(item.agreementData?.finalPrice ?? 0) *
+            Number(item.agreementData?.quantity ?? 1) +
+          (hasAgreementShippingFee ? agreementShippingFee : 0);
 
         return (
           <View
@@ -3324,14 +3364,34 @@ export default function ChatDetailScreen() {
               </Text>
             </View>
 
-            <View style={styles.flowCardMetaRow}>
-              <Text style={styles.flowCardPrice}>
-                {formatCurrency(item.agreementData?.finalPrice)}
-              </Text>
+            <View style={styles.flowCardMetaBox}>
+              <View style={styles.flowCardMetaBoxRow}>
+                <Text style={styles.flowCardPrice}>
+                  {formatCurrency(item.agreementData?.finalPrice)}
+                </Text>
 
-              <Text style={styles.flowCardQuantity}>
-                Số lượng: {item.agreementData?.quantity}
-              </Text>
+                <Text style={styles.flowCardQuantity}>
+                  Số lượng: {item.agreementData?.quantity}
+                </Text>
+              </View>
+
+              {hasAgreementShippingFee ? (
+                <>
+                  <View style={styles.flowCardFeeDivider} />
+                  <View style={styles.flowCardFeeRow}>
+                    <Text style={styles.flowCardFeeLabel}>Phí vận chuyển</Text>
+                    <Text style={styles.flowCardFeeValue}>
+                      {formatCurrency(agreementShippingFee)}
+                    </Text>
+                  </View>
+                  <View style={styles.flowCardFeeRow}>
+                    <Text style={styles.flowCardTotalLabel}>Tổng cộng</Text>
+                    <Text style={styles.flowCardTotalValue}>
+                      {formatCurrency(agreementGrandTotal)}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
             </View>
 
             {item.isLatestAgreement &&
@@ -3340,7 +3400,7 @@ export default function ChatDetailScreen() {
               <DeadlineBanner
                 countdown={paymentCountdown}
                 label="Thời gian xác nhận và thanh toán còn lại"
-                expiredText="Thỏa thuận đã hết 15 phút xác nhận và thanh toán."
+                expiredText="Thỏa thuận đã hết hạn."
                 note="Chỉnh sửa hợp đồng không gia hạn thời gian."
                 style={styles.cardDeadline}
               />
@@ -3352,7 +3412,18 @@ export default function ChatDetailScreen() {
               <DeadlineBanner
                 countdown={EXPIRED_COUNTDOWN}
                 label=""
-                expiredText="Thỏa thuận đã hết hạn 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                expiredText="Thỏa thuận đã hết hạn."
+                style={styles.cardDeadline}
+              />
+            ) : null}
+
+            {item.isLatestAgreement &&
+            !item.isPaidAgreement &&
+            isAgreementCancelled ? (
+              <DeadlineBanner
+                countdown={EXPIRED_COUNTDOWN}
+                label=""
+                expiredText="Hợp đồng đã bị hủy."
                 style={styles.cardDeadline}
               />
             ) : null}
@@ -3708,7 +3779,7 @@ export default function ChatDetailScreen() {
               <DeadlineBanner
                 countdown={EXPIRED_COUNTDOWN}
                 label=""
-                expiredText="Phiên thương lượng đã hết hạn do không có hoạt động trong 5 phút. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                expiredText="Phiên thương lượng đã hết hạn."
                 style={styles.cardDeadline}
               />
             ) : null}
@@ -3983,6 +4054,26 @@ export default function ChatDetailScreen() {
                   )}
                 </View>
               }
+              ListFooterComponent={
+                isNegotiationEnded ? (
+                  // Thông báo kết thúc nằm ngay sau tin nhắn/thẻ cuối, cùng kiểu với tin hệ thống,
+                  // không còn ô nhập bên dưới.
+                  <View style={{ paddingBottom: composerBottomInset }}>
+                    <View style={styles.systemNoticeContainer}>
+                      <View
+                        style={[
+                          styles.systemNoticePill,
+                          styles.systemNoticePillWithoutAvatar,
+                        ]}
+                      >
+                        <Text style={styles.systemNoticeText}>
+                          {negotiationEndedText}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : null
+              }
               onLayout={() => {
                 if (
                   shouldScrollToLatestRef.current &&
@@ -4006,20 +4097,7 @@ export default function ChatDetailScreen() {
             />
           )}
 
-          {isNegotiationExpired ? (
-            // Bản gọn; lời giải thích đầy đủ nằm trên thẻ đề nghị / thẻ hợp đồng.
-            <DeadlineBanner
-              compact
-              countdown={EXPIRED_COUNTDOWN}
-              label=""
-              expiredText={
-                isAgreementExpired
-                  ? "Thỏa thuận đã hết hạn"
-                  : "Phiên thương lượng đã hết hạn"
-              }
-              style={styles.compactDeadline}
-            />
-          ) : isNegotiationOpen || isAgreedWithoutAgreement ? (
+          {isNegotiationEnded ? null : isNegotiationOpen || isAgreedWithoutAgreement ? (
             // Bản gọn; chi tiết nằm trên thẻ đề nghị / khối tạo hợp đồng.
             <DeadlineBanner
               compact
@@ -4038,6 +4116,7 @@ export default function ChatDetailScreen() {
             />
           ) : null}
 
+          {isNegotiationEnded ? null : (
           <View
             style={[
               styles.inputContainer,
@@ -4078,8 +4157,8 @@ export default function ChatDetailScreen() {
                 isResolvingRoute ||
                 !negotiationId
                   ? "Đang kết nối cuộc trò chuyện..."
-                  : isNegotiationExpired
-                    ? "Phiên thương lượng đã hết hạn"
+                  : isMessagingLocked
+                    ? "Không thể nhắn khi chờ xác nhận"
                     : "Nhập tin nhắn..."
               }
               placeholderTextColor={
@@ -4089,7 +4168,7 @@ export default function ChatDetailScreen() {
               editable={
                 !isAuthLoading &&
                 !isResolvingRoute &&
-                !isNegotiationExpired &&
+                !isMessagingLocked &&
                 Boolean(negotiationId)
               }
               onChangeText={setInputText}
@@ -4106,7 +4185,7 @@ export default function ChatDetailScreen() {
                   !negotiationId ||
                   isAuthLoading ||
                   isResolvingRoute ||
-                  isNegotiationExpired ||
+                  isMessagingLocked ||
                   isWaitingForNetwork) && {
                   opacity: 0.45,
                 },
@@ -4116,7 +4195,7 @@ export default function ChatDetailScreen() {
                 !negotiationId ||
                 isAuthLoading ||
                 isResolvingRoute ||
-                isNegotiationExpired ||
+                isMessagingLocked ||
                 isWaitingForNetwork
               }
               onPress={() =>
@@ -4130,6 +4209,7 @@ export default function ChatDetailScreen() {
               />
             </TouchableOpacity>
           </View>
+          )}
         </>
       </KeyboardAvoidingView>
 
@@ -5322,6 +5402,57 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 13,
     fontWeight: "600",
+  },
+
+  flowCardMetaBox: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 9,
+    backgroundColor: "#F8F9FA",
+    gap: 6,
+  },
+
+  flowCardMetaBoxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  flowCardFeeDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.border,
+    marginVertical: 2,
+  },
+
+  flowCardFeeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  flowCardFeeLabel: {
+    color: COLORS.textLight,
+    fontSize: 13,
+  },
+
+  flowCardFeeValue: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  flowCardTotalLabel: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  flowCardTotalValue: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: "800",
   },
 
   commerceShortcutColumn: {
