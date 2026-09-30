@@ -574,11 +574,11 @@ export default function OfferDetailScreen() {
               <Text style={styles.cardTitle}>Đề nghị thương lượng đã gửi</Text>
               <Text style={styles.cardSubtitle}>
                 {canUpdate
-                  ? "Đề nghị đang chờ phản hồi; bạn có thể cập nhật giá hoặc số lượng."
+                  ? "Đề nghị đang chờ phản hồi; số lượng chưa được giữ. Bạn có thể cập nhật giá hoặc số lượng."
                   : movedToNegotiation
                     ? "Đề nghị đã chuyển sang phiên thương lượng."
                     : isExpired
-                      ? "Đề nghị đã hết hạn sau 3 phút chờ phản hồi. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng."
+                      ? "Đề nghị đã hết hạn. Bạn có thể gửi đề nghị mới nếu bài đăng còn khả dụng."
                       : responseActions.length > 0
                       ? "Đề nghị đang chờ phản hồi của bạn."
                       : "Đề nghị này chỉ có thể xem."}
