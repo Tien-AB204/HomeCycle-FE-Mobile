@@ -12,7 +12,12 @@ import {
   View,
 } from "react-native";
 import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
+import CollapsibleNotice from "../../src/components/shared/CollapsibleNotice";
 import HighValueWarning from "../../src/components/shared/HighValueWarning";
+import {
+  downloadAgreementPdf,
+  getAgreementPdfErrorMessage,
+} from "../../src/utils/agreementPdf";
 import { getContractTotal, isHighValueWithoutInspection } from "../../src/utils/highValue";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
@@ -44,6 +49,12 @@ const agreementApi = {
     const response = await apiClient.patch(`/agreements/${agreementId}/accept`, {
       expectedRevision,
     });
+    return response.data;
+  },
+
+  // Hủy hợp đồng trước thanh toán (chỉ khi hai bên đã xác nhận); BE tự đóng phiên thương lượng.
+  cancelAgreement: async (agreementId: string) => {
+    const response = await apiClient.post(`/agreements/${agreementId}/cancel`);
     return response.data;
   },
 
@@ -178,6 +189,8 @@ export default function AgreementPreviewScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [highValueAcknowledged, setHighValueAcknowledged] = useState(false);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // const [isConfirmingRequestEdit, setIsConfirmingRequestEdit] = useState(false); // [KHÔNG ĐƯỢC XÓA]
 
@@ -547,6 +560,53 @@ export default function AgreementPreviewScreen() {
       changed:
         Object.keys(diffs).length > 0 || revisionChanged || updatedAtChanged,
     };
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!agreementId || isDownloadingPdf) return;
+    try {
+      setIsDownloadingPdf(true);
+      setStatusMessage(null);
+      await downloadAgreementPdf(agreementId);
+    } catch (error) {
+      setStatusMessage({
+        type: "error",
+        text: getAgreementPdfErrorMessage(error),
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleCancelAgreement = async () => {
+    if (!agreementId || agreementWriteInFlightRef.current) return;
+
+    const lockKey = `cancel:${agreementId}`;
+    agreementWriteInFlightRef.current = lockKey;
+
+    try {
+      setIsProcessing(true);
+      setStatusMessage(null);
+      await agreementApi.cancelAgreement(agreementId);
+      setIsConfirmingCancel(false);
+      await fetchAgreementDetails(false);
+      setStatusMessage({
+        type: "success",
+        text: "Đã hủy hợp đồng. Phiên thương lượng này đã kết thúc; muốn tiếp tục giao dịch, hãy bắt đầu phiên thương lượng mới trong cuộc trò chuyện.",
+      });
+    } catch (error: any) {
+      setIsConfirmingCancel(false);
+      setStatusMessage({
+        type: "error",
+        text: getApiErrorMessage(error, "Không thể hủy hợp đồng."),
+      });
+      await fetchAgreementDetails(false);
+    } finally {
+      if (agreementWriteInFlightRef.current === lockKey) {
+        agreementWriteInFlightRef.current = null;
+      }
+      setIsProcessing(false);
+    }
   };
 
   const handleAccept = async () => {
@@ -1019,6 +1079,14 @@ export default function AgreementPreviewScreen() {
   );
   const requiresHighValueAck = isHighValueContract && isBuyer && canAccept;
 
+  // Hủy hợp đồng chỉ có khi hai bên đã xác nhận (chờ thanh toán) và còn hạn.
+  const canCancelAgreement =
+    !isStateInvalidated &&
+    !isPaymentWindowClosed &&
+    !isPaymentResolutionPending &&
+    isAwaitingPayment &&
+    isParticipant;
+
   const hasPendingAction = canEdit || canAccept;
   const hasAwaitingAction = /* canRequestEdit || */ canPay;
 
@@ -1303,7 +1371,7 @@ export default function AgreementPreviewScreen() {
         <DeadlineBanner
           countdown={paymentCountdown}
           label="Thời gian xác nhận và thanh toán còn lại"
-          expiredText="Đã hết 15 phút xác nhận và thanh toán. Phần giữ chỗ sẽ được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+          expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
           note={isPending ? "Chỉnh sửa hợp đồng không gia hạn thời gian." : undefined}
           style={styles.deadlineBanner}
         />
@@ -1417,6 +1485,16 @@ export default function AgreementPreviewScreen() {
           </View>
         ) : null}
 
+        {canAccept && !isConfirmingEditConflict && !isStateInvalidated ? (
+          <CollapsibleNotice
+            style={styles.agreementRuleNotice}
+            text={
+              String(agreementData?.confirmationWarningMessage ?? "").trim() ||
+              "Vui lòng kiểm tra kỹ thông tin hợp đồng. Khi cả hai bên xác nhận, nội dung sẽ được chốt và không thể chỉnh sửa. Sau đó, hai bên chỉ có thể thanh toán hoặc hủy hợp đồng trước khi thanh toán."
+            }
+          />
+        ) : null}
+
         {requiresHighValueAck && !highValueAcknowledged && !isConfirmingEditConflict && !isStateInvalidated ? (
           <Text style={[styles.inlineMessage, styles.warningText]}>
             Hãy tích &quot;Tôi đã hiểu&quot; ở mục Hàng giá trị cao phía trên để xác nhận hợp đồng.
@@ -1475,8 +1553,66 @@ export default function AgreementPreviewScreen() {
           </View>
         )}
 
-        {!bankRequirement && !isConfirmingEditConflict && isAwaitingPayment && (
+        {isConfirmingCancel && canCancelAgreement ? (
+          <View
+            style={[
+              styles.inlineConfirmation,
+              { backgroundColor: "rgba(122, 16, 18, 0.06)", borderColor: "rgba(122, 16, 18, 0.24)" },
+            ]}
+          >
+            <View style={styles.inlineConfirmationHeader}>
+              <Ionicons name="alert-circle" size={20} color={COLORS.error} />
+              <Text style={[styles.inlineConfirmationTitle, { color: COLORS.error }]}>
+                Hủy hợp đồng?
+              </Text>
+            </View>
+            <Text style={styles.inlineConfirmationMessage}>
+              {String(agreementData?.cancellationWarningMessage ?? "").trim() ||
+                "Hủy hợp đồng sẽ kết thúc phiên thương lượng hiện tại. Hợp đồng không thể khôi phục hoặc chỉnh sửa. Cuộc trò chuyện và lịch sử vẫn được lưu; nếu muốn tiếp tục giao dịch, hai bên cần bắt đầu phiên thương lượng mới trong cuộc trò chuyện này."}
+            </Text>
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setIsConfirmingCancel(false)}
+                disabled={isProcessing}
+              >
+                <Text style={styles.secondaryBtnText}>Quay lại</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  { backgroundColor: COLORS.error, borderColor: COLORS.error },
+                ]}
+                onPress={() => void handleCancelAgreement()}
+                disabled={isProcessing}
+              >
+                {isProcessing ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Hủy hợp đồng</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {!bankRequirement && !isConfirmingEditConflict && !isConfirmingCancel && isAwaitingPayment && (
           <View style={styles.actionRow}>
+            {canCancelAgreement && (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => {
+                  setStatusMessage(null);
+                  setIsConfirmingCancel(true);
+                }}
+                disabled={isProcessing}
+              >
+                <Text style={[styles.secondaryBtnText, { color: COLORS.error }]}>
+                  Hủy hợp đồng
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {canPay && (
               <TouchableOpacity
                 style={styles.primaryBtn}
@@ -1491,13 +1627,20 @@ export default function AgreementPreviewScreen() {
               </TouchableOpacity>
             )}
 
-            {!hasAwaitingAction && !isPaymentWindowClosed && !isPaymentResolutionPending && (
+            {!hasAwaitingAction && !canCancelAgreement && !isPaymentWindowClosed && !isPaymentResolutionPending && (
               <Text style={styles.waitingText}>
                 Hai bên đã chốt. Đang chờ người mua thanh toán...
               </Text>
             )}
           </View>
         )}
+
+        {!bankRequirement && !isConfirmingEditConflict && !isConfirmingCancel && isAwaitingPayment &&
+        !hasAwaitingAction && canCancelAgreement ? (
+          <Text style={styles.waitingText}>
+            Hai bên đã chốt. Đang chờ người mua thanh toán...
+          </Text>
+        ) : null}
 
         {!isConfirmingEditConflict && isPostPayment && (
           <View style={styles.postPaymentActions}>
@@ -1548,6 +1691,30 @@ export default function AgreementPreviewScreen() {
                 Hợp đồng đã thanh toán. Đơn hàng đang được đồng bộ...
               </Text>
             ) : null}
+
+            <TouchableOpacity
+              style={[
+                styles.secondaryBtn,
+                styles.postPaymentBtn,
+                isDownloadingPdf ? { opacity: 0.6 } : undefined,
+              ]}
+              onPress={() => void handleDownloadPdf()}
+              disabled={isDownloadingPdf}
+            >
+              {isDownloadingPdf ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="document-outline"
+                    size={18}
+                    color={COLORS.primary}
+                    style={{ marginRight: 7 }}
+                  />
+                  <Text style={styles.secondaryBtnText}>Tải hợp đồng PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1557,8 +1724,10 @@ export default function AgreementPreviewScreen() {
           !isPostPayment && (
             <Text style={styles.waitingText}>
               {status === "expired"
-                ? "Thỏa thuận đã hết hạn sau 15 phút xác nhận và thanh toán. Phần giữ chỗ đã được giải phóng; bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-                : "Hợp đồng hiện không có thao tác cần xử lý."}
+                ? "Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+                : status === "cancelled" || status === "canceled"
+                  ? "Hợp đồng đã bị hủy. Để tiếp tục giao dịch, hãy gửi đề nghị mới để bắt đầu phiên thương lượng mới."
+                  : "Hợp đồng hiện không có thao tác cần xử lý."}
             </Text>
           )}
       </View>
@@ -1781,6 +1950,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     width: "100%",
+  },
+  agreementRuleNotice: {
+    marginBottom: 10,
   },
   inlineConfirmation: {
     backgroundColor: "rgba(84, 123, 125, 0.10)",

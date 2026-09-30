@@ -502,7 +502,7 @@ export default function CheckoutScreen() {
 
     if (isPaymentWindowClosed) {
       showError(
-        "Đã hết 15 phút xác nhận và thanh toán của hợp đồng này. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.",
+        "Hợp đồng này đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng.",
       );
       return;
     }
@@ -880,7 +880,7 @@ export default function CheckoutScreen() {
           <DeadlineBanner
             countdown={paymentCountdown}
             label="Thời gian thanh toán còn lại"
-            expiredText="Đã hết 15 phút xác nhận và thanh toán. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+            expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
           />
         ) : null}
         <InlineFeedback feedback={feedback} />
