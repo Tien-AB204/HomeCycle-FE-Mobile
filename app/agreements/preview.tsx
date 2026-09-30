@@ -12,6 +12,8 @@ import {
   View,
 } from "react-native";
 import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
+import HighValueWarning from "../../src/components/shared/HighValueWarning";
+import { getContractTotal, isHighValueWithoutInspection } from "../../src/utils/highValue";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -175,6 +177,7 @@ export default function AgreementPreviewScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [highValueAcknowledged, setHighValueAcknowledged] = useState(false);
 
   // const [isConfirmingRequestEdit, setIsConfirmingRequestEdit] = useState(false); // [KHÔNG ĐƯỢC XÓA]
 
@@ -1008,6 +1011,14 @@ export default function AgreementPreviewScreen() {
     isAwaitingPayment &&
     (previewInfo?.canPay === true || isBuyer);
 
+  // BR-49: hợp đồng không kiểm định trên 3.000.000đ phải cảnh báo; Người mua xác nhận "đã hiểu" trước khi đồng ý.
+  const isHighValueContract = isHighValueWithoutInspection(
+    agreementData.finalPrice,
+    agreementData.quantity || 1,
+    isInspection,
+  );
+  const requiresHighValueAck = isHighValueContract && isBuyer && canAccept;
+
   const hasPendingAction = canEdit || canAccept;
   const hasAwaitingAction = /* canRequestEdit || */ canPay;
 
@@ -1132,6 +1143,23 @@ export default function AgreementPreviewScreen() {
               {renderOldValue("finalPrice", formatPrice)}
             </View>
           </View>
+
+          {isHighValueContract ? (
+            <HighValueWarning
+              totalAmount={getContractTotal(
+                agreementData.finalPrice,
+                agreementData.quantity || 1,
+              )}
+              acknowledged={requiresHighValueAck ? highValueAcknowledged : undefined}
+              onToggleAcknowledge={
+                requiresHighValueAck
+                  ? () => setHighValueAcknowledged((value) => !value)
+                  : undefined
+              }
+              disabled={isProcessing}
+              style={{ marginTop: 8 }}
+            />
+          ) : null}
 
           <View style={styles.divider} />
 
@@ -1389,6 +1417,12 @@ export default function AgreementPreviewScreen() {
           </View>
         ) : null}
 
+        {requiresHighValueAck && !highValueAcknowledged && !isConfirmingEditConflict && !isStateInvalidated ? (
+          <Text style={[styles.inlineMessage, styles.warningText]}>
+            Hãy tích &quot;Tôi đã hiểu&quot; ở mục Hàng giá trị cao phía trên để xác nhận hợp đồng.
+          </Text>
+        ) : null}
+
         {/* Chỉ render các nút bên dưới nếu KHÔNG phải đang hỏi xác nhận conflict */}
         {isStateInvalidated ? <Text style={styles.waitingText}>
           Đang cần cập nhật trạng thái hợp đồng. Vui lòng tải lại nếu kết nối bị gián đoạn.
@@ -1413,9 +1447,17 @@ export default function AgreementPreviewScreen() {
 
             {canAccept && (
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[
+                  styles.primaryBtn,
+                  requiresHighValueAck && !highValueAcknowledged
+                    ? { opacity: 0.5 }
+                    : undefined,
+                ]}
                 onPress={handleAccept}
-                disabled={isProcessing}
+                disabled={
+                  isProcessing ||
+                  (requiresHighValueAck && !highValueAcknowledged)
+                }
               >
                 {isProcessing ? (
                   <ActivityIndicator color={COLORS.white} />
