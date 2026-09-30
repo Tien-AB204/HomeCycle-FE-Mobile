@@ -29,6 +29,7 @@ import {
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
+import { publicProfileApi } from "../../src/services/apis/publicProfileApi";
 import inspectionFormApi, {
   COLLECTION_DELIVERY_METHOD,
   type CollectionDeliveryMethod,
@@ -810,6 +811,13 @@ export default function InspectionCollectionScreen() {
     setDeliveryAddress,
   ] = useState("");
 
+  // Địa chỉ được điền sẵn (chưa do người dùng nhập): hiện dòng nhắc, mất khi người dùng sửa ô.
+  const [pickupSuggested, setPickupSuggested] =
+    useState(false);
+  const [deliverySuggested, setDeliverySuggested] =
+    useState(false);
+  const deliveryTouchedRef = useRef(false);
+
   const [shippingFee, setShippingFee] =
     useState("0");
 
@@ -999,17 +1007,69 @@ export default function InspectionCollectionScreen() {
             : nextMethod,
         );
 
-        setPickupAddress(
-          String(
-            details?.pickupAddress ?? "",
-          ),
+        const savedPickupAddress = String(
+          details?.pickupAddress ?? "",
         );
+        const savedDeliveryAddress = String(
+          details?.deliveryAddress ?? "",
+        );
+        // Hợp đồng kiểm định không lưu điểm lấy/giao: gợi ý điểm lấy = địa điểm kiểm định.
+        const inspectionAddress = String(
+          details?.inspectionAddress ?? "",
+        ).trim();
+        const suggestPickup =
+          !savedPickupAddress.trim() &&
+          Boolean(inspectionAddress);
+
+        setPickupAddress(
+          suggestPickup
+            ? inspectionAddress
+            : savedPickupAddress,
+        );
+        setPickupSuggested(suggestPickup);
 
         setDeliveryAddress(
-          String(
-            details?.deliveryAddress ?? "",
-          ),
+          savedDeliveryAddress,
         );
+        setDeliverySuggested(false);
+        deliveryTouchedRef.current = false;
+
+        // Gợi ý điểm giao = địa chỉ doanh nghiệp của Người mua (hồ sơ công khai). Lỗi thì bỏ qua.
+        const buyerId = String(
+          agreement?.buyerId ?? "",
+        ).trim();
+
+        if (
+          !savedDeliveryAddress.trim() &&
+          buyerId
+        ) {
+          void publicProfileApi
+            .getProfile(buyerId)
+            .then((profile) => {
+              if (
+                profile.kind !== "business" ||
+                deliveryTouchedRef.current
+              ) {
+                return;
+              }
+
+              const suggestion = [
+                profile.businessAddress,
+                profile.ward,
+                profile.city,
+              ]
+                .filter(Boolean)
+                .join(", ");
+
+              if (!suggestion) {
+                return;
+              }
+
+              setDeliveryAddress(suggestion);
+              setDeliverySuggested(true);
+            })
+            .catch(() => undefined);
+        }
 
         setShippingFee(
           String(
@@ -2200,15 +2260,22 @@ export default function InspectionCollectionScreen() {
 
               <AddressPickerField
                 value={pickupAddress}
-                onChange={(value) =>
-                  setPickupAddress(value)
-                }
-                onClear={() =>
-                  setPickupAddress("")
-                }
+                onChange={(value) => {
+                  setPickupAddress(value);
+                  setPickupSuggested(false);
+                }}
+                onClear={() => {
+                  setPickupAddress("");
+                  setPickupSuggested(false);
+                }}
                 placeholder="Chọn điểm lấy hàng"
                 disabled={isSubmitting}
               />
+              {pickupSuggested ? (
+                <Text style={styles.suggestionHint}>
+                  Đã điền sẵn theo địa điểm kiểm định. Bạn có thể sửa.
+                </Text>
+              ) : null}
             </View>
 
             <View style={styles.fieldGroup}>
@@ -2218,16 +2285,25 @@ export default function InspectionCollectionScreen() {
 
               <AddressPickerField
                 value={deliveryAddress}
-                onChange={(value) =>
-                  setDeliveryAddress(value)
-                }
-                onClear={() =>
-                  setDeliveryAddress("")
-                }
+                onChange={(value) => {
+                  deliveryTouchedRef.current = true;
+                  setDeliveryAddress(value);
+                  setDeliverySuggested(false);
+                }}
+                onClear={() => {
+                  deliveryTouchedRef.current = true;
+                  setDeliveryAddress("");
+                  setDeliverySuggested(false);
+                }}
                 placeholder="Chọn điểm giao hàng"
                 disabled={isSubmitting}
                 hasError={Boolean(sameAddressError)}
               />
+              {deliverySuggested ? (
+                <Text style={styles.suggestionHint}>
+                  Đã điền sẵn theo địa chỉ doanh nghiệp của bạn. Hãy sửa nếu nhận hàng ở nơi khác.
+                </Text>
+              ) : null}
               {sameAddressError ? (
                 <Text
                   accessibilityRole="alert"
@@ -2443,6 +2519,13 @@ const styles = StyleSheet.create({
 
   inputError: {
     borderColor: COLORS.error,
+  },
+
+  suggestionHint: {
+    marginTop: 6,
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
   },
 
   fieldErrorText: {
