@@ -1031,6 +1031,14 @@ export default function OrderDetailScreen() {
     !sellerReadyAt &&
     !trackingCode &&
     (!creationStat || String(creationStat).toLowerCase() === "pending");
+  // Giao trực tiếp cũng cần Người bán xác nhận hàng sẵn sàng thì Backend mới mở bước xác nhận giao nhận;
+  // Người mua chưa thấy nút nên cần dòng giải thích.
+  const isAwaitingDirectSellerReady =
+    (deliveryMethod === "SellerDelivers" || deliveryMethod === "BuyerPickUp") &&
+    transactionRole === "buyer" &&
+    isProcessing &&
+    Boolean(shipmentId) &&
+    !sellerReadyAt;
   // Chưa có phương thức (vd. đơn kiểm định trước bước thu gom) và không có dữ liệu giao nhận
   // nào khác thì ẩn cả mục thay vì hiện "Chưa cập nhật".
   const hasDeliveryMethod = deliveryMethod !== "Unknown";
@@ -1181,6 +1189,14 @@ export default function OrderDetailScreen() {
             <InfoRow
               label="Đã lấy hàng lúc:"
               value={formatDate(pickedUpAt)}
+            />
+          ) : null}
+
+          {isAwaitingDirectSellerReady ? (
+            <InfoRow
+              label="Trạng thái giao nhận:"
+              value="Chờ người bán xác nhận hàng sẵn sàng"
+              valueStyle={styles.primaryValue}
             />
           ) : null}
 
