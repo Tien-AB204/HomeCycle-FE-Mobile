@@ -53,6 +53,7 @@ import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useAuth } from "../../src/contexts/AuthContext";
 
 type InlineMessage = {
   type: "error" | "success" | "info";
@@ -108,6 +109,7 @@ const toImageAsset = (
 
 export default function InspectionFormScreen() {
   const router = useGuardedRouter();
+  const { user } = useAuth();
   const params = useLocalSearchParams();
   const appointmentId = Array.isArray(params.appointmentId)
     ? params.appointmentId[0]
@@ -677,6 +679,14 @@ export default function InspectionFormScreen() {
   const canSubmit = form?.actions?.canSubmit === true;
   const canSellerConfirm = form?.actions?.canSellerConfirm === true;
   const canSellerReject = form?.actions?.canSellerReject === true;
+  // Phiếu bị từ chối là trạng thái cuối; bước tiếp theo chỉ còn khiếu nại ở đơn hàng.
+  const isRejectedForm = ["3", "rejected"].includes(
+    String(form?.inspectionStatus ?? "").trim().toLowerCase(),
+  );
+  const currentUserId = String(user?.userId || user?.id || "").toLowerCase();
+  const isInspector =
+    Boolean(currentUserId) &&
+    String(form?.inspectorId ?? "").toLowerCase() === currentUserId;
   const isEditableMode = !form ? canCreateInspectionForm : canEdit;
   const showExistingImages =
     !!form && form.images && form.images.length > 0 && !isReplacingImages;
@@ -733,6 +743,16 @@ export default function InspectionFormScreen() {
               ]}
             >
               {pageMessage.text}
+            </Text>
+          </View>
+        ) : null}
+
+        {isRejectedForm ? (
+          <View style={[styles.messageBox, styles.infoBox]}>
+            <Text style={[styles.messageText, styles.infoText]}>
+              {isInspector
+                ? "Người bán đã từ chối phiếu kiểm định. Nếu không đồng ý, bạn có thể mở khiếu nại tại đơn hàng."
+                : "Bạn đã từ chối phiếu kiểm định. Người mua có thể mở khiếu nại tại đơn hàng nếu không đồng ý."}
             </Text>
           </View>
         ) : null}
