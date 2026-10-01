@@ -40,6 +40,7 @@ type PaymentHistoryItem = {
   paymentMethod: number | string;
   paymentStatus: number | string;
   orderId?: string | null;
+  subscriptionId?: string | null;
 };
 
 const unwrap = (value: any) => value?.data ?? value;
@@ -208,13 +209,16 @@ export default function PaymentHistoryScreen() {
 
           {items.map((item) => {
             const status = translateStatus(item.paymentStatus);
+            // Điều hướng theo ID BE trả (đơn hàng hoặc gói dịch vụ), không đoán từ mô tả.
+            const canOpen = Boolean(item.orderId || item.subscriptionId);
             return (
               <TouchableOpacity
                 key={item.paymentId}
                 style={styles.paymentCard}
-                activeOpacity={item.orderId ? 0.7 : 1}
+                activeOpacity={canOpen ? 0.7 : 1}
                 onPress={() => {
                   if (item.orderId) router.push(`/orders/${item.orderId}` as any);
+                  else if (item.subscriptionId) router.push("/subscription" as any);
                 }}
               >
                 <View style={styles.cardTopRow}>
@@ -234,7 +238,7 @@ export default function PaymentHistoryScreen() {
                       {status.label}
                     </Text>
                   </View>
-                  {item.orderId ? (
+                  {canOpen ? (
                     <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
                   ) : null}
                 </View>

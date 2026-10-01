@@ -1827,7 +1827,7 @@ export default function BusinessAccountInfoScreen() {
               />
             </View>
             <Text style={styles.walletHold}>
-              Đang giữ: {formatCurrency(holdBalance)}
+              Đang chờ rút: {formatCurrency(holdBalance)}
             </Text>
             <TouchableOpacity
               style={styles.historyButton}

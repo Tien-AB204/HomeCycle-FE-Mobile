@@ -470,7 +470,7 @@ export default function ProfileScreen() {
               <Text style={styles.statLabel}>Số dư ví</Text>
               <Text style={styles.statValue}>{formatCurrency(availableBalance)}</Text>
               {Number(holdBalance) > 0 ? (
-                <Text style={styles.holdText}>Đang giữ: {formatCurrency(holdBalance)}</Text>
+                <Text style={styles.holdText}>Đang chờ rút: {formatCurrency(holdBalance)}</Text>
               ) : null}
             </TouchableOpacity>
 

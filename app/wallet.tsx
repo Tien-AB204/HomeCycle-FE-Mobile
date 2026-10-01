@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -16,6 +16,7 @@ import {
 import Header from "../src/components/shared/Header";
 import { COLORS } from "../src/constants/theme";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useChatRealtime } from "../src/contexts/ChatRealtimeContext";
 import apiClient from "../src/services/apis/axiosClient";
 import { getMyWithdrawalQuota, WithdrawalQuota } from "../src/services/apis/withdrawalApi";
 import { getApiErrorMessage } from "../src/utils/apiFeedback";
@@ -28,15 +29,25 @@ const PAGE_SIZE = 10;
 const walletApi = {
   getMyWallet: () => apiClient.get("/wallet/me").then((response) => response.data),
 
-  getLedger: (pageNumber: number) =>
+  // Lịch sử ví là WalletTransaction (mỗi giao dịch một dòng); ledger chỉ là bút toán kế toán.
+  getTransactions: (pageNumber: number) =>
     apiClient
-      .get("/wallet/me/ledger", {
+      .get("/wallet/me/transactions", {
         params: {
           PageNumber: pageNumber,
           PageSize: PAGE_SIZE,
         },
       })
       .then((response) => response.data),
+
+  getTransactionDetail: (walletTransactionId: string) =>
+    apiClient
+      .get(`/wallet/me/transactions/${walletTransactionId}`)
+      .then((response) => response.data),
+
+  // Tiền đơn hàng nền tảng đang giữ (Order_Escrow) cho người bán; không suy ra từ holdBalance.
+  getPendingSettlements: () =>
+    apiClient.get("/wallet/me/pending-settlements").then((response) => response.data),
 
   createWithdrawal: (amount: number) =>
     apiClient
@@ -49,18 +60,42 @@ type InlineMessage = {
   text: string;
 } | null;
 
-type WalletLedgerItem = {
-  ledgerId?: string;
+type WalletTransactionItem = {
+  walletTransactionId?: string;
+  paymentId?: string | null;
+  paymentMethod?: number | string | null;
+  transactionType?: number | string | null;
+  referenceType?: number | string | null;
+  referenceId?: string | null;
+  referenceCode?: string | null;
+  amount?: number;
+  status?: number | string | null;
   createdAt?: string;
+  description?: string;
+};
+
+type BalanceImpact = {
+  ledgerId?: string;
   direction?: number | string;
   balanceType?: number | string;
   amount?: number;
   balanceBefore?: number;
   balanceAfter?: number;
   description?: string;
-  transactionType?: number | string | null;
-  referenceType?: number | string | null;
-  referenceId?: string | null;
+};
+
+type PendingSettlementItem = {
+  orderId?: string;
+  orderCode?: string;
+  productName?: string | null;
+  amount?: number;
+  orderStatus?: number | string | null;
+  updatedAt?: string;
+};
+
+type PendingSettlements = {
+  totalPendingAmount: number;
+  items: PendingSettlementItem[];
 };
 
 const unwrap = (value: any) => value?.data ?? value;
@@ -110,15 +145,96 @@ const isDirectionIn = (value: unknown) => {
 
 const getBalanceTypeLabel = (value: unknown) => {
   const normalized = normalizeEnum(value);
-  return normalized === "1" || normalized === "hold" ? "Tiền đang giữ" : "Số dư khả dụng";
+  return normalized === "1" || normalized === "hold" ? "Đang chờ rút" : "Số dư khả dụng";
+};
+
+// TransactionType của BE (chuỗi hoặc số). Chiều tiền xét theo ví người dùng.
+const TRANSACTION_TYPES: Record<string, { label: string; flow: "in" | "out" | "lock" | "none" }> = {
+  escrow_deposit: { label: "Thanh toán đơn hàng (PayOS)", flow: "none" },
+  wallet_payment: { label: "Thanh toán đơn hàng bằng ví", flow: "out" },
+  payout_release: { label: "Nhận tiền bán hàng", flow: "in" },
+  order_refund: { label: "Hoàn tiền đơn hàng", flow: "in" },
+  withdrawal_lock: { label: "Khóa tiền chờ rút", flow: "lock" },
+  withdrawal_success: { label: "Rút tiền thành công", flow: "out" },
+  withdrawal_revert: { label: "Hoàn lại tiền rút", flow: "in" },
+  commission_fee: { label: "Phí hoa hồng", flow: "out" },
+  subscription_fee: { label: "Thanh toán gói dịch vụ", flow: "out" },
+  shipping_fee_collected: { label: "Thu phí vận chuyển", flow: "none" },
+};
+const TRANSACTION_TYPE_BY_NUMBER: Record<string, string> = {
+  "1": "escrow_deposit",
+  "2": "wallet_payment",
+  "3": "payout_release",
+  "4": "order_refund",
+  "5": "withdrawal_lock",
+  "6": "withdrawal_success",
+  "7": "withdrawal_revert",
+  "8": "commission_fee",
+  "9": "subscription_fee",
+  "10": "shipping_fee_collected",
+};
+
+const getTransactionTypeInfo = (value: unknown) => {
+  const normalized = normalizeEnum(value);
+  const key = TRANSACTION_TYPE_BY_NUMBER[normalized] ?? normalized;
+  return TRANSACTION_TYPES[key] ?? { label: "", flow: "none" as const };
+};
+
+const getTransactionStatusLabel = (value: unknown) => {
+  switch (normalizeEnum(value)) {
+    case "0":
+    case "pending":
+      return "Đang xử lý";
+    case "2":
+    case "failed":
+      return "Thất bại";
+    case "3":
+    case "cancelled":
+      return "Đã hủy";
+    default:
+      return "";
+  }
+};
+
+const getOrderStatusLabel = (value: unknown) => {
+  switch (normalizeEnum(value)) {
+    case "0":
+    case "pending":
+      return "Chờ xử lý";
+    case "4":
+    case "disputing":
+      return "Đang tranh chấp";
+    case "5":
+    case "returned":
+      return "Đã trả hàng";
+    case "1":
+    case "processing":
+      return "Đang xử lý";
+    case "2":
+    case "completed":
+      return "Hoàn tất";
+    case "3":
+    case "cancelled":
+      return "Đã hủy";
+    default:
+      return "";
+  }
 };
 
 export default function WalletScreen() {
   const router = useGuardedRouter();
   const { user } = useAuth();
 
+  const { connection, reconnectVersion } = useChatRealtime();
   const [wallet, setWallet] = useState<any>(null);
-  const [ledger, setLedger] = useState<WalletLedgerItem[]>([]);
+  const [transactions, setTransactions] = useState<WalletTransactionItem[]>([]);
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const [transactionImpacts, setTransactionImpacts] = useState<Record<string, BalanceImpact[]>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [pendingSettlements, setPendingSettlements] = useState<PendingSettlements | null>(null);
+  const [isPendingExpanded, setIsPendingExpanded] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const pageNumberRef = useRef(1);
   const [pageNumber, setPageNumber] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -152,16 +268,57 @@ export default function WalletScreen() {
     }
   }, []);
 
-  const loadLedger = useCallback(async (page: number) => {
-    const response = await walletApi.getLedger(page);
+  const loadTransactions = useCallback(async (page: number) => {
+    const response = await walletApi.getTransactions(page);
     const data = unwrap(response);
     const items = data?.items || data?.data?.items || [];
+    const nextPage = Number(data?.pageNumber || page);
 
-    setLedger(Array.isArray(items) ? items : []);
-    setPageNumber(Number(data?.pageNumber || page));
+    setTransactions(Array.isArray(items) ? items : []);
+    setExpandedTransactionId(null);
+    setPageNumber(nextPage);
+    pageNumberRef.current = nextPage;
     setTotalPages(Math.max(1, Number(data?.totalPages || 1)));
     setTotalCount(Number(data?.totalCount || 0));
   }, []);
+
+  const loadPendingSettlements = useCallback(async () => {
+    try {
+      const data = unwrap(await walletApi.getPendingSettlements());
+      setPendingSettlements({
+        totalPendingAmount: Number(data?.totalPendingAmount ?? 0),
+        items: Array.isArray(data?.items) ? data.items : [],
+      });
+    } catch {
+      // Phần tham khảo; lỗi không chặn màn hình ví.
+      setPendingSettlements(null);
+    }
+  }, []);
+
+  const toggleTransactionDetail = async (walletTransactionId: string) => {
+    if (expandedTransactionId === walletTransactionId) {
+      setExpandedTransactionId(null);
+      return;
+    }
+    setExpandedTransactionId(walletTransactionId);
+    if (transactionImpacts[walletTransactionId]) return;
+    try {
+      setLoadingDetailId(walletTransactionId);
+      const data = unwrap(await walletApi.getTransactionDetail(walletTransactionId));
+      setTransactionImpacts((current) => ({
+        ...current,
+        [walletTransactionId]: Array.isArray(data?.balanceImpacts) ? data.balanceImpacts : [],
+      }));
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: getApiErrorMessage(error, "Không thể tải chi tiết giao dịch."),
+      });
+      setExpandedTransactionId(null);
+    } finally {
+      setLoadingDetailId(null);
+    }
+  };
 
   const loadPage = useCallback(
     async (page: number, refreshing = false) => {
@@ -170,7 +327,12 @@ export default function WalletScreen() {
         else setIsLoading(true);
 
         setMessage(null);
-        await Promise.all([loadWallet(), loadLedger(page), loadQuota()]);
+        await Promise.all([
+          loadWallet(),
+          loadTransactions(page),
+          loadQuota(),
+          loadPendingSettlements(),
+        ]);
       } catch (error) {
         setMessage({
           type: "error",
@@ -181,7 +343,7 @@ export default function WalletScreen() {
         setIsRefreshing(false);
       }
     },
-    [loadLedger, loadQuota, loadWallet],
+    [loadPendingSettlements, loadQuota, loadTransactions, loadWallet],
   );
 
   useFocusEffect(
@@ -189,6 +351,28 @@ export default function WalletScreen() {
       void loadPage(1);
     }, [loadPage]),
   );
+
+  // FinanceUpdated chỉ là tín hiệu làm mới: payload có thể rỗng (vd. người bán khi bên mua vừa
+  // thanh toán) nên luôn tải lại thay vì đọc nội dung sự kiện.
+  useEffect(() => {
+    if (!connection) return;
+    const handleFinanceUpdated = () => {
+      void Promise.all([
+        loadWallet(),
+        loadTransactions(pageNumberRef.current),
+        loadQuota(),
+        loadPendingSettlements(),
+      ]).catch(() => undefined);
+    };
+    connection.on("FinanceUpdated", handleFinanceUpdated);
+    return () => {
+      connection.off("FinanceUpdated", handleFinanceUpdated);
+    };
+  }, [connection, loadPendingSettlements, loadQuota, loadTransactions, loadWallet]);
+
+  useEffect(() => {
+    if (reconnectVersion > 0) void loadPage(pageNumberRef.current, true);
+  }, [loadPage, reconnectVersion]);
 
   const parsedWithdrawalAmount = useMemo(
     () => Number(withdrawalAmount.replace(/[^0-9]/g, "")),
@@ -282,7 +466,7 @@ export default function WalletScreen() {
           : "Đã tạo yêu cầu rút tiền.",
       });
 
-      await Promise.all([loadWallet(), loadLedger(1), loadQuota()]);
+      await Promise.all([loadWallet(), loadTransactions(1), loadQuota()]);
     } catch (error: any) {
       const code = getErrorCode(error);
       const messageByCode: Record<string, string> = {
@@ -351,11 +535,69 @@ export default function WalletScreen() {
               <Ionicons name="wallet-outline" size={28} color={COLORS.primary} />
             </View>
           </View>
+          {/* holdBalance chỉ là tiền khóa của yêu cầu rút; tiền đơn hàng nằm ở mục chờ nhận bên dưới. */}
           <View style={styles.holdRow}>
-            <Text style={styles.holdLabel}>Đang giữ</Text>
+            <Text style={styles.holdLabel}>Đang chờ rút</Text>
             <Text style={styles.holdValue}>{formatCurrency(holdBalance)}</Text>
           </View>
         </View>
+
+        {pendingSettlements &&
+        (pendingSettlements.totalPendingAmount > 0 || pendingSettlements.items.length > 0) ? (
+          <View style={styles.card}>
+            {/* Mặc định thu gọn: chỉ hiện tổng và số đơn; chạm để xem danh sách. */}
+            <TouchableOpacity
+              style={styles.pendingHeader}
+              activeOpacity={0.7}
+              onPress={() => setIsPendingExpanded((value) => !value)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isPendingExpanded }}
+            >
+              <View style={styles.ledgerContent}>
+                <Text style={styles.cardTitle}>Tiền chờ nhận từ đơn hàng</Text>
+                <Text style={styles.pendingTotal}>
+                  {formatCurrency(pendingSettlements.totalPendingAmount)}
+                </Text>
+                <Text style={styles.countText}>
+                  {pendingSettlements.items.length} đơn ·{" "}
+                  {isPendingExpanded ? "Thu gọn" : "Xem chi tiết"}
+                </Text>
+              </View>
+              <Ionicons
+                name={isPendingExpanded ? "chevron-up" : "chevron-down"}
+                size={20}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
+            {isPendingExpanded ? (
+              <Text style={[styles.helperText, styles.pendingHelper]}>
+                HomeCycle đang giữ khoản tiền này cho các đơn bạn bán. Tiền được chuyển vào số dư khả dụng sau khi đơn hoàn tất và hết thời hạn khiếu nại.
+              </Text>
+            ) : null}
+            {isPendingExpanded && pendingSettlements.items.map((item, index) => (
+              <TouchableOpacity
+                key={item.orderId || `${item.orderCode}-${index}`}
+                style={[
+                  styles.pendingItem,
+                  index === pendingSettlements.items.length - 1 ? styles.lastLedgerItem : undefined,
+                ]}
+                disabled={!item.orderId}
+                onPress={() => router.push(`/orders/${item.orderId}` as any)}
+              >
+                <View style={styles.ledgerContent}>
+                  <Text style={styles.ledgerDescription} numberOfLines={1}>
+                    {item.productName || "Đơn hàng"}
+                  </Text>
+                  <Text style={styles.ledgerMeta}>
+                    {[item.orderCode, getOrderStatusLabel(item.orderStatus)].filter(Boolean).join(" · ")}
+                  </Text>
+                </View>
+                <Text style={styles.pendingAmount}>{formatCurrency(item.amount)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
 
         {message ? (
           <View
@@ -390,7 +632,7 @@ export default function WalletScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Rút tiền</Text>
           <Text style={styles.helperText}>
-            Tiền rút sẽ được khóa khỏi số dư khả dụng và chuyển sang trạng thái đang giữ trong lúc chờ xử lý.
+            Tiền rút sẽ được khóa khỏi số dư khả dụng và chuyển sang mục đang chờ rút trong lúc chờ xử lý.
           </Text>
 
           {quota ? (
@@ -509,63 +751,130 @@ export default function WalletScreen() {
 
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <View>
-              <Text style={styles.cardTitle}>Biến động ví</Text>
-              <Text style={styles.countText}>{totalCount} giao dịch</Text>
-            </View>
+            {/* Mặc định thu gọn: chỉ hiện số giao dịch; chạm tiêu đề để xem danh sách. */}
+            <TouchableOpacity
+              style={styles.historyHeaderToggle}
+              activeOpacity={0.7}
+              onPress={() => setIsHistoryExpanded((value) => !value)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isHistoryExpanded }}
+            >
+              <View style={styles.ledgerContent}>
+                <Text style={styles.cardTitle}>Lịch sử giao dịch ví</Text>
+                <Text style={styles.countText}>
+                  {totalCount} giao dịch · {isHistoryExpanded ? "Thu gọn" : "Xem chi tiết"}
+                </Text>
+              </View>
+              <Ionicons
+                name={isHistoryExpanded ? "chevron-up" : "chevron-down"}
+                size={20}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.refreshButton} onPress={() => void loadPage(pageNumber, true)}>
               <Ionicons name="refresh" size={18} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
 
-          {ledger.length === 0 ? (
+          {!isHistoryExpanded ? null : transactions.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons name="receipt-outline" size={32} color={COLORS.textLight} />
-              <Text style={styles.emptyTitle}>Chưa có biến động ví</Text>
-              <Text style={styles.emptyText}>Các khoản cộng, trừ hoặc tiền đang giữ sẽ xuất hiện tại đây.</Text>
+              <Text style={styles.emptyTitle}>Chưa có giao dịch</Text>
+              <Text style={styles.emptyText}>Các khoản cộng, trừ hoặc khóa chờ rút sẽ xuất hiện tại đây.</Text>
             </View>
           ) : (
-            ledger.map((item, index) => {
-              const incoming = isDirectionIn(item.direction);
+            transactions.map((item, index) => {
+              const id = String(item.walletTransactionId || "");
+              const typeInfo = getTransactionTypeInfo(item.transactionType);
+              const amount = Math.abs(Number(item.amount || 0));
+              const statusLabel = getTransactionStatusLabel(item.status);
+              const isExpanded = Boolean(id) && expandedTransactionId === id;
+              const impacts = id ? transactionImpacts[id] : undefined;
+              // Loại không cộng/trừ vào ví của mình (vd. chuyển tiền đơn cũ sang Order_Escrow): dùng mô tả BE.
+              const title =
+                typeInfo.flow === "none"
+                  ? item.description || typeInfo.label || "Giao dịch ví"
+                  : typeInfo.label || item.description || "Giao dịch ví";
+              const showDescriptionInDetail = Boolean(item.description) && title !== item.description;
 
               return (
                 <View
-                  key={item.ledgerId || `${item.createdAt}-${index}`}
+                  key={id || `${item.createdAt}-${index}`}
                   style={[
-                    styles.ledgerItem,
-                    index === ledger.length - 1 ? styles.lastLedgerItem : undefined,
+                    styles.ledgerItemWrap,
+                    index === transactions.length - 1 ? styles.lastLedgerItem : undefined,
                   ]}
                 >
-                  <View style={[styles.directionIcon, incoming ? styles.directionIn : styles.directionOut]}>
-                    <Ionicons
-                      name={incoming ? "arrow-down" : "arrow-up"}
-                      size={18}
-                      color={incoming ? "#2F765D" : "#7A1012"}
-                    />
-                  </View>
-
-                  <View style={styles.ledgerContent}>
-                    <View style={styles.ledgerTopRow}>
-                      <Text style={styles.ledgerDescription} numberOfLines={2}>
-                        {item.description || "Biến động số dư"}
-                      </Text>
-                      <Text style={[styles.ledgerAmount, incoming ? styles.amountIn : styles.amountOut]}>
-                        {incoming ? "+" : "-"}{formatCurrency(item.amount)}
+                  <TouchableOpacity
+                    style={styles.ledgerItem}
+                    disabled={!id}
+                    onPress={() => void toggleTransactionDetail(id)}
+                  >
+                    <View style={styles.ledgerContent}>
+                      <View style={styles.ledgerTopRow}>
+                        <Text style={styles.ledgerDescription} numberOfLines={2}>
+                          {title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.ledgerAmount,
+                            typeInfo.flow === "in"
+                              ? styles.amountIn
+                              : typeInfo.flow === "out"
+                                ? styles.amountOut
+                                : styles.amountNeutral,
+                          ]}
+                        >
+                          {typeInfo.flow === "in" ? "+" : typeInfo.flow === "out" ? "-" : ""}
+                          {formatCurrency(amount)}
+                        </Text>
+                      </View>
+                      <Text style={styles.ledgerMeta}>
+                        {[item.referenceCode, statusLabel, formatDateTime(item.createdAt)].filter(Boolean).join(" · ")}
                       </Text>
                     </View>
-                    <Text style={styles.ledgerMeta}>
-                      {getBalanceTypeLabel(item.balanceType)} · {formatDateTime(item.createdAt)}
-                    </Text>
-                    <Text style={styles.balanceAfterText}>
-                      {formatCurrency(item.balanceBefore)} → {formatCurrency(item.balanceAfter)}
-                    </Text>
-                  </View>
+                    <Ionicons
+                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={COLORS.textLight}
+                    />
+                  </TouchableOpacity>
+
+                  {isExpanded ? (
+                    <View style={styles.impactBox}>
+                      {showDescriptionInDetail ? (
+                        <Text style={styles.impactDescription}>{item.description}</Text>
+                      ) : null}
+                      {loadingDetailId === id ? (
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                      ) : impacts && impacts.length > 0 ? (
+                        impacts.map((impact, impactIndex) => {
+                          const incoming = isDirectionIn(impact.direction);
+                          return (
+                            <View key={impact.ledgerId || impactIndex} style={styles.impactRow}>
+                              <Text style={styles.impactLabel}>{getBalanceTypeLabel(impact.balanceType)}</Text>
+                              <View style={styles.impactValues}>
+                                <Text style={[styles.impactAmount, incoming ? styles.amountIn : styles.amountOut]}>
+                                  {incoming ? "+" : "-"}{formatCurrency(impact.amount)}
+                                </Text>
+                                <Text style={styles.balanceAfterText}>
+                                  {formatCurrency(impact.balanceBefore)} → {formatCurrency(impact.balanceAfter)}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })
+                      ) : (
+                        <Text style={styles.balanceAfterText}>Giao dịch này không làm thay đổi số dư ví của bạn.</Text>
+                      )}
+                    </View>
+                  ) : null}
                 </View>
               );
             })
           )}
 
-          {totalPages > 1 ? (
+          {isHistoryExpanded && totalPages > 1 ? (
             <View style={styles.paginationRow}>
               <TouchableOpacity
                 style={[styles.pageButton, pageNumber <= 1 ? styles.disabledButton : undefined]}
@@ -748,23 +1057,44 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: "center", paddingVertical: 28 },
   emptyTitle: { color: COLORS.text, fontWeight: "700", marginTop: 9 },
   emptyText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 5 },
-  ledgerItem: {
-    flexDirection: "row",
-    gap: 10,
-    paddingVertical: 13,
+  ledgerItemWrap: {
     borderBottomWidth: 1,
     borderBottomColor: "#BAC2C1",
   },
-  lastLedgerItem: { borderBottomWidth: 0 },
-  directionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  ledgerItem: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 13,
   },
-  directionIn: { backgroundColor: "rgba(47, 118, 93, 0.10)" },
-  directionOut: { backgroundColor: "rgba(122, 16, 18, 0.08)" },
+  lastLedgerItem: { borderBottomWidth: 0 },
+  amountNeutral: { color: COLORS.textLight },
+  impactBox: {
+    marginLeft: 0,
+    marginBottom: 12,
+    padding: 10,
+    gap: 8,
+    borderRadius: 10,
+    backgroundColor: "#F8F9FA",
+  },
+  impactDescription: { color: COLORS.text, fontSize: 12, lineHeight: 17 },
+  impactRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
+  impactLabel: { color: COLORS.textLight, fontSize: 12 },
+  impactValues: { alignItems: "flex-end" },
+  impactAmount: { fontSize: 12, fontWeight: "800" },
+  pendingTotal: { color: COLORS.primary, fontSize: 22, fontWeight: "900", marginBottom: 4 },
+  pendingHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  historyHeaderToggle: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, marginRight: 10 },
+  pendingHelper: { marginTop: 10, marginBottom: 4 },
+  pendingItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: "#BAC2C1",
+  },
+  pendingAmount: { color: COLORS.text, fontSize: 13, fontWeight: "800" },
   ledgerContent: { flex: 1 },
   ledgerTopRow: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
   ledgerDescription: { flex: 1, color: COLORS.text, fontSize: 13, fontWeight: "700", lineHeight: 18 },
