@@ -1,0 +1,35 @@
+// Dữ liệu mẫu cho tin bán khi demo (nút "Điền dữ liệu mẫu" trên màn Đăng tin mới).
+// Mã danh mục, loại sản phẩm, thương hiệu và thuộc tính lấy từ dữ liệu thật trên hệ thống.
+export const DEMO_SELL_POST_SAMPLE = {
+  productName: "Máy giặt Samsung Inverter 9.5kg WW95TA046AX",
+  description: "Máy giặt cửa trước Samsung 9.5kg, dùng 2 năm, chạy êm, cần pass gấp",
+  detailDescription:
+    "Máy giặt Samsung Inverter 9.5kg, model WW95TA046AX/SV, mua chính hãng năm 2024. Máy hoạt động bình thường, vắt êm, không rò nước, không báo lỗi. Vỏ có vài vết trầy nhẹ ở cạnh trên, không ảnh hưởng sử dụng. Đã vệ sinh lồng giặt, tặng kèm ống cấp và ống xả.",
+  categoryId: "b8086ea1-9805-41a9-9a0c-d1d46c803dd0",
+  productTypeId: "eb16017a-0bc0-464a-8903-deb2e030ce71",
+  brandId: "a84e9e66-aed1-4c05-9095-c1befe4cdc33",
+  modelNumber: "WW95TA046AX/SV",
+  spaceUsage: "Laundry_room",
+  originalPrice: "9490000",
+  basePrice: "2800000",
+  quantity: "1",
+  functionalityStatus: "FullyFunctional",
+  damageLevel: "Cosmetic_Damage",
+  usageDuration: "2",
+  length: "50",
+  width: "45",
+  height: "45",
+  weight: "21",
+  deliveryMethod: "GhnDelivery",
+  streetAddress: "107 Đường 37",
+  ward: "Xã An Lạc Thôn",
+  city: "Thành phố Cần Thơ",
+  attributeValues: [
+    { attributeId: "15794dd3-1325-4f8d-9e12-afcf74db46d3", optionId: "37a275ed-e4b2-41c3-a857-85e93ec8f759" },
+    { attributeId: "3c70651b-b295-4011-81f1-4917bd5845f2", optionId: "bae068ee-2545-418e-91fe-48d2acf6cace" },
+    { attributeId: "4b2d9d5c-57b3-488f-843b-ace2bba27809", optionId: "6983b01e-de39-4b4b-902d-ab8480d56241" },
+    { attributeId: "4b7fabf9-f72c-4b95-acf5-2c8ce2b03036", optionId: "6a5ee16d-4c5f-4645-af82-1433d91531a3" },
+    { attributeId: "720eab8c-24ae-4b2d-b6a0-8d583ff6ad26", optionId: "8d2c103e-4cc9-490c-90fc-936dd9fbb32e" },
+    { attributeId: "da12d7b1-0f96-4fc3-87a9-aec600fe02ba", optionId: "1a210355-e007-4124-96f0-e9eb7db0d2c7" },
+  ],
+};

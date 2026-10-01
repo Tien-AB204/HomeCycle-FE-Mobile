@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -32,6 +33,7 @@ import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
+import { DEMO_SELL_POST_SAMPLE } from "../../src/constants/demoPostSample";
 import AiPriceDetails, {
   countAiPriceSamples,
   type AiPriceBreakdown,
@@ -57,6 +59,10 @@ const postApi = {
   getAllBrands: () =>
     apiClient
       .get("/brands/active", { params: { PageSize: 100, PageNumber: 1 } })
+      .then((response) => response.data),
+  getModelSuggestions: (productTypeId: string, brandId: string, keyword: string) =>
+    apiClient
+      .get(`/product-types/${productTypeId}/models`, { params: { brandId, keyword } })
       .then((response) => response.data),
   getPostById: (postId: string) =>
     apiClient.get(`/posts/get-by-id/${postId}`).then((response) => response.data),
@@ -327,7 +333,39 @@ export default function PostFormScreen() {
   const [selectedProductType, setSelectedProductType] = useState("");
   const [brandId, setBrandId] = useState("");
   const [modelNumber, setModelNumber] = useState("");
+  const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
+  const [isModelFocused, setIsModelFocused] = useState(false);
+  const [hasFilledDemoSample, setHasFilledDemoSample] = useState(false);
+  const modelSuggestionRequestRef = useRef(0);
   const [length, setLength] = useState("");
+  // Gợi ý mã model (BE: tối đa 10 mã từ các tin bán cùng loại sản phẩm và thương hiệu, cần ít nhất 2 ký tự).
+  useEffect(() => {
+    const requestId = ++modelSuggestionRequestRef.current;
+    const keyword = modelNumber.trim();
+    if (!isModelFocused || keyword.length < 2 || !selectedProductType || !brandId) {
+      setModelSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      postApi
+        .getModelSuggestions(selectedProductType, brandId, keyword)
+        .then((response) => {
+          if (requestId !== modelSuggestionRequestRef.current) return;
+          const items = response?.data ?? response;
+          setModelSuggestions(
+            Array.isArray(items)
+              ? items
+                  .map((item) => String(item ?? "").trim())
+                  .filter((item) => item && item.toLowerCase() !== keyword.toLowerCase())
+              : [],
+          );
+        })
+        .catch(() => {
+          if (requestId === modelSuggestionRequestRef.current) setModelSuggestions([]);
+        });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [brandId, isModelFocused, modelNumber, selectedProductType]);
   const [width, setWidth] = useState("");
   const [height, setHeight] = useState("");
   const [showDimensionsModal, setShowDimensionsModal] = useState(false);
@@ -783,6 +821,37 @@ export default function PostFormScreen() {
     };
     void fetchSchema();
   }, [oldEavData, selectedProductType]);
+
+  // Điền tin bán mẫu cho demo. Thuộc tính đi qua oldEavData giống luồng sửa tin:
+  // khi tải xong thông số loại sản phẩm, lựa chọn mẫu được chọn sẵn. Ảnh vẫn do người dùng thêm.
+  const fillDemoSample = () => {
+    const sample = DEMO_SELL_POST_SAMPLE;
+    setProductName(sample.productName);
+    setDescription(sample.description);
+    setDetailDescription(sample.detailDescription);
+    setSelectedCategory(sample.categoryId);
+    setSelectedProductType(sample.productTypeId);
+    setOldEavData(sample.attributeValues);
+    setBrandId(sample.brandId);
+    setModelNumber(sample.modelNumber);
+    setSpaceUsage(sample.spaceUsage);
+    setOriginalPrice(sample.originalPrice);
+    setBasePrice(sample.basePrice);
+    setQuantity(sample.quantity);
+    setQuantityError("");
+    setFunctionalityStatus(sample.functionalityStatus);
+    setDamageLevel(sample.damageLevel);
+    setUsageDuration(sample.usageDuration);
+    setLength(sample.length);
+    setWidth(sample.width);
+    setHeight(sample.height);
+    setWeight(sample.weight);
+    setDeliveryMethod(sample.deliveryMethod);
+    setStreetAddress(sample.streetAddress);
+    setWard(sample.ward);
+    setCity(sample.city);
+    setHasFilledDemoSample(true);
+  };
 
   const displayDimensions =
     length && width && height ? `${length} x ${width} x ${height} cm` : "";
@@ -1815,6 +1884,12 @@ export default function PostFormScreen() {
               <Text style={styles.recoveryAcknowledgeText}>Tôi đã kiểm tra, tin chưa được tạo</Text>
             </TouchableOpacity>
           ) : null}
+          {!isEditMode && !isBuyPost && !hasFilledDemoSample ? (
+            <TouchableOpacity style={styles.demoSampleButton} onPress={fillDemoSample}>
+              <Ionicons name="flash-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.demoSampleButtonText}>Điền dữ liệu mẫu</Text>
+            </TouchableOpacity>
+          ) : null}
           {formMessage ? (
             <View
               style={[
@@ -1963,8 +2038,30 @@ export default function PostFormScreen() {
                       placeholderTextColor="#547B7D"
                       value={modelNumber}
                       onChangeText={setModelNumber}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      onFocus={() => setIsModelFocused(true)}
+                      onBlur={() => setTimeout(() => setIsModelFocused(false), 150)}
                     />
                   </View>
+                  {modelSuggestions.length > 0 ? (
+                    <View style={styles.modelSuggestionList}>
+                      {modelSuggestions.map((item) => (
+                        <TouchableOpacity
+                          key={item}
+                          style={styles.modelSuggestionItem}
+                          onPress={() => {
+                            setModelNumber(item);
+                            setModelSuggestions([]);
+                            setIsModelFocused(false);
+                            Keyboard.dismiss();
+                          }}
+                        >
+                          <Text style={styles.modelSuggestionText} numberOfLines={1}>{item}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -2646,6 +2743,11 @@ const styles = StyleSheet.create({
   inputText: { flex: 1, fontSize: 14, color: COLORS.text },
   placeholderText: { flex: 1, fontSize: 14, color: "#547B7D" },
   row: { flexDirection: "row", gap: 12 },
+  demoSampleButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, alignSelf: "flex-end", borderWidth: 1, borderColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
+  demoSampleButtonText: { fontSize: 13, fontWeight: "600", color: COLORS.primary },
+  modelSuggestionList: { marginTop: -12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, backgroundColor: COLORS.white, overflow: "hidden" },
+  modelSuggestionItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EEF1F1" },
+  modelSuggestionText: { fontSize: 14, color: COLORS.text },
   schemaLoader: { padding: 20 },
   rawBlock: { marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#BAC2C1" },
   rawLabel: { fontSize: 14, fontWeight: "bold", color: "#172830", marginBottom: 8 },
