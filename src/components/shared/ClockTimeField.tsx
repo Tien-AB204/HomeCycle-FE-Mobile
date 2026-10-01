@@ -14,6 +14,12 @@ import {
   type ViewStyle,
 } from "react-native";
 import { COLORS } from "../../constants/theme";
+import {
+  isWithinScheduleHours,
+  SCHEDULE_END_TIME,
+  SCHEDULE_HOURS_MESSAGE,
+  SCHEDULE_START_TIME,
+} from "../../utils/scheduleHours";
 import { ModalBackdrop, ModalSurface } from "./ModalBackdrop";
 
 /**
@@ -33,6 +39,8 @@ interface ClockTimeFieldProps {
   clearable?: boolean;
   accessibilityLabel?: string;
   style?: ViewStyle;
+  // Chỉ nhận giờ trong khung đặt lịch của BE; giờ ngoài khung bị bỏ và báo ngay dưới ô.
+  restrictToScheduleHours?: boolean;
 }
 
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -63,10 +71,30 @@ export default function ClockTimeField({
   clearable = false,
   accessibilityLabel,
   style,
+  restrictToScheduleHours = false,
 }: ClockTimeFieldProps) {
   const [isIosPickerVisible, setIsIosPickerVisible] = useState(false);
   const [iosDraft, setIosDraft] = useState<Date>(() => toPickerDate(value));
+  const [rejectedTime, setRejectedTime] = useState("");
   const displayValue = isClockTime(value) ? value.trim() : "";
+
+  // Bộ chọn giờ hệ thống không giới hạn được khung giờ nên kiểm tra sau khi chọn.
+  const commitTime = (next: string) => {
+    if (restrictToScheduleHours && next && !isWithinScheduleHours(next)) {
+      setRejectedTime(next);
+      return;
+    }
+    setRejectedTime("");
+    onChange(next);
+  };
+
+  const scheduleHint = restrictToScheduleHours ? (
+    <Text style={[styles.scheduleHint, rejectedTime ? styles.scheduleHintError : undefined]}>
+      {rejectedTime
+        ? `${rejectedTime} nằm ngoài khung giờ. ${SCHEDULE_HOURS_MESSAGE}`
+        : SCHEDULE_HOURS_MESSAGE}
+    </Text>
+  ) : null;
 
   const openPicker = () => {
     if (disabled) return;
@@ -78,7 +106,7 @@ export default function ClockTimeField({
         display: "clock",
         onChange: (event: DateTimePickerEvent, selected?: Date) => {
           if (event.type !== "set" || !selected) return;
-          onChange(toClockString(selected));
+          commitTime(toClockString(selected));
         },
       });
       return;
@@ -88,7 +116,7 @@ export default function ClockTimeField({
   };
 
   const confirmIos = () => {
-    onChange(toClockString(iosDraft));
+    commitTime(toClockString(iosDraft));
     setIsIosPickerVisible(false);
   };
 
@@ -96,6 +124,7 @@ export default function ClockTimeField({
     // Web: điều khiển time của trình duyệt (vẫn là bộ chọn, không phải ô chữ tự do).
     const WebInput = "input" as unknown as React.ComponentType<Record<string, unknown>>;
     return (
+      <>
       <View
         style={[
           styles.trigger,
@@ -108,12 +137,14 @@ export default function ClockTimeField({
         <WebInput
           type="time"
           step={60}
+          min={restrictToScheduleHours ? SCHEDULE_START_TIME : undefined}
+          max={restrictToScheduleHours ? SCHEDULE_END_TIME : undefined}
           value={displayValue}
           disabled={disabled}
           aria-label={accessibilityLabel ?? placeholder}
           onChange={(event: { target: { value: string } }) => {
             const next = String(event?.target?.value ?? "");
-            onChange(isClockTime(next) ? next : "");
+            commitTime(isClockTime(next) ? next : "");
           }}
           style={{
             flex: 1,
@@ -126,6 +157,8 @@ export default function ClockTimeField({
           }}
         />
       </View>
+      {scheduleHint}
+      </>
     );
   }
 
@@ -165,6 +198,7 @@ export default function ClockTimeField({
           <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
         )}
       </TouchableOpacity>
+      {scheduleHint}
 
       {Platform.OS === "ios" ? (
         <Modal
@@ -252,4 +286,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sheetPrimaryText: { color: COLORS.white, fontWeight: "700", fontSize: 14 },
+  scheduleHint: { marginTop: 5, color: COLORS.textLight, fontSize: 12, lineHeight: 17 },
+  scheduleHintError: { color: COLORS.error },
 });

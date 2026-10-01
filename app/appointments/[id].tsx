@@ -33,6 +33,7 @@ import inspectionFormApi, {
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
+import { isWithinScheduleHours, SCHEDULE_HOURS_MESSAGE } from "../../src/utils/scheduleHours";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -554,6 +555,11 @@ export default function AppointmentDetailScreen() {
       proposedDate.getTime() <= Date.now()
     ) {
       setRescheduleFormError("Thời gian đề xuất phải ở tương lai.");
+      return;
+    }
+
+    if (!isWithinScheduleHours(rescheduleTime)) {
+      setRescheduleFormError(`Giờ hẹn mới không hợp lệ. ${SCHEDULE_HOURS_MESSAGE}`);
       return;
     }
 
@@ -1472,6 +1478,7 @@ export default function AppointmentDetailScreen() {
 
             <Text style={styles.label}>Giờ <Text style={{ color: COLORS.error }}>*</Text></Text>
             <ClockTimeField
+              restrictToScheduleHours
               value={rescheduleTime}
               onChange={setRescheduleTime}
               placeholder="Chọn giờ hẹn mới"

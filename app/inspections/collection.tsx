@@ -40,6 +40,7 @@ import inspectionFormApi, {
   type ScheduleInspectionCollectionRequest,
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { isWithinScheduleHours, SCHEDULE_HOURS_MESSAGE } from "../../src/utils/scheduleHours";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -1497,6 +1498,14 @@ export default function InspectionCollectionScreen() {
       return;
     }
 
+    if (!isWithinScheduleHours(collectionTime)) {
+      setNotice({
+        type: "error",
+        text: `Giờ giao nhận không hợp lệ. ${SCHEDULE_HOURS_MESSAGE}`,
+      });
+      return;
+    }
+
     const targetDate =
       new Date(
         `${collectionDate}T${collectionTime}:00`,
@@ -1823,6 +1832,7 @@ export default function InspectionCollectionScreen() {
             </Text>
 
             <ClockTimeField
+              restrictToScheduleHours
               value={collectionTime}
               onChange={setCollectionTime}
               placeholder="Chọn giờ giao nhận"
