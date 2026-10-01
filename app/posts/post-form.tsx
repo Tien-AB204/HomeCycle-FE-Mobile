@@ -32,6 +32,12 @@ import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
+import AiPriceDetails, {
+  countAiPriceSamples,
+  type AiPriceBreakdown,
+  type AiPriceEvidence,
+  type AiPriceSource,
+} from "../../src/components/posts/AiPriceDetails";
 import {
   SupplierMatchAdvancedFilters,
   SupplierMatchDraftRequest,
@@ -163,6 +169,9 @@ type AiPriceSuggestionResult = {
   maxPrice?: number | null;
   confidence?: string;
   explanation?: string;
+  evidence?: AiPriceEvidence;
+  sources?: AiPriceSource[];
+  breakdown?: AiPriceBreakdown | null;
   remainingToday?: number;
   resetsAt?: string;
 };
@@ -2421,8 +2430,20 @@ export default function PostFormScreen() {
                           <Text style={styles.aiPriceRange}>Khoảng {Number(aiPriceResult.minPrice).toLocaleString("vi-VN")} – {Number(aiPriceResult.maxPrice).toLocaleString("vi-VN")} đ</Text>
                         ) : null}
                         {aiResultStatus === "FALLBACK_EQUIVALENT_MODEL" ? <Text style={styles.aiPriceHint}>Tham khảo từ model tương đương</Text> : null}
-                        <Text style={styles.aiPriceExplanation}>{aiPriceResult.explanation}</Text>
-                        <Text style={styles.aiPriceConfidence}>{aiConfidenceLabel[String(aiPriceResult.confidence || "").toUpperCase()] || "Chưa đủ dữ liệu"}</Text>
+                        <Text style={styles.aiPriceConfidence}>
+                          {[
+                            countAiPriceSamples(aiPriceResult.evidence, aiPriceResult.sources) > 0
+                              ? `Dựa trên ${countAiPriceSamples(aiPriceResult.evidence, aiPriceResult.sources)} mẫu giá`
+                              : "",
+                            aiConfidenceLabel[String(aiPriceResult.confidence || "").toUpperCase()] || "Chưa đủ dữ liệu",
+                          ].filter(Boolean).join(" · ")}
+                        </Text>
+                        <AiPriceDetails
+                          explanation={aiPriceResult.explanation}
+                          evidence={aiPriceResult.evidence}
+                          sources={aiPriceResult.sources}
+                          breakdown={aiPriceResult.breakdown}
+                        />
                         <TouchableOpacity style={styles.aiApplyButton} onPress={applyAiSuggestedPrice}>
                           <Text style={styles.aiApplyButtonText}>Áp dụng giá này</Text>
                         </TouchableOpacity>
