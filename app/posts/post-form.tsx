@@ -30,7 +30,7 @@ import { normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spac
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
-import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
 import { DEMO_SELL_POST_SAMPLE } from "../../src/constants/demoPostSample";
@@ -1014,9 +1014,12 @@ export default function PostFormScreen() {
           pathname: "/posts/[id]",
           params: { id: procurementBuyPostId, sellerRequestSellPostId: createdSellId.current, resumeSellerRequest: "false" },
         });
-      } else {
+      } else if (router.canGoBack()) {
         router.back();
+      } else {
+        router.replace("/(tabs)/posts");
       }
+      releaseLockLater(sellNavigationLock);
     } catch {
       sellNavigationLock.current = false;
       setFormMessage({ type: "error", text: "Tin bán đã được tạo. Vui lòng bấm Tiếp tục để quay lại." });
@@ -1861,6 +1864,7 @@ export default function PostFormScreen() {
                 } else {
                   router.replace("/(tabs)/posts");
                 }
+                releaseLockLater(sellNavigationLock);
               }}
             >
               <Text style={styles.primaryButtonText}>Kiểm tra tin bán của tôi</Text>

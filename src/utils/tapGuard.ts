@@ -37,6 +37,20 @@ export const allowNavigation = (
   return true;
 };
 
+/**
+ * Khóa điều hướng tự viết thường chỉ mở lại khi màn được focus. Nếu lệnh điều hướng
+ * bị bỏ qua (bấm lặp trong cửa sổ chặn, không còn màn để quay lại...) thì màn vẫn
+ * đứng yên và nút bị khóa mãi. Gọi hàm này ngay sau lệnh điều hướng để tự mở khóa.
+ */
+export const releaseLockLater = (
+  lock: { current: boolean },
+  delayMs: number = NAVIGATION_REPEAT_WINDOW_MS + 400,
+) => {
+  setTimeout(() => {
+    lock.current = false;
+  }, delayMs);
+};
+
 type ExpoRouter = ReturnType<typeof useRouter>;
 
 export function useGuardedRouter(): ExpoRouter {

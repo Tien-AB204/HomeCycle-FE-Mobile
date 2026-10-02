@@ -34,7 +34,7 @@ import { isBuyPostType } from "../../src/utils/postType";
 import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { getSpaceUsageLabel, normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
-import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
 import {
   BuyPostProgress,
   isTypedDetailUnavailable,
@@ -549,6 +549,7 @@ export default function PostDetailScreen() {
     sellerNavigationLock.current = true;
     setShowSellerRequestModal(false);
     router.push({ pathname: "/offers/[id]", params: { id: offerId } });
+    releaseLockLater(sellerNavigationLock);
   }, [router]);
 
   const fetchPostData = useCallback(async () => {
@@ -1237,6 +1238,7 @@ export default function PostDetailScreen() {
       pathname: "/posts/post-form",
       params: { postType: "Sell", buyPostId: String(post.postId) },
     });
+    releaseLockLater(sellerNavigationLock);
   };
 
   const handleCreateSellerRequest =
