@@ -26,10 +26,13 @@ export const authApi = {
   },
 
   // Đăng ký cho Doanh Nghiệp (Chỉ cần password)
-  registerBusiness: async (token: string, password: string) => {
+  registerBusiness: async (
+    token: string,
+    payload: { username: string; phoneNumber: string; password: string },
+  ) => {
     const response = await axiosClient.post(
       "/auth/business/register",
-      { password },
+      payload,
       {
         headers: { "X-Registration-Token": token },
       },

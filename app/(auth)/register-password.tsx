@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,7 +21,11 @@ import { authApi } from "../../src/services/apis/authApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import {
   PASSWORD_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+  normalizeVietnamPhone,
   validatePassword as validatePasswordValue,
+  validateUsername,
+  validateVietnamPhone,
 } from "../../src/utils/formValidation";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -47,6 +52,14 @@ export default function RegisterPasswordScreen() {
   const isGoogleAuth = getStringParam(
     params.isGoogleAuth,
   );
+
+  const isBusiness = role === "business";
+
+  // Doanh nghiệp đăng ký tài khoản ngay tại màn này nên cần thêm tên đăng nhập và số điện thoại.
+  const [username, setUsername] = useState("");
+  const [phone, setPhone] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
 
   const [password, setPassword] =
     useState("");
@@ -104,10 +117,15 @@ export default function RegisterPasswordScreen() {
       return;
     }
 
+    const nextUsernameError = isBusiness ? validateUsername(username) : "";
+    const nextPhoneError = isBusiness ? validateVietnamPhone(phone) : "";
+    setUsernameError(nextUsernameError);
+    setPhoneError(nextPhoneError);
+
     const validPassword =
       validatePassword();
 
-    if (!validPassword) {
+    if (!validPassword || nextUsernameError || nextPhoneError) {
       return;
     }
 
@@ -148,12 +166,16 @@ export default function RegisterPasswordScreen() {
        * Swagger:
        * POST /api/auth/business/register
        * Header: X-Registration-Token
-       * Body: { password }
+       * Body: { username, phoneNumber, password }
        */
       const response =
         await authApi.registerBusiness(
           registrationToken,
-          validPassword,
+          {
+            username: username.trim(),
+            phoneNumber: normalizeVietnamPhone(phone),
+            password: validPassword,
+          },
         );
 
       /*
@@ -264,6 +286,7 @@ export default function RegisterPasswordScreen() {
           </TouchableOpacity>
         </View>
 
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.contentCard}>
           <View
             style={
@@ -278,7 +301,7 @@ export default function RegisterPasswordScreen() {
             />
 
             <Text style={styles.title}>
-              Tạo mật khẩu
+              {isBusiness ? "Tạo tài khoản" : "Tạo mật khẩu"}
             </Text>
           </View>
 
@@ -315,6 +338,73 @@ export default function RegisterPasswordScreen() {
               accessibilityLabel="Email tài khoản"
             />
           </View>
+
+          {isBusiness ? (
+            <>
+              <Text style={styles.label}>Tên đăng nhập</Text>
+              <View style={[styles.inputContainer, usernameError ? styles.inputContainerError : undefined]}>
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={usernameError ? COLORS.error : COLORS.textLight}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[styles.input, Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : undefined]}
+                  placeholder="Chữ cái, chữ số hoặc dấu gạch dưới"
+                  placeholderTextColor={COLORS.textLight}
+                  maxLength={USERNAME_MAX_LENGTH}
+                  value={username}
+                  onChangeText={(value) => {
+                    setUsername(value);
+                    if (usernameError) setUsernameError("");
+                    if (submitError) setSubmitError("");
+                  }}
+                  editable={!isLoading}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Tên đăng nhập"
+                />
+              </View>
+              {usernameError ? (
+                <View style={styles.fieldErrorRow}>
+                  <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
+                  <Text style={styles.fieldErrorText}>{usernameError}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.label}>Số điện thoại</Text>
+              <View style={[styles.inputContainer, phoneError ? styles.inputContainerError : undefined]}>
+                <Ionicons
+                  name="call-outline"
+                  size={20}
+                  color={phoneError ? COLORS.error : COLORS.textLight}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[styles.input, Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : undefined]}
+                  placeholder="VD: 0912345678"
+                  placeholderTextColor={COLORS.textLight}
+                  keyboardType="phone-pad"
+                  maxLength={20}
+                  value={phone}
+                  onChangeText={(value) => {
+                    setPhone(value);
+                    if (phoneError) setPhoneError("");
+                    if (submitError) setSubmitError("");
+                  }}
+                  editable={!isLoading}
+                  accessibilityLabel="Số điện thoại"
+                />
+              </View>
+              {phoneError ? (
+                <View style={styles.fieldErrorRow}>
+                  <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
+                  <Text style={styles.fieldErrorText}>{phoneError}</Text>
+                </View>
+              ) : null}
+            </>
+          ) : null}
 
           <Text style={styles.label}>
             Mật khẩu
@@ -501,6 +591,7 @@ export default function RegisterPasswordScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -510,6 +601,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
 
   container: {
