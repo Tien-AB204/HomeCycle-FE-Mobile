@@ -13,6 +13,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DisputeResponseModal, {
+  type DisputeResponseMode,
+} from "../../src/components/disputes/DisputeResponseModal";
+import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import Header from "../../src/components/shared/Header";
 import {
   ModalBackdrop,
@@ -22,10 +26,19 @@ import { COLORS } from "../../src/constants/theme";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
+import {
+  translateAppearanceStatus,
+  translateConclusion,
+  translateInspectionStatus,
+  translateMatchStatus,
+  translateOperatingStatus,
+  translatePartsStatus,
+} from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLabel";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
@@ -91,7 +104,68 @@ const statusLabels: Record<string, string> = {
   underreview: "Đang xem xét",
   "5": "Đang chờ hoàn trả",
   awaitingreturn: "Đang chờ hoàn trả",
+  "6": "Đang chờ phản hồi",
+  awaitingresponse: "Đang chờ phản hồi",
 };
+
+// BE trả enum dạng chuỗi tên; vẫn nhận số để tương thích.
+const originLabels: Record<string, string> = {
+  "1": "Người dùng gửi khiếu nại",
+  userreported: "Người dùng gửi khiếu nại",
+  "2": "Phát sinh sau khi phiếu kiểm định bị từ chối",
+  inspectionrejected: "Phát sinh sau khi phiếu kiểm định bị từ chối",
+  "3": "Hệ thống ghi nhận vắng mặt lúc kiểm định",
+  inspectionnoshow: "Hệ thống ghi nhận vắng mặt lúc kiểm định",
+  "4": "Hệ thống ghi nhận sự cố giao nhận",
+  collectionnoshow: "Hệ thống ghi nhận sự cố giao nhận",
+};
+
+const SYSTEM_ORIGINS = new Set(["3", "4", "inspectionnoshow", "collectionnoshow"]);
+
+const resolutionSourceLabels: Record<string, string> = {
+  "1": "Hai bên tự thống nhất",
+  mutualagreement: "Hai bên tự thống nhất",
+  "2": "Kiểm duyệt viên quyết định",
+  moderatordecision: "Kiểm duyệt viên quyết định",
+  "3": "Hệ thống tự đóng",
+  systemautoclosed: "Hệ thống tự đóng",
+};
+
+const outcomeLabels: Record<string, string> = {
+  "1": "Có lợi cho người mua",
+  buyerfavored: "Có lợi cho người mua",
+  "2": "Có lợi cho người bán",
+  sellerfavored: "Có lợi cho người bán",
+  "3": "Xác nhận có vi phạm",
+  violationconfirmed: "Xác nhận có vi phạm",
+  "4": "Không có vi phạm",
+  noviolation: "Không có vi phạm",
+};
+
+const responseTypeLabels: Record<string, string> = {
+  "1": "Đồng ý",
+  accept: "Đồng ý",
+  "2": "Phản biện",
+  rebut: "Phản biện",
+  "3": "Tường trình",
+  statement: "Tường trình",
+};
+
+const appointmentTypeLabels: Record<string, string> = {
+  "0": "Lịch kiểm định liên quan",
+  inspection: "Lịch kiểm định liên quan",
+  "1": "Lịch thu gom liên quan",
+  collection: "Lịch thu gom liên quan",
+};
+
+const inspectionModeLabels: Record<string, string> = {
+  "1": "Kiểm định chi tiết",
+  detailed: "Kiểm định chi tiết",
+  "2": "Xác nhận nhanh",
+  quickaccept: "Xác nhận nhanh",
+};
+
+const getImageUrl = (item: any) => item?.url || item?.Url || "";
 
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
@@ -156,6 +230,7 @@ export default function DisputeDetailScreen() {
   const closeDisputeInFlightRef = useRef(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [responseMode, setResponseMode] = useState<DisputeResponseMode | null>(null);
   const { connection, reconnectVersion } = useChatRealtime();
 
   // silent: làm mới nền (realtime / kéo để làm mới) — giữ nguyên nội dung đang hiển thị,
@@ -223,6 +298,13 @@ export default function DisputeDetailScreen() {
     if (reconnectVersion <= 0) return;
     void loadDetail({ silent: true });
   }, [loadDetail, reconnectVersion]);
+
+  // Hạn phản hồi do BE chốt cho từng tranh chấp; hết hạn thì tải lại để lấy trạng thái mới.
+  const isAwaitingResponse = ["6", "awaitingresponse"].includes(normalizeKey(detail?.status));
+  const responseCountdown = useDeadlineCountdown(
+    isAwaitingResponse ? detail?.responseDeadlineAt : null,
+    () => void loadDetail({ silent: true }),
+  );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -298,9 +380,25 @@ export default function DisputeDetailScreen() {
   const order = target.order || {};
   const contentPost = target.post || null;
   const contentReview = target.review || null;
-  const sender = detail.sender || {};
-  const targetUser = detail.targetUser || {};
+  // Sự cố do hệ thống ghi nhận có thể không có người gửi / người bị khiếu nại.
+  const senderName = detail.sender?.username || "Hệ thống";
+  const targetUserName = detail.targetUser?.username || "Chưa xác định bên vi phạm";
   const evidenceImages = Array.isArray(detail.evidenceImages) ? detail.evidenceImages : [];
+  const originKey = normalizeKey(detail.origin);
+  const originLabel = originLabels[originKey] || null;
+  const isSystemIncident = SYSTEM_ORIGINS.has(originKey);
+  const responses = Array.isArray(detail.responses) ? detail.responses : [];
+  const timeline = Array.isArray(detail.timeline) ? detail.timeline : [];
+  const appointmentContext = detail.appointmentContext || null;
+  const inspectionContext = detail.inspectionContext || null;
+  const inspectionImages = Array.isArray(inspectionContext?.images) ? inspectionContext.images : [];
+  const outcomeLabel = outcomeLabels[normalizeKey(detail.resolutionOutcome)] || null;
+  const resolutionSourceLabel = resolutionSourceLabels[normalizeKey(detail.resolutionSource)] || null;
+  const proposedOutcomeLabel = outcomeLabels[normalizeKey(detail.proposedResolutionOutcome)] || null;
+  const canAccept = detail.actions?.canAccept === true;
+  const canRebut = detail.actions?.canRebut === true;
+  const canSubmitStatement = detail.actions?.canSubmitStatement === true;
+  const hasResponseActions = canAccept || canRebut || canSubmitStatement;
   const statusKey = normalizeKey(detail.status);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
   // Category luôn hiển thị đúng tên đã lưu, kể cả khi loại đó hiện không
@@ -332,11 +430,22 @@ export default function DisputeDetailScreen() {
             <Text style={styles.disputeIdText} numberOfLines={1}>
               #{detail.disputeId || disputeId}
             </Text>
+            {originLabel ? <Text style={styles.originText}>{originLabel}</Text> : null}
           </View>
           <View style={styles.statusBadge}>
             <Text style={styles.statusText}>{statusLabel}</Text>
           </View>
         </View>
+
+        {isAwaitingResponse ? (
+          <DeadlineBanner
+            countdown={responseCountdown}
+            label="Thời hạn phản hồi còn lại"
+            expiredText="Đã hết thời hạn phản hồi."
+            note={`Hạn phản hồi: ${formatDateTime(detail.responseDeadlineAt)}`}
+            style={styles.deadlineBanner}
+          />
+        ) : null}
 
         {errorMessage ? (
           <View style={styles.inlineErrorBox}>
@@ -403,9 +512,77 @@ export default function DisputeDetailScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Các bên liên quan</Text>
-          <InfoRow label="Người khiếu nại" value={sender.username || "Chưa có"} strong />
-          <InfoRow label="Người bị khiếu nại" value={targetUser.username || "Chưa có"} strong />
+          <InfoRow label="Người khiếu nại" value={senderName} strong />
+          <InfoRow label="Người bị khiếu nại" value={targetUserName} strong />
         </View>
+
+        {appointmentContext ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>
+              {appointmentTypeLabels[normalizeKey(appointmentContext.appointmentType)] || "Lịch hẹn liên quan"}
+            </Text>
+            <InfoRow label="Thời gian hẹn" value={formatDateTime(appointmentContext.scheduledAt)} />
+            {appointmentContext.location ? (
+              <InfoRow label="Địa điểm" value={appointmentContext.location} />
+            ) : null}
+            <InfoRow label="Người mua có mặt" value={appointmentContext.buyerCheckAt ? formatDateTime(appointmentContext.buyerCheckAt) : "Chưa xác nhận"} />
+            <InfoRow label="Người bán có mặt" value={appointmentContext.sellerCheckAt ? formatDateTime(appointmentContext.sellerCheckAt) : "Chưa xác nhận"} />
+            {appointmentContext.lateThresholdAt ? (
+              <InfoRow label="Mốc tính trễ hẹn" value={formatDateTime(appointmentContext.lateThresholdAt)} />
+            ) : null}
+            {appointmentContext.appointmentId ? (
+              <TouchableOpacity
+                style={styles.linkButton}
+                onPress={() => router.push(`/appointments/${appointmentContext.appointmentId}` as any)}
+              >
+                <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.linkButtonText}>Xem lịch hẹn</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        {inspectionContext ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Phiếu kiểm định liên quan</Text>
+            <InfoRow
+              label="Hình thức"
+              value={inspectionModeLabels[normalizeKey(inspectionContext.inspectionMode)] || "Chưa rõ"}
+            />
+            <InfoRow label="Trạng thái" value={translateInspectionStatus(inspectionContext.inspectionStatus)} />
+            <InfoRow label="Kết luận" value={translateConclusion(inspectionContext.conclusion) || "Chưa có"} strong />
+            {inspectionContext.operatingStatus != null ? (
+              <InfoRow label="Hoạt động" value={translateOperatingStatus(inspectionContext.operatingStatus) || "Chưa có"} />
+            ) : null}
+            {inspectionContext.appearanceStatus != null ? (
+              <InfoRow label="Ngoại quan" value={translateAppearanceStatus(inspectionContext.appearanceStatus) || "Chưa có"} />
+            ) : null}
+            {inspectionContext.partsStatus != null ? (
+              <InfoRow label="Linh kiện" value={translatePartsStatus(inspectionContext.partsStatus) || "Chưa có"} />
+            ) : null}
+            {inspectionContext.matchStatus != null ? (
+              <InfoRow label="Khớp mô tả" value={translateMatchStatus(inspectionContext.matchStatus) || "Chưa có"} />
+            ) : null}
+            {inspectionContext.inspectorNotes ? (
+              <>
+                <Text style={styles.descriptionLabel}>Ghi chú kiểm định</Text>
+                <Text style={styles.descriptionText}>{inspectionContext.inspectorNotes}</Text>
+              </>
+            ) : null}
+            {inspectionContext.sellerDecisionReason ? (
+              <>
+                <Text style={styles.descriptionLabel}>Lý do người bán từ chối</Text>
+                <Text style={styles.descriptionText}>{inspectionContext.sellerDecisionReason}</Text>
+              </>
+            ) : null}
+            {inspectionImages.length > 0 ? (
+              <>
+                <Text style={styles.descriptionLabel}>Ảnh kiểm định</Text>
+                <EvidenceGrid images={inspectionImages} />
+              </>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Nội dung khiếu nại</Text>
@@ -420,39 +597,109 @@ export default function DisputeDetailScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Ảnh bằng chứng</Text>
+          <Text style={styles.sectionTitle}>Ảnh bằng chứng của bên khiếu nại</Text>
           {evidenceImages.length > 0 ? (
-            <View style={styles.evidenceGrid}>
-              {evidenceImages.map((item: any, index: number) => {
-                const url = item?.url || item?.Url;
-                if (!url) return null;
-                return (
-                  <Image
-                    key={item?.mediaId || item?.MediaId || `${url}-${index}`}
-                    source={{ uri: url }}
-                    style={styles.evidenceImage}
-                  />
-                );
-              })}
-            </View>
+            <EvidenceGrid images={evidenceImages} />
           ) : (
-            <Text style={styles.emptyText}>Không có ảnh bằng chứng để hiển thị.</Text>
+            <Text style={styles.emptyText}>
+              {isSystemIncident
+                ? "Sự cố do hệ thống ghi nhận, bằng chứng lấy từ dữ liệu lịch hẹn và giao dịch."
+                : "Không có ảnh bằng chứng để hiển thị."}
+            </Text>
           )}
         </View>
 
+        {responses.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Phản hồi của các bên</Text>
+            {responses.map((item: any, index: number) => {
+              const responseImages = Array.isArray(item?.evidenceImages) ? item.evidenceImages : [];
+              return (
+                <View
+                  key={item?.disputeResponseId || `response-${index}`}
+                  style={[styles.responseItem, index > 0 ? styles.responseDivider : undefined]}
+                >
+                  <Text style={styles.responseType}>
+                    {responseTypeLabels[normalizeKey(item?.responseType)] || "Phản hồi"}
+                  </Text>
+                  <Text style={styles.responseMeta}>
+                    {item?.responder?.username || "Người dùng"} · {formatDateTime(item?.createdAt)}
+                  </Text>
+                  {item?.content ? <Text style={styles.descriptionText}>{item.content}</Text> : null}
+                  {responseImages.length > 0 ? <EvidenceGrid images={responseImages} /> : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {hasResponseActions ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Phản hồi của bạn</Text>
+            {canAccept && proposedOutcomeLabel ? (
+              <Text style={styles.helperText}>
+                Bên khiếu nại đề xuất: {proposedOutcomeLabel.toLowerCase()}.
+              </Text>
+            ) : null}
+            <Text style={styles.helperText}>
+              {canSubmitStatement && !canAccept && !canRebut
+                ? "Bạn có thể gửi tường trình về sự cố lịch hẹn để kiểm duyệt viên xem xét."
+                : canAccept
+                  ? "Đồng ý thì tranh chấp được giải quyết ngay theo đề xuất trên. Phản biện thì tranh chấp được chuyển cho kiểm duyệt viên."
+                  : "Phản biện thì tranh chấp được chuyển cho kiểm duyệt viên xem xét."}
+            </Text>
+            {canAccept ? (
+              <TouchableOpacity style={styles.primaryActionButton} onPress={() => setResponseMode("accept")}>
+                <Ionicons name="checkmark-circle-outline" size={19} color={COLORS.white} />
+                <Text style={styles.primaryActionText}>Đồng ý</Text>
+              </TouchableOpacity>
+            ) : null}
+            {canRebut ? (
+              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => setResponseMode("rebut")}>
+                <Ionicons name="chatbox-ellipses-outline" size={19} color={COLORS.primary} />
+                <Text style={styles.secondaryActionText}>Phản biện</Text>
+              </TouchableOpacity>
+            ) : null}
+            {canSubmitStatement ? (
+              <TouchableOpacity style={styles.secondaryActionButton} onPress={() => setResponseMode("statement")}>
+                <Ionicons name="document-text-outline" size={19} color={COLORS.primary} />
+                <Text style={styles.secondaryActionText}>Gửi tường trình</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Kết quả xử lý</Text>
+          {outcomeLabel ? <InfoRow label="Kết luận" value={outcomeLabel} strong /> : null}
+          {resolutionSourceLabel ? <InfoRow label="Cách giải quyết" value={resolutionSourceLabel} /> : null}
           {detail.moderatorNote ? (
             <>
               <Text style={styles.descriptionLabel}>Ghi chú của kiểm duyệt viên</Text>
               <Text style={styles.descriptionText}>{detail.moderatorNote}</Text>
             </>
-          ) : (
-            <Text style={styles.emptyText}>
-              Kiểm duyệt viên chưa có ghi chú hoặc kết quả xử lý cho tranh chấp này.
-            </Text>
-          )}
+          ) : !outcomeLabel && !resolutionSourceLabel ? (
+            <Text style={styles.emptyText}>Tranh chấp chưa có kết quả xử lý.</Text>
+          ) : null}
         </View>
+
+        {timeline.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Diễn biến</Text>
+            {timeline.map((step: any, index: number) => (
+              <View key={`${step?.code || "step"}-${index}`} style={styles.timelineItem}>
+                <View style={styles.timelineDot} />
+                <View style={styles.timelineBody}>
+                  <Text style={styles.timelineTitle}>{step?.title || "Cập nhật"}</Text>
+                  {step?.description ? (
+                    <Text style={styles.timelineDescription}>{step.description}</Text>
+                  ) : null}
+                  <Text style={styles.timelineTime}>{formatDateTime(step?.occurredAt)}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {canCloseDispute ? (
           <View style={styles.card}>
@@ -520,7 +767,45 @@ export default function DisputeDetailScreen() {
           </ModalSurface>
         </ModalBackdrop>
       </Modal>
+
+      <DisputeResponseModal
+        disputeId={String(disputeId || "")}
+        mode={responseMode}
+        onClose={() => setResponseMode(null)}
+        onSubmitted={(nextDetail, mode) => {
+          setResponseMode(null);
+          if (nextDetail && typeof nextDetail === "object" && nextDetail.disputeId) setDetail(nextDetail);
+          void loadDetail({ silent: true });
+          setActionMessage({
+            type: "success",
+            text:
+              mode === "accept"
+                ? "Bạn đã đồng ý. Tranh chấp được giải quyết theo đề xuất."
+                : mode === "rebut"
+                  ? "Đã gửi phản biện. Tranh chấp được chuyển cho kiểm duyệt viên."
+                  : "Đã gửi tường trình.",
+          });
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+function EvidenceGrid({ images }: { images: any[] }) {
+  return (
+    <View style={styles.evidenceGrid}>
+      {images.map((item: any, index: number) => {
+        const url = getImageUrl(item);
+        if (!url) return null;
+        return (
+          <Image
+            key={item?.mediaId || item?.MediaId || `${url}-${index}`}
+            source={{ uri: url }}
+            style={styles.evidenceImage}
+          />
+        );
+      })}
+    </View>
   );
 }
 
@@ -696,6 +981,41 @@ const styles = StyleSheet.create({
   headerContent: { flex: 1 },
   headerTitle: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
   disputeIdText: { color: COLORS.textLight, fontSize: 11, marginTop: 3 },
+  originText: { color: "#9A6418", fontSize: 12, fontWeight: "600", marginTop: 4 },
+  deadlineBanner: { marginBottom: 12 },
+  responseItem: { paddingVertical: 10 },
+  responseDivider: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  responseType: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
+  responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2, marginBottom: 8 },
+  timelineItem: { flexDirection: "row", gap: 10, paddingVertical: 6 },
+  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary, marginTop: 6 },
+  timelineBody: { flex: 1 },
+  timelineTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
+  timelineDescription: { color: COLORS.textLight, fontSize: 13, lineHeight: 19, marginTop: 2 },
+  timelineTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  primaryActionButton: {
+    marginTop: 12,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  primaryActionText: { color: COLORS.white, fontSize: 14, fontWeight: "800" },
+  secondaryActionButton: {
+    marginTop: 10,
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  secondaryActionText: { color: COLORS.primary, fontSize: 14, fontWeight: "800" },
   statusBadge: {
     backgroundColor: "rgba(154, 100, 24, 0.10)",
     borderRadius: 999,

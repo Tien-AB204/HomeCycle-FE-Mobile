@@ -35,7 +35,8 @@ type DisputeStatusValue =
   | "Rejected"
   | "Closed"
   | "UnderReview"
-  | "AwaitingReturn";
+  | "AwaitingReturn"
+  | "AwaitingResponse";
 
 type DisputeTargetTypeValue = "Appointment" | "Order" | "Review";
 
@@ -50,8 +51,8 @@ type DisputeCategoryOption = {
 
 type DisputeListItem = {
   disputeId: string;
-  senderId: string;
-  senderUsername: string;
+  senderId?: string | null;
+  senderUsername?: string | null;
   targetUserId?: string | null;
   targetUsername?: string | null;
   targetType?: number | string | null;
@@ -68,6 +69,7 @@ type DisputeListItem = {
 const STATUS_FILTER_OPTIONS: { key: DisputeStatusValue | "all"; label: string }[] =
   [
     { key: "all", label: "Tất cả trạng thái" },
+    { key: "AwaitingResponse", label: "Đang chờ phản hồi" },
     { key: "Pending", label: "Đang chờ xử lý" },
     { key: "UnderReview", label: "Đang xem xét" },
     { key: "AwaitingReturn", label: "Đang chờ hoàn trả" },
@@ -105,6 +107,8 @@ const statusLabels: Record<string, string> = {
   underreview: "Đang xem xét",
   "5": "Đang chờ hoàn trả",
   awaitingreturn: "Đang chờ hoàn trả",
+  "6": "Đang chờ phản hồi",
+  awaitingresponse: "Đang chờ phản hồi",
 };
 
 // BE hiện tại (đã xác minh runtime) vẫn trả category dạng chuỗi enum cũ
@@ -528,7 +532,9 @@ export default function DisputeHistoryScreen() {
                     {[
                       targetTypeLabel,
                       item.orderCode ? `Mã đơn: ${item.orderCode}` : null,
-                      counterpartUsername
+                      !item.senderId
+                        ? "Hệ thống ghi nhận"
+                        : counterpartUsername
                         ? isSender
                           ? `Gửi tới ${counterpartUsername}`
                           : `Từ ${counterpartUsername}`

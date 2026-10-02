@@ -253,6 +253,9 @@ export default function CreateDisputeScreen() {
       : undefined;
   }, [category, disputeEligibility]);
 
+  const isItemMismatchSelected =
+    disputeEligibility?.allowedCategories.find((item) => item.disputeCategoryId === category)?.code?.replace(/_/g, "").toUpperCase() === "ITEMMISMATCH";
+
   const isDisputeSubmitDisabled =
     isSubmitting ||
     isCheckingDisputeEligibility ||
@@ -497,6 +500,7 @@ export default function CreateDisputeScreen() {
             {productName ? <Text style={styles.productName}>{productName}</Text> : null}
             <Text style={styles.helperText}>
               Hệ thống sẽ tự xác định người gửi và người bị khiếu nại từ đơn hàng.
+              Sau khi gửi, bên còn lại có thời hạn để đồng ý hoặc phản biện; nếu bị phản biện hoặc hết hạn, kiểm duyệt viên sẽ xem xét.
             </Text>
           </View>
 
@@ -562,6 +566,11 @@ export default function CreateDisputeScreen() {
               })}
             </View>
             {categoryError ? <Text style={styles.fieldError}>{categoryError}</Text> : null}
+            {isItemMismatchSelected ? (
+              <Text style={styles.helperText}>
+                Nếu sản phẩm đã được chấp nhận ở bước kiểm định, tranh chấp vẫn được xem xét nhưng có thể không được trả hàng với khiếu nại về tình trạng hoặc chất lượng đã xác nhận.
+              </Text>
+            ) : null}
             {selectedCategoryLabel ? (
               <Text style={styles.selectedHint}>Đã chọn: {selectedCategoryLabel}</Text>
             ) : null}

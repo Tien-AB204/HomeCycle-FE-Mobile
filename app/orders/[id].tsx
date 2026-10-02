@@ -999,7 +999,9 @@ export default function OrderDetailScreen() {
         ? "Đang được bộ phận kiểm duyệt xem xét"
         : disputeStatusKey === "5" || disputeStatusKey === "awaitingreturn"
           ? "Đang chờ hoàn trả"
-          : null;
+          : disputeStatusKey === "6" || disputeStatusKey === "awaitingresponse"
+            ? "Đang chờ phản hồi"
+            : null;
   const canCreateDispute =
     (data?.actions ?? order?.actions ?? {}).canDispute === true;
 
@@ -1785,7 +1787,7 @@ export default function OrderDetailScreen() {
                 <Text style={styles.disputeInfoStatus}>{disputeStatusText}</Text>
               ) : null}
               <Text style={styles.disputeInfoText}>
-                Quy trình hoàn tất giao dịch đang tạm khóa trong thời gian xử lý tranh chấp.
+                Trong thời gian xử lý tranh chấp, chỉ những thao tác hệ thống còn cho phép mới hiện bên dưới.
               </Text>
             </View>
           </View>
