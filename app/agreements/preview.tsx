@@ -1305,6 +1305,21 @@ export default function AgreementPreviewScreen() {
             </View>
           )}
 
+          {/* Tổng tiền = đơn giá × số lượng + phí giao hàng (BE trả totalAmount theo đúng công thức này). */}
+          {getContractTotal(agreementData.finalPrice ?? agreementData.initialPrice, agreementData.quantity || 1) > 0 ? (
+            <View style={styles.row}>
+              <Text style={styles.label}>Tổng tiền:</Text>
+              <View style={styles.valueWrapper}>
+                <Text style={[styles.value, styles.finalPrice]}>
+                  {formatPrice(
+                    getContractTotal(agreementData.finalPrice ?? agreementData.initialPrice, agreementData.quantity || 1) +
+                      (typeof details.estimatedShippingFee === "number" ? details.estimatedShippingFee : 0),
+                  )}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.divider} />
 
           <Text style={styles.sectionTitle}>Xác nhận & Thời gian</Text>

@@ -146,7 +146,7 @@ const pickFutureGhnDate = (...values: (string | null | undefined)[]) =>
     const time = value ? Date.parse(value) : NaN;
     return Number.isFinite(time) && time > Date.now() + GHN_SCHEDULE_MIN_LEAD_MS;
   }) ?? null;
-// GHN trả mốc cuối ngày (23:59), BE chỉ nhận lịch trong 08:00–20:00 giờ VN nên giữ ngày, đặt giờ 20:00.
+// GHN trả mốc cuối ngày (23:59), BE chỉ nhận lịch trong khung giờ hẹn nên giữ ngày, đặt giờ 20:00 (nằm trong khung cả trước và sau khi BE nới tới 22:00).
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
 const toGhnScheduleIso = (value: string) => {
   const vnDay = new Date(Date.parse(value) + VN_OFFSET_MS).toISOString().slice(0, 10);
