@@ -43,6 +43,17 @@ const HOME_POST_PAGE_SIZE = 100;
 const BUSINESS_DISCOVER_PAGE_SIZE = 12;
 
 const postApi = {
+  // Tin nổi bật theo gói đăng ký: BE chọn tin của chủ tin đang có gói còn hạn,
+  // tối đa 2 tin mỗi chủ, xếp theo điểm uy tín, tối đa 10 tin mỗi loại.
+  getFeaturedPosts: async (postType: "sell" | "buy") => {
+    try {
+      const res = await apiClient.get(`/posts/featured/${postType}`);
+      const data = res.data?.data ?? res.data;
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  },
   getAllActivePosts: async (params?: any) => {
     try {
       const res = await apiClient.get("/posts/get-all-active", { params });
@@ -140,6 +151,7 @@ export default function HomeScreen() {
   const [businessDiscover, setBusinessDiscover] = useState<BusinessDiscoverState>({ status: "idle" });
   // Mục "Phù hợp với nhu cầu" (Doanh nghiệp) — tách khỏi lô tin bán chung.
   const [discoverPosts, setDiscoverPosts] = useState<any[]>([]);
+  const [featuredPosts, setFeaturedPosts] = useState<any[]>([]);
   const homeRequestVersion = useRef(0);
   const [cartPostIds, setCartPostIds] = useState<Set<string>>(new Set());
   const [addingPostId, setAddingPostId] = useState<string | null>(null);
@@ -194,7 +206,7 @@ export default function HomeScreen() {
         // Doanh nghiệp: gọi thêm mục "Phù hợp với nhu cầu" song song (Backend lọc
         // theo khảo sát); lô tin bán chung vẫn tải và hiển thị như cũ.
         if (isBusiness) setBusinessDiscover({ status: "loading" });
-        const [postsRes, typesRes, discoverResult] = await Promise.all([
+        const [postsRes, typesRes, discoverResult, featuredSell, featuredBuy] = await Promise.all([
           postApi.getAllActivePosts({
             PageNumber: 1,
             PageSize: HOME_POST_PAGE_SIZE,
@@ -206,6 +218,9 @@ export default function HomeScreen() {
                 .then((value) => ({ status: "fulfilled" as const, value }))
                 .catch((reason: unknown) => ({ status: "rejected" as const, reason }))
             : Promise.resolve(null),
+          postApi.getFeaturedPosts("sell"),
+          // Doanh nghiệp không tương tác với tin thu mua của doanh nghiệp khác.
+          isBusiness ? Promise.resolve([]) : postApi.getFeaturedPosts("buy"),
         ]);
         if (version !== homeRequestVersion.current) return;
 
@@ -270,6 +285,16 @@ export default function HomeScreen() {
         const visiblePosts = isBusiness
           ? discoveryPosts.filter((post: any) => post.postType === "Sell")
           : discoveryPosts;
+
+        // Cá nhân thấy cả tin bán lẫn tin thu mua nổi bật (xen kẽ); doanh nghiệp chỉ thấy tin bán.
+        const featuredSellVisible = filterDiscoveryPosts(featuredSell, currentUserId, showOwnPostsInDiscovery);
+        const featuredBuyVisible = filterDiscoveryPosts(featuredBuy, currentUserId, showOwnPostsInDiscovery);
+        const mergedFeatured: any[] = [];
+        for (let index = 0; index < Math.max(featuredSellVisible.length, featuredBuyVisible.length); index += 1) {
+          if (featuredSellVisible[index]) mergedFeatured.push(featuredSellVisible[index]);
+          if (featuredBuyVisible[index]) mergedFeatured.push(featuredBuyVisible[index]);
+        }
+        setFeaturedPosts(mergedFeatured);
 
         setSellPosts(
           visiblePosts.filter((post: any) => post.postType === "Sell"),
@@ -360,42 +385,6 @@ export default function HomeScreen() {
     const filler = productTypes.filter((type) => !seen.has(type.productTypeId));
     return [...withPosts, ...filler].slice(0, MAX_PRODUCT_TYPE_TILES);
   }, [productTypeGroups, productTypes]);
-
-  // "Bài đăng nổi bật" — heuristic FE chỉ cho Trang chủ Cá nhân: xếp hạng lại
-  // đúng lô tin đang hiển thị (đã qua filterDiscoveryPosts và tùy chọn tin của
-  // tôi, tối đa 100 tin mới nhất từ /posts/get-all-active) theo điểm đánh giá
-  // của chủ tin, số lượt đánh giá của chủ tin rồi thời điểm đăng. Không gọi thêm
-  // API. Đây KHÔNG phải chỉ số lượt xem/tương tác thật của bài đăng — Backend
-  // hiện không cung cấp số liệu như vậy — nên chỉ là phần xem trước được chọn lọc
-  // từ nội dung sẵn có; tin có thể xuất hiện lại ở các mục bên dưới.
-  const featuredPosts = useMemo(() => {
-    if (isBusiness) return [];
-    const seen = new Set<string>();
-    const ranked: { post: any; rating: number; reviews: number; createdAt: number; id: string }[] = [];
-    for (const post of [...buyPosts, ...sellPosts]) {
-      const id = String(post?.postId ?? "");
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      const rating = Number(post?.averageRating);
-      const reviews = Number(post?.totalReviews);
-      const created = new Date(post?.createdAt ?? "").getTime();
-      ranked.push({
-        post,
-        id,
-        rating: Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 0,
-        reviews: Number.isFinite(reviews) ? Math.max(0, Math.trunc(reviews)) : 0,
-        createdAt: Number.isFinite(created) ? created : 0,
-      });
-    }
-    ranked.sort(
-      (a, b) =>
-        b.rating - a.rating ||
-        b.reviews - a.reviews ||
-        b.createdAt - a.createdAt ||
-        a.id.localeCompare(b.id),
-    );
-    return ranked.slice(0, MAX_SECTION_PREVIEW).map((entry) => entry.post);
-  }, [buyPosts, isBusiness, sellPosts]);
 
   // Mục theo loại: chỉ loại có đủ tin, số mục có giới hạn.
   const productTypeSections = useMemo(
@@ -795,14 +784,13 @@ export default function HomeScreen() {
                 )
               : null}
 
-            {!isBusiness
-              ? renderPagedSection(
-                  "featured-posts",
-                  "Bài đăng nổi bật",
-                  featuredPosts,
-                  null,
-                )
-              : null}
+            {renderPagedSection(
+              "featured-posts",
+              "Bài đăng nổi bật",
+              featuredPosts,
+              null,
+              20,
+            )}
 
             {isBusiness ? (
               <>
