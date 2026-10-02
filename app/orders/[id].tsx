@@ -841,6 +841,14 @@ export default function OrderDetailScreen() {
     });
   };
 
+  // "trước 20:00, 01/10/2026": GHN chỉ ước tính theo ngày, giờ là mốc chậm nhất chứ không phải giờ hẹn.
+  const formatBeforeTime = (dateString: string) => {
+    const date = dateString ? new Date(dateString) : null;
+    if (!date || Number.isNaN(date.getTime())) return "Chưa có";
+    const time = date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    return `trước ${time}, ${formatDay(dateString)}`;
+  };
+
   const formatDay = (dateString: string) => {
     const date = dateString ? new Date(dateString) : null;
     if (!date || Number.isNaN(date.getTime())) return "Chưa có";
@@ -1254,7 +1262,7 @@ export default function OrderDetailScreen() {
                   label="Dự kiến giao:"
                   value={
                     ghnCollectionScheduledAt
-                      ? formatDate(ghnCollectionScheduledAt)
+                      ? formatBeforeTime(ghnCollectionScheduledAt)
                       : formatDay(expectedDate)
                   }
                 />
