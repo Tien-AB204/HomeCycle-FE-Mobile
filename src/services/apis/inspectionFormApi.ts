@@ -92,6 +92,7 @@ export type InspectionFormSummary = {
   inspectorId?: string;
   revision: number;
   inspectionStatus?: number | string;
+  inspectionMode?: number | string | null;
   inspectionTime?: string | null;
   operatingStatus?: number | string | null;
   appearanceStatus?: number | string | null;
@@ -545,6 +546,16 @@ const inspectionFormApi = {
     const response = await apiClient.post(
       `/inspection-forms/${inspectionFormId}/reject`,
       { expectedRevision, reason },
+    );
+
+    return unwrap<InspectionFormSummary>(response);
+  },
+
+  // Người mua cá nhân chấp nhận tình trạng sản phẩm mà không làm checklist chi tiết.
+  // BE vẫn tạo phiếu thật: InspectionMode = QuickAccept, Accepted, kết luận Đạt.
+  quickAccept: async (appointmentId: string): Promise<InspectionFormSummary> => {
+    const response = await apiClient.post(
+      `/inspection-forms/appointment/${appointmentId}/quick-accept`,
     );
 
     return unwrap<InspectionFormSummary>(response);

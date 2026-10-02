@@ -151,6 +151,9 @@ export default function InspectionFormScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const inspectionWriteInFlightRef = useRef<string | null>(null);
+  const [isQuickAcceptOpen, setIsQuickAcceptOpen] = useState(false);
+  const [isQuickAccepting, setIsQuickAccepting] = useState(false);
+  const [quickAcceptError, setQuickAcceptError] = useState<string | null>(null);
 
   const [sellerAction, setSellerAction] = useState<SellerAction>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -565,6 +568,31 @@ export default function InspectionFormScreen() {
     setSellerActionError(null);
   };
 
+  const handleQuickAccept = async () => {
+    if (!appointmentId || isQuickAccepting || inspectionWriteInFlightRef.current) return;
+    inspectionWriteInFlightRef.current = "quick-accept";
+    setIsQuickAccepting(true);
+    setQuickAcceptError(null);
+    try {
+      const created = await inspectionFormApi.quickAccept(String(appointmentId));
+      setForm(created);
+      hydrateFromForm(created);
+      setCanCreateInspectionForm(false);
+      setIsDirty(false);
+      setIsQuickAcceptOpen(false);
+      setPageMessage({
+        type: "success",
+        text: "Đã xác nhận nhanh. Quay lại lịch hẹn để chọn Nhận hàng ngay hoặc Đặt lịch giao nhận.",
+      });
+      void refreshInBackground();
+    } catch (error) {
+      setQuickAcceptError(getApiErrorMessage(error, "Không thể xác nhận nhanh lúc này."));
+    } finally {
+      inspectionWriteInFlightRef.current = null;
+      setIsQuickAccepting(false);
+    }
+  };
+
   const handleSubmitSellerAction = async () => {
     if (!form || !sellerAction || isSellerActionSubmitting || inspectionWriteInFlightRef.current) return;
 
@@ -688,6 +716,14 @@ export default function InspectionFormScreen() {
     Boolean(currentUserId) &&
     String(form?.inspectorId ?? "").toLowerCase() === currentUserId;
   const isEditableMode = !form ? canCreateInspectionForm : canEdit;
+  const isQuickAcceptForm = ["2", "quickaccept"].includes(
+    String(form?.inspectionMode ?? "").trim().toLowerCase(),
+  );
+  // BE chỉ cho người mua tài khoản cá nhân xác nhận nhanh; doanh nghiệp bắt buộc kiểm định chi tiết.
+  const canQuickAccept =
+    !form &&
+    canCreateInspectionForm &&
+    String(user?.role ?? "").toLowerCase() !== "business";
   const showExistingImages =
     !!form && form.images && form.images.length > 0 && !isReplacingImages;
 
@@ -751,9 +787,25 @@ export default function InspectionFormScreen() {
           <View style={[styles.messageBox, styles.infoBox]}>
             <Text style={[styles.messageText, styles.infoText]}>
               {isInspector
-                ? "Người bán đã từ chối phiếu kiểm định. Nếu không đồng ý, bạn có thể mở khiếu nại tại đơn hàng."
-                : "Bạn đã từ chối phiếu kiểm định. Người mua có thể mở khiếu nại tại đơn hàng nếu không đồng ý."}
+                ? "Người bán đã từ chối phiếu kiểm định. Hệ thống không tự mở tranh chấp; nếu không đồng ý, bạn có thể mở tranh chấp để kiểm duyệt viên xem xét."
+                : "Bạn đã từ chối phiếu kiểm định. Hệ thống không tự mở tranh chấp; nếu cần, bạn hoặc người mua có thể mở tranh chấp để kiểm duyệt viên xem xét."}
             </Text>
+            {relatedOrderId ? (
+              <TouchableOpacity
+                style={[styles.secondaryButtonFlex, styles.quickAcceptButton]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/disputes/create",
+                    params: {
+                      orderId: relatedOrderId,
+                      orderCode: form?.order?.orderCode || "",
+                    },
+                  } as any)
+                }
+              >
+                <Text style={styles.secondaryButtonFlexText}>Mở tranh chấp</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : null}
 
@@ -777,6 +829,25 @@ export default function InspectionFormScreen() {
             <Text style={styles.helperText}>
               Chưa thể tạo phiếu kiểm định cho lịch hẹn này.
             </Text>
+          </View>
+        ) : null}
+
+        {canQuickAccept ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Chọn cách kiểm định</Text>
+            <Text style={styles.helperText}>
+              Bạn có thể điền checklist kiểm định chi tiết bên dưới, hoặc xác nhận nhanh nếu đã hài lòng với tình trạng sản phẩm.
+            </Text>
+            <TouchableOpacity
+              style={[styles.secondaryButtonFlex, styles.quickAcceptButton]}
+              onPress={() => {
+                setQuickAcceptError(null);
+                setIsQuickAcceptOpen(true);
+              }}
+              disabled={isQuickAccepting}
+            >
+              <Text style={styles.secondaryButtonFlexText}>Xác nhận nhanh</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -1019,21 +1090,33 @@ export default function InspectionFormScreen() {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Kết quả kiểm định</Text>
               <InfoRow
-                label="Tình trạng hoạt động"
-                value={translateOperatingStatus(form.operatingStatus) || "Chưa có"}
+                label="Hình thức"
+                value={isQuickAcceptForm ? "Xác nhận nhanh" : "Kiểm định chi tiết"}
               />
-              <InfoRow
-                label="Ngoại quan"
-                value={translateAppearanceStatus(form.appearanceStatus) || "Chưa có"}
-              />
-              <InfoRow
-                label="Bộ phận / phụ kiện"
-                value={translatePartsStatus(form.partsStatus) || "Chưa có"}
-              />
-              <InfoRow
-                label="Mức độ khớp với mô tả"
-                value={translateMatchStatus(form.matchStatus) || "Chưa có"}
-              />
+              {isQuickAcceptForm ? (
+                <Text style={styles.helperText}>
+                  Người mua đã chấp nhận tình trạng sản phẩm mà không điền checklist chi tiết.
+                </Text>
+              ) : (
+                <>
+                  <InfoRow
+                    label="Tình trạng hoạt động"
+                    value={translateOperatingStatus(form.operatingStatus) || "Chưa có"}
+                  />
+                  <InfoRow
+                    label="Ngoại quan"
+                    value={translateAppearanceStatus(form.appearanceStatus) || "Chưa có"}
+                  />
+                  <InfoRow
+                    label="Bộ phận / phụ kiện"
+                    value={translatePartsStatus(form.partsStatus) || "Chưa có"}
+                  />
+                  <InfoRow
+                    label="Mức độ khớp với mô tả"
+                    value={translateMatchStatus(form.matchStatus) || "Chưa có"}
+                  />
+                </>
+              )}
               <InfoRow
                 label="Kết luận"
                 value={translateConclusion(form.conclusion) || "Chưa có"}
@@ -1182,6 +1265,46 @@ export default function InspectionFormScreen() {
                   <ActivityIndicator color={COLORS.white} />
                 ) : (
                   <Text style={styles.primarySmallButtonText}>Xác nhận</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal
+        visible={isQuickAcceptOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !isQuickAccepting && setIsQuickAcceptOpen(false)}
+      >
+        <ModalBackdrop
+          style={styles.modalBackdrop}
+          onPress={() => !isQuickAccepting && setIsQuickAcceptOpen(false)}
+        >
+          <ModalSurface style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Xác nhận nhanh tình trạng sản phẩm?</Text>
+            <Text style={styles.modalText}>
+              Bạn đang chấp nhận tình trạng sản phẩm mà không làm checklist kiểm định chi tiết. Sau này nếu khiếu nại về tình trạng hoặc chất lượng sản phẩm, bạn có thể không được trả hàng.
+            </Text>
+            {quickAcceptError ? <Text style={styles.modalError}>{quickAcceptError}</Text> : null}
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity
+                style={styles.secondaryButtonFlex}
+                onPress={() => setIsQuickAcceptOpen(false)}
+                disabled={isQuickAccepting}
+              >
+                <Text style={styles.secondaryButtonFlexText}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primarySmallButtonFlex}
+                onPress={() => void handleQuickAccept()}
+                disabled={isQuickAccepting}
+              >
+                {isQuickAccepting ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.primarySmallButtonText}>Xác nhận nhanh</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1422,6 +1545,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: "center",
   },
+  quickAcceptButton: { marginTop: 12, flex: 0 },
   secondaryButtonFlex: {
     flex: 1,
     minHeight: 48,

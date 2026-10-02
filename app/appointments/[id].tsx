@@ -708,6 +708,8 @@ export default function AppointmentDetailScreen() {
     );
   };
 
+  const [isCollectNowConfirmOpen, setIsCollectNowConfirmOpen] = useState(false);
+
   const handleCollectNow = async () => {
     if (
       !appointmentId ||
@@ -749,7 +751,7 @@ export default function AppointmentDetailScreen() {
 
       setActionMessage({
         type: "success",
-        text: "Đã xác nhận nhận hàng ngay.",
+        text: "Đã nhận hàng, đơn hàng đã hoàn tất.",
       });
     } catch (error: any) {
       const code = String(
@@ -891,7 +893,7 @@ export default function AppointmentDetailScreen() {
   const stepLabels = [
     "Chờ xác nhận",
     isOverdueActive
-      ? "Đã quá hạn"
+      ? "Đang trễ hẹn"
       : isInProgress
         ? "Đang diễn ra"
         : "Đã lên lịch",
@@ -1139,6 +1141,19 @@ export default function AppointmentDetailScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* Một bên có mặt: lịch vẫn "Đã lên lịch" ở BE, đây chỉ là trạng thái chờ đối phương. */}
+            {buyerCheckAt && sellerCheckAt ? (
+              <Text style={styles.checkInSummaryReady}>
+                Cả hai bên đã có mặt. Có thể bắt đầu kiểm định.
+              </Text>
+            ) : buyerCheckAt || sellerCheckAt ? (
+              <Text style={styles.checkInSummaryWaiting}>
+                {buyerCheckAt
+                  ? "Người mua đã có mặt, đang chờ người bán xác nhận có mặt."
+                  : "Người bán đã có mặt, đang chờ người mua xác nhận có mặt."}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -1155,6 +1170,11 @@ export default function AppointmentDetailScreen() {
                     inspectionForm.inspectionStatus,
                   )}
                 />
+                {["2", "quickaccept"].includes(
+                  String(inspectionForm.inspectionMode ?? "").trim().toLowerCase(),
+                ) ? (
+                  <InfoRow label="Hình thức" value="Xác nhận nhanh" />
+                ) : null}
                 {inspectionForm.conclusion ? (
                   <InfoRow
                     label="Kết luận"
@@ -1183,7 +1203,7 @@ export default function AppointmentDetailScreen() {
             ) : (
               <>
                 <Text style={styles.actionHintText}>
-                  Bạn có thể tạo phiếu kiểm định cho lịch hẹn này.
+                  Bạn có thể tạo phiếu kiểm định chi tiết. Người mua tài khoản cá nhân cũng có thể chọn xác nhận nhanh trong màn phiếu kiểm định.
                 </Text>
                 <TouchableOpacity
                   style={styles.primarySmallButtonFlex}
@@ -1344,7 +1364,7 @@ export default function AppointmentDetailScreen() {
                 ]}
                 disabled={isAnyActionInFlight}
                 onPress={() =>
-                  void handleCollectNow()
+                  setIsCollectNowConfirmOpen(true)
                 }
               >
                 {isCollectingNow ? (
@@ -1452,6 +1472,42 @@ export default function AppointmentDetailScreen() {
           </>
         ) : null}
       </View>
+
+      <Modal
+        visible={isCollectNowConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsCollectNowConfirmOpen(false)}
+      >
+        <ModalBackdrop
+          style={styles.lifecycleModalBackdrop}
+          onPress={() => setIsCollectNowConfirmOpen(false)}
+        >
+          <ModalSurface style={styles.lifecycleModalCard}>
+            <Text style={styles.lifecycleModalTitle}>Nhận hàng ngay?</Text>
+            <Text style={styles.lifecycleModalText}>
+              Đơn hàng sẽ hoàn tất ngay sau khi bạn xác nhận, không cần xác nhận đã nhận hàng thêm lần nữa. Chỉ bấm khi bạn đã nhận được sản phẩm.
+            </Text>
+            <View style={styles.lifecycleModalActions}>
+              <TouchableOpacity
+                style={styles.secondaryButtonFlex}
+                onPress={() => setIsCollectNowConfirmOpen(false)}
+              >
+                <Text style={styles.secondaryButtonText}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primarySmallButtonFlex}
+                onPress={() => {
+                  setIsCollectNowConfirmOpen(false);
+                  void handleCollectNow();
+                }}
+              >
+                <Text style={styles.primarySmallButtonText}>Nhận hàng ngay</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
 
       <Modal
         visible={isRescheduleModalVisible}
@@ -1781,6 +1837,8 @@ const styles = StyleSheet.create({
   },
   checkLabel: { color: COLORS.text, fontSize: 13, fontWeight: "800" },
   checkTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  checkInSummaryWaiting: { color: "#9A6418", fontSize: 13, lineHeight: 19, marginTop: 10, fontWeight: "600" },
+  checkInSummaryReady: { color: "#2F765D", fontSize: 13, lineHeight: 19, marginTop: 10, fontWeight: "600" },
   relatedOrderButton: {
     minHeight: 62,
     borderRadius: 10,
