@@ -196,6 +196,7 @@ export default function AgreementPreviewScreen() {
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isPdfMenuOpen, setIsPdfMenuOpen] = useState(false);
+  const pdfInFlightRef = useRef(false);
 
   // const [isConfirmingRequestEdit, setIsConfirmingRequestEdit] = useState(false); // [KHÔNG ĐƯỢC XÓA]
 
@@ -578,7 +579,8 @@ export default function AgreementPreviewScreen() {
   };
 
   const handleDownloadPdf = async (mode: AgreementPdfMode) => {
-    if (!agreementId || isDownloadingPdf) return;
+    if (!agreementId || pdfInFlightRef.current) return;
+    pdfInFlightRef.current = true;
     setIsPdfMenuOpen(false);
     try {
       setIsDownloadingPdf(true);
@@ -593,6 +595,7 @@ export default function AgreementPreviewScreen() {
         text: getAgreementPdfErrorMessage(error),
       });
     } finally {
+      pdfInFlightRef.current = false;
       setIsDownloadingPdf(false);
     }
   };
