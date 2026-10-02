@@ -253,6 +253,13 @@ export default function CreateDisputeScreen() {
       : undefined;
   }, [category, disputeEligibility]);
 
+  // Sự cố vận chuyển GHN: BE gửi thẳng cho kiểm duyệt viên; mất hàng hoặc shipper tự hoàn thì được hoàn cả phí ship.
+  const selectedCategoryKey = String(
+    disputeEligibility?.allowedCategories.find((item) => item.disputeCategoryId === category)?.code ?? "",
+  ).replace(/_/g, "").toUpperCase();
+  const isGhnCarrierSelected = ["ITEMNOTRECEIVED", "DAMAGEDORLOST", "SHIPPERRETURNED", "BUYERREFUSED"].includes(selectedCategoryKey);
+  const refundsShippingFee = ["ITEMNOTRECEIVED", "SHIPPERRETURNED"].includes(selectedCategoryKey);
+
   const isItemMismatchSelected =
     disputeEligibility?.allowedCategories.find((item) => item.disputeCategoryId === category)?.code?.replace(/_/g, "").toUpperCase() === "ITEMMISMATCH";
 
@@ -500,7 +507,7 @@ export default function CreateDisputeScreen() {
             {productName ? <Text style={styles.productName}>{productName}</Text> : null}
             <Text style={styles.helperText}>
               Hệ thống sẽ tự xác định người gửi và người bị khiếu nại từ đơn hàng.
-              Sau khi gửi, bên còn lại có thời hạn để đồng ý hoặc phản biện; nếu bị phản biện hoặc hết hạn, kiểm duyệt viên sẽ xem xét.
+              Sau khi gửi, bên còn lại có thời hạn để đồng ý hoặc phản biện; nếu bị phản biện hoặc hết hạn, kiểm duyệt viên sẽ xem xét. Riêng sự cố vận chuyển GHN được chuyển thẳng cho kiểm duyệt viên.
             </Text>
           </View>
 
@@ -566,6 +573,13 @@ export default function CreateDisputeScreen() {
               })}
             </View>
             {categoryError ? <Text style={styles.fieldError}>{categoryError}</Text> : null}
+            {isGhnCarrierSelected ? (
+              <Text style={styles.helperText}>
+                {refundsShippingFee
+                  ? "Sự cố vận chuyển GHN được chuyển thẳng cho kiểm duyệt viên. Nếu khiếu nại được chấp nhận, người mua được hoàn tiền hàng và phí vận chuyển."
+                  : "Sự cố vận chuyển GHN được chuyển thẳng cho kiểm duyệt viên. Nếu khiếu nại được chấp nhận, người mua được hoàn tiền hàng; phí vận chuyển không được hoàn."}
+              </Text>
+            ) : null}
             {isItemMismatchSelected ? (
               <Text style={styles.helperText}>
                 Nếu sản phẩm đã được chấp nhận ở bước kiểm định, tranh chấp vẫn được xem xét nhưng có thể không được trả hàng với khiếu nại về tình trạng hoặc chất lượng đã xác nhận.
