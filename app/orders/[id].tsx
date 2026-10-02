@@ -1930,9 +1930,7 @@ export default function OrderDetailScreen() {
             </Text>
             <Text style={styles.lifecycleModalText}>
               {lifecycleAction === "cancel"
-                ? isGhn
-                  ? "Vận đơn GHN sẽ được hủy và người mua được hoàn tiền hàng cùng phí vận chuyển về ví. Thao tác này không thể hoàn tác."
-                  : "Thao tác này sẽ hủy đơn hàng và không thể hoàn tác."
+                ? "Thao tác này sẽ hủy đơn hàng và không thể hoàn tác."
                 : lifecycleAction === "confirmReturn"
                   ? "Xác nhận bạn đã gửi trả sản phẩm cho người bán."
                   : "Xác nhận bạn đã nhận lại sản phẩm trả về. Hệ thống sẽ hoàn tất hoàn tiền còn giữ cho đơn hàng."}
