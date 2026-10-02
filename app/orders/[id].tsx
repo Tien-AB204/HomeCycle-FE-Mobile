@@ -1012,6 +1012,10 @@ export default function OrderDetailScreen() {
   const carrierStat = trackingData?.carrierStatus;
   const expectedDate =
     trackingData?.expectedDeliveryAt || shipment?.expectedDeliveryAt;
+  // Đơn GHN: ưu tiên giờ của lịch thu gom (collectionDate trong hợp đồng, 20:00 giờ VN).
+  // Không có thì dùng ngày GHN trả khi tạo vận đơn; mốc đó là cuối ngày nên chỉ hiện ngày.
+  const ghnCollectionScheduledAt =
+    relatedAppointments.find((item: any) => isGhnCollection(item))?.scheduledAt || null;
   const deliveredDate = trackingData?.deliveredAt || shipment?.deliveredAt;
   const lastSynced = trackingData?.lastSyncedAt;
   const isStaleData = trackingData?.isStale === true;
@@ -1245,8 +1249,15 @@ export default function OrderDetailScreen() {
               {trackingCode ? (
                 <InfoRow label="Mã vận đơn GHN:" value={trackingCode} bold />
               ) : null}
-              {expectedDate ? (
-                <InfoRow label="Dự kiến giao:" value={formatDay(expectedDate)} />
+              {ghnCollectionScheduledAt || expectedDate ? (
+                <InfoRow
+                  label="Dự kiến giao:"
+                  value={
+                    ghnCollectionScheduledAt
+                      ? formatDate(ghnCollectionScheduledAt)
+                      : formatDay(expectedDate)
+                  }
+                />
               ) : null}
               {deliveredDate ? (
                 <InfoRow
