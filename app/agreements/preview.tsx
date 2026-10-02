@@ -3,6 +3,8 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
+  Platform,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -15,9 +17,11 @@ import DeadlineBanner from "../../src/components/shared/DeadlineBanner";
 import CollapsibleNotice from "../../src/components/shared/CollapsibleNotice";
 import HighValueWarning from "../../src/components/shared/HighValueWarning";
 import {
+  type AgreementPdfMode,
   downloadAgreementPdf,
   getAgreementPdfErrorMessage,
 } from "../../src/utils/agreementPdf";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import { getContractTotal, isHighValueWithoutInspection } from "../../src/utils/highValue";
 import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
@@ -191,6 +195,7 @@ export default function AgreementPreviewScreen() {
   const [highValueAcknowledged, setHighValueAcknowledged] = useState(false);
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isPdfMenuOpen, setIsPdfMenuOpen] = useState(false);
 
   // const [isConfirmingRequestEdit, setIsConfirmingRequestEdit] = useState(false); // [KHÔNG ĐƯỢC XÓA]
 
@@ -562,12 +567,26 @@ export default function AgreementPreviewScreen() {
     };
   };
 
-  const handleDownloadPdf = async () => {
+  // Web tải thẳng; Android/iOS cho chọn "Tải xuống" (lưu vào thư mục) hoặc "Tải và chia sẻ".
+  const openPdfOptions = () => {
+    if (isDownloadingPdf) return;
+    if (Platform.OS === "web") {
+      void handleDownloadPdf("save");
+      return;
+    }
+    setIsPdfMenuOpen(true);
+  };
+
+  const handleDownloadPdf = async (mode: AgreementPdfMode) => {
     if (!agreementId || isDownloadingPdf) return;
+    setIsPdfMenuOpen(false);
     try {
       setIsDownloadingPdf(true);
       setStatusMessage(null);
-      await downloadAgreementPdf(agreementId);
+      const done = await downloadAgreementPdf(agreementId, mode);
+      if (done && mode === "save" && Platform.OS !== "web") {
+        setStatusMessage({ type: "success", text: "Đã lưu hợp đồng PDF vào thư mục bạn chọn." });
+      }
     } catch (error) {
       setStatusMessage({
         type: "error",
@@ -1723,7 +1742,7 @@ export default function AgreementPreviewScreen() {
                 styles.postPaymentBtn,
                 isDownloadingPdf ? { opacity: 0.6 } : undefined,
               ]}
-              onPress={() => void handleDownloadPdf()}
+              onPress={openPdfOptions}
               disabled={isDownloadingPdf}
             >
               {isDownloadingPdf ? (
@@ -1756,11 +1775,59 @@ export default function AgreementPreviewScreen() {
             </Text>
           )}
       </View>
+
+      <Modal
+        visible={isPdfMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsPdfMenuOpen(false)}
+      >
+        <ModalBackdrop style={styles.pdfMenuBackdrop} onPress={() => setIsPdfMenuOpen(false)}>
+          <ModalSurface style={styles.pdfMenuCard}>
+            <Text style={styles.pdfMenuTitle}>Tải hợp đồng PDF</Text>
+            <TouchableOpacity style={styles.pdfMenuOption} onPress={() => void handleDownloadPdf("save")}>
+              <Ionicons name="download-outline" size={20} color={COLORS.primary} />
+              <View style={styles.pdfMenuOptionBody}>
+                <Text style={styles.pdfMenuOptionTitle}>Tải xuống</Text>
+                <Text style={styles.pdfMenuOptionHint}>Chọn thư mục trên máy để lưu file</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.pdfMenuOption} onPress={() => void handleDownloadPdf("share")}>
+              <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+              <View style={styles.pdfMenuOptionBody}>
+                <Text style={styles.pdfMenuOptionTitle}>Tải và chia sẻ</Text>
+                <Text style={styles.pdfMenuOptionHint}>Gửi qua Zalo, Gmail, Drive...</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.pdfMenuClose} onPress={() => setIsPdfMenuOpen(false)}>
+              <Text style={styles.secondaryBtnText}>Đóng</Text>
+            </TouchableOpacity>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  pdfMenuBackdrop: { flex: 1, justifyContent: "center", backgroundColor: "rgba(23, 40, 48, 0.45)", padding: 20 },
+  pdfMenuCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 18 },
+  pdfMenuTitle: { fontSize: 17, fontWeight: "700", color: COLORS.text, marginBottom: 10 },
+  pdfMenuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  pdfMenuOptionBody: { flex: 1 },
+  pdfMenuOptionTitle: { fontSize: 15, fontWeight: "700", color: COLORS.text },
+  pdfMenuOptionHint: { fontSize: 12, color: COLORS.textLight, marginTop: 2 },
+  pdfMenuClose: { alignItems: "center", paddingVertical: 12, marginTop: 8 },
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,

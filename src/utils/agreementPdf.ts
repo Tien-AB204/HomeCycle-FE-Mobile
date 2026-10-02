@@ -23,9 +23,21 @@ export const getAgreementPdfErrorMessage = (error: unknown): string => {
   );
 };
 
-// Tải PDF hợp đồng đã thanh toán qua API có xác thực (BE không trả đường dẫn lưu trữ trực tiếp),
-// rồi mở bảng chia sẻ để người dùng lưu hoặc xem file.
-export const downloadAgreementPdf = async (agreementId: string) => {
+export type AgreementPdfMode = "save" | "share";
+
+// Người dùng tự hủy bộ chọn thư mục (Android/iOS đều báo lỗi có chữ "cancel"): không coi là lỗi.
+export const isAgreementPdfCancelled = (error: unknown) =>
+  /cancel/i.test(String((error as any)?.code ?? "")) || /cancel/i.test(String((error as Error)?.message ?? ""));
+
+// Tải PDF hợp đồng đã thanh toán qua API có xác thực (BE không trả đường dẫn lưu trữ trực tiếp).
+// - "save": người dùng chọn thư mục trên máy (vd. Download) rồi lưu file vào đó.
+// - "share": lưu vào bộ nhớ tạm của app rồi mở bảng chia sẻ (Zalo, Gmail, Drive...).
+// Web luôn tải file về như trình duyệt bình thường.
+// Trả về true khi đã lưu/mở chia sẻ, false khi người dùng hủy chọn thư mục.
+export const downloadAgreementPdf = async (
+  agreementId: string,
+  mode: AgreementPdfMode = "share",
+): Promise<boolean> => {
   const response = await apiClient.get(`/agreements/${agreementId}/pdf`, {
     responseType: "arraybuffer",
   });
@@ -40,7 +52,7 @@ export const downloadAgreementPdf = async (agreementId: string) => {
     link.download = fileName;
     link.click();
     URL.revokeObjectURL(url);
-    return;
+    return true;
   }
 
   // Nạp module native khi cần: bản app build trước khi thêm expo-sharing vẫn mở được màn hình,
@@ -54,6 +66,17 @@ export const downloadAgreementPdf = async (agreementId: string) => {
     throw new Error(PDF_UNSUPPORTED_MESSAGE);
   }
 
+  if (mode === "save") {
+    const directory = await FileSystem.Directory.pickDirectoryAsync().catch((error: unknown) => {
+      if (isAgreementPdfCancelled(error)) return null;
+      throw error;
+    });
+    if (!directory) return false;
+    const target = directory.createFile(fileName, "application/pdf");
+    target.write(bytes);
+    return true;
+  }
+
   const file = new FileSystem.File(FileSystem.Paths.cache, fileName);
   if (file.exists) file.delete();
   file.create();
@@ -61,10 +84,11 @@ export const downloadAgreementPdf = async (agreementId: string) => {
 
   if (!(await Sharing.isAvailableAsync())) throw new Error(PDF_SHARE_UNAVAILABLE_MESSAGE);
   // Không chờ bảng chia sẻ đóng: trên một số máy Android lời gọi này không trả về khi người dùng
-  // chọn ứng dụng rồi quay lại, làm nút "Tải hợp đồng PDF" bị khóa mãi.
+  // chọn ứng dụng rồi quay lại, làm nút tải PDF bị khóa mãi.
   void Sharing.shareAsync(file.uri, {
     mimeType: "application/pdf",
     dialogTitle: "Hợp đồng HomeCycle",
     UTI: "com.adobe.pdf",
   }).catch(() => undefined);
+  return true;
 };
