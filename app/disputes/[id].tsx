@@ -23,6 +23,7 @@ import {
   ModalSurface,
 } from "../../src/components/shared/ModalBackdrop";
 import { COLORS } from "../../src/constants/theme";
+import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
@@ -232,6 +233,8 @@ export default function DisputeDetailScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [responseMode, setResponseMode] = useState<DisputeResponseMode | null>(null);
   const { connection, reconnectVersion } = useChatRealtime();
+  const { user } = useAuth();
+  const currentUserId = String(user?.userId || user?.id || "").trim().toLowerCase();
 
   // silent: làm mới nền (realtime / kéo để làm mới) — giữ nguyên nội dung đang hiển thị,
   // không che bằng loading toàn màn và không xóa dữ liệu cũ khi lỗi.
@@ -397,7 +400,13 @@ export default function DisputeDetailScreen() {
   const proposedOutcomeLabel = outcomeLabels[normalizeKey(detail.proposedResolutionOutcome)] || null;
   const canAccept = detail.actions?.canAccept === true;
   const canRebut = detail.actions?.canRebut === true;
-  const canSubmitStatement = detail.actions?.canSubmitStatement === true;
+  // BE chỉ nhận một phản hồi mỗi người nhưng cờ tường trình chưa loại người đã gửi.
+  const hasResponded =
+    Boolean(currentUserId) &&
+    responses.some(
+      (item: any) => String(item?.responder?.userId ?? "").trim().toLowerCase() === currentUserId,
+    );
+  const canSubmitStatement = detail.actions?.canSubmitStatement === true && !hasResponded;
   const hasResponseActions = canAccept || canRebut || canSubmitStatement;
   const statusKey = normalizeKey(detail.status);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
