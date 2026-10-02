@@ -1246,7 +1246,7 @@ export default function OrderDetailScreen() {
                 <InfoRow label="Mã vận đơn GHN:" value={trackingCode} bold />
               ) : null}
               {expectedDate ? (
-                <InfoRow label="Dự kiến giao:" value={formatDate(expectedDate)} />
+                <InfoRow label="Dự kiến giao:" value={formatDay(expectedDate)} />
               ) : null}
               {deliveredDate ? (
                 <InfoRow
