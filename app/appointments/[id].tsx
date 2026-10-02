@@ -33,9 +33,76 @@ import inspectionFormApi, {
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
+import {
+  beginRestLoad,
+  classifyRealtimeEvent,
+  createRealtimeFreshness,
+  markRealtimeEventApplied,
+  markRestApplied,
+  readEventUpdatedAt,
+  resetRealtimeFreshness,
+} from "../../src/utils/realtimeFreshness";
 import { isWithinScheduleHours, SCHEDULE_HOURS_MESSAGE } from "../../src/utils/scheduleHours";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+
+// Gộp snapshot của AppointmentUpdated vào dữ liệu chi tiết đang hiển thị. Snapshot có cùng
+// cấu trúc GET /appointments/{id} nhưng không có các field phụ thuộc người xem (actions,
+// checkIn.canCheckIn, reschedule.isCurrentUserRequester): giữ giá trị REST tới lượt tải lại kế tiếp.
+const mergeAppointmentSnapshot = (current: any, snapshot: any) => {
+  const base = current?.appointment;
+  if (!base || !snapshot) return current;
+
+  const inspection = snapshot.inspection
+    ? {
+        ...(base.inspection ?? {}),
+        ...snapshot.inspection,
+        checkIn: {
+          ...(base.inspection?.checkIn ?? {}),
+          ...(snapshot.inspection.checkIn ?? {}),
+          canCheckIn: base.inspection?.checkIn?.canCheckIn,
+        },
+      }
+    : base.inspection;
+
+  const collection = snapshot.collection
+    ? { ...(base.collection ?? {}), ...snapshot.collection }
+    : base.collection;
+
+  const reschedule = snapshot.reschedule
+    ? {
+        ...snapshot.reschedule,
+        isCurrentUserRequester:
+          base.reschedule?.proposalAppointmentId ===
+          snapshot.reschedule.proposalAppointmentId
+            ? base.reschedule?.isCurrentUserRequester
+            : false,
+      }
+    : null;
+
+  const appointment = {
+    ...base,
+    appointmentType: snapshot.appointmentType ?? base.appointmentType,
+    appointmentStatus: snapshot.appointmentStatus ?? base.appointmentStatus,
+    lateThresholdAt: snapshot.lateThresholdAt ?? null,
+    isOverdue: Boolean(snapshot.isOverdue),
+    completedAt: snapshot.completedAt ?? null,
+    updatedAt: snapshot.updatedAt ?? base.updatedAt,
+    inspection,
+    collection,
+    cancellation: snapshot.cancellation ?? null,
+    reschedule,
+    order: snapshot.order ? { ...(base.order ?? {}), ...snapshot.order } : base.order,
+  };
+
+  return {
+    ...current,
+    ...appointment,
+    appointment,
+    inspectionAppointment: appointment.inspection,
+    collectionAppointment: appointment.collection,
+  };
+};
 
 const appointmentApi = {
   getAppointmentDetail: (appointmentId: string) =>
@@ -239,6 +306,7 @@ export default function AppointmentDetailScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const handledRefreshSignalVersionRef = useRef(0);
   const handledReconnectVersionRef = useRef(0);
+  const freshnessRef = useRef(createRealtimeFreshness());
 
   // "quiet": làm mới ngầm do realtime/reconnect/foreground — giữ nguyên nội dung,
   // không lặp lại thông báo trạng thái đã biết (vd. chưa có phiếu kiểm định).
@@ -266,6 +334,7 @@ export default function AppointmentDetailScreen() {
       try {
         if (showLoading) setIsLoading(true);
         setLoadError(null);
+        const restStartedAt = beginRestLoad();
         const response = await appointmentApi.getAppointmentDetail(appointmentId);
         if (!isCurrent()) return;
         const rawAppointment = unwrap(response);
@@ -281,6 +350,7 @@ export default function AppointmentDetailScreen() {
                 }
               : rawAppointment;
         setData(normalizedData);
+        markRestApplied(freshnessRef.current, restStartedAt);
         loadedAppointmentIdRef.current = String(appointmentId);
 
         const normalizedAppointment =
@@ -377,6 +447,7 @@ export default function AppointmentDetailScreen() {
     // Đổi mã lịch hẹn: vô hiệu ngay các lượt tải cũ.
     detailLoadVersionRef.current += 1;
     pendingSilentRefreshRef.current = false;
+    resetRealtimeFreshness(freshnessRef.current);
   }, [appointmentId]);
 
   useEffect(
@@ -386,7 +457,31 @@ export default function AppointmentDetailScreen() {
     [],
   );
 
-  // Realtime = tín hiệu tải lại dữ liệu chính thức (không dựng trạng thái từ sự kiện).
+  // AppointmentUpdated của chính lịch hẹn đang xem: cập nhật ngay trạng thái chung từ snapshot.
+  // Event cũ hơn dữ liệu đang hiển thị bị bỏ qua; lượt tải lại ngầm phía sau vẫn chạy để lấy
+  // các nút hành động và dữ liệu phụ thuộc người xem.
+  const applyAppointmentEvent = useCallback((event: any) => {
+    const eventAppointmentId = String(event?.appointmentId ?? event?.AppointmentId ?? "")
+      .trim()
+      .toLowerCase();
+    const currentAppointmentId = String(appointmentIdRef.current ?? "").trim().toLowerCase();
+    const snapshot = event?.appointment ?? event?.Appointment;
+    if (!eventAppointmentId || eventAppointmentId !== currentAppointmentId || !snapshot) return;
+    if (!dataRef.current?.appointment) return;
+
+    const eventUpdatedAt = readEventUpdatedAt(event);
+    if (
+      eventUpdatedAt === null ||
+      classifyRealtimeEvent(freshnessRef.current, eventUpdatedAt) !== "apply"
+    ) {
+      return;
+    }
+
+    markRealtimeEventApplied(freshnessRef.current, eventUpdatedAt);
+    setData((current: any) => mergeAppointmentSnapshot(current, snapshot));
+  }, []);
+
+  // REST vẫn là nguồn chính thức: mọi tín hiệu đều dẫn tới một lượt tải lại ngầm.
   const requestSilentRefresh = useCallback(() => {
     if (!isFocusedRef.current || !appointmentIdRef.current) return;
     void fetchDetailRef.current(false, true);
@@ -415,8 +510,13 @@ export default function AppointmentDetailScreen() {
     }
     if (handledRefreshSignalVersionRef.current === version) return;
     handledRefreshSignalVersionRef.current = version;
+    if (appointmentRefreshSignal.appointmentEvent) {
+      applyAppointmentEvent(appointmentRefreshSignal.appointmentEvent);
+    }
     requestSilentRefresh();
-  }, [appointmentRefreshSignal.version, requestSilentRefresh]);
+    // Chỉ chạy theo version; appointmentEvent đi cùng version đó.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentRefreshSignal.version, applyAppointmentEvent, requestSilentRefresh]);
 
   // Kết nối lại: sự kiện bị lỡ không được phát lại → tải lại một lần.
   useEffect(() => {
