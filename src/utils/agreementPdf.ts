@@ -11,9 +11,11 @@ const PDF_ERROR_MESSAGES: Record<number, string> = {
 
 const PDF_UNSUPPORTED_MESSAGE =
   "Phiên bản ứng dụng này chưa hỗ trợ tải PDF. Vui lòng cập nhật ứng dụng.";
+const PDF_SHARE_UNAVAILABLE_MESSAGE = "Thiết bị này không mở được bảng chia sẻ để lưu file PDF.";
 
 export const getAgreementPdfErrorMessage = (error: unknown): string => {
   if ((error as Error)?.message === PDF_UNSUPPORTED_MESSAGE) return PDF_UNSUPPORTED_MESSAGE;
+  if ((error as Error)?.message === PDF_SHARE_UNAVAILABLE_MESSAGE) return PDF_SHARE_UNAVAILABLE_MESSAGE;
   const status = Number((error as any)?.response?.status || 0);
   return (
     PDF_ERROR_MESSAGES[status] ||
@@ -57,11 +59,12 @@ export const downloadAgreementPdf = async (agreementId: string) => {
   file.create();
   file.write(bytes);
 
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri, {
-      mimeType: "application/pdf",
-      dialogTitle: "Hợp đồng HomeCycle",
-      UTI: "com.adobe.pdf",
-    });
-  }
+  if (!(await Sharing.isAvailableAsync())) throw new Error(PDF_SHARE_UNAVAILABLE_MESSAGE);
+  // Không chờ bảng chia sẻ đóng: trên một số máy Android lời gọi này không trả về khi người dùng
+  // chọn ứng dụng rồi quay lại, làm nút "Tải hợp đồng PDF" bị khóa mãi.
+  void Sharing.shareAsync(file.uri, {
+    mimeType: "application/pdf",
+    dialogTitle: "Hợp đồng HomeCycle",
+    UTI: "com.adobe.pdf",
+  }).catch(() => undefined);
 };
