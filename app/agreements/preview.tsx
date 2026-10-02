@@ -818,6 +818,8 @@ export default function AgreementPreviewScreen() {
 
   const formatDate = (value: string | null | undefined) =>
     value ? new Date(value).toLocaleString("vi-VN") : "Chưa có";
+  const formatDateOnly = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleDateString("vi-VN") : "Chưa có";
 
   const translateDeliveryMethod = (method: string) => {
     switch (method) {
@@ -1243,13 +1245,21 @@ export default function AgreementPreviewScreen() {
             </View>
           </View>
 
+          {/* GHN chỉ ước tính theo ngày; giờ lưu kèm chỉ để lọt khung giờ hẹn của BE nên không hiển thị. */}
           <View style={styles.row}>
-            <Text style={styles.label}>Thời gian thu gom:</Text>
+            <Text style={styles.label}>
+              {details.deliveryMethod === "GhnDelivery" ? "Dự kiến giao:" : "Thời gian thu gom:"}
+            </Text>
             <View style={styles.valueWrapper}>
               <Text style={styles.value}>
-                {formatDate(details.collectionDate)}
+                {details.deliveryMethod === "GhnDelivery"
+                  ? formatDateOnly(details.collectionDate)
+                  : formatDate(details.collectionDate)}
               </Text>
-              {renderOldValue("collectionDate", formatDate)}
+              {renderOldValue(
+                "collectionDate",
+                details.deliveryMethod === "GhnDelivery" ? formatDateOnly : formatDate,
+              )}
             </View>
           </View>
 
