@@ -1235,7 +1235,10 @@ export default function OrderDetailScreen() {
                       : "Chờ người bán xác nhận hàng sẵn sàng"
                     : creationStat && creationStat !== "Success"
                       ? translateCreationStatus(creationStat) || "Đang cập nhật"
-                      : trackingMsg || translateCarrierStatus(carrierStat)
+                      : // BE trả kèm câu cố định khi đã có mã vận đơn; ưu tiên trạng thái GHN thật.
+                        carrierStat
+                        ? translateCarrierStatus(carrierStat)
+                        : trackingMsg || translateCarrierStatus(carrierStat)
                 }
                 valueStyle={styles.primaryValue}
               />
