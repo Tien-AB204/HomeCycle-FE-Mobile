@@ -744,7 +744,12 @@ export default function InspectionFormScreen() {
           />
         }
       >
-        <View style={styles.headerStatusCard}>
+        <View
+          style={[
+            styles.headerStatusCard,
+            isRejectedForm ? styles.headerStatusCardRejected : undefined,
+          ]}
+        >
           <Text style={styles.statusTitle}>
             {form
               ? translateInspectionStatus(form.inspectionStatus)
@@ -1399,6 +1404,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  // Phiếu đã bị từ chối: thẻ trạng thái màu đỏ để phân biệt với phiếu đang xử lý / đã xác nhận.
+  headerStatusCardRejected: { backgroundColor: COLORS.error },
   statusTitle: { color: COLORS.white, fontSize: 18, fontWeight: "900" },
   statusMeta: {
     color: "rgba(255,255,255,0.78)",
