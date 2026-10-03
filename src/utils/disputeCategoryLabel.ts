@@ -8,8 +8,11 @@ const DISPUTE_CATEGORY_LABELS: Record<string, string> = {
   noshow: "Không xuất hiện / bùng hẹn",
   itemmismatch: "Hàng hóa không đúng mô tả",
   sellernotshipped: "Người bán không giao hàng",
-  damagedorlost: "Hàng hóa hư hỏng hoặc thất lạc",
-  itemnotreceived: "Không nhận được hàng",
+  // Sự cố vận chuyển GHN (BE gửi thẳng cho kiểm duyệt viên).
+  damagedorlost: "Hàng bị hư hỏng khi vận chuyển",
+  itemnotreceived: "Không nhận được hàng (thất lạc)",
+  shipperreturned: "Shipper tự ý hủy hoặc hoàn đơn",
+  buyerrefused: "Người mua không nhận hàng",
   fraudorscam: "Gian lận / lừa đảo",
   paymentnotcompleted: "Không thanh toán theo thỏa thuận",
   commitmentviolation: "Vi phạm cam kết giao dịch",
