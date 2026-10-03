@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 
+import FilterChipGroup from "../../src/components/shared/FilterChipGroup";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
@@ -24,6 +25,12 @@ import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import {
+  getDateRangeLabel,
+  matchesOrderDateRange,
+  ORDER_DATE_RANGE_OPTIONS,
+  OrderDateRange,
+} from "../../src/utils/dateRangeFilter";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 // Primary structural perspective: which side of the transaction.
@@ -54,7 +61,19 @@ type OrderItem = {
   statusCode: number;
   orderStatusText: string;
   quantity: number;
+  createdAt: Date | null;
 };
+
+const parseOrderDate = (value: unknown) => {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const formatOrderDate = (date: Date) =>
+  `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
 
 const orderApi = {
   getBuyerOrders: (params?: {
@@ -121,6 +140,8 @@ export default function OrdersScreen() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [draftStatusFilter, setDraftStatusFilter] =
     useState<OrderStatusFilter>("all");
+  const [dateRange, setDateRange] = useState<OrderDateRange>("all");
+  const [draftDateRange, setDraftDateRange] = useState<OrderDateRange>("all");
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -205,11 +226,17 @@ export default function OrdersScreen() {
             statusCode: Number(order.orderStatus ?? -1),
             orderStatusText: translateOrderStatus(order.orderStatus),
             quantity: Number(order.quantity ?? 0),
+            createdAt: parseOrderDate(order.createdAt ?? order.CreatedAt),
           }))
           .filter((order) => Boolean(order.id));
 
-        // Danh sách không có ngày tạo từ Backend: giữ nguyên thứ tự máy chủ,
-        // không tự dựng ngày.
+        // Có ngày tạo thì gộp đơn mua + đơn bán theo mới nhất; thiếu ngày thì giữ
+        // nguyên thứ tự máy chủ, không tự dựng ngày.
+        if (mappedOrders.every((order) => order.createdAt)) {
+          mappedOrders.sort(
+            (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
+          );
+        }
         setOrders(mappedOrders);
 
         if (failedMessages.length > 0) {
@@ -273,6 +300,7 @@ export default function OrdersScreen() {
 
   const openFilterModal = () => {
     setDraftStatusFilter(statusFilter);
+    setDraftDateRange(dateRange);
     setShowFilterModal(true);
   };
 
@@ -280,12 +308,15 @@ export default function OrdersScreen() {
 
   const handleResetFilter = () => {
     setDraftStatusFilter("all");
+    setDraftDateRange("all");
     setStatusFilter("all");
+    setDateRange("all");
     setShowFilterModal(false);
   };
 
   const handleApplyFilter = () => {
     setStatusFilter(draftStatusFilter);
+    setDateRange(draftDateRange);
     setShowFilterModal(false);
   };
 
@@ -331,7 +362,14 @@ export default function OrdersScreen() {
     );
   }
 
+  // Lọc theo ngày chỉ bật khi Backend trả ngày tạo đơn.
+  const hasOrderDates = orders.some((order) => order.createdAt);
+  const activeDateRange: OrderDateRange = hasOrderDates ? dateRange : "all";
+  const isFilterActive = statusFilter !== "all" || activeDateRange !== "all";
+
   const filteredOrders = orders.filter((order) => {
+    if (!matchesOrderDateRange(order.createdAt, activeDateRange)) return false;
+
     const matchesStatus =
       statusFilter === "all"
         ? true
@@ -390,9 +428,21 @@ export default function OrdersScreen() {
             hitSlop={8}
           >
             <Ionicons name="filter-outline" size={20} color={COLORS.text} />
-            {statusFilter !== "all" ? <View style={styles.filterActiveDot} /> : null}
+            {isFilterActive ? <View style={styles.filterActiveDot} /> : null}
           </TouchableOpacity>
         </View>
+
+        {activeDateRange !== "all" ? (
+          <View style={styles.dateSummaryRow}>
+            <Ionicons name="calendar-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.dateSummaryText}>
+              Ngày đặt: {getDateRangeLabel(ORDER_DATE_RANGE_OPTIONS, activeDateRange)}
+            </Text>
+            <TouchableOpacity onPress={() => setDateRange("all")} hitSlop={8}>
+              <Text style={styles.dateSummaryReset}>Bỏ lọc ngày</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {pageError ? (
           <View style={styles.errorBox}>
@@ -469,6 +519,11 @@ export default function OrdersScreen() {
                         {order.quantity > 0 ? (
                           <Text style={styles.quantityText}>SL: {order.quantity}</Text>
                         ) : null}
+                        {order.createdAt ? (
+                          <Text style={styles.orderDateText}>
+                            Ngày đặt: {formatOrderDate(order.createdAt)}
+                          </Text>
+                        ) : null}
                       </View>
                     </View>
 
@@ -486,7 +541,11 @@ export default function OrdersScreen() {
                 );
               })
             ) : (
-              <Text style={styles.emptyText}>Chưa có đơn hàng nào cho mục này.</Text>
+              <Text style={styles.emptyText}>
+                {activeDateRange !== "all"
+                  ? "Không có đơn hàng nào trong khoảng thời gian này."
+                  : "Chưa có đơn hàng nào cho mục này."}
+              </Text>
             )}
           </ScrollView>
         )}
@@ -502,6 +561,7 @@ export default function OrdersScreen() {
           <ModalSurface style={styles.filterModalCard}>
             <Text style={styles.filterModalTitle}>Bộ lọc đơn hàng</Text>
 
+            <Text style={styles.filterSectionLabel}>Trạng thái</Text>
             <View style={styles.filterOptionList}>
               {ORDER_STATUS_FILTER_OPTIONS.map((option) => {
                 const selected = draftStatusFilter === option.key;
@@ -529,6 +589,19 @@ export default function OrdersScreen() {
                 );
               })}
             </View>
+
+            {hasOrderDates ? (
+              <>
+                <Text style={[styles.filterSectionLabel, styles.filterSectionSpacing]}>
+                  Ngày đặt
+                </Text>
+                <FilterChipGroup
+                  options={ORDER_DATE_RANGE_OPTIONS}
+                  value={draftDateRange}
+                  onChange={setDraftDateRange}
+                />
+              </>
+            ) : null}
 
             <View style={styles.filterModalActions}>
               <TouchableOpacity
@@ -639,6 +712,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   filterOptionList: { gap: 2 },
+  filterSectionLabel: {
+    marginBottom: 6,
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  filterSectionSpacing: { marginTop: 16 },
+  dateSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  dateSummaryText: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: "700" },
+  dateSummaryReset: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
   filterOptionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -745,6 +836,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   quantityText: { marginTop: 3, color: COLORS.textLight, fontSize: 12 },
+  orderDateText: { marginTop: 2, color: COLORS.textLight, fontSize: 12 },
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",
