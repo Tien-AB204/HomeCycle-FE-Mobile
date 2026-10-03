@@ -480,9 +480,8 @@ export default function DisputeDetailScreen() {
                 #{String(detail.disputeId || disputeId).slice(0, 8).toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.headerMeta} numberOfLines={1}>
-              {[categoryLabel, originLabel].filter(Boolean).join(" · ")}
-            </Text>
+            <Text style={styles.headerMeta}>{categoryLabel}</Text>
+            {originLabel ? <Text style={styles.headerMeta}>{originLabel}</Text> : null}
           </View>
         </View>
 
@@ -1094,7 +1093,7 @@ const styles = StyleSheet.create({
   headerContent: { flex: 1 },
   headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerStatus: { flexShrink: 1, fontSize: 15, fontWeight: "800" },
-  headerMeta: { color: COLORS.text, fontSize: 12, marginTop: 2 },
+  headerMeta: { color: COLORS.textLight, fontSize: 11, lineHeight: 15, marginTop: 1 },
   disputeIdText: { color: COLORS.textLight, fontSize: 11, fontWeight: "600" },
   deadlineBanner: { marginBottom: 12 },
   responseItem: { paddingVertical: 12 },
