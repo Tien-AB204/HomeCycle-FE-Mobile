@@ -529,6 +529,8 @@ export default function PostDetailScreen() {
     clearFeedback: clearSellerRequestFeedback,
     showError: showSellerRequestError,
   } = useLocalFeedback();
+  // Lỗi do giá chào bán (giá <= 0 hoặc BE báo ngoài khoảng giá bài mua): tô viền đỏ ô giá.
+  const [isSellerPriceInvalid, setIsSellerPriceInvalid] = useState(false);
 
   const {
     feedback: cartFeedback,
@@ -1063,6 +1065,7 @@ export default function PostDetailScreen() {
       String(sellPost.postId),
     );
     setSellerRequestQuantity("1");
+    setIsSellerPriceInvalid(false);
 
     const listedPrice = Number(
       sellPost.basePrice ?? 0,
@@ -1131,6 +1134,7 @@ export default function PostDetailScreen() {
 
     clearPageFeedback();
     clearSellerRequestFeedback();
+    setIsSellerPriceInvalid(false);
     setSellerLoadError(false);
     setShowSellerRequestModal(true);
     setIsLoadingSellerMatches(true);
@@ -1305,6 +1309,7 @@ export default function PostDetailScreen() {
         !Number.isFinite(price) ||
         price <= 0
       ) {
+        setIsSellerPriceInvalid(true);
         showSellerRequestError(
           "Giá chào bán phải lớn hơn 0.",
         );
@@ -1331,6 +1336,7 @@ export default function PostDetailScreen() {
         sellerSubmitLock.current = true;
         setIsSubmittingSellerRequest(true);
         clearSellerRequestFeedback();
+        setIsSellerPriceInvalid(false);
 
         const pending = await findPendingSellerOffer(targetBuyPostId, String(selectedSellPost.postId));
         if (sellerContextVersion.current !== contextVersion) return;
@@ -1385,6 +1391,7 @@ export default function PostDetailScreen() {
           }
         }
         if (sellerContextVersion.current !== contextVersion) return;
+        setIsSellerPriceInvalid(code === "OFFER_PRICE_OUT_OF_RANGE");
         showSellerRequestError(
           getApiErrorMessage(
             error,
@@ -1845,6 +1852,12 @@ export default function PostDetailScreen() {
     getSellerRequestMaxQuantity(
       selectedSellerPost,
     );
+
+  // Nút "Gửi chào bán" / "Xem chào bán đã gửi" ở thanh dưới của hộp chào bán.
+  const showSellerFooterAction =
+    !isLoadingSellerMatches &&
+    !sellerLoadError &&
+    Boolean(pendingSellerOfferId || (selectedSellerPost && !isSelectedSellerBlocked));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -2631,17 +2644,6 @@ export default function PostDetailScreen() {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator
               >
-                {sellerRequestFeedback ? (
-                  <InlineFeedback
-                    feedback={
-                      sellerRequestFeedback
-                    }
-                    onDismiss={
-                      clearSellerRequestFeedback
-                    }
-                  />
-                ) : null}
-
                 <TouchableOpacity
                   style={[styles.primaryBtn, styles.modalSubmitBtn, styles.sellerModalButton]}
                   disabled={isSubmittingSellerRequest || isLoadingSellerMatches}
@@ -2989,6 +2991,9 @@ export default function PostDetailScreen() {
                           <TextInput
                             style={[
                               styles.input,
+                              isSellerPriceInvalid
+                                ? styles.inputInvalid
+                                : undefined,
                               Platform.OS ===
                               "web"
                                 ? ({
@@ -3007,6 +3012,7 @@ export default function PostDetailScreen() {
                               setSellerRequestPrice(
                                 toPriceDigits(value),
                               );
+                              setIsSellerPriceInvalid(false);
                               clearSellerRequestFeedback();
                             }}
                             placeholder={
@@ -3037,12 +3043,20 @@ export default function PostDetailScreen() {
                   </>
                 )}
               </ScrollView>
-              {!isLoadingSellerMatches && !sellerLoadError &&
-                (pendingSellerOfferId || (selectedSellerPost && !isSelectedSellerBlocked)) ? (
+              {showSellerFooterAction || sellerRequestFeedback ? (
                 <View style={[styles.sellerModalFooter, { paddingBottom: Platform.OS === "android" ? 16 : Math.max(insets.bottom, 16) }]}>
-                  {pendingSellerOfferId ? (
+                  {/* Lỗi hiện ngay trên nút gửi, chỗ người dùng vừa bấm, thay vì ở đầu danh sách phải cuộn lên. */}
+                  {sellerRequestFeedback ? (
+                    <InlineFeedback
+                      feedback={sellerRequestFeedback}
+                      onDismiss={clearSellerRequestFeedback}
+                      style={styles.sellerFooterFeedback}
+                    />
+                  ) : null}
+                  {pendingSellerOfferId && showSellerFooterAction ? (
                     <Text style={styles.sellerPendingText}>Đã chào bán · Đang chờ phản hồi</Text>
                   ) : null}
+                  {showSellerFooterAction ? (
                   <TouchableOpacity
                     style={[styles.primaryBtn, styles.modalSubmitBtn, styles.sellerModalButton,
                       isSubmittingSellerRequest ? styles.disabledButton : undefined]}
@@ -3060,6 +3074,7 @@ export default function PostDetailScreen() {
                       </>
                     )}
                   </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
             </ModalSurface>
@@ -3788,6 +3803,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sellerModalButton: { width: "100%", minWidth: 0 },
+  sellerFooterFeedback: { width: "100%", marginBottom: 0 },
+  inputInvalid: { borderColor: COLORS.error, backgroundColor: "rgba(122, 16, 18, 0.04)" },
   sellerPendingText: {
     color: COLORS.primary,
     fontSize: 13,
