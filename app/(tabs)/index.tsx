@@ -39,6 +39,7 @@ const POSTS_PER_PAGE = 4;
 const CARD_GAP = 12;
 const SECTION_HORIZONTAL_PADDING = 20;
 const HOME_POST_PAGE_SIZE = 100;
+const BUY_ACCENT = "#9A6418";
 // Trang chủ Doanh nghiệp: Backend tự lọc theo khảo sát thu mua (khu vực, loại
 // sản phẩm, mức hư hỏng, tình trạng, quy mô); FE không gửi tiêu chí và không lọc lại.
 const BUSINESS_DISCOVER_PAGE_SIZE = 12;
@@ -543,25 +544,29 @@ export default function HomeScreen() {
               <PriorityBadge post={post} />
             </View>
           </View>
-        ) : null}
-
-        <View style={styles.infoWrapper}>
-          {isBuyPostType(post.postType) ? (
-            <View style={styles.textBadgeRow}>
-              {post.categoryName ? (
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                    {post.categoryName}
+        ) : (
+          // Tin thu mua không có ảnh: dải đầu thẻ làm điểm nhìn thay ảnh, gom
+          // danh mục + thương hiệu + ưu tiên vào một chỗ thay vì nhiều tầng nhãn.
+          <View style={styles.buyHeader}>
+            <View style={styles.buyHeaderText}>
+              <View style={styles.buyHeaderTopRow}>
+                <View style={styles.buyHeaderLabelRow}>
+                  <Ionicons name="pricetags" size={12} color={BUY_ACCENT} />
+                  <Text style={styles.buyHeaderLabel} numberOfLines={1}>
+                    THU MUA
                   </Text>
                 </View>
-              ) : null}
-              <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
-                <Text style={styles.postTypeBadgeText}>Tin mua</Text>
+                <PriorityBadge post={post} />
               </View>
-              <PriorityBadge post={post} />
+              <Text style={styles.buyHeaderMeta} numberOfLines={1}>
+                {[post.categoryName, post.brandName].filter(Boolean).join(" · ") || "Đồ cũ"}
+              </Text>
             </View>
-          ) : null}
-          {post.brandName ? (
+          </View>
+        )}
+
+        <View style={styles.infoWrapper}>
+          {!isBuyPostType(post.postType) && post.brandName ? (
             <View style={styles.brandBadgeWhite}>
               <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
             </View>
@@ -583,8 +588,16 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
+          {isBuyPostType(post.postType) ? (
+            <Text style={styles.buyPriceLabel}>Giá thu mua</Text>
+          ) : null}
           <View style={styles.priceRow}>
-            <Text style={styles.productPrice} numberOfLines={1}>
+            <Text
+              style={styles.productPrice}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
               {isBuyPostType(post.postType)
                 ? formatBuyPostPrice(post)
                 : formatPrice(post.basePrice || post.expectedPrice)}
@@ -1056,12 +1069,34 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 4,
   },
-  textBadgeRow: {
+  buyHeader: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginBottom: 7,
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "#FBF3E6",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(154, 100, 24, 0.16)",
   },
+  buyHeaderText: { flex: 1, minWidth: 0 },
+  buyHeaderTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 4,
+    minHeight: 18,
+  },
+  buyHeaderLabelRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+  buyHeaderLabel: {
+    flexShrink: 1,
+    color: BUY_ACCENT,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  buyHeaderMeta: { marginTop: 3, color: "#172830", fontSize: 11, fontWeight: "600" },
+  buyPriceLabel: { marginBottom: 1, color: "#547B7D", fontSize: 10, fontWeight: "600" },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",
     paddingHorizontal: 6,
@@ -1075,7 +1110,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   sellPostBadge: { backgroundColor: "rgba(43, 86, 89, 0.92)" },
-  buyPostBadge: { backgroundColor: "rgba(154, 100, 24, 0.92)" },
   postTypeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
   infoWrapper: { padding: 10 },
   brandBadgeWhite: {
