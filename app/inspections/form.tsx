@@ -1347,6 +1347,8 @@ function EnumChipGroup<T extends number>({
             <TouchableOpacity
               key={option}
               style={[styles.chip, selected ? styles.chipSelected : undefined]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
               // Chạm lại lựa chọn hiện tại để bỏ chọn.
               onPress={() => onSelect(selected ? null : option)}
             >
@@ -1477,10 +1479,11 @@ const styles = StyleSheet.create({
   },
   chipSelected: {
     borderColor: COLORS.primary,
-    backgroundColor: "rgba(43, 86, 89, 0.10)",
+    backgroundColor: "rgba(43, 86, 89, 0.14)",
   },
-  chipText: { color: COLORS.text, fontSize: 13 },
-  chipTextSelected: { color: COLORS.primary, fontWeight: "800" },
+  // Cùng độ đậm ở cả hai trạng thái: đổi độ đậm làm chip rộng ra và đẩy chip bên cạnh xuống dòng.
+  chipText: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
+  chipTextSelected: { color: COLORS.primary },
   textInput: {
     minHeight: 48,
     paddingHorizontal: 14,
