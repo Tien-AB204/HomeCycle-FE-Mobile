@@ -268,6 +268,7 @@ export default function DisputeDetailScreen() {
   const [closeError, setCloseError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [responseMode, setResponseMode] = useState<DisputeResponseMode | null>(null);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const { connection, reconnectVersion } = useChatRealtime();
   const { user } = useAuth();
   const currentUserId = String(user?.userId || user?.id || "").trim().toLowerCase();
@@ -428,6 +429,7 @@ export default function DisputeDetailScreen() {
   const isSystemIncident = SYSTEM_ORIGINS.has(originKey);
   const responses = Array.isArray(detail.responses) ? detail.responses : [];
   const timeline = Array.isArray(detail.timeline) ? detail.timeline : [];
+  const latestStep = timeline.length > 0 ? timeline[timeline.length - 1] : null;
   const appointmentContext = detail.appointmentContext || null;
   const inspectionContext = detail.inspectionContext || null;
   const inspectionImages = Array.isArray(inspectionContext?.images) ? inspectionContext.images : [];
@@ -455,6 +457,66 @@ export default function DisputeDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Chi tiết tranh chấp" showBack />
+      {/* Diễn biến cố định dưới header: đóng thì hiện bước mới nhất, mở thì xem toàn bộ. */}
+      {latestStep ? (
+        <View style={styles.timelineBar}>
+          <TouchableOpacity
+            style={styles.timelineBarHeader}
+            onPress={() => setIsTimelineOpen((open) => !open)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isTimelineOpen }}
+            accessibilityLabel="Diễn biến tranh chấp"
+          >
+            <View style={styles.timelineBarIcon}>
+              <Ionicons name="git-commit-outline" size={16} color={COLORS.primary} />
+            </View>
+            <View style={styles.timelineBarBody}>
+              <Text style={styles.timelineBarLabel}>
+                Diễn biến · {timeline.length} bước
+              </Text>
+              <Text style={styles.timelineBarLatest} numberOfLines={1}>
+                {latestStep?.title || "Cập nhật"} · {formatDateTime(latestStep?.occurredAt)}
+              </Text>
+            </View>
+            <Ionicons
+              name={isTimelineOpen ? "chevron-up" : "chevron-down"}
+              size={20}
+              color={COLORS.textLight}
+            />
+          </TouchableOpacity>
+
+          {isTimelineOpen ? (
+            <ScrollView
+              style={styles.timelineBarList}
+              contentContainerStyle={styles.timelineBarListContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+            >
+              {timeline.map((step: any, index: number) => (
+                <View key={`${step?.code || "step"}-${index}`} style={styles.timelineItem}>
+                  <View style={styles.timelineRail}>
+                    <View
+                      style={[
+                        styles.timelineDot,
+                        index === timeline.length - 1 ? styles.timelineDotCurrent : undefined,
+                      ]}
+                    />
+                    {index < timeline.length - 1 ? <View style={styles.timelineLine} /> : null}
+                  </View>
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTitle}>{step?.title || "Cập nhật"}</Text>
+                    {step?.description ? (
+                      <Text style={styles.timelineDescription}>{formatIsoInText(String(step.description))}</Text>
+                    ) : null}
+                    <Text style={styles.timelineTime}>{formatDateTime(step?.occurredAt)}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      ) : null}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -638,24 +700,24 @@ export default function DisputeDetailScreen() {
           <Text style={[styles.descriptionText, styles.descriptionSpacing]}>
             {detail.description || "Không có mô tả."}
           </Text>
-          <InfoRow label="Ngày gửi" value={formatDateTime(detail.createdAt)} />
-          <InfoRow label="Cập nhật" value={formatDateTime(detail.updatedAt)} />
-          {detail.resolvedAt ? (
-            <InfoRow label="Ngày xử lý" value={formatDateTime(detail.resolvedAt)} />
-          ) : null}
-        </View>
-
-        <View style={styles.card}>
-          <SectionTitle icon="images-outline" title="Ảnh bằng chứng của bên khiếu nại" />
+          {/* Ảnh bằng chứng nằm chung khung với mô tả của bên khiếu nại. */}
+          <Text style={styles.descriptionLabel}>Ảnh bằng chứng</Text>
           {evidenceImages.length > 0 ? (
-            <EvidenceGrid images={evidenceImages} />
+            <View style={styles.descriptionSpacing}>
+              <EvidenceGrid images={evidenceImages} />
+            </View>
           ) : (
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, styles.descriptionSpacing]}>
               {isSystemIncident
                 ? "Sự cố do hệ thống ghi nhận, bằng chứng lấy từ dữ liệu lịch hẹn và giao dịch."
                 : "Không có ảnh bằng chứng để hiển thị."}
             </Text>
           )}
+          <InfoRow label="Ngày gửi" value={formatDateTime(detail.createdAt)} />
+          <InfoRow label="Cập nhật" value={formatDateTime(detail.updatedAt)} />
+          {detail.resolvedAt ? (
+            <InfoRow label="Ngày xử lý" value={formatDateTime(detail.resolvedAt)} />
+          ) : null}
         </View>
 
         {responses.length > 0 ? (
@@ -753,32 +815,6 @@ export default function DisputeDetailScreen() {
             </View>
           ) : null}
         </View>
-
-        {timeline.length > 0 ? (
-          <View style={styles.card}>
-            <SectionTitle icon="git-commit-outline" title="Diễn biến" />
-            {timeline.map((step: any, index: number) => (
-              <View key={`${step?.code || "step"}-${index}`} style={styles.timelineItem}>
-                <View style={styles.timelineRail}>
-                  <View
-                    style={[
-                      styles.timelineDot,
-                      index === timeline.length - 1 ? styles.timelineDotCurrent : undefined,
-                    ]}
-                  />
-                  {index < timeline.length - 1 ? <View style={styles.timelineLine} /> : null}
-                </View>
-                <View style={styles.timelineBody}>
-                  <Text style={styles.timelineTitle}>{step?.title || "Cập nhật"}</Text>
-                  {step?.description ? (
-                    <Text style={styles.timelineDescription}>{formatIsoInText(String(step.description))}</Text>
-                  ) : null}
-                  <Text style={styles.timelineTime}>{formatDateTime(step?.occurredAt)}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
 
         {canCloseDispute ? (
           <View style={styles.card}>
@@ -1137,6 +1173,31 @@ const styles = StyleSheet.create({
   partyRoleChip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
   partyRoleText: { fontSize: 11, fontWeight: "800" },
   responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  timelineBar: {
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  timelineBarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  timelineBarIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+  },
+  timelineBarBody: { flex: 1 },
+  timelineBarLabel: { color: COLORS.textLight, fontSize: 11, fontWeight: "600" },
+  timelineBarLatest: { color: COLORS.text, fontSize: 13, fontWeight: "700", marginTop: 1 },
+  timelineBarList: { maxHeight: 320 },
+  timelineBarListContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
   timelineItem: { flexDirection: "row", gap: 12 },
   timelineRail: { width: 12, alignItems: "center" },
   timelineLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 2 },
