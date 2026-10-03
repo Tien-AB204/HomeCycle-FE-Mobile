@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -31,6 +30,11 @@ import IdentityNameField from "../../src/components/shared/IdentityNameField";
 import IdentityScanPanel from "../../src/components/shared/IdentityScanPanel";
 import SensitiveNumberField from "../../src/components/shared/SensitiveNumberField";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
+import {
+  DEMO_BUSINESS_SAMPLES,
+  formatDemoAddress,
+  type DemoBusinessSample,
+} from "../../src/constants/demoBusinessSample";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import apiClient from "../../src/services/apis/axiosClient";
@@ -45,6 +49,7 @@ import {
   FULL_NAME_MAX_LENGTH,
   validateFullName,
 } from "../../src/utils/formValidation";
+import { launchImagePickerWithCamera } from "../../src/utils/imageSourcePicker";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const OPERATING_SCOPE_OPTIONS = [
@@ -202,6 +207,7 @@ export default function BusinessSetupScreen() {
   const [identityAddress, setIdentityAddress] = useState("");
   const [operatingScope, setOperatingScope] = useState("");
   const [showOperatingScopeModal, setShowOperatingScopeModal] = useState(false);
+  const [showDemoSampleModal, setShowDemoSampleModal] = useState(false);
 
   const [warehouseAddress, setWarehouseAddress] = useState("");
   const [warehouseAddressSelection, setWarehouseAddressSelection] =
@@ -332,10 +338,19 @@ export default function BusinessSetupScreen() {
   ) => {
     try {
       setUploadError(type, "");
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      const result = await launchImagePickerWithCamera({
+        mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.8,
+      }, {
+        title:
+          type === "license"
+            ? "Giấy chứng nhận đăng ký kinh doanh"
+            : type === "front"
+              ? "CCCD mặt trước"
+              : type === "back"
+                ? "CCCD mặt sau"
+                : "Giấy ủy quyền",
       });
       if (result.canceled) return;
       const selectedAsset = result.assets?.[0];
@@ -371,6 +386,69 @@ export default function BusinessSetupScreen() {
     } catch {
       setUploadError(type, "Không thể chọn hình ảnh. Vui lòng thử lại.");
     }
+  };
+
+  // Điền hồ sơ mẫu cho demo ở bước nhập thông tin, theo đúng mô hình đã chọn ở bước 1.
+  // Ảnh giấy tờ (GPKD, CCCD hai mặt) vẫn do người dùng tải lên.
+  const demoSamplesForModel = DEMO_BUSINESS_SAMPLES.filter(
+    (sample) => sample.model === model,
+  );
+
+  const fillDemoBusinessSample = (sample: DemoBusinessSample) => {
+    const upperName = sample.fullName.toLocaleUpperCase("vi-VN");
+
+    setBusinessName(sample.businessName);
+    setBusinessDescription(sample.businessDescription);
+    setTaxCode(sample.taxCode);
+    setBusinessAddress(formatDemoAddress(sample.businessAddress));
+    setBusinessCity(sample.businessAddress.city);
+    setBusinessWard(sample.businessAddress.ward);
+    setOperatingScope(sample.operatingScope);
+
+    if (sample.warehouseAddress) {
+      const formattedAddress = formatDemoAddress(sample.warehouseAddress);
+      setWarehouseAddress(formattedAddress);
+      setWarehouseAddressSelection({
+        provinceCode: "",
+        provinceName: sample.warehouseAddress.city,
+        wardName: sample.warehouseAddress.ward,
+        streetAddress: sample.warehouseAddress.street,
+        formattedAddress,
+      });
+    } else {
+      setWarehouseAddress("");
+      setWarehouseAddressSelection(null);
+    }
+
+    setFullName(sample.fullName);
+    setIdentityName(upperName);
+    setIdentityNumber(sample.identityNumber);
+    setIdentityDob(sample.identityDob);
+    setIdentityAddress(formatDemoAddress(sample.identityAddress));
+
+    setBankCode(sample.bankCode);
+    setBankName(sample.bankName);
+    setAccountNumber(sample.accountNumber);
+    setPreviousAccountNumber("");
+    setAccountName(upperName);
+    setIsAccountNameManuallyEdited(false);
+
+    setModelError("");
+    setBusinessNameError("");
+    setTaxCodeError("");
+    setBusinessAddressError("");
+    setServiceAreaError("");
+    setFullNameError("");
+    setIdentityNumberError("");
+    setIdentityNameError("");
+    setIdentityDobError("");
+    setIdentityAddressError("");
+    setBankError("");
+    setAccountNumberError("");
+    setAccountNameError("");
+    setSubmitError("");
+
+    setShowDemoSampleModal(false);
   };
 
   const handleNextToForm = () => {
@@ -916,7 +994,20 @@ export default function BusinessSetupScreen() {
               <Ionicons name="arrow-back" size={24} color={COLORS.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>HomeCycle</Text>
-            <View style={styles.headerSpacer} />
+            {step === 2 && isRejected !== "true" && demoSamplesForModel.length > 0 ? (
+              <TouchableOpacity
+                style={styles.demoSampleButton}
+                onPress={() => setShowDemoSampleModal(true)}
+                disabled={isLoading}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Điền hồ sơ mẫu"
+              >
+                <Ionicons name="flash-outline" size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.headerSpacer} />
+            )}
           </View>
         )}
 
@@ -1218,6 +1309,101 @@ export default function BusinessSetupScreen() {
                 </>
               ) : null}
 
+              <SectionHeader title="HỒ SƠ PHÁP LÝ" />
+
+              <Text style={styles.label}>
+                {model === "household"
+                  ? "Giấy chứng nhận đăng ký hộ kinh doanh *"
+                  : "Giấy chứng nhận đăng ký doanh nghiệp *"}
+              </Text>
+              <UploadBox
+                icon="cloud-upload-outline"
+                text="Tải lên file giấy phép kinh doanh"
+                uri={businessLicense}
+                onPress={() => pickImage("license")}
+                hasError={Boolean(businessLicenseError)}
+              />
+              {businessLicenseError ? (
+                <Text style={styles.fieldErrorText}>
+                  {businessLicenseError}
+                </Text>
+              ) : null}
+
+              {model === "enterprise" ? (
+                <>
+                  <Text style={styles.label}>
+                    Giấy ủy quyền + CCCD người được ủy quyền (Tùy chọn)
+                  </Text>
+                  <UploadBox
+                    icon="attach-outline"
+                    text="Tải lên ảnh giấy ủy quyền"
+                    uri={authorizationLetter}
+                    onPress={() => pickImage("authorization")}
+                    hasError={Boolean(authorizationLetterError)}
+                  />
+                  {authorizationLetterError ? (
+                    <Text style={styles.fieldErrorText}>
+                      {authorizationLetterError}
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+
+              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau) <Text style={{ color: COLORS.error }}>*</Text></Text>
+              <View style={styles.row}>
+                <View style={styles.leftUploadColumn}>
+                  <UploadBox
+                    icon="camera-outline"
+                    text="Mặt trước"
+                    uri={frontImage}
+                    onPress={() => pickImage("front")}
+                    hasError={Boolean(frontImageError)}
+                  />
+                  {frontImageError ? (
+                    <Text style={styles.uploadFieldErrorText}>
+                      {frontImageError}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={styles.rightUploadColumn}>
+                  <UploadBox
+                    icon="camera-outline"
+                    text="Mặt sau"
+                    uri={backImage}
+                    onPress={() => pickImage("back")}
+                    hasError={Boolean(backImageError)}
+                  />
+                  {backImageError ? (
+                    <Text style={styles.uploadFieldErrorText}>
+                      {backImageError}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Chỉ quét ảnh vừa chọn trên máy; ảnh đã lưu trên máy chủ không gửi lại để quét. */}
+              <IdentityScanPanel
+                target={{ kind: "business" }}
+                front={frontImage && !/^https?:/i.test(frontImage) ? { uri: frontImage } : null}
+                back={backImage && !/^https?:/i.test(backImage) ? { uri: backImage } : null}
+                disabled={isLoading}
+                onResult={(result) => {
+                  if (result.identityNumber) {
+                    setIdentityNumber(result.identityNumber);
+                    setIdentityNumberError("");
+                  }
+                  if (result.fullName) handleIdentityNameChange(result.fullName);
+                  if (result.dateOfBirth) {
+                    setIdentityDob(result.dateOfBirth);
+                    setIdentityDobError("");
+                  }
+                  if (result.address) {
+                    setIdentityAddress(result.address);
+                    setIdentityAddressError("");
+                  }
+                }}
+              />
+
               <SectionHeader title="THÔNG TIN NGƯỜI ĐẠI DIỆN / CHỦ HỘ" />
 
               <FullNameField
@@ -1331,101 +1517,6 @@ export default function BusinessSetupScreen() {
               />
               {identityAddressError ? (
                 <Text style={styles.fieldErrorText}>{identityAddressError}</Text>
-              ) : null}
-
-              <SectionHeader title="HỒ SƠ PHÁP LÝ" />
-
-              <Text style={styles.label}>
-                {model === "household"
-                  ? "Giấy chứng nhận đăng ký hộ kinh doanh *"
-                  : "Giấy chứng nhận đăng ký doanh nghiệp *"}
-              </Text>
-              <UploadBox
-                icon="cloud-upload-outline"
-                text="Tải lên file giấy phép kinh doanh"
-                uri={businessLicense}
-                onPress={() => pickImage("license")}
-                hasError={Boolean(businessLicenseError)}
-              />
-              {businessLicenseError ? (
-                <Text style={styles.fieldErrorText}>
-                  {businessLicenseError}
-                </Text>
-              ) : null}
-
-              <Text style={styles.label}>CCCD/CMND (Mặt trước & Mặt sau) <Text style={{ color: COLORS.error }}>*</Text></Text>
-              <View style={styles.row}>
-                <View style={styles.leftUploadColumn}>
-                  <UploadBox
-                    icon="camera-outline"
-                    text="Mặt trước"
-                    uri={frontImage}
-                    onPress={() => pickImage("front")}
-                    hasError={Boolean(frontImageError)}
-                  />
-                  {frontImageError ? (
-                    <Text style={styles.uploadFieldErrorText}>
-                      {frontImageError}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.rightUploadColumn}>
-                  <UploadBox
-                    icon="camera-outline"
-                    text="Mặt sau"
-                    uri={backImage}
-                    onPress={() => pickImage("back")}
-                    hasError={Boolean(backImageError)}
-                  />
-                  {backImageError ? (
-                    <Text style={styles.uploadFieldErrorText}>
-                      {backImageError}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-
-              {/* Chỉ quét ảnh vừa chọn trên máy; ảnh đã lưu trên máy chủ không gửi lại để quét. */}
-              <IdentityScanPanel
-                target={{ kind: "business" }}
-                front={frontImage && !/^https?:/i.test(frontImage) ? { uri: frontImage } : null}
-                back={backImage && !/^https?:/i.test(backImage) ? { uri: backImage } : null}
-                disabled={isLoading}
-                onResult={(result) => {
-                  if (result.identityNumber) {
-                    setIdentityNumber(result.identityNumber);
-                    setIdentityNumberError("");
-                  }
-                  if (result.fullName) handleIdentityNameChange(result.fullName);
-                  if (result.dateOfBirth) {
-                    setIdentityDob(result.dateOfBirth);
-                    setIdentityDobError("");
-                  }
-                  if (result.address) {
-                    setIdentityAddress(result.address);
-                    setIdentityAddressError("");
-                  }
-                }}
-              />
-
-              {model === "enterprise" ? (
-                <>
-                  <Text style={styles.label}>
-                    Giấy ủy quyền + CCCD người được ủy quyền (Tùy chọn)
-                  </Text>
-                  <UploadBox
-                    icon="attach-outline"
-                    text="Tải lên ảnh giấy ủy quyền"
-                    uri={authorizationLetter}
-                    onPress={() => pickImage("authorization")}
-                    hasError={Boolean(authorizationLetterError)}
-                  />
-                  {authorizationLetterError ? (
-                    <Text style={styles.fieldErrorText}>
-                      {authorizationLetterError}
-                    </Text>
-                  ) : null}
-                </>
               ) : null}
 
               <SectionHeader title="THÔNG TIN THANH TOÁN" />
@@ -1578,6 +1669,49 @@ export default function BusinessSetupScreen() {
       </KeyboardAvoidingView>
 
       <Modal
+        visible={showDemoSampleModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowDemoSampleModal(false)}
+      >
+        <ModalBackdrop
+          style={styles.modalOverlay}
+          onPress={() => setShowDemoSampleModal(false)}
+        >
+          <ModalSurface style={[styles.scopeModalContent, styles.demoSampleModalContent]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {model === "household" ? "Chọn hồ sơ hộ kinh doanh mẫu" : "Chọn hồ sơ doanh nghiệp mẫu"}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowDemoSampleModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {demoSamplesForModel.map((sample) => (
+                <TouchableOpacity
+                  key={sample.key}
+                  style={styles.scopeOption}
+                  onPress={() => fillDemoBusinessSample(sample)}
+                >
+                  <Text style={styles.scopeOptionText}>{sample.label}</Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={COLORS.textLight}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
+
+      <Modal
         visible={showOperatingScopeModal}
         animationType="fade"
         transparent
@@ -1654,6 +1788,16 @@ const styles = StyleSheet.create({
   backButton: { padding: 4, marginLeft: -4 },
   headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
   headerSpacer: { width: 40 },
+  demoSampleButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  demoSampleModalContent: { maxHeight: "80%" },
   scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
   successScrollContainer: {
     flexGrow: 1,
