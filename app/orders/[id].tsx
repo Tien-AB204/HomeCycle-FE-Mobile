@@ -357,13 +357,13 @@ const translateCarrierStatus = (status: string) => {
 
   const map: Record<string, string> = {
     ready_to_pick: "Đã tạo vận đơn, đang chờ GHN lấy hàng",
-    picking: "Nhân viên GHN đang đến lấy hàng",
+    picking: "Shipper GHN đang đến lấy hàng",
     money_collect_picking: "GHN đang làm việc với người gửi",
     picked: "GHN đã lấy hàng thành công",
     storing: "Hàng đang được lưu tại kho GHN",
     transporting: "Hàng đang được luân chuyển",
     sorting: "Hàng đang được phân loại tại kho",
-    delivering: "Nhân viên GHN đang giao hàng",
+    delivering: "Shipper GHN đang giao hàng",
     money_collect_delivering: "GHN đang làm việc với người nhận",
     delivered: "Giao hàng thành công",
     delivery_fail: "Lần giao hàng chưa thành công",
@@ -1167,8 +1167,9 @@ export default function OrderDetailScreen() {
   const canCancelOrder = orderActions.canCancel === true;
   const canConfirmReturn = orderActions.canConfirmReturn === true;
   const canConfirmReturnReceived = orderActions.canConfirmReturnReceived === true;
-  const showLifecycleActionsCard =
-    canCancelOrder || canConfirmReturn || canConfirmReturnReceived;
+  // Hủy đơn nằm ở thanh dưới cố định; thẻ này chỉ còn các bước trả hàng.
+  const showLifecycleActionsCard = canConfirmReturn || canConfirmReturnReceived;
+  const showBottomBar = canCancelOrder || canOpenDispute;
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
@@ -1441,17 +1442,30 @@ export default function OrderDetailScreen() {
         title="Chi tiết Đơn hàng"
         showBack
         rightContent={
-          overflowActions.length > 0 ? (
-            <TouchableOpacity
-              style={styles.overflowButton}
-              accessibilityRole="button"
-              accessibilityLabel="Tùy chọn khác"
-              hitSlop={8}
-              onPress={() => setShowOverflowMenu(true)}
-            >
-              <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
-            </TouchableOpacity>
-          ) : null
+          <>
+            {negotiationId ? (
+              <TouchableOpacity
+                style={styles.overflowButton}
+                accessibilityRole="button"
+                accessibilityLabel="Mở hội thoại chat"
+                hitSlop={8}
+                onPress={() => router.push(`/chat/${negotiationId}` as any)}
+              >
+                <Ionicons name="chatbubbles-outline" size={22} color={COLORS.primary} />
+              </TouchableOpacity>
+            ) : null}
+            {overflowActions.length > 0 ? (
+              <TouchableOpacity
+                style={styles.overflowButton}
+                accessibilityRole="button"
+                accessibilityLabel="Tùy chọn khác"
+                hitSlop={8}
+                onPress={() => setShowOverflowMenu(true)}
+              >
+                <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+              </TouchableOpacity>
+            ) : null}
+          </>
         }
       />
 
@@ -1866,24 +1880,6 @@ export default function OrderDetailScreen() {
               </TouchableOpacity>
             ) : null}
 
-            {canCancelOrder ? (
-              <TouchableOpacity
-                style={[
-                  styles.outlineBtnDanger,
-                  (canConfirmReturn || canConfirmReturnReceived)
-                    ? styles.actionSpacingTop
-                    : undefined,
-                ]}
-                onPress={() => openLifecycleAction("cancel")}
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={19}
-                  color={COLORS.error}
-                />
-                <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
         ) : null}
 
@@ -1903,19 +1899,6 @@ export default function OrderDetailScreen() {
           ) : (
             <InfoRow label="Đối tác:" value={counterpartyName} bold />
           )}
-          {negotiationId ? (
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => router.push(`/chat/${negotiationId}` as any)}
-            >
-              <Ionicons
-                name="chatbubbles-outline"
-                size={18}
-                color={COLORS.primary}
-              />
-              <Text style={styles.chatButtonText}>Mở hội thoại chat</Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -1965,8 +1948,9 @@ export default function OrderDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {canOpenDispute ? (
+      {showBottomBar ? (
         <View style={styles.bottomBar}>
+          {canOpenDispute ? (
             <TouchableOpacity
               style={styles.outlineBtnWarning}
               onPress={() => router.push(`/disputes/${latestDisputeId}` as any)}
@@ -1978,6 +1962,20 @@ export default function OrderDetailScreen() {
               />
               <Text style={styles.outlineBtnWarningText}>Xem tranh chấp</Text>
             </TouchableOpacity>
+          ) : null}
+          {canCancelOrder ? (
+            <TouchableOpacity
+              style={[styles.outlineBtnDanger, styles.bottomBarButton]}
+              onPress={() => openLifecycleAction("cancel")}
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={19}
+                color={COLORS.error}
+              />
+              <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
@@ -2979,19 +2977,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   lifecycleModalActions: { flexDirection: "row", gap: 10 },
-  chatButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "rgba(84, 123, 125, 0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(84, 123, 125, 0.24)",
-  },
-  chatButtonText: { color: COLORS.primary, fontWeight: "bold", fontSize: 14 },
   disputeInfoCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -3041,6 +3026,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backBtnText: { color: COLORS.white, fontWeight: "700" },
+  bottomBarButton: { flex: 1 },
   bottomBar: {
     flexDirection: "row",
     padding: 16,
