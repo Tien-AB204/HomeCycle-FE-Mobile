@@ -219,7 +219,13 @@ export default function InspectionFormScreen() {
           const status = Number(formError?.response?.status ?? 0);
           setForm(null);
 
-          if (status !== 404) {
+          // Chưa có phiếu là trường hợp bình thường (màn hình chuyển sang tạo mới): BE trả
+          // Inspection.NotFound nên không hiện thành lỗi.
+          const isMissingForm =
+            status === 404 ||
+            String(getErrorCode(formError)).toLowerCase() === "inspection.notfound";
+
+          if (!isMissingForm) {
             setPageMessage({
               type: "error",
               text: getApiErrorMessage(
