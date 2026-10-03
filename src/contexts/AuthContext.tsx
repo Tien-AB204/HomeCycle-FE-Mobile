@@ -30,6 +30,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutInFlightRef = useRef(false);
   const router = useRouter();
 
+  // Bản user tạm giải mã từ token chỉ dùng khi chưa có dữ liệu của đúng tài khoản đó
+  // (mở app lần đầu, vừa đăng nhập). Tải lại khi đã có hồ sơ thì giữ dữ liệu đang hiện,
+  // không để màn hình nháy về email/không avatar trong lúc chờ API.
+  const showFallbackUser = (fallback: any) =>
+    setUser((current: any) =>
+      current && String(current.userId || current.id) === String(fallback.userId)
+        ? current
+        : fallback,
+    );
+
   const reloadUser = async () => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -70,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatar: null,
         };
 
-        setUser(fallbackBusinessUser);
+        showFallbackUser(fallbackBusinessUser);
 
         try {
           const profileResponse = await apiClient.get("/business-profiles");
@@ -136,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatar: null,
         };
 
-        setUser(fallbackPersonalUser);
+        showFallbackUser(fallbackPersonalUser);
 
         try {
           const profileResponse = await apiClient.get("/personal-profiles/me");

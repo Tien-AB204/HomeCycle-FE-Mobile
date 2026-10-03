@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import OnboardingGuide from "../../src/components/onboarding/OnboardingGuide";
 import MainHeader from "../../src/components/shared/MainHeader";
 import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
@@ -28,6 +29,7 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { devLog } from "../../src/utils/devLog";
+import { hasSeenGuide, isNewAccount, markGuideSeen } from "../../src/utils/onboardingGuide";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -39,6 +41,7 @@ const POSTS_PER_PAGE = 4;
 const CARD_GAP = 12;
 const SECTION_HORIZONTAL_PADDING = 20;
 const HOME_POST_PAGE_SIZE = 100;
+const BUY_ACCENT = COLORS.primary;
 // Trang chủ Doanh nghiệp: Backend tự lọc theo khảo sát thu mua (khu vực, loại
 // sản phẩm, mức hư hỏng, tình trạng, quy mô); FE không gửi tiêu chí và không lọc lại.
 const BUSINESS_DISCOVER_PAGE_SIZE = 12;
@@ -164,13 +167,42 @@ export default function HomeScreen() {
   const cartRequestVersion = useRef(0);
 
   const isBusiness = user?.role === "business";
+  const guideUserId = user?.userId || user?.id ? String(user?.userId || user?.id) : null;
+  // "checking" chặn chuyển sang khảo sát doanh nghiệp cho tới khi biết có cần
+  // hiện giới thiệu không, để hai màn không chồng lên nhau.
+  const [guideStatus, setGuideStatus] = useState<"checking" | "show" | "done">("checking");
+
+  useEffect(() => {
+    let active = true;
+    if (!guideUserId) {
+      setGuideStatus("done");
+      return;
+    }
+
+    setGuideStatus("checking");
+    void (async () => {
+      const shouldShow = isNewAccount(user?.createdAt) && !(await hasSeenGuide(guideUserId));
+      if (active) setGuideStatus(shouldShow ? "show" : "done");
+    })();
+
+    return () => {
+      active = false;
+    };
+    // Chỉ kiểm tra lại khi đổi tài khoản; createdAt đi cùng hồ sơ của tài khoản đó.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideUserId]);
+
+  const closeGuide = () => {
+    setGuideStatus("done");
+    if (guideUserId) void markGuideSeen(guideUserId);
+  };
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
 
       const checkBusinessOnboarding = async () => {
-        if (!isBusiness || hasRedirectedSurvey) return;
+        if (!isBusiness || hasRedirectedSurvey || guideStatus !== "done") return;
 
         try {
           const response = await apiClient.get(
@@ -192,7 +224,7 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [hasRedirectedSurvey, isBusiness, router]),
+    }, [guideStatus, hasRedirectedSurvey, isBusiness, router]),
   );
 
   const fetchHomeData = useCallback(
@@ -543,25 +575,29 @@ export default function HomeScreen() {
               <PriorityBadge post={post} />
             </View>
           </View>
-        ) : null}
-
-        <View style={styles.infoWrapper}>
-          {isBuyPostType(post.postType) ? (
-            <View style={styles.textBadgeRow}>
-              {post.categoryName ? (
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                    {post.categoryName}
+        ) : (
+          // Tin thu mua không có ảnh: dải đầu thẻ làm điểm nhìn thay ảnh, gom
+          // danh mục + thương hiệu + ưu tiên vào một chỗ thay vì nhiều tầng nhãn.
+          <View style={styles.buyHeader}>
+            <View style={styles.buyHeaderText}>
+              <View style={styles.buyHeaderTopRow}>
+                <View style={styles.buyHeaderLabelRow}>
+                  <Ionicons name="pricetags" size={12} color={BUY_ACCENT} />
+                  <Text style={styles.buyHeaderLabel} numberOfLines={1}>
+                    THU MUA
                   </Text>
                 </View>
-              ) : null}
-              <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
-                <Text style={styles.postTypeBadgeText}>Tin mua</Text>
+                <PriorityBadge post={post} />
               </View>
-              <PriorityBadge post={post} />
+              <Text style={styles.buyHeaderMeta} numberOfLines={1}>
+                {[post.categoryName, post.brandName].filter(Boolean).join(" · ") || "Đồ cũ"}
+              </Text>
             </View>
-          ) : null}
-          {post.brandName ? (
+          </View>
+        )}
+
+        <View style={styles.infoWrapper}>
+          {!isBuyPostType(post.postType) && post.brandName ? (
             <View style={styles.brandBadgeWhite}>
               <Text style={styles.brandBadgeTextWhite}>{post.brandName}</Text>
             </View>
@@ -583,8 +619,16 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
+          {isBuyPostType(post.postType) ? (
+            <Text style={styles.buyPriceLabel}>Giá thu mua</Text>
+          ) : null}
           <View style={styles.priceRow}>
-            <Text style={styles.productPrice} numberOfLines={1}>
+            <Text
+              style={styles.productPrice}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
               {isBuyPostType(post.postType)
                 ? formatBuyPostPrice(post)
                 : formatPrice(post.basePrice || post.expectedPrice)}
@@ -741,18 +785,47 @@ export default function HomeScreen() {
             }
           >
             <View style={styles.bannerContainer}>
+              {/* Vòng tròn mờ trang trí để khối nền có chiều sâu (không cần gradient). */}
+              <View pointerEvents="none" style={[styles.bannerBlob, styles.bannerBlobLarge]} />
+              <View pointerEvents="none" style={[styles.bannerBlob, styles.bannerBlobSmall]} />
+
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>
                   {isBusiness ? "Đăng nhu cầu thu mua" : "Thanh lý nhanh chóng"}
                 </Text>
+                <Text style={styles.bannerSubtitle}>
+                  {isBusiness
+                    ? "Người bán quanh bạn sẽ chủ động gửi chào bán."
+                    : "Đăng tin miễn phí, tìm người mua đồ cũ của bạn."}
+                </Text>
                 <TouchableOpacity
                   style={styles.bannerButton}
+                  activeOpacity={0.85}
                   onPress={() => router.push("/posts/post-form")}
                 >
+                  <Ionicons name="add-circle" size={17} color={COLORS.primary} />
                   <Text style={styles.bannerButtonText}>
                     {isBusiness ? "Đăng tin thu mua" : "Đăng tin bán ngay"}
                   </Text>
+                  <Ionicons name="arrow-forward" size={15} color={COLORS.primary} />
                 </TouchableOpacity>
+              </View>
+
+              <View pointerEvents="none" style={styles.bannerIllustration}>
+                <View style={styles.bannerIllustrationInner}>
+                  <Ionicons
+                    name={isBusiness ? "storefront" : "cube"}
+                    size={34}
+                    color={COLORS.white}
+                  />
+                </View>
+                <View style={styles.bannerIllustrationBadge}>
+                  <Ionicons
+                    name={isBusiness ? "cart" : "pricetag"}
+                    size={13}
+                    color={COLORS.primary}
+                  />
+                </View>
               </View>
             </View>
 
@@ -792,6 +865,14 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
+            {renderPagedSection(
+              "featured-posts",
+              "Bài đăng nổi bật",
+              featuredPosts,
+              null,
+              20,
+            )}
+
             {!isBusiness
               ? renderPagedSection(
                   "buy-posts",
@@ -804,14 +885,6 @@ export default function HomeScreen() {
                     }),
                 )
               : null}
-
-            {renderPagedSection(
-              "featured-posts",
-              "Bài đăng nổi bật",
-              featuredPosts,
-              null,
-              20,
-            )}
 
             {isBusiness ? (
               <>
@@ -889,6 +962,12 @@ export default function HomeScreen() {
           </ScrollView>
         )}
       </View>
+
+      <OnboardingGuide
+        visible={guideStatus === "show"}
+        role={isBusiness ? "business" : "personal"}
+        onClose={closeGuide}
+      />
     </SafeAreaView>
   );
 }
@@ -1009,29 +1088,89 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   bannerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: 28,
     backgroundColor: COLORS.primary,
     borderRadius: 20,
-    padding: 24,
+    paddingVertical: 22,
+    paddingLeft: 22,
+    paddingRight: 16,
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 8px 18px rgba(43,86,89,0.28)" } as any)
+      : {
+          shadowColor: COLORS.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.28,
+          shadowRadius: 14,
+          elevation: 6,
+        }),
   },
-  bannerContent: { width: "75%" },
+  bannerBlob: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  bannerBlobLarge: { width: 180, height: 180, top: -70, right: -50 },
+  bannerBlobSmall: { width: 90, height: 90, bottom: -40, right: 90 },
+  bannerContent: { flex: 1, paddingRight: 12 },
   bannerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "800",
     color: COLORS.white,
-    marginBottom: 8,
+  },
+  bannerSubtitle: {
+    marginTop: 4,
+    marginBottom: 14,
+    color: "rgba(255, 255, 255, 0.82)",
+    fontSize: 13,
+    lineHeight: 18,
   },
   bannerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     backgroundColor: COLORS.white,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     alignSelf: "flex-start",
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 3px 8px rgba(0,0,0,0.18)" } as any)
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.18,
+          shadowRadius: 6,
+          elevation: 3,
+        }),
   },
-  bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
+  bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
+  bannerIllustration: { width: 76, height: 76 },
+  bannerIllustrationInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
+  },
+  bannerIllustrationBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
@@ -1056,12 +1195,34 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 4,
   },
-  textBadgeRow: {
+  buyHeader: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginBottom: 7,
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(84, 123, 125, 0.16)",
   },
+  buyHeaderText: { flex: 1, minWidth: 0 },
+  buyHeaderTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 4,
+    minHeight: 18,
+  },
+  buyHeaderLabelRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+  buyHeaderLabel: {
+    flexShrink: 1,
+    color: BUY_ACCENT,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  buyHeaderMeta: { marginTop: 3, color: "#172830", fontSize: 11, fontWeight: "600" },
+  buyPriceLabel: { marginBottom: 1, color: "#547B7D", fontSize: 10, fontWeight: "600" },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",
     paddingHorizontal: 6,
@@ -1075,7 +1236,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   sellPostBadge: { backgroundColor: "rgba(43, 86, 89, 0.92)" },
-  buyPostBadge: { backgroundColor: "rgba(154, 100, 24, 0.92)" },
   postTypeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
   infoWrapper: { padding: 10 },
   brandBadgeWhite: {
