@@ -468,32 +468,22 @@ export default function DisputeDetailScreen() {
         }
       >
         <View style={[styles.headerCard, { backgroundColor: statusTone.background, borderColor: statusTone.border }]}>
-          <View style={styles.headerTopRow}>
-            <View style={[styles.headerIcon, { backgroundColor: statusTone.border }]}>
-              <Ionicons name={statusTone.icon} size={22} color={statusTone.color} />
-            </View>
-            <View style={styles.headerContent}>
-              <Text style={styles.headerEyebrow}>
-                {isPostTarget ? "Báo cáo bài đăng" : isReviewTarget ? "Báo cáo đánh giá" : "Tranh chấp giao dịch"}
+          <View style={[styles.headerIcon, { backgroundColor: statusTone.border }]}>
+            <Ionicons name={statusTone.icon} size={18} color={statusTone.color} />
+          </View>
+          <View style={styles.headerContent}>
+            <View style={styles.headerTitleRow}>
+              <Text style={[styles.headerStatus, { color: statusTone.color }]} numberOfLines={1}>
+                {statusLabel}
               </Text>
-              <Text style={[styles.headerStatus, { color: statusTone.color }]}>{statusLabel}</Text>
+              <Text style={styles.disputeIdText}>
+                #{String(detail.disputeId || disputeId).slice(0, 8).toUpperCase()}
+              </Text>
             </View>
+            <Text style={styles.headerMeta} numberOfLines={1}>
+              {[categoryLabel, originLabel].filter(Boolean).join(" · ")}
+            </Text>
           </View>
-          <View style={styles.headerChips}>
-            <View style={styles.headerChip}>
-              <Ionicons name="pricetag-outline" size={13} color={COLORS.text} />
-              <Text style={styles.headerChipText} numberOfLines={1}>{categoryLabel}</Text>
-            </View>
-            {originLabel ? (
-              <View style={styles.headerChip}>
-                <Ionicons name="flag-outline" size={13} color={COLORS.text} />
-                <Text style={styles.headerChipText} numberOfLines={1}>{originLabel}</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={styles.disputeIdText} numberOfLines={1}>
-            Mã #{String(detail.disputeId || disputeId).slice(0, 8).toUpperCase()} · Gửi lúc {formatDateTime(detail.createdAt)}
-          </Text>
         </View>
 
         {isAwaitingResponse ? (
@@ -1084,43 +1074,32 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: COLORS.white, fontWeight: "700" },
   scrollContent: { padding: 16, paddingBottom: 36 },
-headerCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    gap: 12,
-  },
-  headerTopRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  headerEyebrow: { color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
-  headerStatus: { fontSize: 18, fontWeight: "800", marginTop: 2 },
-  headerChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  headerChip: {
+  headerCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    maxWidth: "100%",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: COLORS.white,
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
   },
-  headerChipText: { color: COLORS.text, fontSize: 12, fontWeight: "600", flexShrink: 1 },
-headerIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  headerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
   headerContent: { flex: 1 },
-
-disputeIdText: { color: COLORS.textLight, fontSize: 12 },
-
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerStatus: { flexShrink: 1, fontSize: 15, fontWeight: "800" },
+  headerMeta: { color: COLORS.text, fontSize: 12, marginTop: 2 },
+  disputeIdText: { color: COLORS.textLight, fontSize: 11, fontWeight: "600" },
   deadlineBanner: { marginBottom: 12 },
-responseItem: { paddingVertical: 12 },
+  responseItem: { paddingVertical: 12 },
   responseDivider: { borderTopWidth: 1, borderTopColor: COLORS.border },
-responseHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  responseHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   responseHeaderBody: { flex: 1 },
   responseName: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
   responseTypeChip: {
@@ -1158,11 +1137,11 @@ responseHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBot
   partyName: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: "700" },
   partyRoleChip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
   partyRoleText: { fontSize: 11, fontWeight: "800" },
-responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
-timelineItem: { flexDirection: "row", gap: 12 },
+  responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  timelineItem: { flexDirection: "row", gap: 12 },
   timelineRail: { width: 12, alignItems: "center" },
   timelineLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 2 },
-timelineDot: {
+  timelineDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -1178,7 +1157,7 @@ timelineDot: {
     borderRadius: 7,
     marginTop: 3,
   },
-timelineBody: { flex: 1, paddingBottom: 14 },
+  timelineBody: { flex: 1, paddingBottom: 14 },
   timelineTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   timelineDescription: { color: COLORS.textLight, fontSize: 13, lineHeight: 19, marginTop: 2 },
   timelineTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
@@ -1206,7 +1185,6 @@ timelineBody: { flex: 1, paddingBottom: 14 },
   },
   secondaryActionText: { color: COLORS.primary, fontSize: 14, fontWeight: "800" },
 
-
   inlineErrorBox: {
     backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
@@ -1216,7 +1194,7 @@ timelineBody: { flex: 1, paddingBottom: 14 },
     marginBottom: 14,
   },
   inlineErrorText: { color: "#7A1012", fontSize: 12, lineHeight: 18 },
-card: {
+  card: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -1224,7 +1202,7 @@ card: {
     padding: 16,
     marginBottom: 14,
   },
-sectionHeader: {
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1282,8 +1260,8 @@ sectionHeader: {
     padding: 11,
     marginBottom: 12,
   },
-evidenceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-evidenceImage: {
+  evidenceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  evidenceImage: {
     width: 92,
     height: 92,
     borderRadius: 10,
