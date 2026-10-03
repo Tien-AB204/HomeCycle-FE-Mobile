@@ -754,18 +754,47 @@ export default function HomeScreen() {
             }
           >
             <View style={styles.bannerContainer}>
+              {/* Vòng tròn mờ trang trí để khối nền có chiều sâu (không cần gradient). */}
+              <View pointerEvents="none" style={[styles.bannerBlob, styles.bannerBlobLarge]} />
+              <View pointerEvents="none" style={[styles.bannerBlob, styles.bannerBlobSmall]} />
+
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>
                   {isBusiness ? "Đăng nhu cầu thu mua" : "Thanh lý nhanh chóng"}
                 </Text>
+                <Text style={styles.bannerSubtitle}>
+                  {isBusiness
+                    ? "Người bán quanh bạn sẽ chủ động gửi chào bán."
+                    : "Đăng tin miễn phí, tìm người mua đồ cũ của bạn."}
+                </Text>
                 <TouchableOpacity
                   style={styles.bannerButton}
+                  activeOpacity={0.85}
                   onPress={() => router.push("/posts/post-form")}
                 >
+                  <Ionicons name="add-circle" size={17} color={COLORS.primary} />
                   <Text style={styles.bannerButtonText}>
                     {isBusiness ? "Đăng tin thu mua" : "Đăng tin bán ngay"}
                   </Text>
+                  <Ionicons name="arrow-forward" size={15} color={COLORS.primary} />
                 </TouchableOpacity>
+              </View>
+
+              <View pointerEvents="none" style={styles.bannerIllustration}>
+                <View style={styles.bannerIllustrationInner}>
+                  <Ionicons
+                    name={isBusiness ? "storefront" : "cube"}
+                    size={34}
+                    color={COLORS.white}
+                  />
+                </View>
+                <View style={styles.bannerIllustrationBadge}>
+                  <Ionicons
+                    name={isBusiness ? "cart" : "pricetag"}
+                    size={13}
+                    color={COLORS.primary}
+                  />
+                </View>
               </View>
             </View>
 
@@ -1022,29 +1051,89 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   bannerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: 28,
     backgroundColor: COLORS.primary,
     borderRadius: 20,
-    padding: 24,
+    paddingVertical: 22,
+    paddingLeft: 22,
+    paddingRight: 16,
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 8px 18px rgba(43,86,89,0.28)" } as any)
+      : {
+          shadowColor: COLORS.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.28,
+          shadowRadius: 14,
+          elevation: 6,
+        }),
   },
-  bannerContent: { width: "75%" },
+  bannerBlob: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  bannerBlobLarge: { width: 180, height: 180, top: -70, right: -50 },
+  bannerBlobSmall: { width: 90, height: 90, bottom: -40, right: 90 },
+  bannerContent: { flex: 1, paddingRight: 12 },
   bannerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "800",
     color: COLORS.white,
-    marginBottom: 8,
+  },
+  bannerSubtitle: {
+    marginTop: 4,
+    marginBottom: 14,
+    color: "rgba(255, 255, 255, 0.82)",
+    fontSize: 13,
+    lineHeight: 18,
   },
   bannerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     backgroundColor: COLORS.white,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     alignSelf: "flex-start",
+    ...(Platform.OS === "web"
+      ? ({ boxShadow: "0px 3px 8px rgba(0,0,0,0.18)" } as any)
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.18,
+          shadowRadius: 6,
+          elevation: 3,
+        }),
   },
-  bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "bold" },
+  bannerButtonText: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
+  bannerIllustration: { width: 76, height: 76 },
+  bannerIllustrationInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
+  },
+  bannerIllustrationBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
