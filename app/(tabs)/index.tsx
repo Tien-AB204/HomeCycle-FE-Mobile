@@ -792,6 +792,14 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
+            {renderPagedSection(
+              "featured-posts",
+              "Bài đăng nổi bật",
+              featuredPosts,
+              null,
+              20,
+            )}
+
             {!isBusiness
               ? renderPagedSection(
                   "buy-posts",
@@ -804,14 +812,6 @@ export default function HomeScreen() {
                     }),
                 )
               : null}
-
-            {renderPagedSection(
-              "featured-posts",
-              "Bài đăng nổi bật",
-              featuredPosts,
-              null,
-              20,
-            )}
 
             {isBusiness ? (
               <>
