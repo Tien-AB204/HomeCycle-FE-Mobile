@@ -191,11 +191,29 @@ export default function DisputeResponseModal({ disputeId, mode, onClose, onSubmi
 
             {allowImages ? (
               <>
-                <TouchableOpacity style={styles.pickButton} onPress={() => void pickImages()} disabled={isSubmitting}>
-                  <Ionicons name="images-outline" size={18} color={COLORS.primary} />
-                  <Text style={styles.pickButtonText}>Thêm ảnh ({images.length}/{MAX_IMAGES}, không bắt buộc)</Text>
-                </TouchableOpacity>
-                {images.length > 0 ? (
+                <View style={styles.imageHeader}>
+                  <Text style={styles.imageLabel}>Ảnh minh chứng</Text>
+                  <Text style={styles.imageCount}>
+                    {images.length}/{MAX_IMAGES} · không bắt buộc
+                  </Text>
+                </View>
+                {images.length === 0 ? (
+                  // Chưa có ảnh: một ô tải ảnh lớn, nhìn là biết bấm được.
+                  <TouchableOpacity
+                    style={styles.uploadBox}
+                    onPress={() => void pickImages()}
+                    disabled={isSubmitting}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel="Thêm ảnh minh chứng"
+                  >
+                    <View style={styles.uploadIcon}>
+                      <Ionicons name="camera-outline" size={22} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.uploadTitle}>Thêm ảnh minh chứng</Text>
+                    <Text style={styles.uploadHint}>Chọn tối đa {MAX_IMAGES} ảnh từ thư viện</Text>
+                  </TouchableOpacity>
+                ) : (
                   <View style={styles.imageRow}>
                     {images.map((asset, index) => (
                       <View key={`${asset.uri}-${index}`} style={styles.imageWrap}>
@@ -210,8 +228,21 @@ export default function DisputeResponseModal({ disputeId, mode, onClose, onSubmi
                         </TouchableOpacity>
                       </View>
                     ))}
+                    {images.length < MAX_IMAGES ? (
+                      <TouchableOpacity
+                        style={styles.addTile}
+                        onPress={() => void pickImages()}
+                        disabled={isSubmitting}
+                        activeOpacity={0.75}
+                        accessibilityRole="button"
+                        accessibilityLabel="Thêm ảnh"
+                      >
+                        <Ionicons name="add" size={24} color={COLORS.primary} />
+                        <Text style={styles.addTileText}>Thêm</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
-                ) : null}
+                )}
               </>
             ) : null}
 
@@ -253,11 +284,52 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}),
   },
   counter: { alignSelf: "flex-end", fontSize: 12, color: COLORS.textLight, marginTop: 4 },
-  pickButton: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, paddingVertical: 8 },
-  pickButtonText: { color: COLORS.primary, fontSize: 14, fontWeight: "600" },
-  imageRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
+  imageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  imageLabel: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
+  imageCount: { color: COLORS.textLight, fontSize: 12 },
+  uploadBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  uploadIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(84, 123, 125, 0.16)",
+    marginBottom: 2,
+  },
+  uploadTitle: { color: COLORS.primary, fontSize: 14, fontWeight: "700" },
+  uploadHint: { color: COLORS.textLight, fontSize: 12 },
+  imageRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   imageWrap: { position: "relative" },
-  image: { width: 64, height: 64, borderRadius: 8, backgroundColor: COLORS.border },
+  image: { width: 68, height: 68, borderRadius: 10, backgroundColor: COLORS.border },
+  addTile: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: COLORS.primary,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addTileText: { color: COLORS.primary, fontSize: 11, fontWeight: "700" },
   removeImage: {
     position: "absolute",
     top: -6,
