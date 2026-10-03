@@ -72,6 +72,15 @@ const appendImage = async (formData: FormData, asset: ImagePicker.ImagePickerAss
   } as any);
 };
 
+// Phản hồi kèm ảnh: BE tải ảnh lên rồi mới trả kết quả, trên Render có thể quá 10s mặc định của apiClient.
+const RESPONSE_TIMEOUT_MS = 60000;
+
+const isTimeoutError = (error: any) =>
+  error?.code === "ECONNABORTED" || (!error?.response && Boolean(error?.request));
+
+const getErrorCode = (error: any) =>
+  String(error?.response?.data?.code ?? error?.response?.data?.error?.code ?? "");
+
 type Props = {
   disputeId: string;
   mode: DisputeResponseMode | null;
@@ -154,9 +163,28 @@ export default function DisputeResponseModal({ disputeId, mode, onClose, onSubmi
       }
       const response = await apiClient.post(`/disputes/${disputeId}/response`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: RESPONSE_TIMEOUT_MS,
       });
       onSubmitted(response.data?.data ?? response.data, mode);
     } catch (submitError) {
+      // Hết thời gian chờ hoặc BE báo tranh chấp không còn chờ phản hồi: có thể lần gửi trước đã
+      // thành công phía server. Đọc lại tranh chấp; nếu đã rời trạng thái chờ phản hồi thì coi như đã gửi.
+      if (
+        isTimeoutError(submitError) ||
+        getErrorCode(submitError) === "DISPUTE_RESPONSE_NOT_ALLOWED"
+      ) {
+        try {
+          const detailResponse = await apiClient.get(`/disputes/${disputeId}`);
+          const latest = detailResponse.data?.data ?? detailResponse.data;
+          const status = String(latest?.disputeStatus ?? "").replace(/[\s_-]/g, "").toLowerCase();
+          if (latest?.disputeId && status !== "awaitingresponse" && status !== "6") {
+            onSubmitted(latest, mode);
+            return;
+          }
+        } catch {
+          // Không đọc lại được: giữ thông báo lỗi bên dưới.
+        }
+      }
       setError(getApiErrorMessage(submitError, "Không thể gửi phản hồi lúc này."));
     } finally {
       submitLockRef.current = false;
