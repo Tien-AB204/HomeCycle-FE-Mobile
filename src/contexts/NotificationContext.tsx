@@ -33,12 +33,16 @@ export type AppointmentRefreshSignal = {
   version: number;
   targetType: "appointment" | "order" | null;
   targetId: string | null;
+  // Payload của AppointmentUpdated (có snapshot lịch hẹn) khi tín hiệu đến từ event này;
+  // null với tín hiệu đến từ thông báo. Màn chi tiết dùng để cập nhật ngay trước khi tải lại.
+  appointmentEvent: any | null;
 };
 
 const INITIAL_APPOINTMENT_REFRESH_SIGNAL: AppointmentRefreshSignal = {
   version: 0,
   targetType: null,
   targetId: null,
+  appointmentEvent: null,
 };
 
 type NotificationContextValue = {
@@ -342,6 +346,7 @@ export function NotificationProvider({
             version: current.version + 1,
             targetType,
             targetId: item.targetId,
+            appointmentEvent: null,
           }));
         }
       }
@@ -425,6 +430,7 @@ export function NotificationProvider({
         version: current.version + 1,
         targetType: "appointment",
         targetId: appointmentId || null,
+        appointmentEvent: data ?? null,
       }));
     };
 

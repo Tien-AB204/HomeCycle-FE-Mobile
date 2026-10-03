@@ -33,9 +33,76 @@ import inspectionFormApi, {
 } from "../../src/services/apis/inspectionFormApi";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
+import {
+  beginRestLoad,
+  classifyRealtimeEvent,
+  createRealtimeFreshness,
+  markRealtimeEventApplied,
+  markRestApplied,
+  readEventUpdatedAt,
+  resetRealtimeFreshness,
+} from "../../src/utils/realtimeFreshness";
 import { isWithinScheduleHours, SCHEDULE_HOURS_MESSAGE } from "../../src/utils/scheduleHours";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+
+// Gộp snapshot của AppointmentUpdated vào dữ liệu chi tiết đang hiển thị. Snapshot có cùng
+// cấu trúc GET /appointments/{id} nhưng không có các field phụ thuộc người xem (actions,
+// checkIn.canCheckIn, reschedule.isCurrentUserRequester): giữ giá trị REST tới lượt tải lại kế tiếp.
+const mergeAppointmentSnapshot = (current: any, snapshot: any) => {
+  const base = current?.appointment;
+  if (!base || !snapshot) return current;
+
+  const inspection = snapshot.inspection
+    ? {
+        ...(base.inspection ?? {}),
+        ...snapshot.inspection,
+        checkIn: {
+          ...(base.inspection?.checkIn ?? {}),
+          ...(snapshot.inspection.checkIn ?? {}),
+          canCheckIn: base.inspection?.checkIn?.canCheckIn,
+        },
+      }
+    : base.inspection;
+
+  const collection = snapshot.collection
+    ? { ...(base.collection ?? {}), ...snapshot.collection }
+    : base.collection;
+
+  const reschedule = snapshot.reschedule
+    ? {
+        ...snapshot.reschedule,
+        isCurrentUserRequester:
+          base.reschedule?.proposalAppointmentId ===
+          snapshot.reschedule.proposalAppointmentId
+            ? base.reschedule?.isCurrentUserRequester
+            : false,
+      }
+    : null;
+
+  const appointment = {
+    ...base,
+    appointmentType: snapshot.appointmentType ?? base.appointmentType,
+    appointmentStatus: snapshot.appointmentStatus ?? base.appointmentStatus,
+    lateThresholdAt: snapshot.lateThresholdAt ?? null,
+    isOverdue: Boolean(snapshot.isOverdue),
+    completedAt: snapshot.completedAt ?? null,
+    updatedAt: snapshot.updatedAt ?? base.updatedAt,
+    inspection,
+    collection,
+    cancellation: snapshot.cancellation ?? null,
+    reschedule,
+    order: snapshot.order ? { ...(base.order ?? {}), ...snapshot.order } : base.order,
+  };
+
+  return {
+    ...current,
+    ...appointment,
+    appointment,
+    inspectionAppointment: appointment.inspection,
+    collectionAppointment: appointment.collection,
+  };
+};
 
 const appointmentApi = {
   getAppointmentDetail: (appointmentId: string) =>
@@ -193,6 +260,16 @@ export default function AppointmentDetailScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(actionMessage, () => setActionMessage(null));
+  // Lịch mới thay thế lịch đang xem sau khi đề xuất đổi lịch được chấp nhận (biết qua realtime).
+  const [replacementAppointmentId, setReplacementAppointmentId] = useState<
+    string | null
+  >(null);
+  // Mở từ lịch cũ ngay sau khi chấp nhận đổi lịch: hiện thông báo thành công ở lịch mới.
+  const pendingNoticeRef = useRef<InlineMessage>(
+    params.notice === "rescheduled"
+      ? { type: "success", text: "Đã xác nhận lịch hẹn mới." }
+      : null,
+  );
 
   const [isRescheduleModalVisible, setIsRescheduleModalVisible] =
     useState(false);
@@ -239,6 +316,7 @@ export default function AppointmentDetailScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const handledRefreshSignalVersionRef = useRef(0);
   const handledReconnectVersionRef = useRef(0);
+  const freshnessRef = useRef(createRealtimeFreshness());
 
   // "quiet": làm mới ngầm do realtime/reconnect/foreground — giữ nguyên nội dung,
   // không lặp lại thông báo trạng thái đã biết (vd. chưa có phiếu kiểm định).
@@ -266,6 +344,7 @@ export default function AppointmentDetailScreen() {
       try {
         if (showLoading) setIsLoading(true);
         setLoadError(null);
+        const restStartedAt = beginRestLoad();
         const response = await appointmentApi.getAppointmentDetail(appointmentId);
         if (!isCurrent()) return;
         const rawAppointment = unwrap(response);
@@ -281,6 +360,7 @@ export default function AppointmentDetailScreen() {
                 }
               : rawAppointment;
         setData(normalizedData);
+        markRestApplied(freshnessRef.current, restStartedAt);
         loadedAppointmentIdRef.current = String(appointmentId);
 
         const normalizedAppointment =
@@ -377,6 +457,7 @@ export default function AppointmentDetailScreen() {
     // Đổi mã lịch hẹn: vô hiệu ngay các lượt tải cũ.
     detailLoadVersionRef.current += 1;
     pendingSilentRefreshRef.current = false;
+    resetRealtimeFreshness(freshnessRef.current);
   }, [appointmentId]);
 
   useEffect(
@@ -386,7 +467,55 @@ export default function AppointmentDetailScreen() {
     [],
   );
 
-  // Realtime = tín hiệu tải lại dữ liệu chính thức (không dựng trạng thái từ sự kiện).
+  // AppointmentUpdated của chính lịch hẹn đang xem: cập nhật ngay trạng thái chung từ snapshot.
+  // Event cũ hơn dữ liệu đang hiển thị bị bỏ qua; lượt tải lại ngầm phía sau vẫn chạy để lấy
+  // các nút hành động và dữ liệu phụ thuộc người xem.
+  const applyAppointmentEvent = useCallback((event: any) => {
+    const eventAppointmentId = String(event?.appointmentId ?? event?.AppointmentId ?? "")
+      .trim()
+      .toLowerCase();
+    const currentAppointmentId = String(appointmentIdRef.current ?? "").trim().toLowerCase();
+    const snapshot = event?.appointment ?? event?.Appointment;
+
+    // Event của lịch đề xuất có lịch gốc là lịch đang xem: khi đề xuất thành lịch chính thức
+    // (đã được chấp nhận) thì ghi nhớ để dẫn người dùng sang lịch mới.
+    const rescheduledFromId = String(
+      event?.rescheduledFromAppointmentId ?? event?.RescheduledFromAppointmentId ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      eventAppointmentId &&
+      rescheduledFromId &&
+      rescheduledFromId === currentAppointmentId
+    ) {
+      const proposalStatus = normalizeAppointmentStatus(
+        snapshot?.appointmentStatus ?? snapshot?.AppointmentStatus,
+      );
+      if (["1", "scheduled", "5", "inprogress", "2", "completed"].includes(proposalStatus)) {
+        setReplacementAppointmentId(
+          String(event?.appointmentId ?? event?.AppointmentId).trim(),
+        );
+      }
+      return;
+    }
+
+    if (!eventAppointmentId || eventAppointmentId !== currentAppointmentId || !snapshot) return;
+    if (!dataRef.current?.appointment) return;
+
+    const eventUpdatedAt = readEventUpdatedAt(event);
+    if (
+      eventUpdatedAt === null ||
+      classifyRealtimeEvent(freshnessRef.current, eventUpdatedAt) !== "apply"
+    ) {
+      return;
+    }
+
+    markRealtimeEventApplied(freshnessRef.current, eventUpdatedAt);
+    setData((current: any) => mergeAppointmentSnapshot(current, snapshot));
+  }, []);
+
+  // REST vẫn là nguồn chính thức: mọi tín hiệu đều dẫn tới một lượt tải lại ngầm.
   const requestSilentRefresh = useCallback(() => {
     if (!isFocusedRef.current || !appointmentIdRef.current) return;
     void fetchDetailRef.current(false, true);
@@ -395,13 +524,18 @@ export default function AppointmentDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       isFocusedRef.current = true;
-      setActionMessage(null);
+      setActionMessage(pendingNoticeRef.current);
+      pendingNoticeRef.current = null;
       void fetchDetail(loadedAppointmentIdRef.current !== String(appointmentId));
       return () => {
         isFocusedRef.current = false;
       };
     }, [appointmentId, fetchDetail]),
   );
+
+  useEffect(() => {
+    setReplacementAppointmentId(null);
+  }, [appointmentId]);
 
   // Thông báo miền Lịch hẹn/Đơn hàng: KHÔNG lọc theo targetId — chấp nhận đổi lịch
   // có thể nhắm tới lịch hẹn đề xuất trong khi người dùng đang xem lịch gốc, và
@@ -415,8 +549,13 @@ export default function AppointmentDetailScreen() {
     }
     if (handledRefreshSignalVersionRef.current === version) return;
     handledRefreshSignalVersionRef.current = version;
+    if (appointmentRefreshSignal.appointmentEvent) {
+      applyAppointmentEvent(appointmentRefreshSignal.appointmentEvent);
+    }
     requestSilentRefresh();
-  }, [appointmentRefreshSignal.version, requestSilentRefresh]);
+    // Chỉ chạy theo version; appointmentEvent đi cùng version đó.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentRefreshSignal.version, applyAppointmentEvent, requestSilentRefresh]);
 
   // Kết nối lại: sự kiện bị lỡ không được phát lại → tải lại một lần.
   useEffect(() => {
@@ -658,16 +797,25 @@ export default function AppointmentDetailScreen() {
       const completedAction = pendingLifecycleAction;
       setPendingLifecycleAction(null);
       setLifecycleReason("");
+
+      // Chấp nhận đổi lịch: lịch đang xem bị hủy (lý do "Rescheduled"), lịch đề xuất trở thành
+      // lịch chính thức nên chuyển thẳng sang lịch mới thay vì ở lại lịch đã hủy.
+      if (completedAction === "accept") {
+        router.replace({
+          pathname: "/appointments/[id]",
+          params: { id: proposalId!, notice: "rescheduled" },
+        } as any);
+        return;
+      }
+
       await fetchDetail(false);
 
       setActionMessage({
         type: "success",
         text:
-          completedAction === "accept"
-            ? "Đã xác nhận lịch hẹn mới."
-            : completedAction === "reject"
-              ? "Đã từ chối lịch hẹn mới."
-              : "Đã hủy lịch hẹn.",
+          completedAction === "reject"
+            ? "Đã từ chối lịch hẹn mới."
+            : "Đã hủy lịch hẹn.",
       });
     } catch (error) {
       setLifecycleError(
@@ -864,6 +1012,9 @@ export default function AppointmentDetailScreen() {
     normalizedStatus === "2" ||
     normalizedStatus === "completed" ||
     Boolean(appt.completedAt);
+  const isRescheduled =
+    isCancelled &&
+    String(data?.cancellation?.reason ?? "").trim().toLowerCase() === "rescheduled";
   const isExpired =
     normalizedStatus === "4" || normalizedStatus === "expired";
   const isScheduled =
@@ -897,7 +1048,13 @@ export default function AppointmentDetailScreen() {
       : isInProgress
         ? "Đang diễn ra"
         : "Đã lên lịch",
-    isCancelled ? "Đã hủy" : isExpired ? "Quá hạn" : "Hoàn thành",
+    isRescheduled
+      ? "Đã đổi lịch"
+      : isCancelled
+        ? "Đã hủy"
+        : isExpired
+          ? "Quá hạn"
+          : "Hoàn thành",
   ];
 
   const checkInDisabled =
@@ -950,10 +1107,39 @@ export default function AppointmentDetailScreen() {
           <View style={styles.statusHighlightBox}>
             <Text style={styles.statusHighlightLabel}>Trạng thái lịch hẹn</Text>
             <Text style={styles.statusHighlightValue}>
-              {translateStatus(appt.appointmentStatus)}
+              {isRescheduled ? "Đã đổi lịch" : translateStatus(appt.appointmentStatus)}
             </Text>
           </View>
         </View>
+
+        {isRescheduled || replacementAppointmentId ? (
+          <View style={styles.rescheduledCard}>
+            <View style={styles.rescheduledHeader}>
+              <Ionicons name="swap-horizontal-outline" size={20} color={COLORS.primary} />
+              <Text style={styles.rescheduledTitle}>Lịch hẹn đã được đổi</Text>
+            </View>
+            <Text style={styles.rescheduledText}>
+              Hai bên đã thống nhất lịch hẹn mới. Lịch này không còn hiệu lực.
+            </Text>
+            {replacementAppointmentId || relatedOrderId ? (
+              <TouchableOpacity
+                style={styles.rescheduledButton}
+                onPress={() =>
+                  replacementAppointmentId
+                    ? router.replace(("/appointments/" + replacementAppointmentId) as any)
+                    : router.push(("/orders/" + relatedOrderId) as any)
+                }
+              >
+                <Text style={styles.rescheduledButtonText}>
+                  {replacementAppointmentId
+                    ? "Xem lịch hẹn mới"
+                    : "Xem lịch hẹn mới trong đơn hàng"}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.white} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Tiến trình lịch hẹn</Text>
@@ -1460,8 +1646,10 @@ export default function AppointmentDetailScreen() {
                 <Text style={styles.primaryButtonText}>
                   {isCompleted
                     ? "Lịch hẹn đã hoàn thành"
-                    : isCancelled
-                      ? "Lịch hẹn đã bị hủy"
+                    : isRescheduled
+                      ? "Lịch hẹn đã được đổi"
+                      : isCancelled
+                        ? "Lịch hẹn đã bị hủy"
                       : isExpired
                         ? "Lịch hẹn đã quá hạn"
                         : "Xác nhận có mặt tại điểm hẹn"}
@@ -1756,6 +1944,29 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 14,
   },
+  rescheduledCard: {
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(84, 123, 125, 0.28)",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+    gap: 8,
+  },
+  rescheduledHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rescheduledTitle: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
+  rescheduledText: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
+  rescheduledButton: {
+    marginTop: 4,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  rescheduledButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "700" },
   sectionTitle: {
     color: COLORS.text,
     fontSize: 15,

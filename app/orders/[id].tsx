@@ -28,6 +28,15 @@ import { normalizeTargetType } from "../../src/services/notifications/notificati
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
+import {
+  beginRestLoad,
+  classifyRealtimeEvent,
+  createRealtimeFreshness,
+  markRealtimeEventApplied,
+  markRestApplied,
+  readEventUpdatedAt,
+  resetRealtimeFreshness,
+} from "../../src/utils/realtimeFreshness";
 
 type InlineMessage = {
   type: "error" | "warning" | "info" | "success";
@@ -69,6 +78,74 @@ const isRetryableTrackingError = (error: unknown): boolean => {
   if (!(error as any)?.response) return true;
   if (status >= 500) return true;
   return false;
+};
+
+// Gộp snapshot của OrderTrackingUpdated vào chi tiết đơn đang hiển thị. Snapshot chỉ có trạng
+// thái chung (không có timeline, Can* hay thông tin đối tác); phần còn lại giữ dữ liệu REST
+// cho tới lượt tải lại ngầm ngay sau đó.
+const ORDER_SNAPSHOT_FIELDS = [
+  "orderStatus",
+  "paymentStatus",
+  "finalTotalAmount",
+  "amountPaid",
+  "amountRemaining",
+  "sellerHandoverConfirmedAt",
+  "buyerReceivedConfirmedAt",
+  "completedAt",
+  "completionSource",
+  "disputeWindowEndsAt",
+  "returnDueAt",
+  "buyerReturnConfirmedAt",
+  "sellerReturnReceivedAt",
+  "returnedAt",
+  "cancellation",
+  "updatedAt",
+] as const;
+
+const mergeOrderSnapshot = (current: any, snapshot: any) => {
+  const base = current?.order;
+  if (!base || !snapshot) return current;
+
+  const order: any = { ...base };
+  for (const field of ORDER_SNAPSHOT_FIELDS) {
+    if (field in snapshot) order[field] = snapshot[field] ?? null;
+  }
+
+  if (snapshot.shipment) {
+    // Cùng các field của shipment trong GET /orders/{id}; phần GHN cập nhật qua mergeTrackingSnapshot.
+    order.shipment = {
+      ...(base.shipment ?? {}),
+      shipmentId: snapshot.shipment.shipmentId,
+      shipmentStatus: snapshot.shipment.shipmentStatus ?? null,
+      sellerReadyAt: snapshot.shipment.sellerReadyAt ?? null,
+      pickedUpAt: snapshot.shipment.pickedUpAt ?? null,
+      deliveredAt: snapshot.shipment.deliveredAt ?? null,
+    };
+  }
+
+  if (snapshot.dispute) {
+    order.dispute = { ...(base.dispute ?? {}), ...snapshot.dispute };
+  }
+
+  // fetchOrderDetail lưu chi tiết đơn ở cả cấp ngoài lẫn data.order: cập nhật cả hai.
+  return { ...current, ...order, order };
+};
+
+// Các field vận chuyển GHN trong snapshot dùng để cập nhật ngay phần theo dõi vận đơn.
+// Chưa có dữ liệu theo dõi (vd. vận đơn vừa được tạo) thì dựng từ event, chỉ với đơn GHN
+// (event của đơn giao trực tiếp không có creationStatus).
+const mergeTrackingSnapshot = (current: any, shipment: any) => {
+  if (!shipment) return current;
+  if (!current && !shipment.creationStatus) return current;
+  return {
+    ...(current ?? { shipmentId: shipment.shipmentId }),
+    trackingCode: shipment.trackingCode ?? current?.trackingCode ?? null,
+    carrierStatus: shipment.carrierStatus ?? current?.carrierStatus ?? null,
+    creationStatus: shipment.creationStatus ?? current?.creationStatus ?? null,
+    shipmentStatus: shipment.shipmentStatus ?? current?.shipmentStatus ?? null,
+    expectedDeliveryAt: shipment.expectedDeliveryAt ?? current?.expectedDeliveryAt ?? null,
+    deliveredAt: shipment.deliveredAt ?? current?.deliveredAt ?? null,
+  };
 };
 
 const orderApi = {
@@ -280,13 +357,13 @@ const translateCarrierStatus = (status: string) => {
 
   const map: Record<string, string> = {
     ready_to_pick: "Đã tạo vận đơn, đang chờ GHN lấy hàng",
-    picking: "Nhân viên GHN đang đến lấy hàng",
+    picking: "Shipper GHN đang đến lấy hàng",
     money_collect_picking: "GHN đang làm việc với người gửi",
     picked: "GHN đã lấy hàng thành công",
     storing: "Hàng đang được lưu tại kho GHN",
     transporting: "Hàng đang được luân chuyển",
     sorting: "Hàng đang được phân loại tại kho",
-    delivering: "Nhân viên GHN đang giao hàng",
+    delivering: "Shipper GHN đang giao hàng",
     money_collect_delivering: "GHN đang làm việc với người nhận",
     delivered: "Giao hàng thành công",
     delivery_fail: "Lần giao hàng chưa thành công",
@@ -362,11 +439,22 @@ export default function OrderDetailScreen() {
   const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction>(null);
   const [isLifecycleActionLoading, setIsLifecycleActionLoading] = useState(false);
   const [lifecycleActionError, setLifecycleActionError] = useState<string | null>(null);
+  // Tăng sau mỗi lượt tải chi tiết KHÔNG do realtime (mở màn, kết nối lại, sau thao tác) để
+  // gọi lại API theo dõi GHN. Lượt tải do realtime đã có trạng thái GHN trong event.
+  const [trackingRefreshKey, setTrackingRefreshKey] = useState(0);
+  const freshnessRef = useRef(createRealtimeFreshness());
+  // Hợp đồng và bài đăng của một đơn không đổi: lượt tải do realtime dùng lại bản đã tải.
+  const loadedAgreementRef = useRef<{ agreementId: string; agreement: any } | null>(null);
+  const loadedPostIdRef = useRef<string | null>(null);
 
   // silent: làm mới nền (realtime / sau thao tác) — không che màn hình bằng loading,
   // không xóa thông báo đang hiển thị, không đóng hộp xác nhận và giữ dữ liệu cũ khi lỗi.
-  const fetchOrderDetail = useCallback(async (options?: { silent?: boolean }) => {
+  const fetchOrderDetail = useCallback(async (options?: {
+    silent?: boolean;
+    source?: "realtime";
+  }) => {
     const silent = options?.silent === true;
+    const fromRealtime = options?.source === "realtime";
 
     if (!orderId) {
       setPageMessage({ type: "error", text: "Không tìm thấy mã đơn hàng." });
@@ -382,6 +470,7 @@ export default function OrderDetailScreen() {
       }
       setTrackingError(null);
 
+      const restStartedAt = beginRestLoad();
       const detailResponse = await orderApi.getOrderDetail(orderId);
       const rawOrder = unwrap(detailResponse);
       const responseData =
@@ -397,18 +486,25 @@ export default function OrderDetailScreen() {
               }
             : rawOrder;
       setData(responseData);
+      markRestApplied(freshnessRef.current, restStartedAt);
 
       const order = responseData?.order;
+      const postId = order?.postId ? String(order.postId) : null;
 
-      if (order?.postId) {
-        try {
-          const postResponse = await orderApi.getPost(String(order.postId));
-          setPostContext(unwrap(postResponse));
-        } catch {
-          setPostContext(null);
+      if (postId) {
+        if (!fromRealtime || loadedPostIdRef.current !== postId) {
+          try {
+            const postResponse = await orderApi.getPost(postId);
+            setPostContext(unwrap(postResponse));
+            loadedPostIdRef.current = postId;
+          } catch {
+            setPostContext(null);
+            loadedPostIdRef.current = null;
+          }
         }
       } else {
         setPostContext(null);
+        loadedPostIdRef.current = null;
       }
       let nextAgreement: any = null;
       // BE ưu tiên phương thức của shipment rồi mới tới hợp đồng. Đơn có kiểm định chỉ
@@ -421,8 +517,19 @@ export default function OrderDetailScreen() {
 
       if (order?.agreementId) {
         try {
-          const agreementResponse = await orderApi.getAgreement(order.agreementId);
-          nextAgreement = unwrap(agreementResponse);
+          const agreementId = String(order.agreementId);
+          const cachedAgreement =
+            fromRealtime && loadedAgreementRef.current?.agreementId === agreementId
+              ? loadedAgreementRef.current.agreement
+              : null;
+
+          if (cachedAgreement) {
+            nextAgreement = cachedAgreement;
+          } else {
+            const agreementResponse = await orderApi.getAgreement(agreementId);
+            nextAgreement = unwrap(agreementResponse);
+            loadedAgreementRef.current = { agreementId, agreement: nextAgreement };
+          }
           setAgreement(nextAgreement);
 
           if (nextDeliveryMethod === "Unknown") {
@@ -438,6 +545,7 @@ export default function OrderDetailScreen() {
           if (currentUserId && currentUserId === buyerId) nextRole = "buyer";
           setTransactionRole(nextRole);
         } catch (error) {
+          loadedAgreementRef.current = null;
           setAgreement(null);
           setDeliveryMethod(orderDeliveryMethod);
           setTransactionRole(null);
@@ -459,6 +567,8 @@ export default function OrderDetailScreen() {
         setTrackingData(null);
         setTrackingError(null);
         setIsTrackingLoading(false);
+      } else if (!fromRealtime) {
+        setTrackingRefreshKey((current) => current + 1);
       }
     } catch (error: any) {
       if (silent) return;
@@ -481,6 +591,8 @@ export default function OrderDetailScreen() {
     }
   }, [currentUserId, orderId]);
 
+  const hasOrderData = Boolean(data);
+
   useEffect(() => {
     const targetOrderId = String(orderId || "").trim();
     const generation = ++trackingRequestGenerationRef.current;
@@ -488,7 +600,7 @@ export default function OrderDetailScreen() {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    if (!targetOrderId || deliveryMethod !== "GhnDelivery" || !data) {
+    if (!targetOrderId || deliveryMethod !== "GhnDelivery" || !hasOrderData) {
       if (deliveryMethod !== "GhnDelivery") {
         setTrackingData(null);
         setTrackingError(null);
@@ -576,7 +688,7 @@ export default function OrderDetailScreen() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [data, deliveryMethod, orderId]);
+  }, [deliveryMethod, hasOrderData, orderId, trackingRefreshKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -597,7 +709,7 @@ export default function OrderDetailScreen() {
       running = true;
       do {
         pending = false;
-        await fetchOrderDetail({ silent: true });
+        await fetchOrderDetail({ silent: true, source: "realtime" });
       } while (active && pending);
       running = false;
     };
@@ -612,10 +724,9 @@ export default function OrderDetailScreen() {
       scheduleRefresh();
     };
 
-    const handleOrderTrackingUpdated = (payload: {
-      orderId?: string;
-      OrderId?: string;
-    }) => {
+    // Event mang trạng thái chung của đơn: cập nhật ngay, rồi tải lại ngầm (có gom) để lấy
+    // timeline và các nút hành động phụ thuộc người xem. Event cũ hơn dữ liệu đang có bị bỏ qua.
+    const handleOrderTrackingUpdated = (payload: any) => {
       const eventOrderId = String(
         payload?.orderId ?? payload?.OrderId ?? "",
       )
@@ -624,6 +735,21 @@ export default function OrderDetailScreen() {
 
       if (!eventOrderId || eventOrderId !== currentOrderId) {
         return;
+      }
+
+      const eventUpdatedAt = readEventUpdatedAt(payload);
+      const decision = classifyRealtimeEvent(freshnessRef.current, eventUpdatedAt);
+      if (decision === "stale") return;
+
+      const snapshot = payload?.order ?? payload?.Order;
+      if (decision === "apply" && eventUpdatedAt !== null && snapshot) {
+        markRealtimeEventApplied(freshnessRef.current, eventUpdatedAt);
+        setData((current: any) => mergeOrderSnapshot(current, snapshot));
+        if (snapshot.shipment) {
+          setTrackingData((current: any) =>
+            mergeTrackingSnapshot(current, snapshot.shipment),
+          );
+        }
       }
 
       scheduleRefresh();
@@ -657,6 +783,13 @@ export default function OrderDetailScreen() {
     leaveOrder,
     orderId,
   ]);
+
+  useEffect(() => {
+    // Đổi đơn: dữ liệu và mốc thời gian của đơn cũ không còn giá trị.
+    resetRealtimeFreshness(freshnessRef.current);
+    loadedAgreementRef.current = null;
+    loadedPostIdRef.current = null;
+  }, [orderId]);
 
   useEffect(() => {
     if (!orderId || reconnectVersion <= 0) return;
@@ -1034,8 +1167,9 @@ export default function OrderDetailScreen() {
   const canCancelOrder = orderActions.canCancel === true;
   const canConfirmReturn = orderActions.canConfirmReturn === true;
   const canConfirmReturnReceived = orderActions.canConfirmReturnReceived === true;
-  const showLifecycleActionsCard =
-    canCancelOrder || canConfirmReturn || canConfirmReturnReceived;
+  // Hủy đơn nằm ở thanh dưới cố định; thẻ này chỉ còn các bước trả hàng.
+  const showLifecycleActionsCard = canConfirmReturn || canConfirmReturnReceived;
+  const showBottomBar = canCancelOrder || canOpenDispute;
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
@@ -1308,17 +1442,30 @@ export default function OrderDetailScreen() {
         title="Chi tiết Đơn hàng"
         showBack
         rightContent={
-          overflowActions.length > 0 ? (
-            <TouchableOpacity
-              style={styles.overflowButton}
-              accessibilityRole="button"
-              accessibilityLabel="Tùy chọn khác"
-              hitSlop={8}
-              onPress={() => setShowOverflowMenu(true)}
-            >
-              <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
-            </TouchableOpacity>
-          ) : null
+          <>
+            {negotiationId ? (
+              <TouchableOpacity
+                style={styles.overflowButton}
+                accessibilityRole="button"
+                accessibilityLabel="Mở hội thoại chat"
+                hitSlop={8}
+                onPress={() => router.push(`/chat/${negotiationId}` as any)}
+              >
+                <Ionicons name="chatbubbles-outline" size={22} color={COLORS.primary} />
+              </TouchableOpacity>
+            ) : null}
+            {overflowActions.length > 0 ? (
+              <TouchableOpacity
+                style={styles.overflowButton}
+                accessibilityRole="button"
+                accessibilityLabel="Tùy chọn khác"
+                hitSlop={8}
+                onPress={() => setShowOverflowMenu(true)}
+              >
+                <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+              </TouchableOpacity>
+            ) : null}
+          </>
         }
       />
 
@@ -1733,24 +1880,6 @@ export default function OrderDetailScreen() {
               </TouchableOpacity>
             ) : null}
 
-            {canCancelOrder ? (
-              <TouchableOpacity
-                style={[
-                  styles.outlineBtnDanger,
-                  (canConfirmReturn || canConfirmReturnReceived)
-                    ? styles.actionSpacingTop
-                    : undefined,
-                ]}
-                onPress={() => openLifecycleAction("cancel")}
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={19}
-                  color={COLORS.error}
-                />
-                <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
         ) : null}
 
@@ -1770,19 +1899,6 @@ export default function OrderDetailScreen() {
           ) : (
             <InfoRow label="Đối tác:" value={counterpartyName} bold />
           )}
-          {negotiationId ? (
-            <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => router.push(`/chat/${negotiationId}` as any)}
-            >
-              <Ionicons
-                name="chatbubbles-outline"
-                size={18}
-                color={COLORS.primary}
-              />
-              <Text style={styles.chatButtonText}>Mở hội thoại chat</Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -1832,8 +1948,9 @@ export default function OrderDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {canOpenDispute ? (
+      {showBottomBar ? (
         <View style={styles.bottomBar}>
+          {canOpenDispute ? (
             <TouchableOpacity
               style={styles.outlineBtnWarning}
               onPress={() => router.push(`/disputes/${latestDisputeId}` as any)}
@@ -1845,6 +1962,20 @@ export default function OrderDetailScreen() {
               />
               <Text style={styles.outlineBtnWarningText}>Xem tranh chấp</Text>
             </TouchableOpacity>
+          ) : null}
+          {canCancelOrder ? (
+            <TouchableOpacity
+              style={[styles.outlineBtnDanger, styles.bottomBarButton]}
+              onPress={() => openLifecycleAction("cancel")}
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={19}
+                color={COLORS.error}
+              />
+              <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
@@ -2848,19 +2979,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   lifecycleModalActions: { flexDirection: "row", gap: 10 },
-  chatButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "rgba(84, 123, 125, 0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(84, 123, 125, 0.24)",
-  },
-  chatButtonText: { color: COLORS.primary, fontWeight: "bold", fontSize: 14 },
   disputeInfoCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -2910,6 +3028,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backBtnText: { color: COLORS.white, fontWeight: "700" },
+  bottomBarButton: { flex: 1 },
   bottomBar: {
     flexDirection: "row",
     padding: 16,

@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -338,6 +339,27 @@ export default function OrderReviewScreen() {
       }
       setIsSubmitting(false);
     }
+  };
+
+  // Còn trong thời hạn khiếu nại (BE trả canDispute) thì đánh giá xong sẽ mất quyền khiếu nại đơn:
+  // hỏi lại trước khi gửi.
+  const confirmCreateReview = () => {
+    if (reviewWriteInFlightRef.current || !validate()) return;
+
+    const actions = orderData?.actions ?? order?.actions ?? {};
+    if (actions.canDispute !== true) {
+      void submitCreateReview();
+      return;
+    }
+
+    Alert.alert(
+      "Gửi đánh giá?",
+      "Sau khi đánh giá, bạn sẽ không thể gửi khiếu nại cho đơn hàng này nữa. Nếu đơn có vấn đề, hãy gửi khiếu nại trước khi đánh giá.",
+      [
+        { text: "Xem lại", style: "cancel" },
+        { text: "Gửi đánh giá", onPress: () => void submitCreateReview() },
+      ],
+    );
   };
 
   const submitUpdateReview = async () => {
@@ -709,9 +731,9 @@ export default function OrderReviewScreen() {
                     isSubmitting ? styles.disabledButton : undefined,
                   ]}
                   onPress={() =>
-                    void (isEditing
-                      ? submitUpdateReview()
-                      : submitCreateReview())
+                    isEditing
+                      ? void submitUpdateReview()
+                      : confirmCreateReview()
                   }
                   disabled={isSubmitting}
                 >

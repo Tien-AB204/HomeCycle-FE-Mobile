@@ -33,7 +33,7 @@ import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
-import { DEMO_SELL_POST_SAMPLE } from "../../src/constants/demoPostSample";
+import { DEMO_SELL_POST_SAMPLES } from "../../src/constants/demoPostSample";
 import AiPriceDetails, {
   countAiPriceSamples,
   type AiPriceBreakdown,
@@ -335,7 +335,6 @@ export default function PostFormScreen() {
   const [modelNumber, setModelNumber] = useState("");
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [isModelFocused, setIsModelFocused] = useState(false);
-  const [hasFilledDemoSample, setHasFilledDemoSample] = useState(false);
   const modelSuggestionRequestRef = useRef(0);
   const [length, setLength] = useState("");
   // Gợi ý mã model (BE: tối đa 10 mã từ các tin bán cùng loại sản phẩm và thương hiệu, cần ít nhất 2 ký tự).
@@ -824,8 +823,9 @@ export default function PostFormScreen() {
 
   // Điền tin bán mẫu cho demo. Thuộc tính đi qua oldEavData giống luồng sửa tin:
   // khi tải xong thông số loại sản phẩm, lựa chọn mẫu được chọn sẵn. Ảnh vẫn do người dùng thêm.
-  const fillDemoSample = () => {
-    const sample = DEMO_SELL_POST_SAMPLE;
+  const fillDemoSample = (sampleKey: string) => {
+    const sample = DEMO_SELL_POST_SAMPLES.find((item) => item.key === sampleKey);
+    if (!sample) return;
     setProductName(sample.productName);
     setDescription(sample.description);
     setDetailDescription(sample.detailDescription);
@@ -850,8 +850,15 @@ export default function PostFormScreen() {
     setStreetAddress(sample.streetAddress);
     setWard(sample.ward);
     setCity(sample.city);
-    setHasFilledDemoSample(true);
+    setFormMessage(null);
   };
+
+  const openDemoSamplePicker = () =>
+    openSelect(
+      "Chọn dữ liệu mẫu",
+      DEMO_SELL_POST_SAMPLES.map((sample) => ({ label: sample.label, value: sample.key })),
+      fillDemoSample,
+    );
 
   const displayDimensions =
     length && width && height ? `${length} x ${width} x ${height} cm` : "";
@@ -1833,16 +1840,30 @@ export default function PostFormScreen() {
           <TouchableOpacity onPress={() => { if (!publishLock.current) router.back(); }} disabled={isLoading} style={styles.backButton}>
             <Ionicons name="close" size={28} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>
+          <Text style={styles.headerTitle} pointerEvents="none">
             {isEditMode ? "Sửa tin đăng" : isBuyPost ? "Đăng tin thu mua" : "Đăng tin mới"}
           </Text>
-          <TouchableOpacity onPress={() => void handlePublish()} disabled={isLoading || sellCreateNeedsRecovery}>
-            {isLoading ? (
-              <ActivityIndicator color={COLORS.primary} />
-            ) : (
-              <Text style={styles.publishButtonText}>{createdSellId.current ? "Tiếp tục" : isEditMode ? "Cập nhật" : "Đăng"}</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {!isEditMode && !isBuyPost ? (
+              <TouchableOpacity
+                style={styles.demoSampleButton}
+                onPress={openDemoSamplePicker}
+                disabled={isLoading}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Điền dữ liệu mẫu"
+              >
+                <Ionicons name="flash-outline" size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={() => void handlePublish()} disabled={isLoading || sellCreateNeedsRecovery}>
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : (
+                <Text style={styles.publishButtonText}>{createdSellId.current ? "Tiếp tục" : isEditMode ? "Cập nhật" : "Đăng"}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -1886,12 +1907,6 @@ export default function PostFormScreen() {
               }}
             >
               <Text style={styles.recoveryAcknowledgeText}>Tôi đã kiểm tra, tin chưa được tạo</Text>
-            </TouchableOpacity>
-          ) : null}
-          {!isEditMode && !isBuyPost && !hasFilledDemoSample ? (
-            <TouchableOpacity style={styles.demoSampleButton} onPress={fillDemoSample}>
-              <Ionicons name="flash-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.demoSampleButtonText}>Điền dữ liệu mẫu</Text>
             </TouchableOpacity>
           ) : null}
           {formMessage ? (
@@ -2716,7 +2731,8 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 12, color: COLORS.textLight },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.white },
   backButton: { padding: 4 },
-  headerTitle: { fontSize: 17, fontWeight: "bold", color: COLORS.text },
+  headerTitle: { position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 17, fontWeight: "bold", color: COLORS.text },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 14 },
   publishButtonText: { fontSize: 16, fontWeight: "bold", color: COLORS.primary },
   scrollContainer: { padding: 16, paddingBottom: 40 },
   inlineMessage: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 16 },
@@ -2747,8 +2763,7 @@ const styles = StyleSheet.create({
   inputText: { flex: 1, fontSize: 14, color: COLORS.text },
   placeholderText: { flex: 1, fontSize: 14, color: "#547B7D" },
   row: { flexDirection: "row", gap: 12 },
-  demoSampleButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, alignSelf: "flex-end", borderWidth: 1, borderColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
-  demoSampleButtonText: { fontSize: 13, fontWeight: "600", color: COLORS.primary },
+  demoSampleButton: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
   modelSuggestionList: { marginTop: -12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, backgroundColor: COLORS.white, overflow: "hidden" },
   modelSuggestionItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EEF1F1" },
   modelSuggestionText: { fontSize: 14, color: COLORS.text },

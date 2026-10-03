@@ -50,6 +50,7 @@ import {
   capitalizeWordInitials,
   toUppercaseText,
 } from "../../src/utils/textFormat";
+import { launchImagePickerWithCamera } from "../../src/utils/imageSourcePicker";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const PLACEHOLDER_COLOR = "#547B7D";
@@ -238,11 +239,13 @@ export default function AccountInfoScreen() {
 
   const pickImage = async (type: "avatar" | "front" | "back") => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const result = await launchImagePickerWithCamera({
         mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.5,
-      });
+      }, type === "avatar"
+        ? { title: "Ảnh đại diện", hint: null }
+        : { title: type === "front" ? "CCCD mặt trước" : "CCCD mặt sau" });
 
       if (!result.canceled) {
         const asset = result.assets[0];

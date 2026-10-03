@@ -13,6 +13,7 @@ import {
 } from "react-native-safe-area-context";
 
 import AppDialogHost from "../src/components/shared/AppDialogHost";
+import ImageSourceSheetHost from "../src/components/shared/ImageSourceSheetHost";
 import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
 import InAppNotificationToast from "../src/components/shared/InAppNotificationToast";
 import AppToastHost from "../src/components/shared/AppToast";
@@ -130,7 +131,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AppErrorBoundary>
         <AppDialogHost>
-          <RootNavigator />
+          <ImageSourceSheetHost>
+            <RootNavigator />
+          </ImageSourceSheetHost>
         </AppDialogHost>
       </AppErrorBoundary>
     </SafeAreaProvider>

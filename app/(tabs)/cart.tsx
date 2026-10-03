@@ -17,12 +17,23 @@ import {
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import {
   getApiErrorMessage,
   getApiSuccessMessage,
 } from "../../src/utils/apiFeedback";
 import { isBuyPostType } from "../../src/utils/postType";
+import {
+  beginRestLoad,
+  classifyRealtimeEvent,
+  createRealtimeFreshness,
+  markRealtimeEventApplied,
+  markRestApplied,
+  readEventUpdatedAt,
+  resetRealtimeFreshness,
+  wasOvertakenByEvent,
+} from "../../src/utils/realtimeFreshness";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type CartPost = {
@@ -85,6 +96,33 @@ const cartApi = {
     apiClient.delete(`/cart/${cartItemId}`).then((response) => response.data),
 };
 
+// CartUpdated mang snapshot rút gọn (một ảnh đại diện thay cho danh sách ảnh);
+// đổi về đúng dạng CartItem của GET /cart để màn hình dùng chung một kiểu dữ liệu.
+const toCartItemFromRealtime = (item: any): CartItem => {
+  const postId = String(item?.postId ?? item?.PostId ?? "");
+  const thumbnailUrl = item?.thumbnailUrl ?? item?.ThumbnailUrl ?? null;
+
+  return {
+    cartItemId: String(item?.cartItemId ?? item?.CartItemId ?? ""),
+    postId,
+    quantity: Number(item?.quantity ?? item?.Quantity ?? 0),
+    addedAt: item?.addedAt ?? item?.AddedAt ?? undefined,
+    post: {
+      postId,
+      ownerId: item?.ownerId ?? item?.OwnerId ?? undefined,
+      productName: item?.productName ?? item?.ProductName ?? null,
+      productTypeName: item?.productTypeName ?? item?.ProductTypeName ?? null,
+      categoryName: item?.categoryName ?? item?.CategoryName ?? null,
+      brandName: item?.brandName ?? item?.BrandName ?? null,
+      remainingQuantity: item?.remainingQuantity ?? item?.RemainingQuantity ?? null,
+      postType: item?.postType ?? item?.PostType ?? undefined,
+      basePrice: item?.basePrice ?? item?.BasePrice ?? null,
+      status: item?.status ?? item?.Status ?? undefined,
+      medias: thumbnailUrl ? [{ url: thumbnailUrl, displayOrder: 0 }] : [],
+    },
+  };
+};
+
 const formatCurrency = (value: number | null | undefined) =>
   `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 
@@ -115,6 +153,11 @@ export default function CartScreen() {
   const [undoError, setUndoError] = useState<string | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
   const cartWriteInFlightRef = useRef<string | null>(null);
+  const { connection, connectionStatus, reconnectVersion } = useChatRealtime();
+  const connectionStatusRef = useRef(connectionStatus);
+  connectionStatusRef.current = connectionStatus;
+  const freshnessRef = useRef(createRealtimeFreshness());
+  const handledReconnectVersionRef = useRef(0);
 
   const fetchCart = useCallback(
     async (showLoader = true) => {
@@ -124,8 +167,12 @@ export default function CartScreen() {
         if (showLoader) setIsLoading(true);
         setLoadError(null);
 
+        const restStartedAt = beginRestLoad();
         const response = await cartApi.getCart();
         if (response?.isSuccess === false) throw response;
+
+        // CartUpdated mới hơn đã được áp dụng trong lúc chờ: giữ snapshot đó.
+        if (wasOvertakenByEvent(freshnessRef.current, restStartedAt)) return;
 
         const data = response?.data || response || {};
         const items = Array.isArray(data.items) ? data.items : [];
@@ -135,6 +182,7 @@ export default function CartScreen() {
           totalQuantity: Number(data.totalQuantity || 0),
           totalPrice: Number(data.totalPrice || 0),
         });
+        markRestApplied(freshnessRef.current, restStartedAt);
       } catch (error: unknown) {
         setLoadError(getApiErrorMessage(error, "Không thể tải giỏ hàng."));
       } finally {
@@ -153,6 +201,7 @@ export default function CartScreen() {
 
       if (!user) {
         setCartData(EMPTY_CART);
+        resetRealtimeFreshness(freshnessRef.current);
         setLoadError(null);
         setIsLoading(false);
         return;
@@ -163,6 +212,45 @@ export default function CartScreen() {
       void fetchCart();
     }, [fetchCart, isAuthLoading, user]),
   );
+
+  // CartUpdated gửi theo user (không cần vào phòng). Event mang snapshot giỏ hàng nên
+  // thay thẳng state; không có snapshot hoặc không chắc mới hơn thì tải lại qua REST.
+  useEffect(() => {
+    if (!connection || !user) return;
+
+    const handleCartUpdated = (payload: any) => {
+      const eventUpdatedAt = readEventUpdatedAt(payload);
+      const decision = classifyRealtimeEvent(freshnessRef.current, eventUpdatedAt);
+      if (decision === "stale") return;
+
+      const items = payload?.items ?? payload?.Items;
+      if (decision !== "apply" || eventUpdatedAt === null || !Array.isArray(items)) {
+        void fetchCart(false);
+        return;
+      }
+
+      markRealtimeEventApplied(freshnessRef.current, eventUpdatedAt);
+      setCartData({
+        items: items.map(toCartItemFromRealtime),
+        totalQuantity: Number(payload?.totalQuantity ?? payload?.TotalQuantity ?? 0),
+        totalPrice: Number(payload?.totalPrice ?? payload?.TotalPrice ?? 0),
+      });
+    };
+
+    connection.on("CartUpdated", handleCartUpdated);
+
+    return () => {
+      connection.off("CartUpdated", handleCartUpdated);
+    };
+  }, [connection, fetchCart, user]);
+
+  // Kết nối lại: event trong lúc mất kết nối không được phát lại → tải lại một lần.
+  useEffect(() => {
+    if (!user || reconnectVersion <= 0) return;
+    if (handledReconnectVersionRef.current === reconnectVersion) return;
+    handledReconnectVersionRef.current = reconnectVersion;
+    void fetchCart(false);
+  }, [fetchCart, reconnectVersion, user]);
 
   useEffect(() => {
     if (!undoDelete) return;
@@ -240,9 +328,12 @@ export default function CartScreen() {
         };
       });
 
-      // Backend is still authoritative: reconcile immediately after the local
-      // removal, then once more when the 5-second undo window expires.
-      await fetchCart(false);
+      // Backend is still authoritative. While realtime is connected the CartUpdated
+      // snapshot reconciles this removal; otherwise reload now. Either way the cart
+      // reloads once more when the 5-second undo window expires.
+      if (connectionStatusRef.current !== "connected") {
+        await fetchCart(false);
+      }
     } catch (error: unknown) {
       setItemMessage({
         itemId: item.cartItemId,

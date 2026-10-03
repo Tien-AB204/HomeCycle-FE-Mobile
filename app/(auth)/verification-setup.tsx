@@ -1,6 +1,5 @@
 // app/(auth)/verification-setup.tsx
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,6 +30,7 @@ import { authApi } from "../../src/services/apis/authApi";
 import { validateNewLocalFiles } from "../../src/services/fileUploadPolicy";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
+import { launchImagePickerWithCamera } from "../../src/utils/imageSourcePicker";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 type InlineMessage = {
@@ -236,11 +236,11 @@ export default function VerificationSetupScreen() {
 
   const pickImage = async (side: "front" | "back") => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const result = await launchImagePickerWithCamera({
         mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.8,
-      });
+      }, { title: side === "front" ? "CCCD mặt trước" : "CCCD mặt sau" });
       if (result.canceled) return;
 
       const selectedAsset = result.assets?.[0];
