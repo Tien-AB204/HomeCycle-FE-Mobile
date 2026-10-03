@@ -26,6 +26,7 @@ import {
 } from "../../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
+import { getAvatarSource } from "../../src/utils/avatar";
 import { devLog } from "../../src/utils/devLog";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
@@ -506,9 +507,17 @@ export default function HomeScreen() {
   const cardWidth =
     (width - SECTION_HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
+  // Chỉ API bài nổi bật trả kèm người đăng; mục nào thiếu tên thì ẩn dòng này.
+  const getOwnerName = (post: any) =>
+    String(post.ownerName || post.ownerUsername || "").trim();
+
+  const isOwnerVerified = (post: any) =>
+    post.verifyStatus === 2 || String(post.verifyStatus ?? "").toLowerCase() === "verified";
+
   const renderCard = (post: any) => {
     const quickCartState = getQuickCartState(post);
     const isAdding = addingPostId === String(post.postId);
+    const ownerName = getOwnerName(post);
 
     return (
       <TouchableOpacity
@@ -561,6 +570,18 @@ export default function HomeScreen() {
           <Text style={styles.productName} numberOfLines={2}>
             {post.productName || post.description || "Sản phẩm"}
           </Text>
+
+          {ownerName ? (
+            <View style={styles.ownerRow}>
+              <Image source={getAvatarSource(post.avatarUrl)} style={styles.ownerAvatar} />
+              <Text style={styles.ownerName} numberOfLines={1}>
+                {ownerName}
+              </Text>
+              {isOwnerVerified(post) ? (
+                <Ionicons name="checkmark-circle" size={12} color={COLORS.primary} />
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.priceRow}>
             <Text style={styles.productPrice} numberOfLines={1}>
@@ -1074,6 +1095,19 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     height: 36,
   },
+  ownerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 6,
+  },
+  ownerAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#E8EEEE",
+  },
+  ownerName: { flexShrink: 1, fontSize: 11, color: "#547B7D", fontWeight: "500" },
   priceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
