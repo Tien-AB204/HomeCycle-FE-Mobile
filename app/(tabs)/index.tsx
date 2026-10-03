@@ -39,7 +39,7 @@ const POSTS_PER_PAGE = 4;
 const CARD_GAP = 12;
 const SECTION_HORIZONTAL_PADDING = 20;
 const HOME_POST_PAGE_SIZE = 100;
-const BUY_ACCENT = "#9A6418";
+const BUY_ACCENT = COLORS.primary;
 // Trang chủ Doanh nghiệp: Backend tự lọc theo khảo sát thu mua (khu vực, loại
 // sản phẩm, mức hư hỏng, tình trạng, quy mô); FE không gửi tiêu chí và không lọc lại.
 const BUSINESS_DISCOVER_PAGE_SIZE = 12;
@@ -1075,9 +1075,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 10,
     paddingVertical: 10,
-    backgroundColor: "#FBF3E6",
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(154, 100, 24, 0.16)",
+    borderBottomColor: "rgba(84, 123, 125, 0.16)",
   },
   buyHeaderText: { flex: 1, minWidth: 0 },
   buyHeaderTopRow: {
