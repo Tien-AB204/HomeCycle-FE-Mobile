@@ -56,12 +56,6 @@ const agreementApi = {
     return response.data;
   },
 
-  // Hủy hợp đồng trước thanh toán (chỉ khi hai bên đã xác nhận); BE tự đóng phiên thương lượng.
-  cancelAgreement: async (agreementId: string) => {
-    const response = await apiClient.post(`/agreements/${agreementId}/cancel`);
-    return response.data;
-  },
-
   /* [KHÔNG ĐƯỢC XÓA] - Tạm thời đóng tính năng Yêu cầu chỉnh sửa
   requestEditAgreement: async (agreementId: string) => {
     const response = await apiClient.patch(
@@ -193,7 +187,6 @@ export default function AgreementPreviewScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [highValueAcknowledged, setHighValueAcknowledged] = useState(false);
-  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isPdfMenuOpen, setIsPdfMenuOpen] = useState(false);
   const pdfInFlightRef = useRef(false);
@@ -597,37 +590,6 @@ export default function AgreementPreviewScreen() {
     } finally {
       pdfInFlightRef.current = false;
       setIsDownloadingPdf(false);
-    }
-  };
-
-  const handleCancelAgreement = async () => {
-    if (!agreementId || agreementWriteInFlightRef.current) return;
-
-    const lockKey = `cancel:${agreementId}`;
-    agreementWriteInFlightRef.current = lockKey;
-
-    try {
-      setIsProcessing(true);
-      setStatusMessage(null);
-      await agreementApi.cancelAgreement(agreementId);
-      setIsConfirmingCancel(false);
-      await fetchAgreementDetails(false);
-      setStatusMessage({
-        type: "success",
-        text: "Đã hủy hợp đồng. Phiên thương lượng này đã kết thúc; muốn tiếp tục giao dịch, hãy bắt đầu phiên thương lượng mới trong cuộc trò chuyện.",
-      });
-    } catch (error: any) {
-      setIsConfirmingCancel(false);
-      setStatusMessage({
-        type: "error",
-        text: getApiErrorMessage(error, "Không thể hủy hợp đồng."),
-      });
-      await fetchAgreementDetails(false);
-    } finally {
-      if (agreementWriteInFlightRef.current === lockKey) {
-        agreementWriteInFlightRef.current = null;
-      }
-      setIsProcessing(false);
     }
   };
 
@@ -1103,14 +1065,6 @@ export default function AgreementPreviewScreen() {
   );
   const requiresHighValueAck = isHighValueContract && isBuyer && canAccept;
 
-  // Hủy hợp đồng chỉ có khi hai bên đã xác nhận (chờ thanh toán) và còn hạn.
-  const canCancelAgreement =
-    !isStateInvalidated &&
-    !isPaymentWindowClosed &&
-    !isPaymentResolutionPending &&
-    isAwaitingPayment &&
-    isParticipant;
-
   const hasPendingAction = canEdit || canAccept;
   const hasAwaitingAction = /* canRequestEdit || */ canPay;
 
@@ -1584,66 +1538,8 @@ export default function AgreementPreviewScreen() {
           </View>
         )}
 
-        {isConfirmingCancel && canCancelAgreement ? (
-          <View
-            style={[
-              styles.inlineConfirmation,
-              { backgroundColor: "rgba(122, 16, 18, 0.06)", borderColor: "rgba(122, 16, 18, 0.24)" },
-            ]}
-          >
-            <View style={styles.inlineConfirmationHeader}>
-              <Ionicons name="alert-circle" size={20} color={COLORS.error} />
-              <Text style={[styles.inlineConfirmationTitle, { color: COLORS.error }]}>
-                Hủy hợp đồng?
-              </Text>
-            </View>
-            <Text style={styles.inlineConfirmationMessage}>
-              {String(agreementData?.cancellationWarningMessage ?? "").trim() ||
-                "Hủy hợp đồng sẽ kết thúc phiên thương lượng hiện tại. Hợp đồng không thể khôi phục hoặc chỉnh sửa. Cuộc trò chuyện và lịch sử vẫn được lưu; nếu muốn tiếp tục giao dịch, hai bên cần bắt đầu phiên thương lượng mới trong cuộc trò chuyện này."}
-            </Text>
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={() => setIsConfirmingCancel(false)}
-                disabled={isProcessing}
-              >
-                <Text style={styles.secondaryBtnText}>Quay lại</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  { backgroundColor: COLORS.error, borderColor: COLORS.error },
-                ]}
-                onPress={() => void handleCancelAgreement()}
-                disabled={isProcessing}
-              >
-                {isProcessing ? (
-                  <ActivityIndicator color={COLORS.white} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Hủy hợp đồng</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
-        {!bankRequirement && !isConfirmingEditConflict && !isConfirmingCancel && isAwaitingPayment && (
+        {!bankRequirement && !isConfirmingEditConflict && isAwaitingPayment && (
           <View style={styles.actionRow}>
-            {canCancelAgreement && (
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={() => {
-                  setStatusMessage(null);
-                  setIsConfirmingCancel(true);
-                }}
-                disabled={isProcessing}
-              >
-                <Text style={[styles.secondaryBtnText, { color: COLORS.error }]}>
-                  Hủy hợp đồng
-                </Text>
-              </TouchableOpacity>
-            )}
-
             {canPay && (
               <TouchableOpacity
                 style={styles.primaryBtn}
@@ -1658,20 +1554,13 @@ export default function AgreementPreviewScreen() {
               </TouchableOpacity>
             )}
 
-            {!hasAwaitingAction && !canCancelAgreement && !isPaymentWindowClosed && !isPaymentResolutionPending && (
+            {!hasAwaitingAction && !isPaymentWindowClosed && !isPaymentResolutionPending && (
               <Text style={styles.waitingText}>
                 Hai bên đã chốt. Đang chờ người mua thanh toán...
               </Text>
             )}
           </View>
         )}
-
-        {!bankRequirement && !isConfirmingEditConflict && !isConfirmingCancel && isAwaitingPayment &&
-        !hasAwaitingAction && canCancelAgreement ? (
-          <Text style={styles.waitingText}>
-            Hai bên đã chốt. Đang chờ người mua thanh toán...
-          </Text>
-        ) : null}
 
         {!isConfirmingEditConflict && isPostPayment && (
           <View style={styles.postPaymentActions}>
