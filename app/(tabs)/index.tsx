@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import OnboardingGuide from "../../src/components/onboarding/OnboardingGuide";
 import MainHeader from "../../src/components/shared/MainHeader";
 import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
@@ -28,6 +29,7 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { devLog } from "../../src/utils/devLog";
+import { hasSeenGuide, isNewAccount, markGuideSeen } from "../../src/utils/onboardingGuide";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -165,13 +167,42 @@ export default function HomeScreen() {
   const cartRequestVersion = useRef(0);
 
   const isBusiness = user?.role === "business";
+  const guideUserId = user?.userId || user?.id ? String(user?.userId || user?.id) : null;
+  // "checking" chặn chuyển sang khảo sát doanh nghiệp cho tới khi biết có cần
+  // hiện giới thiệu không, để hai màn không chồng lên nhau.
+  const [guideStatus, setGuideStatus] = useState<"checking" | "show" | "done">("checking");
+
+  useEffect(() => {
+    let active = true;
+    if (!guideUserId) {
+      setGuideStatus("done");
+      return;
+    }
+
+    setGuideStatus("checking");
+    void (async () => {
+      const shouldShow = isNewAccount(user?.createdAt) && !(await hasSeenGuide(guideUserId));
+      if (active) setGuideStatus(shouldShow ? "show" : "done");
+    })();
+
+    return () => {
+      active = false;
+    };
+    // Chỉ kiểm tra lại khi đổi tài khoản; createdAt đi cùng hồ sơ của tài khoản đó.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideUserId]);
+
+  const closeGuide = () => {
+    setGuideStatus("done");
+    if (guideUserId) void markGuideSeen(guideUserId);
+  };
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
 
       const checkBusinessOnboarding = async () => {
-        if (!isBusiness || hasRedirectedSurvey) return;
+        if (!isBusiness || hasRedirectedSurvey || guideStatus !== "done") return;
 
         try {
           const response = await apiClient.get(
@@ -193,7 +224,7 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [hasRedirectedSurvey, isBusiness, router]),
+    }, [guideStatus, hasRedirectedSurvey, isBusiness, router]),
   );
 
   const fetchHomeData = useCallback(
@@ -931,6 +962,12 @@ export default function HomeScreen() {
           </ScrollView>
         )}
       </View>
+
+      <OnboardingGuide
+        visible={guideStatus === "show"}
+        role={isBusiness ? "business" : "personal"}
+        onClose={closeGuide}
+      />
     </SafeAreaView>
   );
 }
