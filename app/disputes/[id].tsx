@@ -638,24 +638,24 @@ export default function DisputeDetailScreen() {
           <Text style={[styles.descriptionText, styles.descriptionSpacing]}>
             {detail.description || "Không có mô tả."}
           </Text>
-          <InfoRow label="Ngày gửi" value={formatDateTime(detail.createdAt)} />
-          <InfoRow label="Cập nhật" value={formatDateTime(detail.updatedAt)} />
-          {detail.resolvedAt ? (
-            <InfoRow label="Ngày xử lý" value={formatDateTime(detail.resolvedAt)} />
-          ) : null}
-        </View>
-
-        <View style={styles.card}>
-          <SectionTitle icon="images-outline" title="Ảnh bằng chứng của bên khiếu nại" />
+          {/* Ảnh bằng chứng nằm chung khung với mô tả của bên khiếu nại. */}
+          <Text style={styles.descriptionLabel}>Ảnh bằng chứng</Text>
           {evidenceImages.length > 0 ? (
-            <EvidenceGrid images={evidenceImages} />
+            <View style={styles.descriptionSpacing}>
+              <EvidenceGrid images={evidenceImages} />
+            </View>
           ) : (
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, styles.descriptionSpacing]}>
               {isSystemIncident
                 ? "Sự cố do hệ thống ghi nhận, bằng chứng lấy từ dữ liệu lịch hẹn và giao dịch."
                 : "Không có ảnh bằng chứng để hiển thị."}
             </Text>
           )}
+          <InfoRow label="Ngày gửi" value={formatDateTime(detail.createdAt)} />
+          <InfoRow label="Cập nhật" value={formatDateTime(detail.updatedAt)} />
+          {detail.resolvedAt ? (
+            <InfoRow label="Ngày xử lý" value={formatDateTime(detail.resolvedAt)} />
+          ) : null}
         </View>
 
         {responses.length > 0 ? (
