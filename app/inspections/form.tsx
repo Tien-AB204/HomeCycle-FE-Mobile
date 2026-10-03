@@ -744,12 +744,22 @@ export default function InspectionFormScreen() {
           />
         }
       >
-        <View style={styles.headerStatusCard}>
-          <Text style={styles.statusTitle}>
-            {form
-              ? translateInspectionStatus(form.inspectionStatus)
-              : "Chưa có phiếu kiểm định"}
-          </Text>
+        <View
+          style={[
+            styles.headerStatusCard,
+            isRejectedForm ? styles.headerStatusCardRejected : undefined,
+          ]}
+        >
+          <View style={styles.statusTitleRow}>
+            {isRejectedForm ? (
+              <Ionicons name="close-circle" size={22} color={COLORS.white} />
+            ) : null}
+            <Text style={styles.statusTitle}>
+              {form
+                ? translateInspectionStatus(form.inspectionStatus)
+                : "Chưa có phiếu kiểm định"}
+            </Text>
+          </View>
           {form ? (
             <Text style={styles.statusMeta}>
               Phiên bản hiện tại: {form.revision}
@@ -784,15 +794,22 @@ export default function InspectionFormScreen() {
         ) : null}
 
         {isRejectedForm ? (
-          <View style={[styles.messageBox, styles.infoBox]}>
-            <Text style={[styles.messageText, styles.infoText]}>
+          <View style={[styles.messageBox, styles.errorBox]}>
+            <View style={styles.rejectedNoticeRow}>
+              <Ionicons name="alert-circle-outline" size={18} color={COLORS.error} />
+              <Text style={[styles.messageText, styles.errorText, styles.rejectedNoticeText]}>
               {isInspector
                 ? "Người bán đã từ chối phiếu kiểm định. Hệ thống không tự mở tranh chấp; nếu không đồng ý, bạn có thể mở tranh chấp để kiểm duyệt viên xem xét."
                 : "Bạn đã từ chối phiếu kiểm định. Hệ thống không tự mở tranh chấp; nếu cần, bạn hoặc người mua có thể mở tranh chấp để kiểm duyệt viên xem xét."}
-            </Text>
+              </Text>
+            </View>
             {relatedOrderId ? (
               <TouchableOpacity
-                style={[styles.secondaryButtonFlex, styles.quickAcceptButton]}
+                style={[
+                  styles.secondaryButtonFlex,
+                  styles.quickAcceptButton,
+                  styles.rejectedDisputeButton,
+                ]}
                 onPress={() =>
                   router.push({
                     pathname: "/disputes/create",
@@ -803,7 +820,10 @@ export default function InspectionFormScreen() {
                   } as any)
                 }
               >
-                <Text style={styles.secondaryButtonFlexText}>Mở tranh chấp</Text>
+                <Ionicons name="shield-outline" size={17} color={COLORS.error} />
+                <Text style={[styles.secondaryButtonFlexText, styles.rejectedDisputeButtonText]}>
+                  Mở tranh chấp
+                </Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1151,6 +1171,7 @@ export default function InspectionFormScreen() {
                 <InfoRow
                   label="Lý do từ chối"
                   value={form.sellerDecisionReason}
+                  danger
                 />
               ) : null}
             </View>
@@ -1315,11 +1336,23 @@ export default function InspectionFormScreen() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <Text style={[styles.infoLabel, danger ? styles.infoLabelDanger : undefined]}>
+        {label}
+      </Text>
+      <Text style={[styles.infoValue, danger ? styles.infoValueDanger : undefined]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -1399,6 +1432,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  // Phiếu đã bị từ chối: thẻ trạng thái màu đỏ để phân biệt với phiếu đang xử lý / đã xác nhận.
+  headerStatusCardRejected: { backgroundColor: COLORS.error },
+  statusTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rejectedNoticeRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  rejectedNoticeText: { flex: 1 },
+  rejectedDisputeButton: {
+    flexDirection: "row",
+    gap: 6,
+    borderColor: COLORS.error,
+  },
+  rejectedDisputeButtonText: { color: COLORS.error },
   statusTitle: { color: COLORS.white, fontSize: 18, fontWeight: "900" },
   statusMeta: {
     color: "rgba(255,255,255,0.78)",
@@ -1601,6 +1645,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   infoLabel: { flex: 1, color: COLORS.textLight, fontSize: 13 },
+  infoLabelDanger: { color: COLORS.error },
   infoValue: {
     flex: 1.5,
     color: COLORS.text,
@@ -1608,6 +1653,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "right",
   },
+  infoValueDanger: { color: COLORS.error },
   modalBackdrop: {
     flex: 1,
     justifyContent: "center",
