@@ -92,9 +92,11 @@ export default function ProfileScreen() {
   reloadUserRef.current = reloadUser;
 
   const [imageError, setImageError] = useState(false);
-  const [postCount, setPostCount] = useState(0);
+  // null = chưa tải lần nào: hiện "…" thay vì số 0 giả rồi nhảy lên số thật.
+  const [postCount, setPostCount] = useState<number | null>(null);
   const [bizStatus, setBizStatus] = useState<string | null>(null);
   const [wallet, setWallet] = useState<any>(null);
+  const [walletStatus, setWalletStatus] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(message, () => setMessage(null));
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -153,8 +155,10 @@ export default function ProfileScreen() {
         const walletResult = results[1];
         if (walletResult.status === "fulfilled") {
           setWallet(unwrap(walletResult.value));
+          setWalletStatus("ready");
         } else {
           setWallet(null);
+          setWalletStatus("error");
           setMessage({
             type: "info",
             text:
@@ -478,7 +482,13 @@ export default function ProfileScreen() {
             >
               <Ionicons name="wallet-outline" size={24} color={COLORS.primary} />
               <Text style={styles.statLabel}>Số dư ví</Text>
-              <Text style={styles.statValue}>{formatCurrency(availableBalance)}</Text>
+              <Text style={styles.statValue}>
+                {walletStatus === "ready"
+                  ? formatCurrency(availableBalance)
+                  : walletStatus === "loading"
+                    ? "…"
+                    : "—"}
+              </Text>
               {Number(holdBalance) > 0 ? (
                 <Text style={styles.holdText}>Đang chờ rút: {formatCurrency(holdBalance)}</Text>
               ) : null}
@@ -493,7 +503,9 @@ export default function ProfileScreen() {
               <Text style={styles.statLabel}>
                 {user.role === "business" ? "Tin đang thu mua" : "Tin đang đăng bán"}
               </Text>
-              <Text style={styles.statValue}>{postCount} bài</Text>
+              <Text style={styles.statValue}>
+                {postCount === null ? "…" : `${postCount} bài`}
+              </Text>
             </TouchableOpacity>
           </View>
 
