@@ -143,6 +143,42 @@ const outcomeLabels: Record<string, string> = {
   noviolation: "Không có vi phạm",
 };
 
+type Tone = { color: string; background: string; border: string; icon: React.ComponentProps<typeof Ionicons>["name"] };
+
+const TONES: Record<"warning" | "info" | "success" | "danger" | "neutral", Tone> = {
+  warning: { color: "#9A6418", background: "rgba(154, 100, 24, 0.10)", border: "rgba(154, 100, 24, 0.26)", icon: "hourglass-outline" },
+  info: { color: COLORS.primary, background: "rgba(84, 123, 125, 0.10)", border: "rgba(84, 123, 125, 0.26)", icon: "chatbubbles-outline" },
+  success: { color: "#2F765D", background: "rgba(47, 118, 93, 0.10)", border: "rgba(47, 118, 93, 0.26)", icon: "checkmark-circle-outline" },
+  danger: { color: "#7A1012", background: "rgba(122, 16, 18, 0.08)", border: "rgba(122, 16, 18, 0.24)", icon: "close-circle-outline" },
+  neutral: { color: COLORS.textLight, background: "rgba(84, 123, 125, 0.06)", border: COLORS.border, icon: "archive-outline" },
+};
+
+// Màu thẻ trạng thái: chờ phản hồi (xanh), chờ / đang xử lý (vàng), xong (xanh lá), bị từ chối (đỏ), đã đóng (xám).
+const getStatusTone = (statusKey: string): Tone => {
+  if (["6", "awaitingresponse"].includes(statusKey)) return TONES.info;
+  if (["1", "resolved"].includes(statusKey)) return TONES.success;
+  if (["2", "rejected"].includes(statusKey)) return TONES.danger;
+  if (["3", "closed"].includes(statusKey)) return TONES.neutral;
+  return TONES.warning;
+};
+
+const responseTypeIcons: Record<string, React.ComponentProps<typeof Ionicons>["name"]> = {
+  "1": "checkmark-circle",
+  accept: "checkmark-circle",
+  "2": "chatbox-ellipses",
+  rebut: "chatbox-ellipses",
+  "3": "document-text",
+  statement: "document-text",
+};
+
+// BE đôi khi chèn thời điểm dạng ISO (UTC) vào mô tả diễn biến: đổi sang giờ hiển thị cho dễ đọc.
+const ISO_DATE_TIME_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?/g;
+const formatIsoInText = (text: string) =>
+  text.replace(ISO_DATE_TIME_PATTERN, (match) => formatDateTime(match));
+
+const getInitial = (name?: string | null) =>
+  String(name || "?").trim().charAt(0).toUpperCase() || "?";
+
 const responseTypeLabels: Record<string, string> = {
   "1": "Đồng ý",
   accept: "Đồng ý",
@@ -410,6 +446,7 @@ export default function DisputeDetailScreen() {
   const hasResponseActions = canAccept || canRebut || canSubmitStatement;
   const statusKey = normalizeKey(detail.status);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
+  const statusTone = getStatusTone(statusKey);
   // Category luôn hiển thị đúng tên đã lưu, kể cả khi loại đó hiện không
   // còn active cho khiếu nại mới (lịch sử vẫn phải hiển thị đúng).
   const categoryLabel = getDisputeCategoryLabel(detail.category);
@@ -430,20 +467,33 @@ export default function DisputeDetailScreen() {
           />
         }
       >
-        <View style={styles.headerCard}>
-          <View style={styles.headerIcon}>
-            <Ionicons name="warning-outline" size={24} color="#9A6418" />
+        <View style={[styles.headerCard, { backgroundColor: statusTone.background, borderColor: statusTone.border }]}>
+          <View style={styles.headerTopRow}>
+            <View style={[styles.headerIcon, { backgroundColor: statusTone.border }]}>
+              <Ionicons name={statusTone.icon} size={22} color={statusTone.color} />
+            </View>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerEyebrow}>
+                {isPostTarget ? "Báo cáo bài đăng" : isReviewTarget ? "Báo cáo đánh giá" : "Tranh chấp giao dịch"}
+              </Text>
+              <Text style={[styles.headerStatus, { color: statusTone.color }]}>{statusLabel}</Text>
+            </View>
           </View>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Tranh chấp giao dịch</Text>
-            <Text style={styles.disputeIdText} numberOfLines={1}>
-              #{detail.disputeId || disputeId}
-            </Text>
-            {originLabel ? <Text style={styles.originText}>{originLabel}</Text> : null}
+          <View style={styles.headerChips}>
+            <View style={styles.headerChip}>
+              <Ionicons name="pricetag-outline" size={13} color={COLORS.text} />
+              <Text style={styles.headerChipText} numberOfLines={1}>{categoryLabel}</Text>
+            </View>
+            {originLabel ? (
+              <View style={styles.headerChip}>
+                <Ionicons name="flag-outline" size={13} color={COLORS.text} />
+                <Text style={styles.headerChipText} numberOfLines={1}>{originLabel}</Text>
+              </View>
+            ) : null}
           </View>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>{statusLabel}</Text>
-          </View>
+          <Text style={styles.disputeIdText} numberOfLines={1}>
+            Mã #{String(detail.disputeId || disputeId).slice(0, 8).toUpperCase()} · Gửi lúc {formatDateTime(detail.createdAt)}
+          </Text>
         </View>
 
         {isAwaitingResponse ? (
@@ -495,7 +545,7 @@ export default function DisputeDetailScreen() {
           <ReviewTargetCard review={contentReview} />
         ) : (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Đơn hàng liên quan</Text>
+            <SectionTitle icon="receipt-outline" title="Đơn hàng liên quan" />
             <InfoRow label="Mã đơn hàng" value={order.orderCode || "Chưa có"} strong />
             <InfoRow label="Sản phẩm" value={order.productName || "Chưa có"} />
             <InfoRow label="Số lượng" value={String(order.quantity ?? "Chưa có")} />
@@ -520,16 +570,17 @@ export default function DisputeDetailScreen() {
         )}
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Các bên liên quan</Text>
-          <InfoRow label="Người khiếu nại" value={senderName} strong />
-          <InfoRow label="Người bị khiếu nại" value={targetUserName} strong />
+          <SectionTitle icon="people-outline" title="Các bên liên quan" />
+          <PartyRow name={senderName} role="Người khiếu nại" tone={TONES.warning} />
+          <PartyRow name={targetUserName} role="Người bị khiếu nại" tone={TONES.info} />
         </View>
 
         {appointmentContext ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>
-              {appointmentTypeLabels[normalizeKey(appointmentContext.appointmentType)] || "Lịch hẹn liên quan"}
-            </Text>
+            <SectionTitle
+              icon="calendar-outline"
+              title={appointmentTypeLabels[normalizeKey(appointmentContext.appointmentType)] || "Lịch hẹn liên quan"}
+            />
             <InfoRow label="Thời gian hẹn" value={formatDateTime(appointmentContext.scheduledAt)} />
             {appointmentContext.location ? (
               <InfoRow label="Địa điểm" value={appointmentContext.location} />
@@ -553,7 +604,7 @@ export default function DisputeDetailScreen() {
 
         {inspectionContext ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Phiếu kiểm định liên quan</Text>
+            <SectionTitle icon="clipboard-outline" title="Phiếu kiểm định liên quan" />
             <InfoRow
               label="Hình thức"
               value={inspectionModeLabels[normalizeKey(inspectionContext.inspectionMode)] || "Chưa rõ"}
@@ -594,10 +645,10 @@ export default function DisputeDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Nội dung khiếu nại</Text>
-          <InfoRow label="Loại khiếu nại" value={categoryLabel} strong />
-          <Text style={styles.descriptionLabel}>Mô tả</Text>
-          <Text style={styles.descriptionText}>{detail.description || "Không có mô tả."}</Text>
+          <SectionTitle icon="document-text-outline" title="Nội dung khiếu nại" />
+          <Text style={[styles.descriptionText, styles.descriptionSpacing]}>
+            {detail.description || "Không có mô tả."}
+          </Text>
           <InfoRow label="Ngày gửi" value={formatDateTime(detail.createdAt)} />
           <InfoRow label="Cập nhật" value={formatDateTime(detail.updatedAt)} />
           {detail.resolvedAt ? (
@@ -606,7 +657,7 @@ export default function DisputeDetailScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Ảnh bằng chứng của bên khiếu nại</Text>
+          <SectionTitle icon="images-outline" title="Ảnh bằng chứng của bên khiếu nại" />
           {evidenceImages.length > 0 ? (
             <EvidenceGrid images={evidenceImages} />
           ) : (
@@ -620,7 +671,7 @@ export default function DisputeDetailScreen() {
 
         {responses.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Phản hồi của các bên</Text>
+            <SectionTitle icon="chatbubbles-outline" title="Phản hồi của các bên" />
             {responses.map((item: any, index: number) => {
               const responseImages = Array.isArray(item?.evidenceImages) ? item.evidenceImages : [];
               return (
@@ -628,14 +679,33 @@ export default function DisputeDetailScreen() {
                   key={item?.disputeResponseId || `response-${index}`}
                   style={[styles.responseItem, index > 0 ? styles.responseDivider : undefined]}
                 >
-                  <Text style={styles.responseType}>
-                    {responseTypeLabels[normalizeKey(item?.responseType)] || "Phản hồi"}
-                  </Text>
-                  <Text style={styles.responseMeta}>
-                    {item?.responder?.username || "Người dùng"} · {formatDateTime(item?.createdAt)}
-                  </Text>
-                  {item?.content ? <Text style={styles.descriptionText}>{item.content}</Text> : null}
-                  {responseImages.length > 0 ? <EvidenceGrid images={responseImages} /> : null}
+                  <View style={styles.responseHeader}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{getInitial(item?.responder?.username)}</Text>
+                    </View>
+                    <View style={styles.responseHeaderBody}>
+                      <Text style={styles.responseName} numberOfLines={1}>
+                        {item?.responder?.username || "Người dùng"}
+                      </Text>
+                      <Text style={styles.responseMeta}>{formatDateTime(item?.createdAt)}</Text>
+                    </View>
+                    <View style={styles.responseTypeChip}>
+                      <Ionicons
+                        name={responseTypeIcons[normalizeKey(item?.responseType)] || "chatbox"}
+                        size={12}
+                        color={COLORS.primary}
+                      />
+                      <Text style={styles.responseTypeText}>
+                        {responseTypeLabels[normalizeKey(item?.responseType)] || "Phản hồi"}
+                      </Text>
+                    </View>
+                  </View>
+                  {item?.content ? <Text style={styles.responseBubble}>{item.content}</Text> : null}
+                  {responseImages.length > 0 ? (
+                    <View style={styles.responseImages}>
+                      <EvidenceGrid images={responseImages} />
+                    </View>
+                  ) : null}
                 </View>
               );
             })}
@@ -644,7 +714,7 @@ export default function DisputeDetailScreen() {
 
         {hasResponseActions ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Phản hồi của bạn</Text>
+            <SectionTitle icon="create-outline" title="Phản hồi của bạn" />
             {canAccept && proposedOutcomeLabel ? (
               <Text style={styles.helperText}>
                 Bên khiếu nại đề xuất: {proposedOutcomeLabel.toLowerCase()}.
@@ -679,7 +749,7 @@ export default function DisputeDetailScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Kết quả xử lý</Text>
+          <SectionTitle icon="ribbon-outline" title="Kết quả xử lý" />
           {outcomeLabel ? <InfoRow label="Kết luận" value={outcomeLabel} strong /> : null}
           {resolutionSourceLabel ? <InfoRow label="Cách giải quyết" value={resolutionSourceLabel} /> : null}
           {detail.moderatorNote ? (
@@ -688,20 +758,31 @@ export default function DisputeDetailScreen() {
               <Text style={styles.descriptionText}>{detail.moderatorNote}</Text>
             </>
           ) : !outcomeLabel && !resolutionSourceLabel ? (
-            <Text style={styles.emptyText}>Tranh chấp chưa có kết quả xử lý.</Text>
+            <View style={styles.emptyState}>
+              <Ionicons name="hourglass-outline" size={20} color={COLORS.textLight} />
+              <Text style={styles.emptyText}>Tranh chấp chưa có kết quả xử lý.</Text>
+            </View>
           ) : null}
         </View>
 
         {timeline.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Diễn biến</Text>
+            <SectionTitle icon="git-commit-outline" title="Diễn biến" />
             {timeline.map((step: any, index: number) => (
               <View key={`${step?.code || "step"}-${index}`} style={styles.timelineItem}>
-                <View style={styles.timelineDot} />
+                <View style={styles.timelineRail}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      index === timeline.length - 1 ? styles.timelineDotCurrent : undefined,
+                    ]}
+                  />
+                  {index < timeline.length - 1 ? <View style={styles.timelineLine} /> : null}
+                </View>
                 <View style={styles.timelineBody}>
                   <Text style={styles.timelineTitle}>{step?.title || "Cập nhật"}</Text>
                   {step?.description ? (
-                    <Text style={styles.timelineDescription}>{step.description}</Text>
+                    <Text style={styles.timelineDescription}>{formatIsoInText(String(step.description))}</Text>
                   ) : null}
                   <Text style={styles.timelineTime}>{formatDateTime(step?.occurredAt)}</Text>
                 </View>
@@ -712,7 +793,7 @@ export default function DisputeDetailScreen() {
 
         {canCloseDispute ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Thao tác</Text>
+            <SectionTitle icon="settings-outline" title="Thao tác" />
             <Text style={styles.helperText}>
               Chỉ nên đóng khi bạn không còn muốn tiếp tục yêu cầu xử lý tranh
               chấp này.
@@ -800,20 +881,59 @@ export default function DisputeDetailScreen() {
   );
 }
 
+// Ô ảnh kích thước cố định; ảnh không tải được thì hiện ô báo lỗi thay vì khoảng trắng lớn.
+function EvidenceThumb({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <View style={[styles.evidenceImage, styles.evidenceFallback]}>
+        <Ionicons name="image-outline" size={22} color={COLORS.textLight} />
+        <Text style={styles.evidenceFallbackText}>Không tải được ảnh</Text>
+      </View>
+    );
+  }
+  return <Image source={{ uri: url }} style={styles.evidenceImage} onError={() => setFailed(true)} />;
+}
+
 function EvidenceGrid({ images }: { images: any[] }) {
   return (
     <View style={styles.evidenceGrid}>
       {images.map((item: any, index: number) => {
         const url = getImageUrl(item);
         if (!url) return null;
-        return (
-          <Image
-            key={item?.mediaId || item?.MediaId || `${url}-${index}`}
-            source={{ uri: url }}
-            style={styles.evidenceImage}
-          />
-        );
+        return <EvidenceThumb key={item?.mediaId || item?.MediaId || `${url}-${index}`} url={url} />;
       })}
+    </View>
+  );
+}
+
+function SectionTitle({
+  icon,
+  title,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionIcon}>
+        <Ionicons name={icon} size={16} color={COLORS.primary} />
+      </View>
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+}
+
+function PartyRow({ name, role, tone }: { name: string; role: string; tone: Tone }) {
+  return (
+    <View style={styles.partyRow}>
+      <View style={[styles.avatar, { backgroundColor: tone.background }]}>
+        <Text style={[styles.avatarText, { color: tone.color }]}>{getInitial(name)}</Text>
+      </View>
+      <Text style={styles.partyName} numberOfLines={1}>{name}</Text>
+      <View style={[styles.partyRoleChip, { backgroundColor: tone.background }]}>
+        <Text style={[styles.partyRoleText, { color: tone.color }]}>{role}</Text>
+      </View>
     </View>
   );
 }
@@ -838,11 +958,7 @@ function ContentImageGrid({
         const url = item?.url || item?.Url;
         if (!url) return null;
         return (
-          <Image
-            key={item?.mediaId || item?.MediaId || `${url}-${index}`}
-            source={{ uri: url }}
-            style={styles.evidenceImage}
-          />
+          <EvidenceThumb key={item?.mediaId || item?.MediaId || `${url}-${index}`} url={url} />
         );
       })}
     </View>
@@ -862,7 +978,7 @@ function PostTargetCard({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Bài đăng bị báo cáo</Text>
+      <SectionTitle icon="newspaper-outline" title="Bài đăng bị báo cáo" />
       <InfoRow label="Sản phẩm" value={post?.productName || "Chưa có"} strong />
       {postTypeLabel ? <InfoRow label="Loại tin" value={postTypeLabel} /> : null}
       <InfoRow
@@ -900,7 +1016,7 @@ function ReviewTargetCard({ review }: { review: any }) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Đánh giá bị báo cáo</Text>
+      <SectionTitle icon="star-outline" title="Đánh giá bị báo cáo" />
       {Number.isFinite(rating) && rating > 0 ? (
         <InfoRow label="Số sao" value={`${rating}/5`} strong />
       ) : null}
@@ -968,37 +1084,101 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: COLORS.white, fontWeight: "700" },
   scrollContent: { padding: 16, paddingBottom: 36 },
-  headerCard: {
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
+headerCard: {
     borderWidth: 1,
-    borderColor: "rgba(154, 100, 24, 0.24)",
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    gap: 12,
+  },
+  headerTopRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerEyebrow: { color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
+  headerStatus: { fontSize: 18, fontWeight: "800", marginTop: 2 },
+  headerChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  headerChip: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
+    gap: 5,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: COLORS.white,
   },
-  headerIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
+  headerChipText: { color: COLORS.text, fontSize: 12, fontWeight: "600", flexShrink: 1 },
+headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
   },
   headerContent: { flex: 1 },
-  headerTitle: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
-  disputeIdText: { color: COLORS.textLight, fontSize: 11, marginTop: 3 },
-  originText: { color: "#9A6418", fontSize: 12, fontWeight: "600", marginTop: 4 },
+
+disputeIdText: { color: COLORS.textLight, fontSize: 12 },
+
   deadlineBanner: { marginBottom: 12 },
-  responseItem: { paddingVertical: 10 },
+responseItem: { paddingVertical: 12 },
   responseDivider: { borderTopWidth: 1, borderTopColor: COLORS.border },
-  responseType: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
-  responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2, marginBottom: 8 },
-  timelineItem: { flexDirection: "row", gap: 10, paddingVertical: 6 },
-  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary, marginTop: 6 },
-  timelineBody: { flex: 1 },
+responseHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  responseHeaderBody: { flex: 1 },
+  responseName: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
+  responseTypeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(84, 123, 125, 0.12)",
+  },
+  responseTypeText: { color: COLORS.primary, fontSize: 11, fontWeight: "800" },
+  responseBubble: {
+    color: COLORS.text,
+    fontSize: 14,
+    lineHeight: 21,
+    backgroundColor: "#F3F6F6",
+    borderRadius: 12,
+    borderTopLeftRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginLeft: 46,
+  },
+  responseImages: { marginLeft: 46, marginTop: 10 },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(84, 123, 125, 0.14)",
+  },
+  avatarText: { color: COLORS.primary, fontSize: 15, fontWeight: "800" },
+  partyRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
+  partyName: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: "700" },
+  partyRoleChip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
+  partyRoleText: { fontSize: 11, fontWeight: "800" },
+responseMeta: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+timelineItem: { flexDirection: "row", gap: 12 },
+  timelineRail: { width: 12, alignItems: "center" },
+  timelineLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 2 },
+timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.border,
+    marginTop: 5,
+  },
+  timelineDotCurrent: {
+    backgroundColor: COLORS.primary,
+    borderWidth: 3,
+    borderColor: "rgba(84, 123, 125, 0.25)",
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginTop: 3,
+  },
+timelineBody: { flex: 1, paddingBottom: 14 },
   timelineTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   timelineDescription: { color: COLORS.textLight, fontSize: 13, lineHeight: 19, marginTop: 2 },
   timelineTime: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
@@ -1025,14 +1205,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryActionText: { color: COLORS.primary, fontSize: 14, fontWeight: "800" },
-  statusBadge: {
-    backgroundColor: "rgba(154, 100, 24, 0.10)",
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    marginLeft: 8,
-  },
-  statusText: { color: "#9A6418", fontSize: 11, fontWeight: "800" },
+
+
   inlineErrorBox: {
     backgroundColor: "rgba(122, 16, 18, 0.08)",
     borderWidth: 1,
@@ -1042,23 +1216,32 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   inlineErrorText: { color: "#7A1012", fontSize: 12, lineHeight: 18 },
-  card: {
+card: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 14,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: COLORS.text,
-    borderBottomWidth: 1,
-    borderBottomColor: "#BAC2C1",
-    paddingBottom: 8,
+sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 10,
     marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E3E8E8",
   },
+  sectionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+  },
+  sectionTitle: { flex: 1, fontSize: 15, fontWeight: "800", color: COLORS.text },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1099,13 +1282,19 @@ const styles = StyleSheet.create({
     padding: 11,
     marginBottom: 12,
   },
-  evidenceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  evidenceImage: {
-    width: "47%",
-    aspectRatio: 1,
+evidenceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+evidenceImage: {
+    width: 92,
+    height: 92,
     borderRadius: 10,
-    backgroundColor: "#F8F9FA",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#EEF2F2",
   },
+  evidenceFallback: { alignItems: "center", justifyContent: "center", gap: 4, padding: 6 },
+  evidenceFallbackText: { color: COLORS.textLight, fontSize: 10, textAlign: "center" },
+  descriptionSpacing: { marginBottom: 12 },
+  emptyState: { flexDirection: "row", alignItems: "center", gap: 8 },
   emptyText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18 },
   inlineSuccessBox: {
     backgroundColor: "rgba(47, 118, 93, 0.10)",
