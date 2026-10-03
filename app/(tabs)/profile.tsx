@@ -339,6 +339,11 @@ export default function ProfileScreen() {
             route: "/disputes",
           },
           {
+            icon: "help-circle-outline",
+            title: "Hướng dẫn sử dụng",
+            route: "/guide",
+          },
+          {
             icon: "book-outline",
             title: "Quy định & Chính sách",
             route: "/policy",
@@ -365,6 +370,11 @@ export default function ProfileScreen() {
             icon: "alert-circle-outline",
             title: "Tranh chấp của tôi",
             route: "/disputes",
+          },
+          {
+            icon: "help-circle-outline",
+            title: "Hướng dẫn sử dụng",
+            route: "/guide",
           },
           {
             icon: "book-outline",
