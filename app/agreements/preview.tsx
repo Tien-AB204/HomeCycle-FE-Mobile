@@ -1399,22 +1399,6 @@ export default function AgreementPreviewScreen() {
       </ScrollView>
 
       <View style={styles.bottomBar}>
-        <View style={styles.reloadRow}>
-          <TouchableOpacity
-            style={styles.reloadBtn}
-            onPress={handleManualReload}
-            disabled={isProcessing}
-          >
-            <Ionicons
-              name="sync-outline"
-              size={16}
-              color={COLORS.primary}
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.reloadBtnText}>Làm mới dữ liệu</Text>
-          </TouchableOpacity>
-        </View>
-
         <DeadlineBanner
           countdown={paymentCountdown}
           label="Thời gian xác nhận và thanh toán còn lại"
@@ -2019,26 +2003,6 @@ const styles = StyleSheet.create({
 
   deadlineBanner: {
     marginBottom: 10,
-  },
-  reloadRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 4,
-  },
-  reloadBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(84, 123, 125, 0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(84, 123, 125, 0.24)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  reloadBtnText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "600",
   },
 
   actionRow: {
