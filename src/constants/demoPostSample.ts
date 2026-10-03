@@ -331,3 +331,141 @@ export const DEMO_SELL_POST_SAMPLES: DemoSellPostSample[] = [
     ],
   },
 ];
+
+// Mẫu cho tin thu mua (màn "Đăng tin thu mua"). Tin thu mua không có ảnh, kích thước hay giá gốc;
+// mức hư hại và thời gian sử dụng là mức tối đa người mua chấp nhận. Giá đến dùng chung state basePrice.
+export type DemoBuyPostSample = {
+  key: string;
+  label: string;
+  productName: string;
+  description: string;
+  categoryId: string;
+  productTypeId: string;
+  brandId: string;
+  quantity: string;
+  functionalityStatus: string;
+  damageLevel: string;
+  usageDuration: string;
+  priceFrom: string;
+  priceTo: string;
+  streetAddress: string;
+  ward: string;
+  city: string;
+};
+
+export const DEMO_BUY_POST_SAMPLES: DemoBuyPostSample[] = [
+  {
+    key: "buy-washer",
+    label: "Thu mua máy giặt cửa trước · 10 chiếc",
+    productName: "Cần mua máy giặt cửa trước 8–10kg",
+    description:
+      "Thu mua số lượng 10 máy giặt cửa trước 8–10kg, còn hoạt động tốt, ưu tiên máy Inverter. Nhận máy trầy xước nhẹ, không nhận máy rò nước hoặc báo lỗi bo mạch. Hỗ trợ tới lấy hàng tại nhà trong nội thành.",
+    categoryId: CATEGORY.electronics,
+    productTypeId: "eb16017a-0bc0-464a-8903-deb2e030ce71",
+    brandId: "",
+    quantity: "10",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Cosmetic_Damage",
+    usageDuration: "5",
+    priceFrom: "1500000",
+    priceTo: "3500000",
+    streetAddress: "125 Xô Viết Nghệ Tĩnh",
+    ward: "Phường Bình Thạnh",
+    city: "Thành phố Hồ Chí Minh",
+  },
+  {
+    key: "buy-fridge",
+    label: "Thu mua tủ lạnh 150–250 lít · 5 chiếc",
+    productName: "Cần mua tủ lạnh Inverter 150–250 lít",
+    description:
+      "Cần mua 5 tủ lạnh 2 cánh dung tích 150–250 lít cho phòng trọ cho thuê. Yêu cầu làm lạnh tốt, gioăng cửa còn kín, không đọng nước. Ưu tiên Toshiba, Panasonic, Samsung. Thanh toán ngay khi nhận hàng.",
+    categoryId: CATEGORY.electronics,
+    productTypeId: "24c1497e-7aba-4001-b5df-7e9053042f4c",
+    brandId: "",
+    quantity: "5",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Cosmetic_Damage",
+    usageDuration: "4",
+    priceFrom: "1500000",
+    priceTo: "4000000",
+    streetAddress: "18 Trần Duy Hưng",
+    ward: "Phường Cầu Giấy",
+    city: "Thành phố Hà Nội",
+  },
+  {
+    key: "buy-aircon",
+    label: "Thu mua máy lạnh Panasonic 1–1.5HP · 8 bộ",
+    productName: "Cần mua máy lạnh Panasonic Inverter 1–1.5HP",
+    description:
+      "Thu mua 8 bộ máy lạnh Panasonic Inverter công suất 1–1.5HP, đủ dàn nóng và dàn lạnh, còn chạy êm, lạnh sâu. Bên mua tự tháo dỡ và vận chuyển, ưu tiên khu vực trung tâm thành phố.",
+    categoryId: CATEGORY.electronics,
+    productTypeId: "409c2839-191f-4f9d-ae8a-f57e137d0745",
+    brandId: BRAND.panasonic,
+    quantity: "8",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Minor_Damage",
+    usageDuration: "5",
+    priceFrom: "2500000",
+    priceTo: "6000000",
+    streetAddress: "210 Hùng Vương",
+    ward: "Phường Hải Châu",
+    city: "Thành phố Đà Nẵng",
+  },
+  {
+    key: "buy-tv",
+    label: "Thu mua tivi Samsung 43–55 inch · 6 chiếc",
+    productName: "Cần mua tivi Samsung Smart TV 43–55 inch",
+    description:
+      "Cần mua 6 tivi Samsung Smart TV 43–55 inch, màn hình không sọc, không điểm chết, còn remote. Nhận máy có vết trầy nhẹ ở viền. Ưu tiên đời 2020 trở lại đây.",
+    categoryId: CATEGORY.electronics,
+    productTypeId: "8e2a8837-a88d-49b3-9c4e-6732d47a8957",
+    brandId: BRAND.samsung,
+    quantity: "6",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Cosmetic_Damage",
+    usageDuration: "5",
+    priceFrom: "2000000",
+    priceTo: "6000000",
+    streetAddress: "72 Đường 30 Tháng 4",
+    ward: "Phường Ninh Kiều",
+    city: "Thành phố Cần Thơ",
+  },
+  {
+    key: "buy-office-chair",
+    label: "Thu mua ghế công thái học · 20 chiếc",
+    productName: "Cần mua ghế văn phòng công thái học",
+    description:
+      "Thu mua 20 ghế văn phòng công thái học cho văn phòng mới. Yêu cầu chỉnh được độ cao, ngả lưng, lưng lưới hoặc đệm còn tốt, không gãy chân hay tay vịn. Nhận nhiều thương hiệu.",
+    categoryId: CATEGORY.furniture,
+    productTypeId: "2f8b0696-f299-47d7-b2e5-abf7e219ec8e",
+    brandId: "",
+    quantity: "20",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Cosmetic_Damage",
+    usageDuration: "3",
+    priceFrom: "500000",
+    priceTo: "2500000",
+    streetAddress: "88 Lê Lợi",
+    ward: "Phường Bến Thành",
+    city: "Thành phố Hồ Chí Minh",
+  },
+  {
+    key: "buy-thermos",
+    label: "Thu mua bình giữ nhiệt Lock&Lock · 100 chiếc",
+    productName: "Cần mua bình giữ nhiệt Lock&Lock 500ml",
+    description:
+      "Thu mua số lượng lớn 100 bình giữ nhiệt Lock&Lock lõi inox 400–600ml, nắp còn kín, không móp méo. Dùng làm quà tặng cho chương trình tái sử dụng, ưu tiên còn hộp.",
+    categoryId: CATEGORY.household,
+    productTypeId: "b2257e74-c534-4b8a-b4d7-25629d714c82",
+    brandId: BRAND.lockAndLock,
+    quantity: "100",
+    functionalityStatus: "FullyFunctional",
+    damageLevel: "Cosmetic_Damage",
+    usageDuration: "2",
+    priceFrom: "30000",
+    priceTo: "80000",
+    streetAddress: "9 Võ Văn Ngân",
+    ward: "Phường Thủ Đức",
+    city: "Thành phố Hồ Chí Minh",
+  },
+];

@@ -33,7 +33,10 @@ import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
-import { DEMO_SELL_POST_SAMPLES } from "../../src/constants/demoPostSample";
+import {
+  DEMO_BUY_POST_SAMPLES,
+  DEMO_SELL_POST_SAMPLES,
+} from "../../src/constants/demoPostSample";
 import AiPriceDetails, {
   countAiPriceSamples,
   type AiPriceBreakdown,
@@ -853,12 +856,41 @@ export default function PostFormScreen() {
     setFormMessage(null);
   };
 
+  // Điền tin thu mua mẫu: chỉ các trường của tin thu mua; mức hư hại và thời gian sử dụng là mức tối đa chấp nhận.
+  const fillDemoBuySample = (sampleKey: string) => {
+    const sample = DEMO_BUY_POST_SAMPLES.find((item) => item.key === sampleKey);
+    if (!sample) return;
+    setProductName(sample.productName);
+    setDescription(sample.description);
+    setSelectedCategory(sample.categoryId);
+    setSelectedProductType(sample.productTypeId);
+    setOldEavData([]);
+    setBrandId(sample.brandId);
+    setQuantity(sample.quantity);
+    setQuantityError("");
+    setFunctionalityStatus(sample.functionalityStatus);
+    setDamageLevel(sample.damageLevel);
+    setUsageDuration(sample.usageDuration);
+    setPriceFrom(sample.priceFrom);
+    setBasePrice(sample.priceTo);
+    setStreetAddress(sample.streetAddress);
+    setWard(sample.ward);
+    setCity(sample.city);
+    setFormMessage(null);
+  };
+
   const openDemoSamplePicker = () =>
-    openSelect(
-      "Chọn dữ liệu mẫu",
-      DEMO_SELL_POST_SAMPLES.map((sample) => ({ label: sample.label, value: sample.key })),
-      fillDemoSample,
-    );
+    isBuyPost
+      ? openSelect(
+          "Chọn tin thu mua mẫu",
+          DEMO_BUY_POST_SAMPLES.map((sample) => ({ label: sample.label, value: sample.key })),
+          fillDemoBuySample,
+        )
+      : openSelect(
+          "Chọn dữ liệu mẫu",
+          DEMO_SELL_POST_SAMPLES.map((sample) => ({ label: sample.label, value: sample.key })),
+          fillDemoSample,
+        );
 
   const displayDimensions =
     length && width && height ? `${length} x ${width} x ${height} cm` : "";
@@ -1844,7 +1876,7 @@ export default function PostFormScreen() {
             {isEditMode ? "Sửa tin đăng" : isBuyPost ? "Đăng tin thu mua" : "Đăng tin mới"}
           </Text>
           <View style={styles.headerActions}>
-            {!isEditMode && !isBuyPost ? (
+            {!isEditMode ? (
               <TouchableOpacity
                 style={styles.demoSampleButton}
                 onPress={openDemoSamplePicker}
