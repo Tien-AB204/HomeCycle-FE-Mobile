@@ -55,6 +55,7 @@ import {
   capitalizeWordInitials,
   toUppercaseText,
 } from "../../src/utils/textFormat";
+import { launchImagePickerWithCamera } from "../../src/utils/imageSourcePicker";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
 const OPERATING_SCOPE_OPTIONS = [
@@ -171,7 +172,7 @@ const appendAssetToForm = async (
 const pickSingleImage = async (
   context: FileUploadContext,
 ): Promise<{ asset: ImagePicker.ImagePickerAsset | null; error?: string }> => {
-  const result = await ImagePicker.launchImageLibraryAsync({
+  const result = await launchImagePickerWithCamera({
     mediaTypes: ["images"],
     allowsEditing: false,
     quality: 0.8,

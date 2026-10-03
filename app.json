@@ -35,7 +35,14 @@
           "resizeMode": "contain"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HomeCycle cần truy cập ảnh để bạn tải lên ảnh sản phẩm và giấy tờ xác minh.",
+          "cameraPermission": "HomeCycle cần dùng camera để bạn chụp ảnh CCCD và giấy tờ xác minh."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
