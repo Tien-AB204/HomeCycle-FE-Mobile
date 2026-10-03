@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -18,6 +19,7 @@ import {
 
 import OfferManagementPanel from "../../src/components/offers/OfferManagementPanel";
 import MainHeader from "../../src/components/shared/MainHeader";
+import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
@@ -32,7 +34,25 @@ import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
-type PostTab = "all" | "active" | "closed";
+type PostTab = "all" | "active" | "closed" | "suspended";
+type PostState = "active" | "expired" | "closed" | "suspended" | "draft";
+type PostSort = "newest" | "oldest" | "expiring";
+type PostRange = "all" | "7" | "30" | "90";
+
+const SORT_OPTIONS: { key: PostSort; label: string }[] = [
+  { key: "newest", label: "Mới nhất" },
+  { key: "oldest", label: "Cũ nhất" },
+  { key: "expiring", label: "Sắp hết hạn" },
+];
+
+const RANGE_OPTIONS: { key: PostRange; label: string }[] = [
+  { key: "all", label: "Tất cả" },
+  { key: "7", label: "7 ngày qua" },
+  { key: "30", label: "30 ngày qua" },
+  { key: "90", label: "3 tháng qua" },
+];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 type PostSection = "posts" | "offers";
 type OfferTab = "received" | "sent";
 
@@ -58,7 +78,76 @@ type PostMessage =
     }
   | null;
 
-const PAGE_SIZE = 10;
+// Mỗi người dùng thường có ít bài: tải hết (tối đa PageSize BE cho phép) để lọc,
+// sắp xếp và đếm theo trạng thái ở FE cho đúng, không bị lệch theo trang.
+const PAGE_SIZE = 100;
+const MAX_PAGES = 10;
+
+const toTime = (value: unknown) => {
+  const time = new Date(String(value ?? "")).getTime();
+  return Number.isNaN(time) ? null : time;
+};
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const formatDate = (time: number) => {
+  const date = new Date(time);
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+};
+
+const startOfDay = (time: number) => {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
+
+// Mới đăng thì hiện tương đối cho dễ đọc; từ 7 ngày trở lên hiện ngày cụ thể.
+const formatPostedAt = (value: unknown) => {
+  const time = toTime(value);
+  if (time === null) return "Chưa rõ";
+
+  const diffMinutes = Math.floor((Date.now() - time) / 60000);
+  if (diffMinutes < 1) return "Vừa xong";
+  if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} giờ trước`;
+
+  const diffDays = Math.round((startOfDay(Date.now()) - startOfDay(time)) / DAY_MS);
+  if (diffDays <= 1) return "Hôm qua";
+  if (diffDays < 7) return `${diffDays} ngày trước`;
+  return formatDate(time);
+};
+
+const getPostState = (post: any): PostState => {
+  const status = String(post.status ?? "").trim().toLowerCase();
+  if (status === "suspended" || status === "2") return "suspended";
+  if (status === "closed" || status === "3") return "closed";
+  if (status === "draft" || status === "0") return "draft";
+
+  const expiry = toTime(post.expiryDate);
+  return expiry !== null && expiry <= Date.now() ? "expired" : "active";
+};
+
+const POST_STATE_BADGE: Record<PostState, { text: string; color: string; background: string }> = {
+  active: { text: "Đang hoạt động", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" },
+  expired: { text: "Hết hạn", color: "#9A6418", background: "rgba(154, 100, 24, 0.10)" },
+  closed: { text: "Đã đóng", color: "#547B7D", background: "#EEF2F2" },
+  suspended: { text: "Bị đình chỉ", color: "#7A1012", background: "rgba(122, 16, 18, 0.10)" },
+  draft: { text: "Bản nháp", color: "#547B7D", background: "#F8F9FA" },
+};
+
+// Chỉ bài đang hoạt động mới cần biết hạn; còn gần thì đếm ngày, xa thì hiện ngày cụ thể.
+const getExpiryLabel = (post: any) => {
+  const expiry = toTime(post.expiryDate);
+  if (expiry === null) return null;
+
+  const daysLeft = Math.ceil((expiry - Date.now()) / DAY_MS);
+  if (daysLeft <= 30) {
+    return { text: `Còn ${Math.max(daysLeft, 1)} ngày`, urgent: daysLeft <= 7 };
+  }
+  return { text: `Hết hạn ${formatDate(expiry)}`, urgent: false };
+};
 
 const postApi = {
   getPostsByUser: (
@@ -129,11 +218,12 @@ export default function PostsScreen() {
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
   const [postMessage, setPostMessage] = useState<PostMessage>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [sortBy, setSortBy] = useState<PostSort>("newest");
+  const [range, setRange] = useState<PostRange>("all");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const fetchPosts = useCallback(
-    async (page = 1, isRefresh = false) => {
+    async (isRefresh = false) => {
       if (!currentUserId) {
         setPosts([]);
         setIsLoading(false);
@@ -142,32 +232,32 @@ export default function PostsScreen() {
       }
 
       try {
-        if (page === 1 && !isRefresh) setIsLoading(true);
+        if (!isRefresh) setIsLoading(true);
         setPageMessage(null);
 
-        const response = await postApi.getPostsByUser(currentUserId, {
-          PageNumber: page,
-          PageSize: PAGE_SIZE,
-        });
-        if (response?.isSuccess === false) throw response;
-
-        const raw =
-          response?.items || response?.data?.items || response?.data || [];
-        const data = Array.isArray(raw) ? raw : [];
-
-        if (isRefresh || page === 1) {
-          setPosts(data);
-        } else {
-          setPosts((current) => {
-            const existingIds = new Set(current.map((post) => post.postId));
-            return [
-              ...current,
-              ...data.filter((post) => !existingIds.has(post.postId)),
-            ];
+        const collected: any[] = [];
+        const seenIds = new Set<string>();
+        for (let page = 1; page <= MAX_PAGES; page += 1) {
+          const response = await postApi.getPostsByUser(currentUserId, {
+            PageNumber: page,
+            PageSize: PAGE_SIZE,
           });
+          if (response?.isSuccess === false) throw response;
+
+          const raw =
+            response?.items || response?.data?.items || response?.data || [];
+          const data = Array.isArray(raw) ? raw : [];
+          data.forEach((post) => {
+            const id = String(post.postId);
+            if (seenIds.has(id)) return;
+            seenIds.add(id);
+            collected.push(post);
+          });
+
+          if (data.length < PAGE_SIZE) break;
         }
 
-        setHasMore(data.length === PAGE_SIZE);
+        setPosts(collected);
       } catch (error: unknown) {
         setPageMessage({
           type: "error",
@@ -191,10 +281,9 @@ export default function PostsScreen() {
         return;
       }
 
-      setPageNumber(1);
       setPendingAction(null);
       setPostMessage(null);
-      void fetchPosts(1, false);
+      void fetchPosts(false);
     }, [currentUserId, fetchPosts]),
   );
 
@@ -209,8 +298,7 @@ export default function PostsScreen() {
     }
 
     handledPostNotificationVersionRef.current = postNotificationSignal.version;
-    setPageNumber(1);
-    void fetchPosts(1, true);
+    void fetchPosts(true);
   }, [
     currentUserId,
     fetchPosts,
@@ -223,15 +311,7 @@ export default function PostsScreen() {
     setPendingAction(null);
     setPostMessage(null);
     setIsRefreshing(true);
-    setPageNumber(1);
-    await fetchPosts(1, true);
-  };
-
-  const loadMore = () => {
-    if (isLoading || isRefreshing || !hasMore) return;
-    const nextPage = pageNumber + 1;
-    setPageNumber(nextPage);
-    void fetchPosts(nextPage);
+    await fetchPosts(true);
   };
 
   const requestAction = (postId: string, action: PostAction) => {
@@ -292,51 +372,12 @@ export default function PostsScreen() {
     const shouldReload = postMessage?.type === "success";
     setPostMessage(null);
     if (shouldReload) {
-      setPageNumber(1);
-      await fetchPosts(1, true);
+      await fetchPosts(true);
     }
   };
 
   const formatPrice = (price: number) =>
     `${Number(price || 0).toLocaleString("vi-VN")} đ`;
-
-  const getTimeAgo = (dateString: string) => {
-    if (!dateString) return "Chưa có";
-    const past = new Date(dateString);
-    if (Number.isNaN(past.getTime())) return "Chưa có";
-
-    const diffMinutes = Math.floor((Date.now() - past.getTime()) / (1000 * 60));
-    if (diffMinutes < 60) return "Vừa xong";
-
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours} giờ trước`;
-
-    return `${Math.floor(diffHours / 24)} ngày trước`;
-  };
-
-  const getDaysLeft = (expiryDate: string) => {
-    if (!expiryDate) return "Không rõ";
-    const expiry = new Date(expiryDate);
-    if (Number.isNaN(expiry.getTime())) return "Không rõ";
-
-    const days = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return days > 0 ? `${days} ngày nữa` : "Đã hết hạn";
-  };
-
-  const translateStatus = (status: string) => {
-    const normalized = String(status || "").trim().toLowerCase();
-
-    switch (normalized) {
-      case "active":
-        return { text: "Đang hoạt động", color: "#2F765D", background: "rgba(47, 118, 93, 0.10)" };
-      case "pending":
-        return { text: "Chờ duyệt", color: "#9A6418", background: "rgba(154, 100, 24, 0.10)" };
-      case "closed":
-        return { text: "Đã đóng", color: "#547B7D", background: "#F8F9FA" };
-      default:
-        return { text: "Chưa xác định", color: "#547B7D", background: "#F8F9FA" };
-    }
-  };
 
   const translatePostType = (postType: unknown) => {
     const normalized = String(postType || "").trim().toLowerCase();
@@ -344,6 +385,71 @@ export default function PostsScreen() {
     if (normalized === "sell" || normalized === "1") return "Tin bán";
     if (normalized === "buy" || normalized === "2") return "Tin mua";
     return "Chưa xác định";
+  };
+
+  const validPosts = useMemo(
+    () => posts.filter((post) => String(post.status ?? "").toLowerCase() !== "deleted"),
+    [posts],
+  );
+
+  // Lọc theo thời gian đăng trước, rồi mới đếm theo trạng thái để số trên chip khớp danh sách.
+  const rangedPosts = useMemo(() => {
+    if (range === "all") return validPosts;
+    const from = Date.now() - Number(range) * DAY_MS;
+    return validPosts.filter((post) => (toTime(post.createdAt) ?? 0) >= from);
+  }, [range, validPosts]);
+
+  const tabCounts = useMemo(() => {
+    const counts = { all: rangedPosts.length, active: 0, closed: 0, suspended: 0 };
+    rangedPosts.forEach((post) => {
+      const state = getPostState(post);
+      if (state === "active") counts.active += 1;
+      else if (state === "closed" || state === "expired") counts.closed += 1;
+      else if (state === "suspended") counts.suspended += 1;
+    });
+    return counts;
+  }, [rangedPosts]);
+
+  const visiblePosts = useMemo(() => {
+    const filtered = rangedPosts.filter((post) => {
+      const state = getPostState(post);
+      if (activeTab === "active") return state === "active";
+      if (activeTab === "closed") return state === "closed" || state === "expired";
+      if (activeTab === "suspended") return state === "suspended";
+      return true;
+    });
+
+    const created = (post: any) => toTime(post.createdAt) ?? 0;
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "oldest") return created(a) - created(b);
+      if (sortBy === "expiring") {
+        // Bài đang hoạt động sắp hết hạn lên đầu; bài đã đóng/hết hạn xuống cuối.
+        const rank = (post: any) =>
+          getPostState(post) === "active"
+            ? toTime(post.expiryDate) ?? Number.MAX_SAFE_INTEGER
+            : Number.MAX_SAFE_INTEGER;
+        return rank(a) - rank(b) || created(b) - created(a);
+      }
+      return created(b) - created(a);
+    });
+  }, [activeTab, rangedPosts, sortBy]);
+
+  // Bài vi phạm không còn thì đưa người dùng về "Tất cả".
+  useEffect(() => {
+    if (activeTab === "suspended" && tabCounts.suspended === 0) setActiveTab("all");
+  }, [activeTab, tabCounts.suspended]);
+
+  const isFiltering = sortBy !== "newest" || range !== "all";
+  const filterSummary = [
+    range !== "all" ? RANGE_OPTIONS.find((option) => option.key === range)?.label : null,
+    sortBy !== "newest" ? SORT_OPTIONS.find((option) => option.key === sortBy)?.label : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const resetFilters = () => {
+    setSortBy("newest");
+    setRange("all");
   };
 
   if (!user) {
@@ -375,14 +481,10 @@ export default function PostsScreen() {
     );
   }
 
-  const validPosts = posts.filter((post) => post.status !== "Deleted");
-  const activePosts = validPosts.filter(
-    (post) => post.status === "Active" || post.status === "Pending",
-  );
-  const closedPosts = validPosts.filter((post) => post.status === "Closed");
-
   const renderCard = (post: any) => {
-    const status = translateStatus(post.status);
+    const postState = getPostState(post);
+    const status = POST_STATE_BADGE[postState];
+    const expiryLabel = postState === "active" ? getExpiryLabel(post) : null;
     const address = [post.streetAddress, post.ward, post.city].filter(Boolean).join(", ");
     const displayPrice = post.basePrice || post.expectedPrice || 0;
     const isProcessing = processingPostId === post.postId;
@@ -457,9 +559,21 @@ export default function PostsScreen() {
             </View>
 
             <View style={styles.cardFooter}>
-              <Text style={styles.statsText}>{getTimeAgo(post.createdAt)}</Text>
+              <View style={styles.postedRow}>
+                <Ionicons name="time-outline" size={12} color={COLORS.textLight} />
+                <Text style={styles.statsText}>Đăng {formatPostedAt(post.createdAt).toLowerCase()}</Text>
+              </View>
               <View style={styles.footerRight}>
-                <Text style={styles.expiryText}>Hết hạn: {getDaysLeft(post.expiryDate)}</Text>
+                {expiryLabel ? (
+                  <Text
+                    style={[
+                      styles.expiryText,
+                      expiryLabel.urgent ? styles.expiryTextUrgent : undefined,
+                    ]}
+                  >
+                    {expiryLabel.text}
+                  </Text>
+                ) : null}
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     style={styles.iconBtn}
@@ -628,34 +742,79 @@ export default function PostsScreen() {
         ) : (
           <>
         <View style={styles.statusFilterContainer}>
-          {([
-            { key: "all", label: "Tất cả", count: validPosts.length },
-            {
-              key: "active",
-              label: userRole === "personal" ? "Đang hiển thị" : "Đang thu mua",
-              count: activePosts.length,
-            },
-            { key: "closed", label: "Đã đóng", count: closedPosts.length },
-          ] as const).map((item) => {
-            const selected = activeTab === item.key;
-            return (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.statusChip, selected ? styles.statusChipActive : undefined]}
-                onPress={() => {
-                  setPageMessage(null);
-                  setActiveTab(item.key);
-                }}
-              >
-                <Text
-                  style={[styles.statusChipText, selected ? styles.statusChipTextActive : undefined]}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.statusChipScroll}
+            contentContainerStyle={styles.statusChipRow}
+          >
+            {([
+              { key: "all", label: "Tất cả", count: tabCounts.all },
+              {
+                key: "active",
+                label: userRole === "personal" ? "Đang hiển thị" : "Đang thu mua",
+                count: tabCounts.active,
+              },
+              { key: "closed", label: "Đã đóng", count: tabCounts.closed },
+              ...(tabCounts.suspended > 0
+                ? [{ key: "suspended", label: "Vi phạm", count: tabCounts.suspended }]
+                : []),
+            ] as { key: PostTab; label: string; count: number }[]).map((item) => {
+              const selected = activeTab === item.key;
+              const isViolation = item.key === "suspended";
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.statusChip,
+                    isViolation ? styles.statusChipDanger : undefined,
+                    selected ? styles.statusChipActive : undefined,
+                    selected && isViolation ? styles.statusChipDangerActive : undefined,
+                  ]}
+                  onPress={() => {
+                    setPageMessage(null);
+                    setActiveTab(item.key);
+                  }}
                 >
-                  {item.label} ({item.count})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Text
+                    style={[
+                      styles.statusChipText,
+                      isViolation ? styles.statusChipDangerText : undefined,
+                      selected ? styles.statusChipTextActive : undefined,
+                    ]}
+                  >
+                    {item.label} ({item.count})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={[styles.filterButton, isFiltering ? styles.filterButtonActive : undefined]}
+            onPress={() => setIsFilterOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Sắp xếp và lọc theo thời gian"
+          >
+            <Ionicons
+              name="options-outline"
+              size={18}
+              color={isFiltering ? COLORS.white : COLORS.primary}
+            />
+          </TouchableOpacity>
         </View>
+
+        {isFiltering ? (
+          <View style={styles.filterSummaryRow}>
+            <Ionicons name="funnel-outline" size={13} color={COLORS.primary} />
+            <Text style={styles.filterSummaryText} numberOfLines={1}>
+              {filterSummary}
+            </Text>
+            <TouchableOpacity onPress={resetFilters} hitSlop={8}>
+              <Text style={styles.filterResetText}>Bỏ lọc</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {pageMessage ? (
           <View
@@ -682,7 +841,7 @@ export default function PostsScreen() {
           </View>
         ) : null}
 
-        {isLoading && pageNumber === 1 ? (
+        {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={styles.loadingText}>Đang tải tin đăng...</Text>
@@ -701,38 +860,23 @@ export default function PostsScreen() {
             }
           >
             {(() => {
-              const visiblePosts =
-                activeTab === "active"
-                  ? activePosts
-                  : activeTab === "closed"
-                    ? closedPosts
-                    : validPosts;
-
               if (visiblePosts.length > 0) {
                 return visiblePosts.map(renderCard);
               }
 
               const emptyText =
-                activeTab === "active"
-                  ? userRole === "personal"
-                    ? "Chưa có tin đăng nào đang hoạt động."
-                    : "Chưa có tin thu mua nào đang hoạt động."
-                  : activeTab === "closed"
-                    ? "Bạn chưa đóng tin đăng nào."
-                    : "Bạn chưa có tin đăng nào.";
+                isFiltering && validPosts.length > 0
+                  ? "Không có tin đăng nào khớp bộ lọc."
+                  : activeTab === "active"
+                    ? userRole === "personal"
+                      ? "Chưa có tin đăng nào đang hoạt động."
+                      : "Chưa có tin thu mua nào đang hoạt động."
+                    : activeTab === "closed"
+                      ? "Chưa có tin đăng nào đã đóng hoặc hết hạn."
+                      : "Bạn chưa có tin đăng nào.";
 
               return <Text style={styles.emptyText}>{emptyText}</Text>;
             })()}
-
-            {hasMore && !isLoading ? (
-              <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore}>
-                <Text style={styles.loadMoreText}>Tải thêm</Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {isLoading && pageNumber > 1 ? (
-              <ActivityIndicator color={COLORS.primary} style={styles.loadMoreIndicator} />
-            ) : null}
 
             <View style={styles.bottomSpacer} />
           </ScrollView>
@@ -741,6 +885,81 @@ export default function PostsScreen() {
         <TouchableOpacity style={styles.fabButton} onPress={() => router.push("/posts/post-form")}>
           <Ionicons name="add" size={32} color={COLORS.white} />
         </TouchableOpacity>
+
+        <Modal
+          visible={isFilterOpen}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setIsFilterOpen(false)}
+        >
+          <ModalBackdrop style={styles.sheetBackdrop} onPress={() => setIsFilterOpen(false)}>
+            <ModalSurface style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Sắp xếp & lọc</Text>
+                {isFiltering ? (
+                  <TouchableOpacity onPress={resetFilters} hitSlop={8}>
+                    <Text style={styles.filterResetText}>Đặt lại</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <Text style={styles.sheetLabel}>Sắp xếp</Text>
+              <View style={styles.sheetOptions}>
+                {SORT_OPTIONS.map((option) => {
+                  const selected = sortBy === option.key;
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.sheetOption, selected ? styles.sheetOptionActive : undefined]}
+                      onPress={() => setSortBy(option.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.sheetOptionText,
+                          selected ? styles.sheetOptionTextActive : undefined,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.sheetLabel}>Thời gian đăng</Text>
+              <View style={styles.sheetOptions}>
+                {RANGE_OPTIONS.map((option) => {
+                  const selected = range === option.key;
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.sheetOption, selected ? styles.sheetOptionActive : undefined]}
+                      onPress={() => setRange(option.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.sheetOptionText,
+                          selected ? styles.sheetOptionTextActive : undefined,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                style={styles.sheetApplyButton}
+                onPress={() => setIsFilterOpen(false)}
+              >
+                <Text style={styles.sheetApplyText}>Xem {visiblePosts.length} tin đăng</Text>
+              </TouchableOpacity>
+            </ModalSurface>
+          </ModalBackdrop>
+        </Modal>
           </>
         )}
       </View>
@@ -816,14 +1035,38 @@ const styles = StyleSheet.create({
   sectionBadgeTextActive: { color: COLORS.primary },
   statusFilterContainer: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "center",
     gap: 8,
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 12,
     paddingVertical: 10,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  statusChipScroll: { flex: 1 },
+  statusChipRow: { gap: 8, paddingRight: 4 },
+  filterButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white,
+  },
+  filterButtonActive: { backgroundColor: COLORS.primary },
+  filterSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  filterSummaryText: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: "600" },
+  filterResetText: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
   statusChip: {
     paddingVertical: 6,
     paddingHorizontal: 14,
@@ -835,6 +1078,9 @@ const styles = StyleSheet.create({
   statusChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   statusChipText: { color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
   statusChipTextActive: { color: COLORS.white },
+  statusChipDanger: { borderColor: "rgba(122, 16, 18, 0.35)", backgroundColor: "rgba(122, 16, 18, 0.06)" },
+  statusChipDangerActive: { backgroundColor: "#7A1012", borderColor: "#7A1012" },
+  statusChipDangerText: { color: "#7A1012" },
   pageMessage: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -891,9 +1137,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#BAC2C1",
   },
-  statsText: { marginBottom: 2, color: COLORS.textLight, fontSize: 12 },
+  postedRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
+  statsText: { color: COLORS.textLight, fontSize: 12 },
   footerRight: { alignItems: "flex-end" },
-  expiryText: { marginBottom: 2, color: COLORS.error, fontSize: 12, fontWeight: "bold" },
+  expiryText: { marginBottom: 2, color: COLORS.textLight, fontSize: 12, fontWeight: "600" },
+  expiryTextUrgent: { color: COLORS.error, fontWeight: "bold" },
   actionButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
   iconBtn: {
     minWidth: 30,
@@ -953,15 +1201,63 @@ const styles = StyleSheet.create({
   postMessageText: { flex: 1, fontSize: 13, lineHeight: 18 },
   postMessageErrorText: { color: "#7A1012" },
   postMessageSuccessText: { color: "#2F765D" },
-  loadMoreBtn: {
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(23, 40, 48, 0.48)",
+  },
+  sheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginBottom: 14,
+  },
+  sheetHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    marginVertical: 10,
-    padding: 12,
-    borderRadius: 8,
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  sheetTitle: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
+  sheetLabel: {
+    marginTop: 12,
+    marginBottom: 8,
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  sheetOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sheetOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     backgroundColor: "#F8F9FA",
   },
-  loadMoreText: { color: COLORS.text, fontWeight: "bold" },
-  loadMoreIndicator: { marginTop: 20 },
+  sheetOptionActive: { borderColor: COLORS.primary, backgroundColor: "rgba(84, 123, 125, 0.12)" },
+  sheetOptionText: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
+  sheetOptionTextActive: { color: COLORS.primary, fontWeight: "800" },
+  sheetApplyButton: {
+    marginTop: 20,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+  },
+  sheetApplyText: { color: COLORS.white, fontSize: 15, fontWeight: "800" },
   bottomSpacer: { height: 80 },
   fabButton: {
     position: "absolute",
