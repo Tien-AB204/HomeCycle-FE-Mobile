@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import FilterChipGroup from "../../src/components/shared/FilterChipGroup";
 import { ModalBackdrop, ModalSurface } from "../../src/components/shared/ModalBackdrop";
 import MainHeader from "../../src/components/shared/MainHeader";
 import { COLORS } from "../../src/constants/theme";
@@ -23,6 +24,12 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useChatRealtime } from "../../src/contexts/ChatRealtimeContext";
 import { useNotifications } from "../../src/contexts/NotificationContext";
 import apiClient from "../../src/services/apis/axiosClient";
+import {
+  APPOINTMENT_DATE_RANGE_OPTIONS,
+  AppointmentDateRange,
+  getDateRangeLabel,
+  matchesAppointmentDateRange,
+} from "../../src/utils/dateRangeFilter";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
 
@@ -294,6 +301,9 @@ export default function ScheduleScreen() {
     useState<AppointmentRoleFilter>("all");
   const [draftStatusFilter, setDraftStatusFilter] =
     useState<AppointmentStatusFilter>("all");
+  // Lọc theo ngày hẹn cho danh sách cá nhân; doanh nghiệp đã chọn ngày trên lịch tháng/tuần.
+  const [dateRange, setDateRange] = useState<AppointmentDateRange>("all");
+  const [draftDateRange, setDraftDateRange] = useState<AppointmentDateRange>("all");
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -730,15 +740,21 @@ export default function ScheduleScreen() {
   // cả" can show both types on the same day without either hiding the other.
   const roleStatusFilteredAppointments = appointments.filter(matchesRoleAndStatus);
 
+  const activeDateRange: AppointmentDateRange = isBusiness ? "all" : dateRange;
+
   const filteredAppointments = roleStatusFilteredAppointments.filter(
-    (item) => typeFilter === "all" || item.typeKey === typeFilter,
+    (item) =>
+      (typeFilter === "all" || item.typeKey === typeFilter) &&
+      matchesAppointmentDateRange(parseScheduledDate(item.rawDate), activeDateRange),
   );
 
-  const isFunnelActive = roleFilter !== "all" || statusFilter !== "all";
+  const isFunnelActive =
+    roleFilter !== "all" || statusFilter !== "all" || activeDateRange !== "all";
 
   const openFilterModal = () => {
     setDraftRoleFilter(roleFilter);
     setDraftStatusFilter(statusFilter);
+    setDraftDateRange(dateRange);
     setShowFilterModal(true);
   };
 
@@ -747,14 +763,17 @@ export default function ScheduleScreen() {
   const handleResetFilter = () => {
     setDraftRoleFilter("all");
     setDraftStatusFilter("all");
+    setDraftDateRange("all");
     setRoleFilter("all");
     setStatusFilter("all");
+    setDateRange("all");
     setShowFilterModal(false);
   };
 
   const handleApplyFilter = () => {
     setRoleFilter(draftRoleFilter);
     setStatusFilter(draftStatusFilter);
+    setDateRange(draftDateRange);
     setShowFilterModal(false);
   };
 
@@ -1161,7 +1180,11 @@ export default function ScheduleScreen() {
       {filteredAppointments.length > 0 ? (
         filteredAppointments.map(renderAppointmentCard)
       ) : (
-        <Text style={styles.emptyText}>Chưa có lịch hẹn nào cho mục này.</Text>
+        <Text style={styles.emptyText}>
+          {activeDateRange !== "all"
+            ? "Không có lịch hẹn nào trong khoảng thời gian này."
+            : "Chưa có lịch hẹn nào cho mục này."}
+        </Text>
       )}
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -1174,6 +1197,17 @@ export default function ScheduleScreen() {
       >
         <MainHeader title="Quản lý Lịch hẹn" />
         {renderAppointmentControls()}
+        {activeDateRange !== "all" ? (
+          <View style={styles.dateSummaryRow}>
+            <Ionicons name="calendar-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.dateSummaryText}>
+              Ngày hẹn: {getDateRangeLabel(APPOINTMENT_DATE_RANGE_OPTIONS, activeDateRange)}
+            </Text>
+            <TouchableOpacity onPress={() => setDateRange("all")} hitSlop={8}>
+              <Text style={styles.dateSummaryReset}>Bỏ lọc ngày</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -1254,6 +1288,19 @@ export default function ScheduleScreen() {
                 );
               })}
             </View>
+
+            {!isBusiness ? (
+              <>
+                <Text style={styles.filterSectionLabel}>Ngày hẹn</Text>
+                <View style={styles.filterChipSection}>
+                  <FilterChipGroup
+                    options={APPOINTMENT_DATE_RANGE_OPTIONS}
+                    value={draftDateRange}
+                    onChange={setDraftDateRange}
+                  />
+                </View>
+              </>
+            ) : null}
 
             <View style={styles.filterModalActions}>
               <TouchableOpacity
@@ -1382,6 +1429,17 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   filterOptionList: { gap: 2, marginBottom: 16 },
+  filterChipSection: { marginTop: 4, marginBottom: 18 },
+  dateSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "rgba(84, 123, 125, 0.08)",
+  },
+  dateSummaryText: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: "700" },
+  dateSummaryReset: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
   filterOptionRow: {
     flexDirection: "row",
     alignItems: "center",
