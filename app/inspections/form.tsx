@@ -60,7 +60,7 @@ type InlineMessage = {
   text: string;
 } | null;
 
-type SellerAction = "confirm" | "reject" | null;
+type SellerAction = "confirm" | null;
 
 const unwrap = (value: any) => value?.data ?? value;
 
@@ -156,7 +156,6 @@ export default function InspectionFormScreen() {
   const [quickAcceptError, setQuickAcceptError] = useState<string | null>(null);
 
   const [sellerAction, setSellerAction] = useState<SellerAction>(null);
-  const [rejectReason, setRejectReason] = useState("");
   const [isSellerActionSubmitting, setIsSellerActionSubmitting] =
     useState(false);
   const [sellerActionError, setSellerActionError] = useState<string | null>(
@@ -556,15 +555,24 @@ export default function InspectionFormScreen() {
 
   const openSellerAction = (action: SellerAction) => {
     if (isSellerActionSubmitting) return;
-    setRejectReason("");
     setSellerActionError(null);
     setSellerAction(action);
+  };
+
+  const openOrderDispute = () => {
+    if (!relatedOrderId) return;
+    router.push({
+      pathname: "/disputes/create",
+      params: {
+        orderId: relatedOrderId,
+        orderCode: form?.order?.orderCode || "",
+      },
+    } as any);
   };
 
   const closeSellerAction = () => {
     if (isSellerActionSubmitting) return;
     setSellerAction(null);
-    setRejectReason("");
     setSellerActionError(null);
   };
 
@@ -596,19 +604,6 @@ export default function InspectionFormScreen() {
   const handleSubmitSellerAction = async () => {
     if (!form || !sellerAction || isSellerActionSubmitting || inspectionWriteInFlightRef.current) return;
 
-    const trimmedReason = rejectReason.trim();
-
-    if (sellerAction === "reject") {
-      if (!trimmedReason) {
-        setSellerActionError("Vui lòng nhập lý do từ chối.");
-        return;
-      }
-      if (trimmedReason.length > 500) {
-        setSellerActionError("Lý do từ chối tối đa 500 ký tự.");
-        return;
-      }
-    }
-
     const action = sellerAction;
     const lockKey = `${action}:${form.inspectionFormId}`;
     inspectionWriteInFlightRef.current = lockKey;
@@ -617,28 +612,17 @@ export default function InspectionFormScreen() {
       setIsSellerActionSubmitting(true);
       setSellerActionError(null);
 
-      const updated =
-        action === "confirm"
-          ? await inspectionFormApi.sellerConfirm(
-              form.inspectionFormId,
-              form.revision,
-            )
-          : await inspectionFormApi.sellerReject(
-              form.inspectionFormId,
-              form.revision,
-              trimmedReason,
-            );
+      const updated = await inspectionFormApi.sellerConfirm(
+        form.inspectionFormId,
+        form.revision,
+      );
 
       setForm(updated);
       hydrateFromForm(updated);
       setSellerAction(null);
-      setRejectReason("");
       setPageMessage({
         type: "success",
-        text:
-          action === "confirm"
-            ? "Đã xác nhận kết quả kiểm định."
-            : "Đã từ chối kết quả kiểm định.",
+        text: "Đã xác nhận kết quả kiểm định.",
       });
     } catch (error: any) {
       const code = getErrorCode(error);
@@ -656,9 +640,7 @@ export default function InspectionFormScreen() {
       setSellerActionError(
         getApiErrorMessage(
           error,
-          action === "confirm"
-            ? "Không thể xác nhận kết quả kiểm định lúc này."
-            : "Không thể từ chối kết quả kiểm định lúc này.",
+          "Không thể xác nhận kết quả kiểm định lúc này.",
         ),
       );
     } finally {
@@ -810,15 +792,7 @@ export default function InspectionFormScreen() {
                   styles.quickAcceptButton,
                   styles.rejectedDisputeButton,
                 ]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/disputes/create",
-                    params: {
-                      orderId: relatedOrderId,
-                      orderCode: form?.order?.orderCode || "",
-                    },
-                  } as any)
-                }
+                onPress={openOrderDispute}
               >
                 <Ionicons name="shield-outline" size={17} color={COLORS.error} />
                 <Text style={[styles.secondaryButtonFlexText, styles.rejectedDisputeButtonText]}>
@@ -1195,15 +1169,16 @@ export default function InspectionFormScreen() {
               </View>
             ) : null}
 
-            {canSellerConfirm || canSellerReject ? (
+            {canSellerConfirm || (canSellerReject && relatedOrderId) ? (
               <View style={styles.formActionsRow}>
-                {canSellerReject ? (
+                {/* Không đồng ý kết quả: chuyển sang tạo tranh chấp cho đơn hàng thay vì từ chối phiếu. */}
+                {canSellerReject && relatedOrderId ? (
                   <TouchableOpacity
                     style={styles.outlineBtnDanger}
-                    onPress={() => openSellerAction("reject")}
+                    onPress={openOrderDispute}
                   >
                     <Text style={styles.outlineBtnDangerText}>
-                      Từ chối kết quả
+                      Mở tranh chấp
                     </Text>
                   </TouchableOpacity>
                 ) : null}
@@ -1234,31 +1209,10 @@ export default function InspectionFormScreen() {
           onPress={closeSellerAction}
         >
           <ModalSurface style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {sellerAction === "confirm"
-                ? "Xác nhận kết quả kiểm định?"
-                : "Từ chối kết quả kiểm định?"}
+            <Text style={styles.modalTitle}>Xác nhận kết quả kiểm định?</Text>
+            <Text style={styles.modalText}>
+              Kết quả kiểm định sẽ được xác nhận và không thể hoàn tác.
             </Text>
-
-            {sellerAction === "reject" ? (
-              <>
-                <Text style={styles.label}>Lý do từ chối <Text style={{ color: COLORS.error }}>*</Text></Text>
-                <TextInput
-                  value={rejectReason}
-                  onChangeText={setRejectReason}
-                  placeholder="Nhập lý do từ chối kết quả kiểm định"
-                  placeholderTextColor={COLORS.textLight}
-                  multiline
-                  maxLength={500}
-                  editable={!isSellerActionSubmitting}
-                  style={[styles.textInput, styles.multilineInput]}
-                />
-              </>
-            ) : (
-              <Text style={styles.modalText}>
-                Kết quả kiểm định sẽ được xác nhận và không thể hoàn tác.
-              </Text>
-            )}
 
             {sellerActionError ? (
               <Text style={styles.modalError}>{sellerActionError}</Text>
@@ -1273,12 +1227,7 @@ export default function InspectionFormScreen() {
                 <Text style={styles.secondaryButtonFlexText}>Đóng</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.primarySmallButtonFlex,
-                  sellerAction === "reject"
-                    ? styles.primaryButtonDanger
-                    : undefined,
-                ]}
+                style={styles.primarySmallButtonFlex}
                 onPress={() => void handleSubmitSellerAction()}
                 disabled={isSellerActionSubmitting}
               >
@@ -1621,7 +1570,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
-  primaryButtonDanger: { backgroundColor: COLORS.error },
   outlineBtnDanger: {
     flex: 1,
     minHeight: 48,
