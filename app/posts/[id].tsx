@@ -464,6 +464,9 @@ export default function PostDetailScreen() {
 
   const [showSellerRequestModal, setShowSellerRequestModal] = useState(false);
   const [sellerMatches, setSellerMatches] = useState<BuyPostMatch[]>([]);
+  // Giá tin bán nằm ngoài khoảng doanh nghiệp nhận: giá điền sẵn đã được đưa về
+  // mức gần nhất trong khoảng; giữ giá gốc để giải thích cho người dùng.
+  const [sellerPriceAdjustedFrom, setSellerPriceAdjustedFrom] = useState<number | null>(null);
   const [selectedSellPostId, setSelectedSellPostId] = useState<string | null>(
     null,
   );
@@ -1015,7 +1018,7 @@ export default function PostDetailScreen() {
         });
         if (response?.isSuccess === false) break;
         const page = response?.data ?? response;
-        if (!Array.isArray(page?.items) || sellerLoadVersion.current !== version) return;
+        if (!Array.isArray(page?.items) || sellerLoadVersion.current !== version) return found;
         for (const item of page.items as BuyPostMatch[]) {
           if (item.sellPost?.postId) found.set(normalizePostId(item.sellPost.postId), item);
         }
@@ -1024,7 +1027,7 @@ export default function PostDetailScreen() {
     } catch {
       // Keep comparisons from pages that loaded; inventory remains usable without them.
     }
-    if (found.size === 0 || sellerLoadVersion.current !== version) return;
+    if (found.size === 0 || sellerLoadVersion.current !== version) return found;
     setSellerMatches((current) => sellerLoadVersion.current !== version ? current : current.map((item) => {
       const match = found.get(normalizePostId(item.sellPost?.postId));
       return {
@@ -1035,6 +1038,7 @@ export default function PostDetailScreen() {
         blockMessage: match?.blockMessage ?? null,
       };
     }));
+    return found;
   }, []);
 
   const findPendingSellerOffer = async (buyPostId: string, sellPostId: string) => {
@@ -1071,15 +1075,28 @@ export default function PostDetailScreen() {
       sellPost.basePrice ?? 0,
     );
 
-    setSellerRequestPrice(
-      Number.isFinite(listedPrice) &&
-        listedPrice > 0
-        ? String(Math.trunc(listedPrice))
-        : "",
-    );
+    // BE chỉ nhận giá chào bán trong khoảng doanh nghiệp đặt (MinExpectedPrice..BasePrice):
+    // điền sẵn giá tin bán, nếu lệch khoảng thì đưa về mức gần nhất để khỏi bị từ chối.
+    const rangeMin = Number(post?.priceFrom ?? post?.minExpectedPrice);
+    const rangeMax = Number(post?.priceTo ?? post?.basePrice ?? post?.expectedPrice);
+    let suggestedPrice =
+      Number.isFinite(listedPrice) && listedPrice > 0 ? Math.trunc(listedPrice) : 0;
+    let adjustedFrom: number | null = null;
+    if (suggestedPrice > 0) {
+      if (Number.isFinite(rangeMax) && rangeMax > 0 && suggestedPrice > rangeMax) {
+        adjustedFrom = suggestedPrice;
+        suggestedPrice = Math.trunc(rangeMax);
+      } else if (Number.isFinite(rangeMin) && rangeMin > 0 && suggestedPrice < rangeMin) {
+        adjustedFrom = suggestedPrice;
+        suggestedPrice = Math.trunc(rangeMin);
+      }
+    }
+
+    setSellerRequestPrice(suggestedPrice > 0 ? String(suggestedPrice) : "");
+    setSellerPriceAdjustedFrom(adjustedFrom);
 
     clearSellerRequestFeedback();
-  }, [selectedSellPostId, clearSellerRequestFeedback]);
+  }, [selectedSellPostId, clearSellerRequestFeedback, post]);
 
   const handleOpenSellerRequest = useCallback(async (preferredId?: string) => {
     if (sellerSubmitLock.current || sellerLoadLock.current || sellerNavigationLock.current) return;
@@ -1156,14 +1173,40 @@ export default function PostDetailScreen() {
       if (pendingSellerVersion.current === pendingVersion) setPendingSellerOffers(pending);
       const preferred = ownMatches.find((item) =>
         normalizePostId(item.sellPost?.postId) === normalizePostId(requestedId));
-      const selection = preferred?.sellPost || (!requestedId && ownMatches.length === 1
-        ? ownMatches[0].sellPost : undefined);
+      // Chọn sẵn một tin bán để ô số lượng/giá hiện ngay khi mở, thay vì phải bấm chọn
+      // mới hiện. Ưu tiên tin người dùng đã chọn; nếu không thì tin phù hợp nhất còn gửi được.
+      const pickBestEligible = (items: BuyPostMatch[]) =>
+        [...items]
+          .filter((item) =>
+            item.canSendOffer !== false &&
+            !pending[normalizePostId(item.sellPost?.postId)])
+          .sort((a, b) =>
+            Number(b.matchSummary?.matchedCriteriaCount ?? -1) -
+            Number(a.matchSummary?.matchedCriteriaCount ?? -1))[0];
+      const selection = preferred?.sellPost || pickBestEligible(ownMatches)?.sellPost;
       if (selection) {
         handleSelectSellerMatch(selection);
-      } else if (requestedId) {
+      } else if (preferredId) {
         showSellerRequestError("Tin bán đã chọn hiện không thể chào bán. Vui lòng kiểm tra hoặc chọn tin khác.");
       }
-      void loadSellerComparisons(targetBuyPostId, version);
+      const autoPickedId = normalizePostId(selection?.postId);
+      void loadSellerComparisons(targetBuyPostId, version).then((found) => {
+        // Trạng thái bị chặn (canSendOffer) chỉ có sau khi so khớp xong: nếu tin đang chọn
+        // là tự chọn (người dùng chưa đổi) mà bị chặn, chuyển sang tin phù hợp nhất còn gửi được.
+        if (!found || found.size === 0 || preferredId || sellerLoadVersion.current !== version) return;
+        if (normalizePostId(preferredSellerId.current) !== autoPickedId) return;
+        const merged = ownMatches.map((item) => ({
+          ...item,
+          ...(found.get(normalizePostId(item.sellPost?.postId)) ?? {}),
+          sellPost: item.sellPost,
+        }));
+        const current = merged.find((item) =>
+          normalizePostId(item.sellPost?.postId) === autoPickedId);
+        if (current && (current.canSendOffer !== false ||
+          pending[normalizePostId(current.sellPost?.postId)])) return;
+        const best = pickBestEligible(merged);
+        if (best?.sellPost) handleSelectSellerMatch(best.sellPost);
+      });
     } catch (error) {
       if (sellerLoadVersion.current !== version) return;
       setSellerLoadError(true);
@@ -1193,6 +1236,7 @@ export default function PostDetailScreen() {
     setSellerMatches([]);
     setSelectedSellPostId(null);
     setSellerRequestPrice("");
+    setSellerPriceAdjustedFrom(null);
     setSellerRequestQuantity("1");
     pendingSellerVersion.current += 1;
     setPendingSellerOffers({});
@@ -3012,6 +3056,7 @@ export default function PostDetailScreen() {
                               setSellerRequestPrice(
                                 toPriceDigits(value),
                               );
+                              setSellerPriceAdjustedFrom(null);
                               setIsSellerPriceInvalid(false);
                               clearSellerRequestFeedback();
                             }}
@@ -3036,9 +3081,23 @@ export default function PostDetailScreen() {
                               !isSubmittingSellerRequest
                             }
                           />
+                          {sellerPriceAdjustedFrom ? (
+                            <Text style={styles.sellerPriceHint}>
+                              Giá tin bán {formatPrice(sellerPriceAdjustedFrom)} nằm ngoài mức doanh nghiệp
+                              nhận nên đã điền mức gần nhất. Bạn có thể sửa trong khoảng{" "}
+                              {formatBuyPriceRange(post.priceFrom, post.priceTo ?? post.basePrice)}.
+                            </Text>
+                          ) : null}
                         </View>
 
                       </>
+                    ) : !selectedSellerPost && sellerMatches.length > 0 ? (
+                      <View style={styles.sellerPickHint}>
+                        <Ionicons name="hand-left-outline" size={16} color={COLORS.primary} />
+                        <Text style={styles.sellerPickHintText}>
+                          Chọn một tin bán ở trên để nhập số lượng và giá chào bán.
+                        </Text>
+                      </View>
                     ) : null}
                   </>
                 )}
@@ -3805,6 +3864,20 @@ const styles = StyleSheet.create({
   sellerModalButton: { width: "100%", minWidth: 0 },
   sellerFooterFeedback: { width: "100%", marginBottom: 0 },
   inputInvalid: { borderColor: COLORS.error, backgroundColor: "rgba(122, 16, 18, 0.04)" },
+  sellerPriceHint: { marginTop: 6, color: "#9A6418", fontSize: 12, lineHeight: 17 },
+  sellerPickHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(84, 123, 125, 0.4)",
+    backgroundColor: "rgba(84, 123, 125, 0.06)",
+  },
+  sellerPickHintText: { flex: 1, color: COLORS.primary, fontSize: 13, fontWeight: "600" },
   sellerPendingText: {
     color: COLORS.primary,
     fontSize: 13,
