@@ -542,7 +542,7 @@ export default function VerificationSetupScreen() {
           refreshToken,
         );
 
-        router.replace("/(tabs)");
+        router.dismissTo("/(tabs)");
         return;
       }
 
@@ -568,7 +568,7 @@ export default function VerificationSetupScreen() {
           String(password),
         );
 
-        router.replace("/(tabs)");
+        router.dismissTo("/(tabs)");
       } catch {
         router.replace("/(auth)/login");
       }

@@ -41,6 +41,7 @@ import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 
 type InlineMessage = {
   type: "error" | "success";
@@ -254,6 +255,7 @@ const reviewStatusLabels: Record<string, string> = {
 
 export default function DisputeDetailScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const params = useLocalSearchParams();
   const disputeId = getSingleParam(params.id as string | string[] | undefined);
 
@@ -599,7 +601,7 @@ export default function DisputeDetailScreen() {
           <PostTargetCard
             post={contentPost}
             onOpenPost={() =>
-              router.push(`/posts/${contentPost.postId}` as any)
+              openScreen(`/posts/${contentPost.postId}` as any)
             }
           />
         ) : isReviewTarget && contentReview ? (
@@ -621,7 +623,7 @@ export default function DisputeDetailScreen() {
             {order.orderId ? (
               <TouchableOpacity
                 style={styles.linkButton}
-                onPress={() => router.push(`/orders/${order.orderId}` as any)}
+                onPress={() => openScreen(`/orders/${order.orderId}` as any)}
               >
                 <Ionicons name="receipt-outline" size={18} color={COLORS.primary} />
                 <Text style={styles.linkButtonText}>Xem chi tiết đơn hàng</Text>
@@ -654,7 +656,7 @@ export default function DisputeDetailScreen() {
             {appointmentContext.appointmentId ? (
               <TouchableOpacity
                 style={styles.linkButton}
-                onPress={() => router.push(`/appointments/${appointmentContext.appointmentId}` as any)}
+                onPress={() => openScreen(`/appointments/${appointmentContext.appointmentId}` as any)}
               >
                 <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
                 <Text style={styles.linkButtonText}>Xem lịch hẹn</Text>

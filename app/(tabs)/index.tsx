@@ -17,6 +17,11 @@ import {
   View,
 } from "react-native";
 import OnboardingGuide from "../../src/components/onboarding/OnboardingGuide";
+import {
+  BuyPostCardHeader,
+  BuyPriceLabel,
+  PostOwnerRow,
+} from "../../src/components/posts/PostCardParts";
 import MainHeader from "../../src/components/shared/MainHeader";
 import PriorityBadge from "../../src/components/shared/PriorityBadge";
 import { COLORS } from "../../src/constants/theme";
@@ -27,9 +32,13 @@ import {
 } from "../../src/contexts/DiscoveryPreferencesContext";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
-import { getAvatarSource } from "../../src/utils/avatar";
 import { devLog } from "../../src/utils/devLog";
-import { hasSeenGuide, isNewAccount, markGuideSeen } from "../../src/utils/onboardingGuide";
+import {
+  claimGuideDisplay,
+  hasSeenGuide,
+  isNewAccount,
+  markGuideSeen,
+} from "../../src/utils/onboardingGuide";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -41,7 +50,6 @@ const POSTS_PER_PAGE = 4;
 const CARD_GAP = 12;
 const SECTION_HORIZONTAL_PADDING = 20;
 const HOME_POST_PAGE_SIZE = 100;
-const BUY_ACCENT = COLORS.primary;
 // Trang chủ Doanh nghiệp: Backend tự lọc theo khảo sát thu mua (khu vực, loại
 // sản phẩm, mức hư hỏng, tình trạng, quy mô); FE không gửi tiêu chí và không lọc lại.
 const BUSINESS_DISCOVER_PAGE_SIZE = 12;
@@ -182,7 +190,8 @@ export default function HomeScreen() {
     setGuideStatus("checking");
     void (async () => {
       const shouldShow = isNewAccount(user?.createdAt) && !(await hasSeenGuide(guideUserId));
-      if (active) setGuideStatus(shouldShow ? "show" : "done");
+      if (!active) return;
+      setGuideStatus(shouldShow && claimGuideDisplay(guideUserId) ? "show" : "done");
     })();
 
     return () => {
@@ -539,17 +548,9 @@ export default function HomeScreen() {
   const cardWidth =
     (width - SECTION_HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
-  // Chỉ API bài nổi bật trả kèm người đăng; mục nào thiếu tên thì ẩn dòng này.
-  const getOwnerName = (post: any) =>
-    String(post.ownerName || post.ownerUsername || "").trim();
-
-  const isOwnerVerified = (post: any) =>
-    post.verifyStatus === 2 || String(post.verifyStatus ?? "").toLowerCase() === "verified";
-
   const renderCard = (post: any) => {
     const quickCartState = getQuickCartState(post);
     const isAdding = addingPostId === String(post.postId);
-    const ownerName = getOwnerName(post);
 
     return (
       <TouchableOpacity
@@ -576,24 +577,7 @@ export default function HomeScreen() {
             </View>
           </View>
         ) : (
-          // Tin thu mua không có ảnh: dải đầu thẻ làm điểm nhìn thay ảnh, gom
-          // danh mục + thương hiệu + ưu tiên vào một chỗ thay vì nhiều tầng nhãn.
-          <View style={styles.buyHeader}>
-            <View style={styles.buyHeaderText}>
-              <View style={styles.buyHeaderTopRow}>
-                <View style={styles.buyHeaderLabelRow}>
-                  <Ionicons name="pricetags" size={12} color={BUY_ACCENT} />
-                  <Text style={styles.buyHeaderLabel} numberOfLines={1}>
-                    THU MUA
-                  </Text>
-                </View>
-                <PriorityBadge post={post} />
-              </View>
-              <Text style={styles.buyHeaderMeta} numberOfLines={1}>
-                {[post.categoryName, post.brandName].filter(Boolean).join(" · ") || "Đồ cũ"}
-              </Text>
-            </View>
-          </View>
+          <BuyPostCardHeader post={post} />
         )}
 
         <View style={styles.infoWrapper}>
@@ -607,21 +591,9 @@ export default function HomeScreen() {
             {post.productName || post.description || "Sản phẩm"}
           </Text>
 
-          {ownerName ? (
-            <View style={styles.ownerRow}>
-              <Image source={getAvatarSource(post.avatarUrl)} style={styles.ownerAvatar} />
-              <Text style={styles.ownerName} numberOfLines={1}>
-                {ownerName}
-              </Text>
-              {isOwnerVerified(post) ? (
-                <Ionicons name="checkmark-circle" size={12} color={COLORS.primary} />
-              ) : null}
-            </View>
-          ) : null}
+          <PostOwnerRow post={post} />
 
-          {isBuyPostType(post.postType) ? (
-            <Text style={styles.buyPriceLabel}>Giá thu mua</Text>
-          ) : null}
+          {isBuyPostType(post.postType) ? <BuyPriceLabel /> : null}
           <View style={styles.priceRow}>
             <Text
               style={styles.productPrice}
@@ -1195,34 +1167,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 4,
   },
-  buyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: "rgba(84, 123, 125, 0.08)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(84, 123, 125, 0.16)",
-  },
-  buyHeaderText: { flex: 1, minWidth: 0 },
-  buyHeaderTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 4,
-    minHeight: 18,
-  },
-  buyHeaderLabelRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
-  buyHeaderLabel: {
-    flexShrink: 1,
-    color: BUY_ACCENT,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  buyHeaderMeta: { marginTop: 3, color: "#172830", fontSize: 11, fontWeight: "600" },
-  buyPriceLabel: { marginBottom: 1, color: "#547B7D", fontSize: 10, fontWeight: "600" },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",
     paddingHorizontal: 6,
@@ -1255,19 +1199,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     height: 36,
   },
-  ownerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginBottom: 6,
-  },
-  ownerAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#E8EEEE",
-  },
-  ownerName: { flexShrink: 1, fontSize: 11, color: "#547B7D", fontWeight: "500" },
   priceRow: {
     flexDirection: "row",
     justifyContent: "space-between",

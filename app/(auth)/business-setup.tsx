@@ -1639,7 +1639,11 @@ export default function BusinessSetupScreen() {
 
               <TouchableOpacity
                 style={styles.btnGoHome}
-                onPress={() => router.replace("/(tabs)/profile")}
+                onPress={() => {
+                  // Về bộ tab sẵn có rồi mở Hồ sơ, không chồng thêm bộ tab mới.
+                  router.dismissTo("/(tabs)");
+                  router.navigate("/(tabs)/profile");
+                }}
               >
                 <Text style={styles.btnGoHomeText}>Về trang hồ sơ</Text>
                 <Ionicons

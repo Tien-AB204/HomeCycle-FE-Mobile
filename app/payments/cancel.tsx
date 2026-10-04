@@ -13,6 +13,7 @@ import Header from "../../src/components/shared/Header";
 import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { returnToTabs } from "../../src/utils/stackNavigation";
 
 const agreementApi = {
   getAgreementById: (agreementId: string) =>
@@ -50,7 +51,7 @@ export default function PaymentCancelScreen() {
     if (agreementId) {
       router.replace(`/payments/checkout?agreementId=${agreementId}`);
     } else {
-      router.replace("/(tabs)");
+      router.dismissTo("/(tabs)");
     }
   };
 
@@ -58,12 +59,13 @@ export default function PaymentCancelScreen() {
     if (negotiationId) {
       router.replace(`/chat/${negotiationId}`);
     } else {
-      router.replace("/(tabs)/chat");
+      returnToTabs(router, "/(tabs)/chat");
     }
   };
 
+  // Quay về bộ tab sẵn có, không chồng thêm một bộ tab mới lên ngăn xếp.
   const handleGoHome = () => {
-    router.replace("/(tabs)");
+    router.dismissTo("/(tabs)");
   };
 
   return (

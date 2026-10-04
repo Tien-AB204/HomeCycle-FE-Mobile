@@ -145,7 +145,7 @@ export default function GoogleLoginButton({
         returnUrl as any,
       );
     } else {
-      router.replace("/(tabs)");
+      router.dismissTo("/(tabs)");
     }
   };
 

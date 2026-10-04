@@ -28,6 +28,7 @@ import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import {
   beginRestLoad,
@@ -402,6 +403,7 @@ const translateCreationStatus = (status: string) => {
 
 export default function OrderDetailScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const { user } = useAuth();
   const params = useLocalSearchParams();
   const orderId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -1208,8 +1210,43 @@ export default function OrderDetailScreen() {
     );
 
   const canSwipeConfirm = !hasActiveDispute && (canConfirmHandover || canConfirmReceived);
+
+  // Giao trực tiếp: Backend chỉ mở xác nhận bàn giao/nhận hàng từ ngày hẹn thu gom
+  // (theo giờ Việt Nam). Trước ngày đó hiện thanh khóa cho biết khi nào mở, thay vì
+  // để trống như thể mất nút.
+  const upcomingCollectionAt = (() => {
+    const collection = relatedAppointments.find((item: any) => {
+      const type = normalizeStatus(item?.appointmentType);
+      const status = normalizeStatus(item?.appointmentStatus);
+      return (type === "collection" || type === "1") &&
+        ["scheduled", "1", "inprogress", "5"].includes(status) &&
+        Boolean(item?.scheduledAt);
+    });
+    return collection ? new Date(collection.scheduledAt) : null;
+  })();
+  const toVietnamDayKey = (date: Date) =>
+    new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const isDirectDelivery =
+    deliveryMethod === "SellerDelivers" || deliveryMethod === "BuyerPickUp";
+  const myConfirmationDone =
+    transactionRole === "seller"
+      ? Boolean(order.sellerHandoverConfirmedAt)
+      : Boolean(order.buyerReceivedConfirmedAt);
+  const isConfirmLockedUntilCollectionDay =
+    isProcessing &&
+    isDirectDelivery &&
+    Boolean(sellerReadyAt) &&
+    Boolean(transactionRole) &&
+    !canConfirmFromBackend &&
+    !hasActiveDispute &&
+    !myConfirmationDone &&
+    upcomingCollectionAt !== null &&
+    !Number.isNaN(upcomingCollectionAt.getTime()) &&
+    toVietnamDayKey(upcomingCollectionAt) > toVietnamDayKey(new Date());
+
   // Hủy đơn và xác nhận giao/nhận hàng nằm ở thanh dưới cố định (luôn thấy khi cuộn).
-  const showBottomBar = canCancelOrder || canOpenDispute || canSwipeConfirm;
+  const showBottomBar =
+    canCancelOrder || canOpenDispute || canSwipeConfirm || isConfirmLockedUntilCollectionDay;
 
   const shouldShowActionCard =
     !isCancelled &&
@@ -1309,7 +1346,7 @@ export default function OrderDetailScreen() {
               description:
                 "Người mua đã đánh giá giao dịch này. Bạn có thể xem đánh giá đã nhận.",
               onPress: () =>
-                router.push(`/reviews/${receivedReviewId}` as any),
+                openScreen(`/reviews/${receivedReviewId}` as any),
             }
           : null
       : null;
@@ -1423,7 +1460,7 @@ export default function OrderDetailScreen() {
       key: "view-dispute",
       label: "Xem tranh chấp",
       icon: "document-text-outline",
-      onPress: () => router.push(`/disputes/${latestDisputeId}` as any),
+      onPress: () => openScreen(`/disputes/${latestDisputeId}` as any),
     });
   } else if (canCreateDispute) {
     overflowActions.push({
@@ -1448,7 +1485,7 @@ export default function OrderDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Mở hội thoại chat"
                 hitSlop={8}
-                onPress={() => router.push(`/chat/${negotiationId}` as any)}
+                onPress={() => openScreen(`/chat/${negotiationId}` as any)}
               >
                 <Ionicons name="chatbubbles-outline" size={22} color={COLORS.primary} />
               </TouchableOpacity>
@@ -1467,6 +1504,39 @@ export default function OrderDetailScreen() {
           </>
         }
       />
+
+      {/* Bước người bán cần làm ngay: ghim dưới header, không phải cuộn tìm. */}
+      {canConfirmSellerReady ? (
+        <View style={styles.sellerReadyBar}>
+          <View style={styles.sellerReadyIcon}>
+            <Ionicons name="cube" size={18} color={COLORS.primary} />
+          </View>
+          <View style={styles.sellerReadyBody}>
+            <Text style={styles.sellerReadyTitle}>Chuẩn bị giao hàng</Text>
+            <Text style={styles.sellerReadyHint} numberOfLines={2}>
+              {isGhn
+                ? "Đóng gói xong thì xác nhận để tạo vận đơn GHN và gọi shipper đến lấy."
+                : "Xác nhận khi hàng đã sẵn sàng để giao hoặc bàn giao."}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.sellerReadyButton,
+              isSellerReadyLoading ? { opacity: 0.65 } : undefined,
+            ]}
+            onPress={() => void handleConfirmSellerReady()}
+            disabled={isSellerReadyLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Hàng đã sẵn sàng"
+          >
+            {isSellerReadyLoading ? (
+              <ActivityIndicator color={COLORS.white} size="small" />
+            ) : (
+              <Text style={styles.sellerReadyButtonText}>Đã sẵn sàng</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -1568,7 +1638,7 @@ export default function OrderDetailScreen() {
             activeOpacity={postId ? 0.7 : 1}
             onPress={() => {
               if (postId) {
-                router.push({
+                openScreen({
                   pathname: "/posts/[id]",
                   params: { id: postId, viewOnly: "true" },
                 });
@@ -1637,38 +1707,6 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
-        {canConfirmSellerReady ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
-            <Text style={styles.actionHint}>
-              {isGhn
-                ? "Đóng gói xong thì bấm \"Hàng đã sẵn sàng\" để hệ thống tạo vận đơn GHN và gọi shipper đến lấy hàng."
-                : "Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao."}
-            </Text>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                isSellerReadyLoading ? { opacity: 0.65 } : undefined,
-              ]}
-              onPress={() => void handleConfirmSellerReady()}
-              disabled={isSellerReadyLoading}
-            >
-              {isSellerReadyLoading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="cube-outline"
-                    size={20}
-                    color={COLORS.white}
-                  />
-                  <Text style={styles.actionButtonText}>Hàng đã sẵn sàng</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         {relatedAppointments.length === 0 && hasDeliveryInfo ? (
           <View style={styles.card}>
             {renderDeliveryInfo()}
@@ -1691,7 +1729,7 @@ export default function OrderDetailScreen() {
                     index > 0 ? styles.relatedAppointmentButtonSpaced : undefined,
                   ]}
                   onPress={() =>
-                    router.push(("/appointments/" + relatedAppointmentId) as any)
+                    openScreen(("/appointments/" + relatedAppointmentId) as any)
                   }
                 >
                   <View style={styles.relatedAppointmentIcon}>
@@ -1910,12 +1948,26 @@ export default function OrderDetailScreen() {
               onConfirm={() => handleConfirmAction(canConfirmHandover ? "handover" : "received")}
             />
           ) : null}
+          {isConfirmLockedUntilCollectionDay && upcomingCollectionAt ? (
+            <View style={styles.lockedConfirmBar}>
+              <Ionicons name="lock-closed" size={18} color={COLORS.textLight} />
+              <Text style={styles.lockedConfirmText}>
+                {transactionRole === "seller"
+                  ? "Xác nhận đã bàn giao"
+                  : "Xác nhận đã nhận hàng"}{" "}
+                mở vào ngày hẹn thu gom{" "}
+                <Text style={styles.lockedConfirmDate}>
+                  {toVietnamDayKey(upcomingCollectionAt).split("-").reverse().join("/")}
+                </Text>
+              </Text>
+            </View>
+          ) : null}
           {canOpenDispute || canCancelOrder ? (
         <View style={styles.bottomBar}>
           {canOpenDispute ? (
             <TouchableOpacity
               style={styles.outlineBtnWarning}
-              onPress={() => router.push(`/disputes/${latestDisputeId}` as any)}
+              onPress={() => openScreen(`/disputes/${latestDisputeId}` as any)}
             >
               <Ionicons
                 name="document-text-outline"
@@ -2978,6 +3030,51 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: COLORS.white, fontWeight: "700" },
   bottomBarButton: { flex: 1 },
+  sellerReadyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(84, 123, 125, 0.20)",
+  },
+  sellerReadyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
+  sellerReadyBody: { flex: 1 },
+  sellerReadyTitle: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
+  sellerReadyHint: { marginTop: 2, color: COLORS.textLight, fontSize: 12, lineHeight: 16 },
+  sellerReadyButton: {
+    minHeight: 38,
+    minWidth: 104,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  sellerReadyButtonText: { color: COLORS.white, fontSize: 13, fontWeight: "800" },
+  lockedConfirmBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 16,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: COLORS.border,
+    backgroundColor: "#F3F5F5",
+  },
+  lockedConfirmText: { flex: 1, color: COLORS.textLight, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  lockedConfirmDate: { color: COLORS.text, fontWeight: "800" },
   bottomBarWrap: {
     padding: 16,
     gap: 12,

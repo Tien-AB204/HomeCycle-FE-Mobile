@@ -14,6 +14,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  BuyPostCardHeader,
+  BuyPriceLabel,
+  PostOwnerRow,
+} from "../src/components/posts/PostCardParts";
 import { ModalBackdrop, ModalSurface } from "../src/components/shared/ModalBackdrop";
 import PriorityBadge from "../src/components/shared/PriorityBadge";
 import { COLORS } from "../src/constants/theme";
@@ -1609,7 +1614,9 @@ export default function SearchScreen() {
                       <PriorityBadge post={post} />
                     </View>
                   </View>
-                ) : null}
+                ) : (
+                  <BuyPostCardHeader post={post} />
+                )}
 
                 <View
                   style={[
@@ -1619,20 +1626,7 @@ export default function SearchScreen() {
                       : undefined,
                   ]}
                 >
-                  {isBuyPostType(post.postType) ? (
-                    <View style={styles.textBadgeRow}>
-                      {post.categoryName ? (
-                        <View style={styles.categoryBadge}>
-                          <Text style={styles.categoryText}>{post.categoryName}</Text>
-                        </View>
-                      ) : null}
-                      <View style={[styles.postTypeBadge, styles.buyPostBadge]}>
-                        <Text style={styles.postTypeBadgeText}>Tin mua</Text>
-                      </View>
-                      <PriorityBadge post={post} />
-                    </View>
-                  ) : null}
-                  {post.brandName ? (
+                  {!isBuyPostType(post.postType) && post.brandName ? (
                     <View style={styles.brandBadgeWhite}>
                       <Text style={styles.brandBadgeTextWhite}>
                         {post.brandName}
@@ -1644,8 +1638,16 @@ export default function SearchScreen() {
                     {post.productName || "Sản phẩm"}
                   </Text>
 
+                  <PostOwnerRow post={post} />
+
+                  {isBuyPostType(post.postType) ? <BuyPriceLabel /> : null}
                   <View style={styles.priceRow}>
-                    <Text style={styles.productPrice}>
+                    <Text
+                      style={styles.productPrice}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
                       {isBuyPostType(post.postType)
                         ? formatBuyPostPrice(post)
                         : formatPrice(post.basePrice)}
@@ -2162,12 +2164,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     right: 6,
   },
-  textBadgeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginBottom: 8,
-  },
   categoryBadge: {
     backgroundColor: "rgba(23, 40, 48, 0.90)",
     paddingHorizontal: 6,
@@ -2181,7 +2177,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   sellPostBadge: { backgroundColor: "rgba(43, 86, 89, 0.92)" },
-  buyPostBadge: { backgroundColor: "rgba(154, 100, 24, 0.92)" },
   postTypeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: "bold" },
   brandBadgeWhite: {
     alignSelf: "flex-start",

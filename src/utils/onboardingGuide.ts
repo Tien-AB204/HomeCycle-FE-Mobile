@@ -14,6 +14,16 @@ export const isNewAccount = (createdAt: unknown) => {
   return Date.now() - time <= NEW_ACCOUNT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 };
 
+// Trong một phiên app chỉ một màn Trang chủ được hiện giới thiệu cho mỗi tài khoản,
+// kể cả khi ngăn xếp lỡ có nhiều Trang chủ cùng lúc (mỗi màn tự kiểm tra riêng).
+const claimedGuideUserIds = new Set<string>();
+
+export const claimGuideDisplay = (userId: string) => {
+  if (claimedGuideUserIds.has(userId)) return false;
+  claimedGuideUserIds.add(userId);
+  return true;
+};
+
 export const hasSeenGuide = async (userId: string) => {
   try {
     return (await AsyncStorage.getItem(storageKey(userId))) === "1";

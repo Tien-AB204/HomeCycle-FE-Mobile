@@ -39,7 +39,7 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { canRespondToOffer, getOfferVersion, isAcceptedOffer, isPendingOffer, validOfferTerms } from "../../src/utils/offerActions";
-import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import { remainingUntil, useServerNowTicker } from "../../src/utils/useDeadlineCountdown";
 
 type ReceivedOfferItem = {
@@ -435,7 +435,7 @@ const fetchAllReceivedOffers =
 
 export default function OffersByPostScreen() {
   const params = useLocalSearchParams();
-  const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const { user } = useAuth();
   const { connection, reconnectVersion } = useChatRealtime();
   const currentUserId = user?.userId || user?.id;
@@ -959,7 +959,7 @@ export default function OffersByPostScreen() {
       if (!isCurrentAction()) return;
 
       if (completedMode === "accept" && acceptedNegotiationId) {
-        router.push(`/chat/${acceptedNegotiationId}` as any);
+        openScreen(`/chat/${acceptedNegotiationId}` as any);
         return;
       }
 
@@ -1018,7 +1018,7 @@ export default function OffersByPostScreen() {
     if (!key || openingChatOfferId) return;
     const cached = chatRouteCacheRef.current[key];
     if (cached) {
-      router.push(`/chat/${cached}` as any);
+      openScreen(`/chat/${cached}` as any);
       return;
     }
     try {
@@ -1030,7 +1030,7 @@ export default function OffersByPostScreen() {
         return;
       }
       chatRouteCacheRef.current[key] = negotiationId;
-      router.push(`/chat/${negotiationId}` as any);
+      openScreen(`/chat/${negotiationId}` as any);
     } catch (error) {
       setActionFeedback({
         type: "error",
@@ -1049,7 +1049,7 @@ export default function OffersByPostScreen() {
 
     if (!targetOfferId) return;
 
-    router.push({
+    openScreen({
       pathname: "/offers/[id]",
       params: {
         id: targetOfferId,
