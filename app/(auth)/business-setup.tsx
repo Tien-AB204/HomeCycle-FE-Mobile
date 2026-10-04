@@ -389,14 +389,14 @@ export default function BusinessSetupScreen() {
   };
 
   // Điền hồ sơ mẫu cho demo ở bước nhập thông tin, theo đúng mô hình đã chọn ở bước 1.
-  // Ảnh giấy tờ (GPKD, CCCD hai mặt) vẫn do người dùng tải lên.
+  // Ảnh giấy tờ (GPKD, CCCD hai mặt) vẫn do người dùng tải lên. Thông tin trên CCCD
+  // (họ tên, số, ngày sinh, địa chỉ, kéo theo tên chủ tài khoản) lấy từ bước chụp + quét
+  // CCCD nên mẫu không điền, cũng không ghi đè dữ liệu đã quét.
   const demoSamplesForModel = DEMO_BUSINESS_SAMPLES.filter(
     (sample) => sample.model === model,
   );
 
   const fillDemoBusinessSample = (sample: DemoBusinessSample) => {
-    const upperName = sample.fullName.toLocaleUpperCase("vi-VN");
-
     setBusinessName(sample.businessName);
     setBusinessDescription(sample.businessDescription);
     setTaxCode(sample.taxCode);
@@ -420,32 +420,18 @@ export default function BusinessSetupScreen() {
       setWarehouseAddressSelection(null);
     }
 
-    setFullName(sample.fullName);
-    setIdentityName(upperName);
-    setIdentityNumber(sample.identityNumber);
-    setIdentityDob(sample.identityDob);
-    setIdentityAddress(formatDemoAddress(sample.identityAddress));
-
     setBankCode(sample.bankCode);
     setBankName(sample.bankName);
     setAccountNumber(sample.accountNumber);
     setPreviousAccountNumber("");
-    setAccountName(upperName);
-    setIsAccountNameManuallyEdited(false);
 
     setModelError("");
     setBusinessNameError("");
     setTaxCodeError("");
     setBusinessAddressError("");
     setServiceAreaError("");
-    setFullNameError("");
-    setIdentityNumberError("");
-    setIdentityNameError("");
-    setIdentityDobError("");
-    setIdentityAddressError("");
     setBankError("");
     setAccountNumberError("");
-    setAccountNameError("");
     setSubmitError("");
 
     setShowDemoSampleModal(false);
