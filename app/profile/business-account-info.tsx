@@ -1,8 +1,8 @@
 import { getAvatarSource } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -236,6 +236,12 @@ export default function BusinessAccountInfoScreen() {
   const businessProfileWriteInFlightRef = useRef<string | null>(null);
   const [editingSection, setEditingSection] =
     useState<EditableSectionKey | null>(null);
+  // ?section=bank (vd. từ màn Thanh toán khi thiếu tài khoản ngân hàng): mở sẵn phần
+  // ngân hàng ở chế độ sửa và cuộn tới đó.
+  const { section: requestedSection } = useLocalSearchParams<{ section?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const bankSectionYRef = useRef<number | null>(null);
+  const handledRequestedSectionRef = useRef(false);
   const [messages, setMessages] = useState<
     Partial<Record<SectionKey, MessageState>>
   >({});
@@ -397,6 +403,21 @@ export default function BusinessAccountInfoScreen() {
     resetEditableSection(section);
     setEditingSection(section);
   };
+
+  useEffect(() => {
+    if (requestedSection !== "bank" || !data || handledRequestedSectionRef.current) return;
+    handledRequestedSectionRef.current = true;
+    beginEdit("bank");
+    // Đợi phần ngân hàng đo xong vị trí rồi mới cuộn.
+    const timer = setTimeout(() => {
+      if (bankSectionYRef.current !== null) {
+        scrollRef.current?.scrollTo({ y: Math.max(0, bankSectionYRef.current - 12), animated: true });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+    // beginEdit đọc hồ sơ vừa tải; chỉ chạy một lần khi đã có dữ liệu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSection, data]);
 
   const cancelEdit = (section: EditableSectionKey) => {
     if (savingSection) return;
@@ -1018,6 +1039,7 @@ export default function BusinessAccountInfoScreen() {
           <View style={{ width: 24 }} />
         </View>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1703,6 +1725,9 @@ export default function BusinessAccountInfoScreen() {
 
           <Pressable
             style={styles.editableSection}
+            onLayout={(event) => {
+              bankSectionYRef.current = event.nativeEvent.layout.y;
+            }}
             onPress={(event) =>
               handleEditableSectionPress("bank", event)
             }

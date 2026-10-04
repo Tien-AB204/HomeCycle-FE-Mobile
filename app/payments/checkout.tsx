@@ -189,6 +189,9 @@ export default function CheckoutScreen() {
   );
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [showLowAmountConfirm, setShowLowAmountConfirm] = useState(false);
+  // BE chặn thanh toán khi người mua chưa có tài khoản ngân hàng đã xác minh
+  // (Payment.BankAccountNotVerified): hiện modal dẫn sang trang thiết lập ngân hàng.
+  const [bankRequiredMessage, setBankRequiredMessage] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   useAutoDismissFeedback(feedback, () => setFeedback(null));
 
@@ -606,6 +609,14 @@ export default function CheckoutScreen() {
           ((error as any)?.isSuccess === false ? error : undefined),
       );
 
+      if (normalizedErrorCode === "payment.bankaccountnotverified") {
+        clearFeedback();
+        setBankRequiredMessage(
+          beMessage ?? "Bạn cần có tài khoản ngân hàng đã xác minh trước khi thanh toán.",
+        );
+        return;
+      }
+
       if (normalizedErrorCode === "agreement.invalidstatus") {
         const refreshed = await fetchCheckoutData();
 
@@ -981,6 +992,51 @@ export default function CheckoutScreen() {
           </ModalSurface>
         </ModalBackdrop>
       </Modal>
+      <Modal
+        visible={Boolean(bankRequiredMessage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBankRequiredMessage(null)}
+      >
+        <ModalBackdrop
+          style={styles.confirmBackdrop}
+          onPress={() => setBankRequiredMessage(null)}
+        >
+          <ModalSurface style={styles.confirmCard}>
+            <View style={styles.bankModalIcon}>
+              <Ionicons name="card" size={26} color={COLORS.white} />
+            </View>
+            <Text style={styles.bankModalTitle}>Cần tài khoản ngân hàng</Text>
+            <Text style={styles.bankModalMessage}>{bankRequiredMessage}</Text>
+            <Text style={styles.bankModalHint}>
+              Thêm tài khoản ngân hàng trong hồ sơ, chờ xác minh xong rồi quay lại để thanh toán.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmSecondaryButton}
+                onPress={() => setBankRequiredMessage(null)}
+              >
+                <Text style={styles.confirmSecondaryText}>Để sau</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmPrimaryButton}
+                onPress={() => {
+                  setBankRequiredMessage(null);
+                  router.push({
+                    pathname:
+                      user?.role?.toLowerCase() === "business"
+                        ? "/profile/business-account-info"
+                        : "/profile/account-info",
+                    params: { section: "bank" },
+                  } as any);
+                }}
+              >
+                <Text style={styles.confirmPrimaryText}>Thiết lập ngay</Text>
+              </TouchableOpacity>
+            </View>
+          </ModalSurface>
+        </ModalBackdrop>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1191,6 +1247,36 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 16,
     padding: 20,
+  },
+  bankModalIcon: {
+    alignSelf: "center",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    backgroundColor: COLORS.primary,
+  },
+  bankModalTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  bankModalMessage: {
+    marginTop: 8,
+    color: COLORS.text,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  bankModalHint: {
+    marginTop: 8,
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
   },
   confirmMessage: {
     color: COLORS.text,
