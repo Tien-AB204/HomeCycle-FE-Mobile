@@ -1468,6 +1468,39 @@ export default function OrderDetailScreen() {
         }
       />
 
+      {/* Bước người bán cần làm ngay: ghim dưới header, không phải cuộn tìm. */}
+      {canConfirmSellerReady ? (
+        <View style={styles.sellerReadyBar}>
+          <View style={styles.sellerReadyIcon}>
+            <Ionicons name="cube" size={18} color={COLORS.primary} />
+          </View>
+          <View style={styles.sellerReadyBody}>
+            <Text style={styles.sellerReadyTitle}>Chuẩn bị giao hàng</Text>
+            <Text style={styles.sellerReadyHint} numberOfLines={2}>
+              {isGhn
+                ? "Đóng gói xong thì xác nhận để tạo vận đơn GHN và gọi shipper đến lấy."
+                : "Xác nhận khi hàng đã sẵn sàng để giao hoặc bàn giao."}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.sellerReadyButton,
+              isSellerReadyLoading ? { opacity: 0.65 } : undefined,
+            ]}
+            onPress={() => void handleConfirmSellerReady()}
+            disabled={isSellerReadyLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Hàng đã sẵn sàng"
+          >
+            {isSellerReadyLoading ? (
+              <ActivityIndicator color={COLORS.white} size="small" />
+            ) : (
+              <Text style={styles.sellerReadyButtonText}>Đã sẵn sàng</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1636,38 +1669,6 @@ export default function OrderDetailScreen() {
             </Text>
           </View>
         </View>
-
-        {canConfirmSellerReady ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Chuẩn bị giao hàng</Text>
-            <Text style={styles.actionHint}>
-              {isGhn
-                ? "Đóng gói xong thì bấm \"Hàng đã sẵn sàng\" để hệ thống tạo vận đơn GHN và gọi shipper đến lấy hàng."
-                : "Xác nhận khi hàng đã được chuẩn bị xong và sẵn sàng để giao hoặc bàn giao."}
-            </Text>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                isSellerReadyLoading ? { opacity: 0.65 } : undefined,
-              ]}
-              onPress={() => void handleConfirmSellerReady()}
-              disabled={isSellerReadyLoading}
-            >
-              {isSellerReadyLoading ? (
-                <ActivityIndicator color={COLORS.white} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="cube-outline"
-                    size={20}
-                    color={COLORS.white}
-                  />
-                  <Text style={styles.actionButtonText}>Hàng đã sẵn sàng</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
 
         {relatedAppointments.length === 0 && hasDeliveryInfo ? (
           <View style={styles.card}>
@@ -2978,6 +2979,37 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: COLORS.white, fontWeight: "700" },
   bottomBarButton: { flex: 1 },
+  sellerReadyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "rgba(84, 123, 125, 0.10)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(84, 123, 125, 0.20)",
+  },
+  sellerReadyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+  },
+  sellerReadyBody: { flex: 1 },
+  sellerReadyTitle: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
+  sellerReadyHint: { marginTop: 2, color: COLORS.textLight, fontSize: 12, lineHeight: 16 },
+  sellerReadyButton: {
+    minHeight: 38,
+    minWidth: 104,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  sellerReadyButtonText: { color: COLORS.white, fontSize: 13, fontWeight: "800" },
   bottomBarWrap: {
     padding: 16,
     gap: 12,
