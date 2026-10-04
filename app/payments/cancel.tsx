@@ -50,7 +50,7 @@ export default function PaymentCancelScreen() {
     if (agreementId) {
       router.replace(`/payments/checkout?agreementId=${agreementId}`);
     } else {
-      router.replace("/(tabs)");
+      router.dismissTo("/(tabs)");
     }
   };
 
@@ -62,8 +62,9 @@ export default function PaymentCancelScreen() {
     }
   };
 
+  // Quay về bộ tab sẵn có, không chồng thêm một bộ tab mới lên ngăn xếp.
   const handleGoHome = () => {
-    router.replace("/(tabs)");
+    router.dismissTo("/(tabs)");
   };
 
   return (

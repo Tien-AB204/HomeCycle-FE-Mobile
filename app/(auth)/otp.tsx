@@ -168,7 +168,7 @@ export default function OTPScreen() {
           ?.registrationToken;
 
       if (flow === "login") {
-        router.replace("/(tabs)");
+        router.dismissTo("/(tabs)");
         return;
       }
 

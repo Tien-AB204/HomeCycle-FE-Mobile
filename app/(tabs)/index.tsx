@@ -29,7 +29,12 @@ import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { getAvatarSource } from "../../src/utils/avatar";
 import { devLog } from "../../src/utils/devLog";
-import { hasSeenGuide, isNewAccount, markGuideSeen } from "../../src/utils/onboardingGuide";
+import {
+  claimGuideDisplay,
+  hasSeenGuide,
+  isNewAccount,
+  markGuideSeen,
+} from "../../src/utils/onboardingGuide";
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
@@ -182,7 +187,8 @@ export default function HomeScreen() {
     setGuideStatus("checking");
     void (async () => {
       const shouldShow = isNewAccount(user?.createdAt) && !(await hasSeenGuide(guideUserId));
-      if (active) setGuideStatus(shouldShow ? "show" : "done");
+      if (!active) return;
+      setGuideStatus(shouldShow && claimGuideDisplay(guideUserId) ? "show" : "done");
     })();
 
     return () => {

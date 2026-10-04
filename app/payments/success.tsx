@@ -379,8 +379,9 @@ export default function PaymentSuccessScreen() {
     }
   };
 
+  // Quay về bộ tab sẵn có, không chồng thêm một bộ tab mới lên ngăn xếp.
   const handleGoHome = () => {
-    router.replace("/(tabs)");
+    router.dismissTo("/(tabs)");
   };
 
   return (
