@@ -522,17 +522,20 @@ export default function ProfileScreen() {
                 <View style={styles.menuIconBox}>
                   <Ionicons name={item.icon} size={22} color={COLORS.primary} />
                 </View>
-                <Text style={styles.menuText}>{item.title}</Text>
-                {item.subtitle ? (
-                  <Text
-                    style={[
-                      styles.menuSubtitle,
-                      { color: item.subtitleColor || COLORS.textLight },
-                    ]}
-                  >
-                    {item.subtitle}
-                  </Text>
-                ) : null}
+                {/* Trạng thái nằm dưới tiêu đề để tiêu đề dài không bị dính vào. */}
+                <View style={styles.menuTextGroup}>
+                  <Text style={styles.menuText}>{item.title}</Text>
+                  {item.subtitle ? (
+                    <Text
+                      style={[
+                        styles.menuSubtitle,
+                        { color: item.subtitleColor || COLORS.textLight },
+                      ]}
+                    >
+                      {item.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
                 <Ionicons name="chevron-forward" size={20} color={COLORS.border} />
               </TouchableOpacity>
             ))}
@@ -624,7 +627,17 @@ const styles = StyleSheet.create({
   userInfoSection: { alignItems: "center", paddingTop: 20, paddingBottom: 18 },
   avatar: { width: 100, height: 100, borderRadius: 50 },
   avatarCrown: { position: "absolute", bottom: -4, alignSelf: "center" },
-  userName: { color: COLORS.text, fontSize: 20, fontWeight: "900", marginTop: 12 },
+  userName: {
+    alignSelf: "stretch",
+    paddingHorizontal: 16,
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 27,
+    marginTop: 12,
+    // Tên doanh nghiệp dài xuống dòng vẫn căn giữa.
+    textAlign: "center",
+  },
   profileUsername: { color: COLORS.textLight, fontSize: 14, marginTop: 4 },
   accountTypeText: {
     color: COLORS.primary,
@@ -709,8 +722,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8F9FA",
     marginRight: 12,
   },
-  menuText: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: "700" },
-  menuSubtitle: { fontSize: 11, fontWeight: "700", marginRight: 8 },
+  menuTextGroup: { flex: 1, marginRight: 8 },
+  menuText: { color: COLORS.text, fontSize: 15, fontWeight: "700" },
+  menuSubtitle: { marginTop: 3, fontSize: 12, fontWeight: "700" },
   logoutButton: {
     minHeight: 62,
     marginTop: 20,

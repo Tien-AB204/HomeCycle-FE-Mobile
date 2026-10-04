@@ -1,6 +1,7 @@
 import { DEFAULT_AVATAR_URI } from "../../src/utils/avatar";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useLocalSearchParams } from "expo-router";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -103,6 +104,12 @@ export default function AccountInfoScreen() {
   const [imageError, setImageError] = useState(false);
   const [saveMessage, setSaveMessage] = useState<SaveMessage>(null);
   const [editingSection, setEditingSection] = useState<PersonalSection | null>(null);
+  // ?section=bank (vd. từ màn Thanh toán khi thiếu tài khoản ngân hàng): mở sẵn phần
+  // ngân hàng ở chế độ sửa và cuộn tới đó.
+  const { section: requestedSection } = useLocalSearchParams<{ section?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const bankSectionYRef = useRef<number | null>(null);
+  const handledRequestedSectionRef = useRef(false);
   const [showAvatarPreview, setShowAvatarPreview] = useState(false);
   const [showAvatarActions, setShowAvatarActions] = useState(false);
 
@@ -187,6 +194,21 @@ export default function AccountInfoScreen() {
     resetSection(section);
     setEditingSection(section);
   };
+
+  useEffect(() => {
+    if (requestedSection !== "bank" || !user || handledRequestedSectionRef.current) return;
+    handledRequestedSectionRef.current = true;
+    beginEdit("bank");
+    // Đợi phần ngân hàng đo xong vị trí rồi mới cuộn.
+    const timer = setTimeout(() => {
+      if (bankSectionYRef.current !== null) {
+        scrollRef.current?.scrollTo({ y: Math.max(0, bankSectionYRef.current - 12), animated: true });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+    // beginEdit đọc dữ liệu user hiện tại; chỉ chạy một lần khi đã có user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSection, user]);
 
   const cancelEdit = (section: PersonalSection) => {
     if (isSaving) return;
@@ -638,6 +660,7 @@ export default function AccountInfoScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -976,7 +999,12 @@ export default function AccountInfoScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.sectionShell}>
+          <View
+            style={styles.sectionShell}
+            onLayout={(event) => {
+              bankSectionYRef.current = event.nativeEvent.layout.y;
+            }}
+          >
             <Pressable
               style={[
                 styles.sectionCard,
