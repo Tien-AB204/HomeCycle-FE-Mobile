@@ -1208,8 +1208,43 @@ export default function OrderDetailScreen() {
     );
 
   const canSwipeConfirm = !hasActiveDispute && (canConfirmHandover || canConfirmReceived);
+
+  // Giao trực tiếp: Backend chỉ mở xác nhận bàn giao/nhận hàng từ ngày hẹn thu gom
+  // (theo giờ Việt Nam). Trước ngày đó hiện thanh khóa cho biết khi nào mở, thay vì
+  // để trống như thể mất nút.
+  const upcomingCollectionAt = (() => {
+    const collection = relatedAppointments.find((item: any) => {
+      const type = normalizeStatus(item?.appointmentType);
+      const status = normalizeStatus(item?.appointmentStatus);
+      return (type === "collection" || type === "1") &&
+        ["scheduled", "1", "inprogress", "5"].includes(status) &&
+        Boolean(item?.scheduledAt);
+    });
+    return collection ? new Date(collection.scheduledAt) : null;
+  })();
+  const toVietnamDayKey = (date: Date) =>
+    new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const isDirectDelivery =
+    deliveryMethod === "SellerDelivers" || deliveryMethod === "BuyerPickUp";
+  const myConfirmationDone =
+    transactionRole === "seller"
+      ? Boolean(order.sellerHandoverConfirmedAt)
+      : Boolean(order.buyerReceivedConfirmedAt);
+  const isConfirmLockedUntilCollectionDay =
+    isProcessing &&
+    isDirectDelivery &&
+    Boolean(sellerReadyAt) &&
+    Boolean(transactionRole) &&
+    !canConfirmFromBackend &&
+    !hasActiveDispute &&
+    !myConfirmationDone &&
+    upcomingCollectionAt !== null &&
+    !Number.isNaN(upcomingCollectionAt.getTime()) &&
+    toVietnamDayKey(upcomingCollectionAt) > toVietnamDayKey(new Date());
+
   // Hủy đơn và xác nhận giao/nhận hàng nằm ở thanh dưới cố định (luôn thấy khi cuộn).
-  const showBottomBar = canCancelOrder || canOpenDispute || canSwipeConfirm;
+  const showBottomBar =
+    canCancelOrder || canOpenDispute || canSwipeConfirm || isConfirmLockedUntilCollectionDay;
 
   const shouldShowActionCard =
     !isCancelled &&
@@ -1910,6 +1945,20 @@ export default function OrderDetailScreen() {
               loading={isActionLoading}
               onConfirm={() => handleConfirmAction(canConfirmHandover ? "handover" : "received")}
             />
+          ) : null}
+          {isConfirmLockedUntilCollectionDay && upcomingCollectionAt ? (
+            <View style={styles.lockedConfirmBar}>
+              <Ionicons name="lock-closed" size={18} color={COLORS.textLight} />
+              <Text style={styles.lockedConfirmText}>
+                {transactionRole === "seller"
+                  ? "Xác nhận đã bàn giao"
+                  : "Xác nhận đã nhận hàng"}{" "}
+                mở vào ngày hẹn thu gom{" "}
+                <Text style={styles.lockedConfirmDate}>
+                  {toVietnamDayKey(upcomingCollectionAt).split("-").reverse().join("/")}
+                </Text>
+              </Text>
+            </View>
           ) : null}
           {canOpenDispute || canCancelOrder ? (
         <View style={styles.bottomBar}>
@@ -3010,6 +3059,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   sellerReadyButtonText: { color: COLORS.white, fontSize: 13, fontWeight: "800" },
+  lockedConfirmBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 16,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: COLORS.border,
+    backgroundColor: "#F3F5F5",
+  },
+  lockedConfirmText: { flex: 1, color: COLORS.textLight, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  lockedConfirmDate: { color: COLORS.text, fontWeight: "800" },
   bottomBarWrap: {
     padding: 16,
     gap: 12,
