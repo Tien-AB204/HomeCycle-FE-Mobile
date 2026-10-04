@@ -16,6 +16,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  ScrollView,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -228,12 +229,9 @@ type OfferSortOption = "newest" | "oldest" | "priceDesc" | "priceAsc";
 const OFFER_SORT_OPTIONS: Array<{ key: OfferSortOption; label: string }> = [
   { key: "newest", label: "Mới nhất" },
   { key: "oldest", label: "Cũ nhất" },
-  { key: "priceDesc", label: "Giá cao → thấp" },
-  { key: "priceAsc", label: "Giá thấp → cao" },
+  { key: "priceDesc", label: "Giá cao nhất" },
+  { key: "priceAsc", label: "Giá thấp nhất" },
 ];
-
-const getOfferSortLabel = (option: OfferSortOption) =>
-  OFFER_SORT_OPTIONS.find((entry) => entry.key === option)?.label ?? "Mới nhất";
 
 const sortReceivedOffers = (
   offers: ReceivedOfferItem[],
@@ -489,7 +487,6 @@ export default function OffersByPostScreen() {
   // authoritative reason for Sell to default differently.
   const [sortOption, setSortOption] =
     useState<OfferSortOption>("newest");
-  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -1128,7 +1125,7 @@ export default function OffersByPostScreen() {
                 </Text>
               </View>
 
-              {!isBuyPost && postContext ? (
+              {postContext ? (
                 <>
                   <View style={styles.summaryDivider} />
                   <View style={styles.summaryItem}>
@@ -1141,31 +1138,34 @@ export default function OffersByPostScreen() {
               ) : null}
             </View>
 
-            <TouchableOpacity
-              style={styles.sortBadge}
-              onPress={() => setShowSortMenu(true)}
-              disabled={!postContext}
-            >
-              <Ionicons
-                name="swap-vertical-outline"
-                size={15}
-                color={COLORS.primary}
-              />
-
-              <Text style={styles.sortText}>
-                {postContext
-                  ? getOfferSortLabel(sortOption)
-                  : "Đang xác định bài đăng"}
-              </Text>
-
-              {postContext ? (
-                <Ionicons
-                  name="chevron-down"
-                  size={13}
-                  color={COLORS.primary}
-                />
-              ) : null}
-            </TouchableOpacity>
+            {/* Sắp xếp luôn hiện thành hàng chip (trước đây nằm trong menu ẩn). */}
+            {postContext ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sortChipRow}
+              >
+                <Ionicons name="swap-vertical-outline" size={15} color={COLORS.primary} />
+                {OFFER_SORT_OPTIONS.map((option) => {
+                  const selected = option.key === sortOption;
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.sortChip, selected ? styles.sortChipActive : undefined]}
+                      onPress={() => setSortOption(option.key)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={[styles.sortChipText, selected ? styles.sortChipTextActive : undefined]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <Text style={styles.sortText}>Đang xác định bài đăng</Text>
+            )}
 
             {actionFeedback && !actionMode ? (
               <View
@@ -1620,52 +1620,6 @@ export default function OffersByPostScreen() {
         </ModalBackdrop>
       </Modal>
 
-      <Modal
-        visible={showSortMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSortMenu(false)}
-      >
-        <ModalBackdrop
-          style={styles.sortMenuBackdrop}
-          onPress={() => setShowSortMenu(false)}
-        >
-          <ModalSurface style={styles.sortMenuCard}>
-            <Text style={styles.sortMenuTitle}>Sắp xếp theo</Text>
-
-            {OFFER_SORT_OPTIONS.map((option) => {
-              const selected = option.key === sortOption;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={styles.sortMenuOption}
-                  onPress={() => {
-                    setSortOption(option.key);
-                    setShowSortMenu(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.sortMenuOptionText,
-                      selected ? styles.sortMenuOptionTextActive : undefined,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-
-                  {selected ? (
-                    <Ionicons
-                      name="checkmark"
-                      size={18}
-                      color={COLORS.primary}
-                    />
-                  ) : null}
-                </TouchableOpacity>
-              );
-            })}
-          </ModalSurface>
-        </ModalBackdrop>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -1735,60 +1689,22 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 11,
   },
-  sortBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 10,
+  sortChipRow: { alignItems: "center", gap: 8, paddingRight: 8 },
+  sortChip: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor:
-      "rgba(43, 86, 89, 0.08)",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
+  sortChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary },
+  sortChipText: { color: COLORS.text, fontSize: 12, fontWeight: "600" },
+  sortChipTextActive: { color: COLORS.white, fontWeight: "800" },
   sortText: {
     color: COLORS.primary,
     fontSize: 12,
     fontWeight: "600",
-  },
-  sortMenuBackdrop: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 24,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  sortMenuCard: {
-    width: "100%",
-    maxWidth: 360,
-    alignSelf: "center",
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: COLORS.white,
-  },
-  sortMenuTitle: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    color: COLORS.textLight,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  sortMenuOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: 46,
-    paddingHorizontal: 16,
-  },
-  sortMenuOptionText: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  sortMenuOptionTextActive: {
-    color: COLORS.primary,
-    fontWeight: "800",
   },
   errorBox: {
     flexDirection: "row",

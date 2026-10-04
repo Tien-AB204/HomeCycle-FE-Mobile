@@ -449,6 +449,8 @@ export default function DisputeDetailScreen() {
   const statusKey = normalizeKey(detail.status);
   const statusLabel = statusLabels[statusKey] || "Chưa rõ";
   const statusTone = getStatusTone(statusKey);
+  const isDisputeRejected = ["2", "rejected"].includes(statusKey);
+  const isDisputeFinished = isDisputeRejected || ["1", "resolved", "3", "closed"].includes(statusKey);
   // Category luôn hiển thị đúng tên đã lưu, kể cả khi loại đó hiện không
   // còn active cho khiếu nại mới (lịch sử vẫn phải hiển thị đúng).
   const categoryLabel = getDisputeCategoryLabel(detail.category);
@@ -493,15 +495,22 @@ export default function DisputeDetailScreen() {
               nestedScrollEnabled
               showsVerticalScrollIndicator={false}
             >
-              {timeline.map((step: any, index: number) => (
+              {timeline.map((step: any, index: number) => {
+                // Giống tiến trình đơn hàng/lịch hẹn: bước đã qua có dấu tích; bước mới nhất
+                // còn đang chờ xử lý thì hiện đồng hồ, tranh chấp đã kết thúc thì cũng là tích
+                // (bị từ chối thì dấu ✕).
+                const isLatest = index === timeline.length - 1;
+                const dot = !isLatest || isDisputeFinished
+                  ? isLatest && isDisputeRejected
+                    ? { icon: "close" as const, style: styles.timelineDotFailed }
+                    : { icon: "checkmark" as const, style: styles.timelineDotDone }
+                  : { icon: "time-outline" as const, style: styles.timelineDotCurrent };
+                return (
                 <View key={`${step?.code || "step"}-${index}`} style={styles.timelineItem}>
                   <View style={styles.timelineRail}>
-                    <View
-                      style={[
-                        styles.timelineDot,
-                        index === timeline.length - 1 ? styles.timelineDotCurrent : undefined,
-                      ]}
-                    />
+                    <View style={[styles.timelineDot, dot.style]}>
+                      <Ionicons name={dot.icon} size={13} color={COLORS.white} />
+                    </View>
                     {index < timeline.length - 1 ? <View style={styles.timelineLine} /> : null}
                   </View>
                   <View style={styles.timelineBody}>
@@ -512,7 +521,8 @@ export default function DisputeDetailScreen() {
                     <Text style={styles.timelineTime}>{formatDateTime(step?.occurredAt)}</Text>
                   </View>
                 </View>
-              ))}
+                );
+              })}
             </ScrollView>
           ) : null}
         </View>
@@ -1199,24 +1209,19 @@ const styles = StyleSheet.create({
   timelineBarList: { maxHeight: 320 },
   timelineBarListContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
   timelineItem: { flexDirection: "row", gap: 12 },
-  timelineRail: { width: 12, alignItems: "center" },
-  timelineLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 2 },
+  timelineRail: { width: 22, alignItems: "center" },
+  timelineLine: { flex: 1, width: 2, minHeight: 12, backgroundColor: "rgba(47, 118, 93, 0.45)", marginVertical: 2 },
+  // Cùng kiểu chấm tròn có biểu tượng với tiến trình đơn hàng.
   timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.border,
-    marginTop: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  timelineDotCurrent: {
-    backgroundColor: COLORS.primary,
-    borderWidth: 3,
-    borderColor: "rgba(84, 123, 125, 0.25)",
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginTop: 3,
-  },
+  timelineDotDone: { backgroundColor: "#2F765D" },
+  timelineDotCurrent: { backgroundColor: COLORS.primary },
+  timelineDotFailed: { backgroundColor: "#7A1012" },
   timelineBody: { flex: 1, paddingBottom: 14 },
   timelineTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   timelineDescription: { color: COLORS.textLight, fontSize: 13, lineHeight: 19, marginTop: 2 },
