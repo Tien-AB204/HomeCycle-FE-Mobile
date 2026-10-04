@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import Header from "../../src/components/shared/Header";
+import SwipeToConfirm from "../../src/components/shared/SwipeToConfirm";
 import {
   ModalBackdrop,
   ModalSurface,
@@ -44,7 +45,6 @@ type InlineMessage = {
 } | null;
 
 type TransactionRole = "buyer" | "seller" | null;
-type PendingAction = "handover" | "received" | null;
 type LifecycleAction = "cancel" | "confirmReturn" | "confirmReturnReceived" | null;
 type DeliveryMethod =
   | "GhnDelivery"
@@ -430,7 +430,6 @@ export default function OrderDetailScreen() {
   const trackingRequestGenerationRef = useRef(0);
   const [pageMessage, setPageMessage] = useState<InlineMessage>(null);
   useAutoDismissFeedback(pageMessage, () => setPageMessage(null));
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isSellerReadyLoading, setIsSellerReadyLoading] = useState(false);
   const [isOrderTimelineExpanded, setOrderTimelineExpanded] = useState(true);
@@ -466,7 +465,6 @@ export default function OrderDetailScreen() {
       if (!silent) {
         setIsLoading(true);
         setPageMessage(null);
-        setPendingAction(null);
       }
       setTrackingError(null);
 
@@ -846,10 +844,9 @@ export default function OrderDetailScreen() {
     }
   };
 
-  const handleConfirmAction = async () => {
-    if (!orderId || !pendingAction || isActionLoading || orderActionInFlightRef.current) return;
+  const handleConfirmAction = async (action: "handover" | "received") => {
+    if (!orderId || isActionLoading || orderActionInFlightRef.current) return;
 
-    const action = pendingAction;
     const lockKey = `${action}:${orderId}`;
     orderActionInFlightRef.current = lockKey;
 
@@ -863,7 +860,6 @@ export default function OrderDetailScreen() {
         await orderApi.confirmReceived(orderId);
       }
 
-      setPendingAction(null);
       await fetchOrderDetail({ silent: true });
 
       setPageMessage({
@@ -1169,7 +1165,6 @@ export default function OrderDetailScreen() {
   const canConfirmReturnReceived = orderActions.canConfirmReturnReceived === true;
   // Hủy đơn nằm ở thanh dưới cố định; thẻ này chỉ còn các bước trả hàng.
   const showLifecycleActionsCard = canConfirmReturn || canConfirmReturnReceived;
-  const showBottomBar = canCancelOrder || canOpenDispute;
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
@@ -1211,6 +1206,10 @@ export default function OrderDetailScreen() {
       normalizedConfirmAction === "received" ||
       normalizedConfirmAction === "2"
     );
+
+  const canSwipeConfirm = !hasActiveDispute && (canConfirmHandover || canConfirmReceived);
+  // Hủy đơn và xác nhận giao/nhận hàng nằm ở thanh dưới cố định (luôn thấy khi cuộn).
+  const showBottomBar = canCancelOrder || canOpenDispute || canSwipeConfirm;
 
   const shouldShowActionCard =
     !isCancelled &&
@@ -1783,61 +1782,13 @@ export default function OrderDetailScreen() {
               </Text>
             ) : null}
 
-            {pendingAction ? (
-              <View style={styles.inlineConfirmBox}>
-                <Text style={styles.inlineConfirmTitle}>
-                  {pendingAction === "handover"
-                    ? "Xác nhận bạn đã bàn giao hàng cho Người mua?"
-                    : "Xác nhận bạn đã thực sự nhận hàng? Thao tác này sẽ hoàn thành đơn hàng."}
-                </Text>
-                <View style={styles.inlineConfirmActions}>
-                  <TouchableOpacity
-                    style={styles.cancelConfirmBtn}
-                    onPress={() => setPendingAction(null)}
-                    disabled={isActionLoading}
-                  >
-                    <Text style={styles.cancelConfirmText}>Hủy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.primaryConfirmBtn}
-                    onPress={() => void handleConfirmAction()}
-                    disabled={isActionLoading}
-                  >
-                    {isActionLoading ? (
-                      <ActivityIndicator color={COLORS.white} />
-                    ) : (
-                      <Text style={styles.primaryConfirmText}>Xác nhận</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <>
-                {canConfirmHandover ? (
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => setPendingAction("handover")}
-                  >
-                    <Ionicons name="cube-outline" size={20} color={COLORS.white} />
-                    <Text style={styles.actionButtonText}>Đã bàn giao hàng</Text>
-                  </TouchableOpacity>
-                ) : null}
-
-                {canConfirmReceived ? (
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => setPendingAction("received")}
-                  >
-                    <Ionicons
-                      name="checkmark-done-outline"
-                      size={20}
-                      color={COLORS.white}
-                    />
-                    <Text style={styles.actionButtonText}>Đã nhận hàng</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </>
-            )}
+            {canConfirmHandover || canConfirmReceived ? (
+              <Text style={styles.actionHint}>
+                {canConfirmHandover
+                  ? "Trượt thanh ở cuối màn hình khi bạn đã bàn giao hàng cho Người mua."
+                  : "Trượt thanh ở cuối màn hình khi bạn đã thực sự nhận hàng. Thao tác này sẽ hoàn thành đơn hàng."}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -1949,6 +1900,17 @@ export default function OrderDetailScreen() {
       </ScrollView>
 
       {showBottomBar ? (
+        <View style={styles.bottomBarWrap}>
+          {canSwipeConfirm ? (
+            // Xác nhận giao/nhận hàng không hoàn tác được: trượt để xác nhận, tránh bấm nhầm.
+            <SwipeToConfirm
+              label={canConfirmHandover ? "Trượt để xác nhận đã bàn giao" : "Trượt để xác nhận đã nhận hàng"}
+              icon={canConfirmHandover ? "cube" : "checkmark-done"}
+              loading={isActionLoading}
+              onConfirm={() => handleConfirmAction(canConfirmHandover ? "handover" : "received")}
+            />
+          ) : null}
+          {canOpenDispute || canCancelOrder ? (
         <View style={styles.bottomBar}>
           {canOpenDispute ? (
             <TouchableOpacity
@@ -1975,6 +1937,8 @@ export default function OrderDetailScreen() {
               />
               <Text style={styles.outlineBtnDangerText}>Hủy đơn hàng</Text>
             </TouchableOpacity>
+          ) : null}
+        </View>
           ) : null}
         </View>
       ) : null}
@@ -2877,21 +2841,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "800" },
-  inlineConfirmBox: {
-    borderWidth: 1,
-    borderColor: "rgba(84, 123, 125, 0.24)",
-    backgroundColor: "rgba(84, 123, 125, 0.10)",
-    borderRadius: 10,
-    padding: 12,
-  },
-  inlineConfirmTitle: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 19,
-    marginBottom: 12,
-  },
-  inlineConfirmActions: { flexDirection: "row", gap: 10 },
   cancelConfirmBtn: {
     flex: 1,
     minHeight: 44,
@@ -3029,12 +2978,15 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: COLORS.white, fontWeight: "700" },
   bottomBarButton: { flex: 1 },
-  bottomBar: {
-    flexDirection: "row",
+  bottomBarWrap: {
     padding: 16,
+    gap: 12,
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+  },
+  bottomBar: {
+    flexDirection: "row",
     gap: 12,
   },
   outlineBtnWarning: {
