@@ -89,7 +89,9 @@ export default function LoginScreen() {
       if (returnUrl) {
         router.replace(returnUrl as any);
       } else {
-        router.replace("/(tabs)");
+        // Quay về bộ tab sẵn có thay vì replace: replace chồng thêm một bộ tab
+        // mới lên ngăn xếp, sinh nhiều Trang chủ cùng lúc.
+        router.dismissTo("/(tabs)");
       }
     } catch (error: unknown) {
       setLoginError(
@@ -116,7 +118,7 @@ export default function LoginScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace("/(tabs)");
+                router.dismissTo("/(tabs)");
               }
             }}
             style={styles.backButton}
