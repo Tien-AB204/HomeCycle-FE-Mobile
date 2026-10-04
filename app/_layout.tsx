@@ -16,6 +16,7 @@ import AppDialogHost from "../src/components/shared/AppDialogHost";
 import ImageSourceSheetHost from "../src/components/shared/ImageSourceSheetHost";
 import AppErrorBoundary from "../src/components/shared/AppErrorBoundary";
 import InAppNotificationToast from "../src/components/shared/InAppNotificationToast";
+import OfferUpdateAlertHost from "../src/components/shared/OfferUpdateAlertHost";
 import AppToastHost from "../src/components/shared/AppToast";
 import { COLORS } from "../src/constants/theme";
 import { AuthProvider } from "../src/contexts/AuthContext";
@@ -115,6 +116,7 @@ function RootNavigator() {
                 <Stack.Screen name="(tabs)" />
               </Stack>
               <InAppNotificationToast />
+              <OfferUpdateAlertHost />
               <AppToastHost />
               </OfferInboxProvider>
             </NotificationProvider>

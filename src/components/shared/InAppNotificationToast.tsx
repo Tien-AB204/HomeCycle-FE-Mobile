@@ -44,7 +44,9 @@ export default function InAppNotificationToast() {
       ]}
     >
       <Pressable style={styles.toast} onPress={() => setVisibleVersion(null)}>
-        <Ionicons name="notifications-outline" size={22} color={COLORS.primary} />
+        <View style={styles.iconCircle}>
+          <Ionicons name="notifications" size={18} color={COLORS.primary} />
+        </View>
         <View style={styles.content}>
           <Text numberOfLines={1} style={styles.title}>
             {localizeSystemText(inAppNotification.title, "Thông báo mới")}
@@ -64,7 +66,7 @@ export default function InAppNotificationToast() {
           onPress={() => setVisibleVersion(null)}
           style={styles.dismissButton}
         >
-          <Ionicons name="close" size={18} color={COLORS.textLight} />
+          <Ionicons name="close" size={18} color="rgba(255, 255, 255, 0.85)" />
         </TouchableOpacity>
       </Pressable>
     </View>
@@ -84,33 +86,42 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 480,
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 10,
     padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(84, 123, 125, 0.28)",
-    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    // Nền xanh đậm để toast tách hẳn khỏi nền trắng của các màn, nhìn là biết có thông báo.
+    backgroundColor: COLORS.primary,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 12,
+  },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
   },
   content: {
     flex: 1,
   },
   title: {
-    color: COLORS.text,
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: "800",
   },
   message: {
     marginTop: 3,
-    color: COLORS.textLight,
+    color: "rgba(255, 255, 255, 0.88)",
     fontSize: 13,
     lineHeight: 18,
   },
   dismissButton: {
+    alignSelf: "flex-start",
     paddingTop: 1,
   },
 });
