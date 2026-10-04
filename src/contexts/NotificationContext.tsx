@@ -45,6 +45,15 @@ const INITIAL_APPOINTMENT_REFRESH_SIGNAL: AppointmentRefreshSignal = {
   appointmentEvent: null,
 };
 
+export type InAppNotification = {
+  version: number;
+  notificationId: string;
+  title: string;
+  message: string;
+  targetType?: string | null;
+  targetId?: string | null;
+};
+
 type NotificationContextValue = {
   unreadCount: number;
   postNotificationSignal: {
@@ -52,12 +61,7 @@ type NotificationContextValue = {
     targetId: string | null;
   };
   appointmentRefreshSignal: AppointmentRefreshSignal;
-  inAppNotification: {
-    version: number;
-    notificationId: string;
-    title: string;
-    message: string;
-  } | null;
+  inAppNotification: InAppNotification | null;
   refreshUnreadCount: () => Promise<number>;
   markNotificationAsRead: (notificationId: string) => Promise<any>;
   markAllNotificationsAsRead: () => Promise<any>;
@@ -105,12 +109,8 @@ export function NotificationProvider({
   });
   const [appointmentRefreshSignal, setAppointmentRefreshSignal] =
     useState<AppointmentRefreshSignal>(INITIAL_APPOINTMENT_REFRESH_SIGNAL);
-  const [inAppNotification, setInAppNotification] = useState<{
-    version: number;
-    notificationId: string;
-    title: string;
-    message: string;
-  } | null>(null);
+  const [inAppNotification, setInAppNotification] =
+    useState<InAppNotification | null>(null);
   const [systemNotificationsEnabled, setSystemNotificationsEnabledState] =
     useState(true);
   const [
@@ -366,6 +366,8 @@ export function NotificationProvider({
           notificationId: item.notificationId,
           title: item.title,
           message: item.message,
+          targetType: item.targetType,
+          targetId: item.targetId,
         }));
       }
 
