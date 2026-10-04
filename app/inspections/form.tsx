@@ -695,8 +695,16 @@ export default function InspectionFormScreen() {
 
   const canEdit = form?.actions?.canEdit === true;
   const canSubmit = form?.actions?.canSubmit === true;
-  const canSellerConfirm = form?.actions?.canSellerConfirm === true;
-  const canSellerReject = form?.actions?.canSellerReject === true;
+  // BE cấp quyền xác nhận/mở tranh chấp chỉ theo trạng thái phiếu, không xét đơn hàng:
+  // đơn đã sang tranh chấp hoặc đã kết thúc thì ẩn các nút này để không bấm ra lỗi.
+  const orderStatusKey = String(form?.order?.orderStatus ?? "").trim().toLowerCase();
+  const isOrderProcessing = !orderStatusKey || ["1", "processing"].includes(orderStatusKey);
+  const isOrderDisputing = ["4", "disputing"].includes(orderStatusKey);
+  const isPendingSellerDecision =
+    String(form?.inspectionStatus ?? "").trim().toLowerCase() === "pendingsellerconfirmation" ||
+    form?.actions?.canSellerConfirm === true;
+  const canSellerConfirm = form?.actions?.canSellerConfirm === true && isOrderProcessing;
+  const canSellerReject = form?.actions?.canSellerReject === true && isOrderProcessing;
   // Phiếu bị từ chối là trạng thái cuối; bước tiếp theo chỉ còn khiếu nại ở đơn hàng.
   const isRejectedForm = ["3", "rejected"].includes(
     String(form?.inspectionStatus ?? "").trim().toLowerCase(),
@@ -1177,6 +1185,14 @@ export default function InspectionFormScreen() {
               </View>
             ) : null}
 
+            {isPendingSellerDecision && isOrderDisputing ? (
+              <View style={[styles.messageBox, styles.infoBox]}>
+                <Text style={[styles.messageText, styles.infoText]}>
+                  Đơn hàng đang có tranh chấp. Kết quả kiểm định sẽ được xử lý theo kết quả tranh chấp.
+                </Text>
+              </View>
+            ) : null}
+
             {canSellerConfirm || (canSellerReject && relatedOrderId) ? (
               <View style={styles.formActionsRow}>
                 {/* Không đồng ý kết quả: chuyển sang tạo tranh chấp cho đơn hàng thay vì từ chối phiếu. */}
@@ -1263,7 +1279,7 @@ export default function InspectionFormScreen() {
           <ModalSurface style={styles.modalCard}>
             <Text style={styles.modalTitle}>Xác nhận nhanh tình trạng sản phẩm?</Text>
             <Text style={styles.modalText}>
-              Bạn đang chấp nhận tình trạng sản phẩm mà không làm checklist kiểm định chi tiết. Sau này nếu khiếu nại về tình trạng hoặc chất lượng sản phẩm, bạn có thể không được trả hàng.
+              Bạn đang chấp nhận tình trạng sản phẩm mà không làm checklist kiểm định chi tiết. Kết quả được ghi nhận ngay, người bán không cần duyệt lại.
             </Text>
             {quickAcceptError ? <Text style={styles.modalError}>{quickAcceptError}</Text> : null}
             <View style={styles.lifecycleModalActions}>

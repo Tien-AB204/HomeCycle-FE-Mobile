@@ -260,8 +260,6 @@ export default function CreateDisputeScreen() {
   const isGhnCarrierSelected = ["ITEMNOTRECEIVED", "DAMAGEDORLOST", "SHIPPERRETURNED", "BUYERREFUSED"].includes(selectedCategoryKey);
   const refundsShippingFee = ["ITEMNOTRECEIVED", "SHIPPERRETURNED"].includes(selectedCategoryKey);
 
-  const isItemMismatchSelected =
-    disputeEligibility?.allowedCategories.find((item) => item.disputeCategoryId === category)?.code?.replace(/_/g, "").toUpperCase() === "ITEMMISMATCH";
 
   const isDisputeSubmitDisabled =
     isSubmitting ||
@@ -578,11 +576,6 @@ export default function CreateDisputeScreen() {
                 {refundsShippingFee
                   ? "Sự cố vận chuyển GHN được chuyển thẳng cho kiểm duyệt viên. Nếu khiếu nại được chấp nhận, người mua được hoàn tiền hàng và phí vận chuyển."
                   : "Sự cố vận chuyển GHN được chuyển thẳng cho kiểm duyệt viên. Nếu khiếu nại được chấp nhận, người mua được hoàn tiền hàng; phí vận chuyển không được hoàn."}
-              </Text>
-            ) : null}
-            {isItemMismatchSelected ? (
-              <Text style={styles.helperText}>
-                Nếu sản phẩm đã được chấp nhận ở bước kiểm định, tranh chấp vẫn được xem xét nhưng có thể không được trả hàng với khiếu nại về tình trạng hoặc chất lượng đã xác nhận.
               </Text>
             ) : null}
             {selectedCategoryLabel ? (
