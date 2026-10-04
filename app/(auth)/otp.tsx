@@ -8,13 +8,12 @@ import {
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  NativeSyntheticEvent,
   Platform,
+  Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
-  TextInputKeyPressEventData,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -67,8 +66,10 @@ export default function OTPScreen() {
   const [otpMessage, setOtpMessage] =
     useState("");
 
-  const inputRefs =
-    useRef<Array<TextInput | null>>([]);
+  // Một ô nhập ẩn nhận cả 6 số; 6 ô bên trên chỉ để hiển thị. Nhiều TextInput
+  // riêng làm iOS tưởng là form AutoFill (tô vàng ô đang nhập, hiện thanh "Next").
+  const otpInputRef = useRef<TextInput | null>(null);
+  const [isOtpFocused, setIsOtpFocused] = useState(false);
 
   // Ngăn trường hợp auto-submit và Enter
   // cùng gọi API xác thực hai lần.
@@ -107,27 +108,6 @@ export default function OTPScreen() {
       .padStart(2, "0");
 
     return `${minutes}:${remainingSeconds}`;
-  };
-
-  const focusFirstEmptyInput = (
-    currentOtp: string[],
-  ) => {
-    const firstEmptyIndex =
-      currentOtp.findIndex(
-        (digit) => digit === "",
-      );
-
-    if (firstEmptyIndex >= 0) {
-      requestAnimationFrame(() => {
-        inputRefs.current[
-          firstEmptyIndex
-        ]?.focus();
-      });
-
-      return true;
-    }
-
-    return false;
   };
 
   const handleVerify = async (
@@ -255,134 +235,36 @@ export default function OTPScreen() {
     }
   };
 
-  const handleOtpChange = (
-    text: string,
-    index: number,
-  ) => {
+  const handleOtpChange = (text: string) => {
     if (isLoading) {
       return;
     }
 
-    // Chỉ giữ chữ số.
-    // Khi paste "123456", mảng digits có đủ 6 số.
-    const digits = text.replace(
-      /\D/g,
-      "",
-    );
+    // Chỉ giữ chữ số; dán/tự điền "123456" vào là đủ 6 ô.
+    const digits = text.replace(/\D/g, "").slice(0, OTP_LENGTH);
 
     setOtpError("");
     setOtpMessage("");
     lastSubmittedOtpRef.current = "";
 
-    if (!digits) {
-      setOtp((current) => {
-        const nextOtp = [...current];
-        nextOtp[index] = "";
+    setOtp(
+      Array.from({ length: OTP_LENGTH }, (_, index) => digits[index] ?? ""),
+    );
 
-        return nextOtp;
-      });
-
-      return;
-    }
-
-    const nextOtp = [...otp];
-    let targetIndex = index;
-
-    // Phân phối toàn bộ chuỗi được paste
-    // lần lượt từ ô hiện tại.
-    digits
-      .slice(
-        0,
-        OTP_LENGTH - index,
-      )
-      .split("")
-      .forEach((digit) => {
-        nextOtp[targetIndex] = digit;
-        targetIndex += 1;
-      });
-
-    setOtp(nextOtp);
-
-    const hasEmptyInput =
-      focusFirstEmptyInput(nextOtp);
-
-    if (hasEmptyInput) {
+    if (digits.length < OTP_LENGTH) {
       return;
     }
 
     // Đủ 6 số: đóng bàn phím và tự xác thực.
-    inputRefs.current[
-      OTP_LENGTH - 1
-    ]?.blur();
-
-    void handleVerify(
-      nextOtp.join(""),
-    );
+    otpInputRef.current?.blur();
+    void handleVerify(digits);
   };
 
-  const handleKeyPress = (
-    event: NativeSyntheticEvent<TextInputKeyPressEventData>,
-    index: number,
-  ) => {
-    if (
-      event.nativeEvent.key !==
-      "Backspace"
-    ) {
-      return;
-    }
-
-    if (
-      !otp[index] &&
-      index > 0
-    ) {
-      setOtp((current) => {
-        const nextOtp = [...current];
-
-        nextOtp[index - 1] = "";
-
-        return nextOtp;
-      });
-
-      requestAnimationFrame(() => {
-        inputRefs.current[
-          index - 1
-        ]?.focus();
-      });
-    }
-  };
-
-  const handleSubmitEditing = (
-    index: number,
-  ) => {
+  const handleSubmitEditing = () => {
     const fullOtp = otp.join("");
 
-    if (
-      fullOtp.length === OTP_LENGTH
-    ) {
+    if (fullOtp.length === OTP_LENGTH) {
       void handleVerify(fullOtp);
-      return;
-    }
-
-    const firstEmptyIndex =
-      otp.findIndex(
-        (digit) => digit === "",
-      );
-
-    if (firstEmptyIndex >= 0) {
-      inputRefs.current[
-        firstEmptyIndex
-      ]?.focus();
-
-      return;
-    }
-
-    if (
-      index < OTP_LENGTH - 1
-    ) {
-      inputRefs.current[
-        index + 1
-      ]?.focus();
-
       return;
     }
 
@@ -427,7 +309,7 @@ export default function OTPScreen() {
       );
 
       requestAnimationFrame(() => {
-        inputRefs.current[0]?.focus();
+        otpInputRef.current?.focus();
       });
     } catch (error: unknown) {
       setOtpError(
@@ -500,85 +382,55 @@ export default function OTPScreen() {
             ) : null}
           </View>
 
-          <View style={styles.otpContainer}>
-            {otp.map((digit, index) => (
-              <TextInput
-                key={index}
-                ref={(ref) => {
-                  inputRefs.current[index] =
-                    ref;
-                }}
-                style={[
-                  styles.otpInput,
-                  Platform.OS === "web"
-                    ? ({
-                        outlineStyle: "none",
-                      } as any)
-                    : undefined,
-                  digit
-                    ? styles.otpInputActive
-                    : undefined,
-                  otpError
-                    ? styles.otpInputError
-                    : undefined,
-                ]}
-                keyboardType="number-pad"
-                inputMode="numeric"
+          <Pressable
+            style={styles.otpContainer}
+            onPress={() => otpInputRef.current?.focus()}
+            disabled={isLoading}
+            accessibilityLabel="Nhập mã OTP 6 chữ số"
+          >
+            {otp.map((digit, index) => {
+              const filledCount = otp.join("").length;
+              const isCurrent =
+                isOtpFocused &&
+                (index === filledCount ||
+                  (filledCount === OTP_LENGTH && index === OTP_LENGTH - 1));
+              return (
+                <View
+                  key={index}
+                  style={[
+                    styles.otpInput,
+                    digit ? styles.otpInputActive : undefined,
+                    isCurrent ? styles.otpInputActive : undefined,
+                    otpError ? styles.otpInputError : undefined,
+                  ]}
+                >
+                  <Text style={styles.otpDigit}>{digit}</Text>
+                </View>
+              );
+            })}
 
-                // Cho phép dán toàn bộ sáu số
-                // vào bất kỳ ô nào.
-                maxLength={OTP_LENGTH}
-
-                // Hỗ trợ Android/iOS tự nhận OTP.
-                autoComplete={
-                  index === 0
-                    ? "one-time-code"
-                    : "off"
-                }
-                textContentType={
-                  index === 0
-                    ? "oneTimeCode"
-                    : "none"
-                }
-                importantForAutofill={
-                  index === 0
-                    ? "yes"
-                    : "no"
-                }
-                value={digit}
-                onChangeText={(text) =>
-                  handleOtpChange(
-                    text,
-                    index,
-                  )
-                }
-                onKeyPress={(event) =>
-                  handleKeyPress(
-                    event,
-                    index,
-                  )
-                }
-                onSubmitEditing={() =>
-                  handleSubmitEditing(
-                    index,
-                  )
-                }
-                returnKeyType={
-                  index === OTP_LENGTH - 1
-                    ? "done"
-                    : "next"
-                }
-                blurOnSubmit={
-                  index === OTP_LENGTH - 1
-                }
-                selectTextOnFocus
-                editable={!isLoading}
-                accessibilityLabel={`Chữ số OTP ${
-                  index + 1
-                }`}
-              />
-            ))}
-          </View>
+            <TextInput
+              ref={otpInputRef}
+              style={styles.otpHiddenInput}
+              value={otp.join("")}
+              onChangeText={handleOtpChange}
+              onFocus={() => setIsOtpFocused(true)}
+              onBlur={() => setIsOtpFocused(false)}
+              onSubmitEditing={handleSubmitEditing}
+              maxLength={OTP_LENGTH}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              // Hỗ trợ Android/iOS tự nhận OTP từ email/SMS.
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              importantForAutofill="yes"
+              returnKeyType="done"
+              caretHidden
+              contextMenuHidden={false}
+              editable={!isLoading}
+              accessibilityLabel="Mã OTP"
+            />
+          </Pressable>
 
           {/* Lỗi nằm ngay dưới dãy OTP. */}
           {otpError ? (
@@ -811,6 +663,7 @@ const styles = StyleSheet.create({
   },
 
   otpContainer: {
+    position: "relative",
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 8,
@@ -824,11 +677,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 10,
-    color: COLORS.text,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: COLORS.white,
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
   },
 
   otpInputActive: {
@@ -838,6 +689,21 @@ const styles = StyleSheet.create({
 
   otpInputError: {
     borderColor: COLORS.error,
+  },
+
+  otpDigit: {
+    color: COLORS.text,
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+
+  // Phủ lên dãy ô để chạm/dán vào đâu cũng vào ô nhập; gần như trong suốt
+  // (không để 0 vì một số bản iOS bỏ qua view hoàn toàn trong suốt).
+  otpHiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.02,
+    color: "transparent",
+    fontSize: 1,
   },
 
   inlineMessageRow: {
