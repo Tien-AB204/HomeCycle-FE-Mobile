@@ -31,6 +31,7 @@ import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
+import { returnToTabs } from "../../src/utils/stackNavigation";
 import { useSubscription } from "../../src/contexts/SubscriptionContext";
 import SupplierSuggestionPanel from "../../src/components/posts/SupplierSuggestionPanel";
 import {
@@ -1056,7 +1057,7 @@ export default function PostFormScreen() {
       } else if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace("/(tabs)/posts");
+        returnToTabs(router, "/(tabs)/posts");
       }
       releaseLockLater(sellNavigationLock);
     } catch {
@@ -1915,7 +1916,7 @@ export default function PostFormScreen() {
                     params: { id: procurementBuyPostId, sellerRequestSellPostId: "", resumeSellerRequest: "true" },
                   });
                 } else {
-                  router.replace("/(tabs)/posts");
+                  returnToTabs(router, "/(tabs)/posts");
                 }
                 releaseLockLater(sellNavigationLock);
               }}

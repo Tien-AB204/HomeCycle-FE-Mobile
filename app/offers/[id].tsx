@@ -36,7 +36,7 @@ import {
 } from "../../src/utils/offerActions";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
-import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 
 const offerApi = {
   getOfferById: (offerId: string) =>
@@ -154,7 +154,7 @@ const formatDate = (value: unknown) => {
 };
 
 export default function OfferDetailScreen() {
-  const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const params = useLocalSearchParams();
   const { connection } = useChatRealtime();
   const { user } = useAuth();
@@ -473,7 +473,7 @@ export default function OfferDetailScreen() {
       if (!isCurrent()) return;
       const negotiationId = String(unwrap(result)?.negotiationId ?? refreshed?.negotiationId ?? "").trim();
       if (action !== "reject" && negotiationId) {
-        router.push(`/chat/${negotiationId}` as any);
+        openScreen(`/chat/${negotiationId}` as any);
       } else {
         setMessage({ type: refreshed ? "success" : "warning", text: !refreshed
           ? "Đã xử lý đề nghị nhưng chưa tải lại được dữ liệu. Vui lòng làm mới, không gửi lại thao tác."
@@ -557,7 +557,7 @@ export default function OfferDetailScreen() {
   // Hồ sơ công khai của người tham gia (ID lấy từ dữ liệu đề nghị, không suy từ tên).
   const openParticipantProfile = (userId: string) => {
     if (!userId) return;
-    router.push(`/users/${userId}` as any);
+    openScreen(`/users/${userId}` as any);
   };
 
   return (
@@ -687,7 +687,7 @@ export default function OfferDetailScreen() {
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() =>
-              router.push(`/chat/${String(offer.negotiationId)}` as any)
+              openScreen(`/chat/${String(offer.negotiationId)}` as any)
             }
           >
             <Ionicons name="chatbubbles-outline" size={19} color={COLORS.white} />

@@ -45,6 +45,7 @@ import {
 import { isWithinScheduleHours, SCHEDULE_HOURS_MESSAGE } from "../../src/utils/scheduleHours";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 
 // Gộp snapshot của AppointmentUpdated vào dữ liệu chi tiết đang hiển thị. Snapshot có cùng
 // cấu trúc GET /appointments/{id} nhưng không có các field phụ thuộc người xem (actions,
@@ -248,6 +249,7 @@ const translateDeliveryMethod = (value: unknown) => {
 
 export default function AppointmentDetailScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const params = useLocalSearchParams();
   const appointmentId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -1127,7 +1129,7 @@ export default function AppointmentDetailScreen() {
                 onPress={() =>
                   replacementAppointmentId
                     ? router.replace(("/appointments/" + replacementAppointmentId) as any)
-                    : router.push(("/orders/" + relatedOrderId) as any)
+                    : openScreen(("/orders/" + relatedOrderId) as any)
                 }
               >
                 <Text style={styles.rescheduledButtonText}>
@@ -1274,7 +1276,7 @@ export default function AppointmentDetailScreen() {
             <Text style={styles.sectionTitle}>Đơn hàng liên quan</Text>
             <TouchableOpacity
               style={styles.relatedOrderButton}
-              onPress={() => router.push(("/orders/" + relatedOrderId) as any)}
+              onPress={() => openScreen(("/orders/" + relatedOrderId) as any)}
             >
               <View style={styles.relatedOrderIcon}>
                 <Ionicons
@@ -1380,7 +1382,7 @@ export default function AppointmentDetailScreen() {
                 <TouchableOpacity
                   style={styles.primarySmallButtonFlex}
                   onPress={() =>
-                    router.push({
+                    openScreen({
                       pathname: "/inspections/form",
                       params: { appointmentId: String(appointmentId) },
                     } as any)
@@ -1401,7 +1403,7 @@ export default function AppointmentDetailScreen() {
                 <TouchableOpacity
                   style={styles.primarySmallButtonFlex}
                   onPress={() =>
-                    router.push({
+                    openScreen({
                       pathname: "/inspections/form",
                       params: { appointmentId: String(appointmentId) },
                     } as any)

@@ -53,6 +53,7 @@ import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import { useAuth } from "../../src/contexts/AuthContext";
 
 type InlineMessage = {
@@ -109,6 +110,7 @@ const toImageAsset = (
 
 export default function InspectionFormScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const { user } = useAuth();
   const params = useLocalSearchParams();
   const appointmentId = Array.isArray(params.appointmentId)
@@ -812,7 +814,7 @@ export default function InspectionFormScreen() {
         {relatedOrderId ? (
           <TouchableOpacity
             style={styles.relatedOrderButton}
-            onPress={() => router.push(("/orders/" + relatedOrderId) as any)}
+            onPress={() => openScreen(("/orders/" + relatedOrderId) as any)}
           >
             <Ionicons name="receipt-outline" size={18} color={COLORS.primary} />
             <Text style={styles.relatedOrderText}>Xem đơn hàng liên quan</Text>

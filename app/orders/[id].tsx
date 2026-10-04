@@ -28,6 +28,7 @@ import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { normalizeTargetType } from "../../src/services/notifications/notificationTargets";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import {
   beginRestLoad,
@@ -402,6 +403,7 @@ const translateCreationStatus = (status: string) => {
 
 export default function OrderDetailScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const { user } = useAuth();
   const params = useLocalSearchParams();
   const orderId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -1344,7 +1346,7 @@ export default function OrderDetailScreen() {
               description:
                 "Người mua đã đánh giá giao dịch này. Bạn có thể xem đánh giá đã nhận.",
               onPress: () =>
-                router.push(`/reviews/${receivedReviewId}` as any),
+                openScreen(`/reviews/${receivedReviewId}` as any),
             }
           : null
       : null;
@@ -1458,7 +1460,7 @@ export default function OrderDetailScreen() {
       key: "view-dispute",
       label: "Xem tranh chấp",
       icon: "document-text-outline",
-      onPress: () => router.push(`/disputes/${latestDisputeId}` as any),
+      onPress: () => openScreen(`/disputes/${latestDisputeId}` as any),
     });
   } else if (canCreateDispute) {
     overflowActions.push({
@@ -1483,7 +1485,7 @@ export default function OrderDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Mở hội thoại chat"
                 hitSlop={8}
-                onPress={() => router.push(`/chat/${negotiationId}` as any)}
+                onPress={() => openScreen(`/chat/${negotiationId}` as any)}
               >
                 <Ionicons name="chatbubbles-outline" size={22} color={COLORS.primary} />
               </TouchableOpacity>
@@ -1636,7 +1638,7 @@ export default function OrderDetailScreen() {
             activeOpacity={postId ? 0.7 : 1}
             onPress={() => {
               if (postId) {
-                router.push({
+                openScreen({
                   pathname: "/posts/[id]",
                   params: { id: postId, viewOnly: "true" },
                 });
@@ -1727,7 +1729,7 @@ export default function OrderDetailScreen() {
                     index > 0 ? styles.relatedAppointmentButtonSpaced : undefined,
                   ]}
                   onPress={() =>
-                    router.push(("/appointments/" + relatedAppointmentId) as any)
+                    openScreen(("/appointments/" + relatedAppointmentId) as any)
                   }
                 >
                   <View style={styles.relatedAppointmentIcon}>
@@ -1965,7 +1967,7 @@ export default function OrderDetailScreen() {
           {canOpenDispute ? (
             <TouchableOpacity
               style={styles.outlineBtnWarning}
-              onPress={() => router.push(`/disputes/${latestDisputeId}` as any)}
+              onPress={() => openScreen(`/disputes/${latestDisputeId}` as any)}
             >
               <Ionicons
                 name="document-text-outline"

@@ -20,6 +20,7 @@ import { COLORS } from "../../src/constants/theme";
 import apiClient from "../../src/services/apis/axiosClient";
 import { getApiErrorMessage } from "../../src/utils/apiFeedback";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { returnToTabs } from "../../src/utils/stackNavigation";
 
 export default function BusinessPendingScreen() {
   const router = useGuardedRouter();
@@ -171,7 +172,7 @@ export default function BusinessPendingScreen() {
 
         <TouchableOpacity
           style={styles.btnGoHome}
-          onPress={() => router.replace("/(tabs)/profile")}
+          onPress={() => returnToTabs(router, "/(tabs)/profile")}
         >
           <Text style={styles.btnGoHomeText}>Về trang hồ sơ</Text>
         </TouchableOpacity>

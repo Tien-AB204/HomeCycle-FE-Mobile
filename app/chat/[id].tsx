@@ -41,6 +41,7 @@ import { formatBuyPostPrice, getPosterRoleLabel, isBuyPostType } from "../../src
 import { devLog } from "../../src/utils/devLog";
 import { localizeSystemText } from "../../src/utils/localizeSystemText";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import {
   type DeadlineCountdown,
   remainingUntil,
@@ -490,6 +491,7 @@ const applyTimelineGrouping = (items: any[]) => {
 
 export default function ChatDetailScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const insets = useSafeAreaInsets();
 
   const [isKeyboardVisible, setIsKeyboardVisible] =
@@ -3021,7 +3023,7 @@ export default function ChatDetailScreen() {
       activeOpacity={0.7}
       onPress={() => {
         if (negotiationInfo?.postId) {
-          router.push({
+          openScreen({
             pathname: "/posts/[id]",
             params: {
               id: negotiationInfo.postId,
@@ -3115,7 +3117,7 @@ export default function ChatDetailScreen() {
         style={styles.headerCenter}
         onPress={() => {
           if (!partnerUserId) return;
-          router.push(`/users/${partnerUserId}` as any);
+          openScreen(`/users/${partnerUserId}` as any);
         }}
         disabled={!partnerUserId}
         activeOpacity={0.75}
@@ -3433,7 +3435,7 @@ export default function ChatDetailScreen() {
                 <TouchableOpacity
                   style={styles.viewAgreementBtnFill}
                   onPress={() => {
-                    router.push({
+                    openScreen({
                       pathname: "/agreements/preview",
                       params: {
                         agreementId: String(item.agreementId),
@@ -3454,7 +3456,7 @@ export default function ChatDetailScreen() {
                       <TouchableOpacity
                         style={styles.commerceShortcutBtn}
                         onPress={() =>
-                          router.push(`/orders/${String(item.orderId)}` as any)
+                          openScreen(`/orders/${String(item.orderId)}` as any)
                         }
                       >
                         <Ionicons
@@ -3473,7 +3475,7 @@ export default function ChatDetailScreen() {
                       <TouchableOpacity
                         style={styles.commerceShortcutBtn}
                         onPress={() =>
-                          router.push(
+                          openScreen(
                             `/appointments/${String(item.appointmentId)}` as any,
                           )
                         }
@@ -4510,7 +4512,7 @@ export default function ChatDetailScreen() {
                       false,
                     );
 
-                    router.push({
+                    openScreen({
                       pathname:
                         "/agreements/preview",
                       params: {
@@ -4550,7 +4552,7 @@ export default function ChatDetailScreen() {
                       style={styles.menuItem}
                       onPress={() => {
                         setActionMenuVisible(false);
-                        router.push(
+                        openScreen(
                           `/orders/${String(negotiationInfo.orderId)}` as any,
                         );
                       }}
@@ -4575,7 +4577,7 @@ export default function ChatDetailScreen() {
                       style={styles.menuItem}
                       onPress={() => {
                         setActionMenuVisible(false);
-                        router.push(
+                        openScreen(
                           `/appointments/${String(
                             negotiationInfo.appointmentId,
                           )}` as any,

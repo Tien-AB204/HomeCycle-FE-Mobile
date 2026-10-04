@@ -34,6 +34,7 @@ import { readSafeApiMessage } from "../../src/utils/errorMessage";
 import { getPosterRoleLabel, isBuyPostType } from "../../src/utils/postType";
 import { devLog } from "../../src/utils/devLog";
 import { useGuardedRouter } from "../../src/utils/tapGuard";
+import { useOpenScreen } from "../../src/utils/stackNavigation";
 import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
 
 const agreementApi = {
@@ -156,6 +157,7 @@ type BankRequirementState = {
 
 export default function AgreementPreviewScreen() {
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const params = useLocalSearchParams();
 
   const agreementId = Array.isArray(params.agreementId)
@@ -1571,7 +1573,7 @@ export default function AgreementPreviewScreen() {
                   styles.postPaymentBtn,
                 ]}
                 onPress={() =>
-                  router.push(("/orders/" + postPaymentLinks.orderId) as any)
+                  openScreen(("/orders/" + postPaymentLinks.orderId) as any)
                 }
               >
                 <Ionicons
@@ -1591,7 +1593,7 @@ export default function AgreementPreviewScreen() {
                   styles.postPaymentBtn,
                 ]}
                 onPress={() =>
-                  router.push(
+                  openScreen(
                     ("/appointments/" + postPaymentLinks.appointmentId) as any,
                   )
                 }

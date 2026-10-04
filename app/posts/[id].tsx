@@ -35,6 +35,7 @@ import { formatPriceInput, toPriceDigits } from "../../src/utils/textFormat";
 import { getSpaceUsageLabel, normalizeSpaceUsageName, useSpaceUsages } from "../../src/services/spaceUsage";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { releaseLockLater, useGuardedRouter } from "../../src/utils/tapGuard";
+import { returnToTabs, useOpenScreen } from "../../src/utils/stackNavigation";
 import {
   BuyPostProgress,
   isTypedDetailUnavailable,
@@ -419,6 +420,7 @@ export default function PostDetailScreen() {
   const { id, viewOnly, sellerRequestSellPostId, resumeSellerRequest } = useLocalSearchParams();
   const isViewOnly = viewOnly === "true";
   const router = useGuardedRouter();
+  const openScreen = useOpenScreen();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
 
@@ -553,9 +555,9 @@ export default function PostDetailScreen() {
     if (!offerId || sellerSubmitLock.current || sellerNavigationLock.current) return;
     sellerNavigationLock.current = true;
     setShowSellerRequestModal(false);
-    router.push({ pathname: "/offers/[id]", params: { id: offerId } });
+    openScreen({ pathname: "/offers/[id]", params: { id: offerId } });
     releaseLockLater(sellerNavigationLock);
-  }, [router]);
+  }, [openScreen]);
 
   const fetchPostData = useCallback(async () => {
     if (!id) return;
@@ -1549,7 +1551,7 @@ export default function PostDetailScreen() {
     }
 
     if (isInCart) {
-      router.push("/(tabs)/cart");
+      returnToTabs(router, "/(tabs)/cart");
       return;
     }
 
@@ -2601,7 +2603,7 @@ export default function PostDetailScreen() {
                     style={styles.primaryBtn}
                     onPress={() => {
                       setShowCartModal(false);
-                      router.push("/(tabs)/cart");
+                      returnToTabs(router, "/(tabs)/cart");
                     }}
                   >
                     <Text style={styles.primaryBtnText}>Xem giỏ hàng</Text>
