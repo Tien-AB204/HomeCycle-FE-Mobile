@@ -61,9 +61,11 @@ const paymentApi = {
       .post(`/payments/payos/checkout/${agreementId}`, payload)
       .then((response) => response.data),
 
+  // Trừ ví + tạo đơn ở BE có thể lâu hơn mặc định 10s của apiClient; hết giờ phía
+  // app không có nghĩa là BE chưa trừ tiền (xem confirmPaidOrNull).
   checkoutWithWallet: (agreementId: string) =>
     apiClient
-      .post(`/payments/wallet/checkout/${agreementId}`)
+      .post(`/payments/wallet/checkout/${agreementId}`, undefined, { timeout: 60_000 })
       .then((response) => response.data),
 
   // Trạng thái thanh toán do Backend xác nhận (không suy ra từ trình duyệt/URL).
@@ -360,6 +362,35 @@ export default function CheckoutScreen() {
     }
   }, [agreementId, clearFeedback, fetchCheckoutData, router, showInfo]);
 
+  // Hỏi BE hợp đồng đã thanh toán chưa; đã thanh toán thì sang trang thành công.
+  // Dùng khi yêu cầu thanh toán ví bị lỗi mạng/hết giờ hoặc bị từ chối vì hợp đồng
+  // không còn chờ thanh toán: BE có thể đã trừ ví xong trước khi app nhận phản hồi.
+  const goToSuccessIfPaid = useCallback(async () => {
+    if (!agreementId || navigatedToSuccessRef.current) return false;
+    try {
+      const statusData = unwrap(await paymentApi.getStatus(agreementId));
+      const rawStatus =
+        statusData?.paymentStatus ??
+        statusData?.status ??
+        statusData?.payment?.paymentStatus ??
+        statusData?.payment?.status;
+      if (!isCompletedPaymentStatus(rawStatus)) return false;
+    } catch (error) {
+      devLog("[checkout] Không kiểm tra được trạng thái sau lỗi thanh toán:", error);
+      return false;
+    }
+
+    navigatedToSuccessRef.current = true;
+    externalCheckoutPendingRef.current = false;
+    setIsPaymentCompleted(true);
+    clearFeedback();
+    router.replace({
+      pathname: "/payments/success",
+      params: { agreementId },
+    });
+    return true;
+  }, [agreementId, clearFeedback, router]);
+
   // PayOS quay về ứng dụng qua deep link /payments/checkout?payos=return|cancel
   // (cả khi ứng dụng đang mở lẫn khi khởi động lại từ liên kết).
   const payosReturnKind = String(
@@ -608,6 +639,16 @@ export default function CheckoutScreen() {
         (error as any)?.response?.data ??
           ((error as any)?.isSuccess === false ? error : undefined),
       );
+
+      // Không nhận được phản hồi (lỗi mạng/hết giờ) hoặc hợp đồng đã rời trạng thái
+      // chờ thanh toán: kiểm tra BE đã ghi nhận thanh toán chưa trước khi báo lỗi.
+      const hasNoResponse = Boolean((error as any)?.isAxiosError) && !(error as any)?.response;
+      if (
+        (hasNoResponse || normalizedErrorCode === "agreement.invalidstatus") &&
+        (await goToSuccessIfPaid())
+      ) {
+        return;
+      }
 
       if (normalizedErrorCode === "payment.bankaccountnotverified") {
         clearFeedback();
