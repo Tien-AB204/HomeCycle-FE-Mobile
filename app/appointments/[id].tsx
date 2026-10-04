@@ -1182,7 +1182,14 @@ export default function AppointmentDetailScreen() {
                           : undefined,
                     ]}
                   >
-                    {isPassed ? (
+                    {(isCancelled || isExpired) && index === 2 ? (
+                      // Bước kết thúc thất bại (hủy/hết hạn): dấu ✕ thay cho số thứ tự.
+                      <Ionicons
+                        name="close"
+                        size={16}
+                        color={COLORS.white}
+                      />
+                    ) : isPassed ? (
                       <Ionicons
                         name="checkmark"
                         size={14}
