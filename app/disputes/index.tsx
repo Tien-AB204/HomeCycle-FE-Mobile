@@ -35,7 +35,6 @@ type DisputeStatusValue =
   | "Rejected"
   | "Closed"
   | "UnderReview"
-  | "AwaitingReturn"
   | "AwaitingResponse";
 
 type DisputeTargetTypeValue = "Appointment" | "Order" | "Review";
@@ -62,7 +61,6 @@ type DisputeListItem = {
   status?: number | string | null;
   description?: string | null;
   resolutionOutcome?: number | string | null;
-  returnDueAt?: string | null;
   createdAt: string;
 };
 
@@ -72,7 +70,6 @@ const STATUS_FILTER_OPTIONS: { key: DisputeStatusValue | "all"; label: string }[
     { key: "AwaitingResponse", label: "Đang chờ phản hồi" },
     { key: "Pending", label: "Đang chờ xử lý" },
     { key: "UnderReview", label: "Đang xem xét" },
-    { key: "AwaitingReturn", label: "Đang chờ hoàn trả" },
     { key: "Resolved", label: "Đã giải quyết" },
     { key: "Rejected", label: "Đã từ chối" },
     { key: "Closed", label: "Đã đóng" },
@@ -560,11 +557,6 @@ export default function DisputeHistoryScreen() {
                     <Text style={styles.timeText}>
                       {formatDateTime(item.createdAt)}
                     </Text>
-                    {item.returnDueAt ? (
-                      <Text style={styles.returnDueText}>
-                        Hạn hoàn trả: {formatDateTime(item.returnDueAt)}
-                      </Text>
-                    ) : null}
                   </View>
                 </TouchableOpacity>
               );
@@ -764,7 +756,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   timeText: { color: COLORS.textLight, fontSize: 11 },
-  returnDueText: { color: "#9A6418", fontSize: 11, fontWeight: "700" },
   loadMoreButton: {
     minHeight: 46,
     borderRadius: 10,

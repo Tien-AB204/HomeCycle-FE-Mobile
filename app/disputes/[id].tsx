@@ -40,7 +40,6 @@ import { getDisputeCategoryDisplayName } from "../../src/utils/disputeCategoryLa
 import { formatBuyPostPrice, isBuyPostType } from "../../src/utils/postType";
 import { useAutoDismissFeedback } from "../../src/utils/useAutoDismissFeedback";
 import { useDeadlineCountdown } from "../../src/utils/useDeadlineCountdown";
-import { useGuardedRouter } from "../../src/utils/tapGuard";
 import { useOpenScreen } from "../../src/utils/stackNavigation";
 
 type InlineMessage = {
@@ -254,7 +253,6 @@ const reviewStatusLabels: Record<string, string> = {
 };
 
 export default function DisputeDetailScreen() {
-  const router = useGuardedRouter();
   const openScreen = useOpenScreen();
   const params = useLocalSearchParams();
   const disputeId = getSingleParam(params.id as string | string[] | undefined);

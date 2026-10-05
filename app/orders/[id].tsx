@@ -46,7 +46,7 @@ type InlineMessage = {
 } | null;
 
 type TransactionRole = "buyer" | "seller" | null;
-type LifecycleAction = "cancel" | "confirmReturn" | "confirmReturnReceived" | null;
+type LifecycleAction = "cancel" | null;
 type DeliveryMethod =
   | "GhnDelivery"
   | "SellerDelivers"
@@ -95,10 +95,6 @@ const ORDER_SNAPSHOT_FIELDS = [
   "completedAt",
   "completionSource",
   "disputeWindowEndsAt",
-  "returnDueAt",
-  "buyerReturnConfirmedAt",
-  "sellerReturnReceivedAt",
-  "returnedAt",
   "cancellation",
   "updatedAt",
 ] as const;
@@ -175,14 +171,6 @@ const orderApi = {
   cancelOrder: (orderId: string) =>
     apiClient
       .post(`/orders/${orderId}/cancel`)
-      .then((response) => response.data),
-  confirmReturn: (orderId: string) =>
-    apiClient
-      .post(`/orders/${orderId}/confirm-return`)
-      .then((response) => response.data),
-  confirmReturnReceived: (orderId: string) =>
-    apiClient
-      .post(`/orders/${orderId}/confirm-return-received`)
       .then((response) => response.data),
 };
 
@@ -912,36 +900,18 @@ export default function OrderDetailScreen() {
       setIsLifecycleActionLoading(true);
       setLifecycleActionError(null);
 
-      if (action === "cancel") {
-        await orderApi.cancelOrder(orderId);
-      } else if (action === "confirmReturn") {
-        await orderApi.confirmReturn(orderId);
-      } else {
-        await orderApi.confirmReturnReceived(orderId);
-      }
+      await orderApi.cancelOrder(orderId);
 
       setLifecycleAction(null);
       await fetchOrderDetail({ silent: true });
 
       setPageMessage({
         type: "success",
-        text:
-          action === "cancel"
-            ? "Đã hủy đơn hàng."
-            : action === "confirmReturn"
-              ? "Đã xác nhận trả hàng."
-              : "Đã xác nhận nhận lại hàng trả về.",
+        text: "Đã hủy đơn hàng.",
       });
     } catch (error) {
       setLifecycleActionError(
-        getApiErrorMessage(
-          error,
-          action === "cancel"
-            ? "Không thể hủy đơn hàng lúc này."
-            : action === "confirmReturn"
-              ? "Không thể xác nhận đã trả hàng lúc này."
-              : "Không thể xác nhận đã nhận lại hàng lúc này.",
-        ),
+        getApiErrorMessage(error, "Không thể hủy đơn hàng lúc này."),
       );
     } finally {
       if (orderActionInFlightRef.current === lockKey) {
@@ -1163,10 +1133,6 @@ export default function OrderDetailScreen() {
   const canConfirmFromBackend = orderActions.canConfirm === true;
   const canConfirmSellerReady = orderActions.canConfirmSellerReady === true;
   const canCancelOrder = orderActions.canCancel === true;
-  const canConfirmReturn = orderActions.canConfirmReturn === true;
-  const canConfirmReturnReceived = orderActions.canConfirmReturnReceived === true;
-  // Hủy đơn nằm ở thanh dưới cố định; thẻ này chỉ còn các bước trả hàng.
-  const showLifecycleActionsCard = canConfirmReturn || canConfirmReturnReceived;
   const shipmentId = String(shipment?.shipmentId ?? "").trim();
   const sellerReadyAt = shipment?.sellerReadyAt;
   const pickedUpAt = shipment?.pickedUpAt;
@@ -1830,48 +1796,6 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
-        {showLifecycleActionsCard ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Thao tác đơn hàng</Text>
-
-            {canConfirmReturn ? (
-              <TouchableOpacity
-                style={styles.secondaryOutlineBtn}
-                onPress={() => openLifecycleAction("confirmReturn")}
-              >
-                <Ionicons
-                  name="return-up-back-outline"
-                  size={19}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.secondaryOutlineBtnText}>
-                  Xác nhận đã trả hàng
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {canConfirmReturnReceived ? (
-              <TouchableOpacity
-                style={[
-                  styles.secondaryOutlineBtn,
-                  canConfirmReturn ? styles.actionSpacingTop : undefined,
-                ]}
-                onPress={() => openLifecycleAction("confirmReturnReceived")}
-              >
-                <Ionicons
-                  name="checkmark-done-outline"
-                  size={19}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.secondaryOutlineBtnText}>
-                  Xác nhận đã nhận lại hàng
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-          </View>
-        ) : null}
-
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Đối tác giao dịch</Text>
           {transactionRole ? (
@@ -2069,20 +1993,12 @@ export default function OrderDetailScreen() {
         >
           <ModalSurface style={styles.lifecycleModalCard}>
             <Text style={styles.lifecycleModalTitle}>
-              {lifecycleAction === "cancel"
-                ? "Hủy đơn hàng?"
-                : lifecycleAction === "confirmReturn"
-                  ? "Xác nhận đã trả hàng?"
-                  : "Xác nhận đã nhận lại hàng trả về?"}
+              Hủy đơn hàng?
             </Text>
             <Text style={styles.lifecycleModalText}>
-              {lifecycleAction === "cancel"
-                ? isGhn
-                  ? "Vận đơn GHN sẽ được hủy và người mua được hoàn tiền hàng cùng phí vận chuyển về ví. Thao tác này không thể hoàn tác."
-                  : "Thao tác này sẽ hủy đơn hàng và không thể hoàn tác."
-                : lifecycleAction === "confirmReturn"
-                  ? "Xác nhận bạn đã gửi trả sản phẩm cho người bán."
-                  : "Xác nhận bạn đã nhận lại sản phẩm trả về. Hệ thống sẽ hoàn tất hoàn tiền còn giữ cho đơn hàng."}
+              {isGhn
+                ? "Vận đơn GHN sẽ được hủy và người mua được hoàn tiền hàng cùng phí vận chuyển về ví. Thao tác này không thể hoàn tác."
+                : "Thao tác này sẽ hủy đơn hàng và không thể hoàn tác."}
             </Text>
 
             {lifecycleActionError ? (
@@ -2100,12 +2016,7 @@ export default function OrderDetailScreen() {
                 <Text style={styles.cancelConfirmText}>Đóng</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.primaryConfirmBtn,
-                  lifecycleAction === "cancel"
-                    ? styles.primaryConfirmBtnDanger
-                    : undefined,
-                ]}
+                style={[styles.primaryConfirmBtn, styles.primaryConfirmBtnDanger]}
                 onPress={() => void handleLifecycleAction()}
                 disabled={isLifecycleActionLoading}
               >
@@ -2914,22 +2825,6 @@ const styles = StyleSheet.create({
   },
   primaryConfirmBtnDanger: { backgroundColor: COLORS.error },
   primaryConfirmText: { color: COLORS.white, fontWeight: "800" },
-  secondaryOutlineBtn: {
-    minHeight: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    backgroundColor: "rgba(43, 86, 89, 0.06)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  secondaryOutlineBtnText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: "800",
-  },
   outlineBtnDanger: {
     minHeight: 48,
     borderRadius: 10,
@@ -2946,7 +2841,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
-  actionSpacingTop: { marginTop: 10 },
   lifecycleModalBackdrop: {
     flex: 1,
     justifyContent: "center",
