@@ -58,7 +58,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "build:apk": "expo prebuild --platform android --no-install && cd android && ./gradlew assembleRelease && echo \"APK: android/app/build/outputs/apk/release/app-release.apk\""
   },
   "jest": {
     "preset": "jest-expo",
