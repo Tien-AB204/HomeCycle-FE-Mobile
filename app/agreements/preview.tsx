@@ -120,6 +120,9 @@ const profileApi = {
 
 const unwrapResponse = (response: any) => response?.data || response;
 
+// Tỉ lệ đặt cọc khi hợp đồng có kiểm định (khớp chữ "Đặt cọc 20%" ở form).
+const DEPOSIT_RATE = 0.2;
+
 const normalizeStatus = (status: unknown) =>
   String(status ?? "")
     .replace(/[\s_-]/g, "")
@@ -1155,11 +1158,11 @@ export default function AgreementPreviewScreen() {
             <View style={styles.valueWrapper}>
               <Text style={styles.value}>
                 {agreementData.paymentType === "Deposit"
-                  ? "Đặt cọc"
+                  ? "Đặt cọc 20%"
                   : "Toàn phần"}
               </Text>
               {renderOldValue("paymentType", (v) =>
-                v === "Deposit" ? "Đặt cọc" : "Toàn phần",
+                v === "Deposit" ? "Đặt cọc 20%" : "Toàn phần",
               )}
             </View>
           </View>
@@ -1293,20 +1296,54 @@ export default function AgreementPreviewScreen() {
             </View>
           )}
 
-          {/* Tổng tiền = đơn giá × số lượng + phí giao hàng (BE trả totalAmount theo đúng công thức này). */}
-          {getContractTotal(agreementData.finalPrice ?? agreementData.initialPrice, agreementData.quantity || 1) > 0 ? (
-            <View style={styles.row}>
-              <Text style={styles.label}>Tổng tiền:</Text>
-              <View style={styles.valueWrapper}>
-                <Text style={[styles.value, styles.finalPrice]}>
-                  {formatPrice(
-                    getContractTotal(agreementData.finalPrice ?? agreementData.initialPrice, agreementData.quantity || 1) +
-                      (typeof details.estimatedShippingFee === "number" ? details.estimatedShippingFee : 0),
-                  )}
-                </Text>
-              </View>
-            </View>
-          ) : null}
+          {/* Tổng tiền = đơn giá × số lượng + phí giao hàng (BE trả totalAmount theo đúng công thức này).
+              Hợp đồng đặt cọc: hiện giá gốc, tiền cọc 20% và số tiền phải trả trước. */}
+          {(() => {
+            const goodsTotal = getContractTotal(
+              agreementData.finalPrice ?? agreementData.initialPrice,
+              agreementData.quantity || 1,
+            );
+            if (!(goodsTotal > 0)) return null;
+            const shippingFee =
+              typeof details.estimatedShippingFee === "number" ? details.estimatedShippingFee : 0;
+            if (agreementData.paymentType !== "Deposit") {
+              return (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Tổng tiền:</Text>
+                  <View style={styles.valueWrapper}>
+                    <Text style={[styles.value, styles.finalPrice]}>
+                      {formatPrice(goodsTotal + shippingFee)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }
+            const depositAmount = Math.round(goodsTotal * DEPOSIT_RATE);
+            return (
+              <>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Giá gốc:</Text>
+                  <View style={styles.valueWrapper}>
+                    <Text style={styles.value}>{formatPrice(goodsTotal)}</Text>
+                  </View>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Đặt cọc 20%:</Text>
+                  <View style={styles.valueWrapper}>
+                    <Text style={styles.value}>{formatPrice(depositAmount)}</Text>
+                  </View>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Tổng phải trả:</Text>
+                  <View style={styles.valueWrapper}>
+                    <Text style={[styles.value, styles.finalPrice]}>
+                      {formatPrice(depositAmount + shippingFee)}
+                    </Text>
+                  </View>
+                </View>
+              </>
+            );
+          })()}
 
           <View style={styles.divider} />
 

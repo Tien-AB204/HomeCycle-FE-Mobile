@@ -394,6 +394,8 @@ const getTimelineTime = (value: unknown) => {
 };
 
 const MESSAGE_PAGE_SIZE = 50;
+// Tỉ lệ đặt cọc khi hợp đồng có kiểm định (khớp màn chi tiết hợp đồng).
+const DEPOSIT_RATE = 0.2;
 
 type TimelineMergeAuthority = "authoritative" | "backfill";
 
@@ -3344,6 +3346,12 @@ export default function ChatDetailScreen() {
           Number(item.agreementData?.finalPrice ?? 0) *
             Number(item.agreementData?.quantity ?? 1) +
           (hasAgreementShippingFee ? agreementShippingFee : 0);
+        // Hợp đồng đặt cọc (có kiểm định): người mua trả trước 20% giá hàng (+ phí giao nếu có).
+        const isDepositAgreement = item.agreementData?.paymentType === "Deposit";
+        const agreementGoodsTotal =
+          Number(item.agreementData?.finalPrice ?? 0) *
+          Number(item.agreementData?.quantity ?? 1);
+        const agreementDepositAmount = Math.round(agreementGoodsTotal * DEPOSIT_RATE);
 
         return (
           <View
@@ -3390,6 +3398,27 @@ export default function ChatDetailScreen() {
                     <Text style={styles.flowCardTotalLabel}>Tổng cộng</Text>
                     <Text style={styles.flowCardTotalValue}>
                       {formatCurrency(agreementGrandTotal)}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+
+              {isDepositAgreement && agreementGoodsTotal > 0 ? (
+                <>
+                  <View style={styles.flowCardFeeDivider} />
+                  <View style={styles.flowCardFeeRow}>
+                    <Text style={styles.flowCardFeeLabel}>Đặt cọc 20%</Text>
+                    <Text style={styles.flowCardFeeValue}>
+                      {formatCurrency(agreementDepositAmount)}
+                    </Text>
+                  </View>
+                  <View style={styles.flowCardFeeRow}>
+                    <Text style={styles.flowCardTotalLabel}>Tổng phải trả</Text>
+                    <Text style={styles.flowCardTotalValue}>
+                      {formatCurrency(
+                        agreementDepositAmount +
+                          (hasAgreementShippingFee ? agreementShippingFee : 0),
+                      )}
                     </Text>
                   </View>
                 </>

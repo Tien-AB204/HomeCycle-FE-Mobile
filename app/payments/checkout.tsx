@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -780,7 +781,8 @@ export default function CheckoutScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header title="Thanh toán" showBack={true} />
-      <View style={styles.container}>
+      {/* Cuộn được để hóa đơn + phương thức thanh toán không bị thanh dưới che trên máy màn nhỏ. */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         {isBuyer || isSeller ? (
           <View style={styles.transactionRoleCard}>
             <View>
@@ -820,6 +822,16 @@ export default function CheckoutScreen() {
             <Text style={styles.totalValue}>{formatCurrency(totalPayment)}</Text>
           </View>
         </View>
+
+        {/* Đặt dưới hóa đơn thay vì thanh dưới cùng để PayOS không bị che. */}
+        {!isPaymentCompleted ? (
+          <DeadlineBanner
+            countdown={paymentCountdown}
+            label="Thời gian thanh toán còn lại"
+            style={styles.deadlineBanner}
+            expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+          />
+        ) : null}
 
         <Text style={styles.paymentMethodsTitle}>Phương thức thanh toán</Text>
 
@@ -925,16 +937,9 @@ export default function CheckoutScreen() {
             ) : null}
           </View>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       <View style={styles.bottomBar}>
-        {!isPaymentCompleted ? (
-          <DeadlineBanner
-            countdown={paymentCountdown}
-            label="Thời gian thanh toán còn lại"
-            expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-          />
-        ) : null}
         <InlineFeedback feedback={feedback} />
         {!isPaymentCompleted ? (
           <View style={styles.termsBox}>
@@ -1087,7 +1092,8 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   reconcileTitle: { marginTop: 16, fontSize: 16, fontWeight: "700", color: COLORS.text },
   reconcileHint: { marginTop: 6, fontSize: 13, color: COLORS.textLight },
-  container: { flex: 1, padding: 16 },
+  scroll: { flex: 1 },
+  container: { padding: 16 },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
@@ -1155,6 +1161,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 16,
   },
+  deadlineBanner: { marginBottom: 20 },
   paymentMethodsTitle: {
     fontSize: 16,
     fontWeight: "bold",
