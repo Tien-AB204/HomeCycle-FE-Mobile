@@ -821,6 +821,16 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
+        {/* Đặt dưới hóa đơn thay vì thanh dưới cùng để PayOS không bị che. */}
+        {!isPaymentCompleted ? (
+          <DeadlineBanner
+            countdown={paymentCountdown}
+            label="Thời gian thanh toán còn lại"
+            style={styles.deadlineBanner}
+            expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
+          />
+        ) : null}
+
         <Text style={styles.paymentMethodsTitle}>Phương thức thanh toán</Text>
 
         <TouchableOpacity
@@ -928,13 +938,6 @@ export default function CheckoutScreen() {
       </View>
 
       <View style={styles.bottomBar}>
-        {!isPaymentCompleted ? (
-          <DeadlineBanner
-            countdown={paymentCountdown}
-            label="Thời gian thanh toán còn lại"
-            expiredText="Thỏa thuận đã hết hạn. Bạn có thể gửi yêu cầu mới nếu bài đăng còn khả dụng."
-          />
-        ) : null}
         <InlineFeedback feedback={feedback} />
         {!isPaymentCompleted ? (
           <View style={styles.termsBox}>
@@ -1155,6 +1158,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 16,
   },
+  deadlineBanner: { marginBottom: 20 },
   paymentMethodsTitle: {
     fontSize: 16,
     fontWeight: "bold",
